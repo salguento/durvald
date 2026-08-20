@@ -1,0 +1,70 @@
+// UniFFI contract for durvald-core.
+//
+// Types are defined in Rust (api.rs) via proc-macros; this file references them
+// with [Rust=...] so we don't duplicate FfiConverter implementations.
+// Exported functions live in lib.rs via #[uniffi::export].
+
+namespace durvald {};
+
+[Rust="object"]
+typedef extern DurvaldCore;
+
+[Rust="record"]
+typedef extern CoreConfig;
+
+[Rust="record"]
+typedef extern Track;
+
+[Rust="record"]
+typedef extern Release;
+
+[Rust="record"]
+typedef extern Artist;
+
+[Rust="record"]
+typedef extern Playlist;
+
+[Rust="record"]
+typedef extern PlaylistTrack;
+
+[Rust="record"]
+typedef extern QueueItem;
+
+[Rust="record"]
+typedef extern PlaybackSnapshot;
+
+[Rust="enum"]
+typedef extern RepeatMode;
+
+[Rust="record"]
+typedef extern LastFmStatus;
+
+[Rust="record"]
+typedef extern ScanProgress;
+
+[Rust="enum"]
+typedef extern ScanPhase;
+
+[Rust="record"]
+typedef extern ScanResult;
+
+[Rust="record"]
+typedef extern LastSession;
+
+[Rust="record"]
+typedef extern Settings;
+
+[Rust="record"]
+typedef extern KeyValuePair;
+
+[Rust="record"]
+typedef extern AudioMetadata;
+
+[Rust="record"]
+typedef extern SearchResults;
+
+[Rust="record"]
+typedef extern AuthTokenResponse;
+
+[Rust="record"]
+typedef extern SessionResponse;

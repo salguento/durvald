@@ -9,7 +9,15 @@ rust-version = "1.85"
 [lib]
 name = "durvald_core"
 path = "src/lib.rs"
-crate-type = ["lib", "staticlib", "cdylib"]
+# cdylib = dynamic library for FFI (Swift, Kotlin, Python, Node.js)
+# staticlib = static library for GTK4/Rust consumers
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[features]
+# Default features for the core library
+default = []
+# UniFFI bindings generation (enables uniffi::export macros)
+uniffi = ["dep:uniffi", "uniffi/tokio"]
 
 [dependencies]
 # Database
@@ -43,8 +51,23 @@ keyring = "3.6.3"
 # Utilities
 sys-info = "0.9"
 
-# UniFFI
-uniffi = { version = "0.27", features = ["tokio"] }
+# UniFFI - only compiled when "uniffi" feature is enabled
+uniffi = { version = "0.27", features = ["tokio"], optional = true }
 
 [build-dependencies]
-uniffi_build = "0.27"
+
+# Platform-specific dependencies
+[target.'cfg(target_os = "macos")'.dependencies]
+# CoreFoundation needed for keyring on macOS
+core-foundation = "0.9"
+
+[target.'cfg(windows)'.dependencies]
+# Windows-specific for secure storage
+windows = { version = "0.58", features = ["Win32_Security_Credentials", "Win32_Foundation"] }
+
+[profile.release]
+# Optimize for size - important for mobile/embedded
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

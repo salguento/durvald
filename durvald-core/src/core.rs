@@ -15,11 +15,10 @@ use std::sync::Arc;
 use base64::Engine;
 
 /// Opaque core engine - the main entry point for all operations.
-/// 
+///
 /// Internally owns the database pool, audio player, secure storage,
 /// and Last.fm client. All state is encapsulated here.
-/// This struct is not exported to UniFFI directly; instead we use
-/// an opaque handle pattern with uniffi::export functions.
+#[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
     audio_player: Arc<tokio::sync::Mutex<crate::audio::AudioPlayer>>,

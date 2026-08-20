@@ -1,13 +1,13 @@
 //! Public DTO types for the durvald-core API.
-//! 
+//!
 //! These are stable, frontend-safe types that can be serialized
 //! and sent across FFI boundaries (UniFFI, Tauri, etc.).
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Configuration for initializing the core engine.
-#[derive(Debug, Clone, Serialize, Deserialize, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct CoreConfig {
     /// Path to the SQLite database file
     pub database_path: String,
@@ -34,7 +34,8 @@ impl CoreConfig {
 }
 
 /// Stable error type for the public API.
-#[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error, uniffi::Error)]
+#[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Error))]
 pub enum CoreError {
     #[error("Invalid input: {message}")]
     InvalidInput { message: String },
@@ -54,7 +55,8 @@ pub enum CoreError {
 pub type CoreResult<T> = Result<T, CoreError>;
 
 /// Audio track DTO
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct Track {
     pub id: i64,
     pub title: String,
@@ -78,7 +80,8 @@ pub struct Track {
 }
 
 /// Release/album DTO
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct Release {
     pub id: i64,
     pub title: String,
@@ -96,14 +99,16 @@ pub struct Release {
 }
 
 /// Artist DTO
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct Artist {
     pub id: i64,
     pub name: String,
 }
 
 /// Playlist DTO
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct Playlist {
     pub id: i64,
     pub name: String,
@@ -117,7 +122,8 @@ pub struct Playlist {
 }
 
 /// Playlist track entry
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PlaylistTrack {
     pub playlist_id: i64,
     pub track_id: i64,
@@ -126,14 +132,16 @@ pub struct PlaylistTrack {
 }
 
 /// Queue item DTO
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct QueueItem {
     pub track_id: i64,
     pub position: u64,
 }
 
 /// Playback state snapshot
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PlaybackSnapshot {
     pub current_track: Option<Track>,
     pub position_seconds: f64,
@@ -148,8 +156,9 @@ pub struct PlaybackSnapshot {
 }
 
 /// Repeat mode for playback
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum RepeatMode {
     None,
     One,
@@ -157,14 +166,16 @@ pub enum RepeatMode {
 }
 
 /// Last.fm connection status
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct LastFmStatus {
     pub connected: bool,
     pub username: Option<String>,
 }
 
 /// Library scan progress
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ScanProgress {
     pub path: String,
     pub phase: ScanPhase,
@@ -174,8 +185,9 @@ pub struct ScanProgress {
 }
 
 /// Library scan phase
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum ScanPhase {
     Scanning,
     ExtractingMetadata,
@@ -184,7 +196,8 @@ pub enum ScanPhase {
 }
 
 /// Library scan result
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ScanResult {
     pub paths_scanned: u64,
     pub total_files_found: u64,
@@ -194,7 +207,8 @@ pub struct ScanResult {
 }
 
 /// Last session state for resume
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct LastSession {
     pub current_track_id: Option<i64>,
     pub progress_seconds: f64,
@@ -208,7 +222,8 @@ pub struct LastSession {
 }
 
 /// Application settings
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct Settings {
     pub cross_fade: bool,
     pub cross_fade_duration: u32,
@@ -223,8 +238,17 @@ pub struct Settings {
     pub onboarding_complete: bool,
 }
 
+/// Key-value pair for metadata fields (UniFFI-friendly alternative to HashMap).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct KeyValuePair {
+    pub key: String,
+    pub value: String,
+}
+
 /// Audio metadata extracted from a file
-#[derive(Debug, Clone, Serialize, Deserialize, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AudioMetadata {
     pub title: Option<String>,
     pub artist: Option<String>,
@@ -238,15 +262,31 @@ pub struct AudioMetadata {
     pub sample_rate: Option<u32>,
     pub channels: Option<u8>,
     pub cover_artwork_id: Option<String>,
-    pub all_fields: HashMap<String, String>,
+    pub all_fields: Vec<KeyValuePair>,
     pub file_path: String,
 }
 
 /// Search result
-#[derive(Debug, Clone, Serialize, Deserialize, uniffi::Record)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SearchResults {
     pub tracks: Vec<Track>,
     pub releases: Vec<Release>,
     pub artists: Vec<Artist>,
     pub playlists: Vec<Playlist>,
+}
+
+/// Last.fm auth token response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AuthTokenResponse {
+    pub token: String,
+    pub auth_url: String,
+}
+
+/// Last.fm session response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SessionResponse {
+    pub username: String,
 }
