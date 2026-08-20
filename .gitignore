@@ -1,0 +1,46 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# UniFFI generated (built locally, not committed)
+/durvald-core/uniffi/
+/durvald-core/src/durvald.uniffi.rs
+
+# Swift / Xcode
+/durvald-swift/*.xcworkspace/
+/durvald-swift/*.xcodeproj/xcuserdata/
+/durvald-swift/*.xcodeproj/project.xcworkspace/
+/durvald-swift/DerivedData/
+/durvald-swift/build/
+/durvald-swift/.swiftpm/
+
+# Android / Gradle
+/durvald-android/.gradle/
+/durvald-android/build/
+/durvald-android/local.properties
+/durvald-android/*.keystore
+/durvald-android/app/release/
+
+# GTK / Linux
+/durvald-gtk/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tauri
+/durvald-tauri/target/
+/durvald-tauri/app/node_modules/
+/durvald-tauri/app/dist/
+/durvald-tauri/app/.vite/
+
+# Logs
+*.log

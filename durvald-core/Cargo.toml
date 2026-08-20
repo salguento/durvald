@@ -1,0 +1,50 @@
+[package]
+name = "durvald-core"
+version = "0.1.0"
+edition = "2024"
+description = "Core business logic for durvald music player - database, audio, metadata, Last.fm, secure storage"
+license = "MIT"
+rust-version = "1.85"
+
+[lib]
+name = "durvald_core"
+path = "src/lib.rs"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[dependencies]
+# Database
+rusqlite = { version = "0.37.0", features = ["bundled"] }
+r2d2 = "0.8.10"
+r2d2_sqlite = "0.31.0"
+tokio = { version = "1.48.0", features = ["full"] }
+tokio-rusqlite = "0.7.0"
+
+# Audio
+kira = { version = "0.11.0", features = ["mp3", "ogg", "flac", "wav"] }
+
+# Metadata
+lofty = "0.22.4"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+base64 = "0.22.1"
+md-5 = "0.10.6"
+
+# Last.fm
+reqwest = { version = "0.13.1", features = ["json", "form"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+md5 = { version = "0.10.6", package = "md-5" }
+ring = "0.17.14"
+lazy_static = "1.5.0"
+chrono = "0.4.42"
+thiserror = "2.0.17"
+once_cell = "1.21.3"
+keyring = "3.6.3"
+
+# Utilities
+sys-info = "0.9"
+
+# UniFFI
+uniffi = { version = "0.27", features = ["tokio"] }
+
+[build-dependencies]
+uniffi_build = "0.27"
