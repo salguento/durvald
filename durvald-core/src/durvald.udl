@@ -1,8 +1,8 @@
 // UniFFI contract for durvald-core.
 //
-// Types are defined in Rust (api.rs) via proc-macros; this file references them
-// with [Rust=...] so we don't duplicate FfiConverter implementations.
-// Exported functions live in lib.rs via #[uniffi::export].
+// Types and DurvaldCore methods are defined in Rust via proc-macros (api.rs, core.rs).
+// This file references those types for uniffi-bindgen; method exports are discovered
+// from the compiled library metadata via #[uniffi::export] on DurvaldCore.
 
 namespace durvald {};
 
@@ -14,6 +14,9 @@ typedef extern CoreConfig;
 
 [Rust="record"]
 typedef extern Track;
+
+[Rust="record"]
+typedef extern PlaybackHistoryItem;
 
 [Rust="record"]
 typedef extern Release;

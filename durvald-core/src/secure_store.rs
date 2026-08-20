@@ -1,12 +1,14 @@
 //! Secure storage module - adapted to work without Tauri AppHandle
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+#[cfg(not(target_os = "macos"))]
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+#[cfg(target_os = "macos")]
 use keyring::Entry;
 use once_cell::sync::Lazy;
+#[cfg(not(target_os = "macos"))]
 use ring::{
     aead::{self, Aad, LessSafeKey, Nonce, UnboundKey},
-    digest,
-    rand,
+    digest, rand,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -91,7 +93,7 @@ impl SecureStore {
         {
             let entry = Entry::new(&self.keychain_service, name)?;
             entry.set_password(value)?;
-            return Ok(());
+            Ok(())
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -106,7 +108,7 @@ impl SecureStore {
         {
             let entry = Entry::new(&self.keychain_service, name)?;
             let password = entry.get_password()?;
-            return Ok(password);
+            Ok(password)
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -120,7 +122,7 @@ impl SecureStore {
         {
             let entry = keyring::Entry::new(&self.keychain_service, name)?;
             entry.delete_credential()?;
-            return Ok(());
+            Ok(())
         }
 
         #[cfg(not(target_os = "macos"))]
@@ -168,10 +170,9 @@ impl SecureStore {
 
     #[cfg(not(target_os = "macos"))]
     fn secret_path(&self, name: &str) -> SecureStoreResult<PathBuf> {
-        let dir = self
-            .data_path
-            .parent()
-            .ok_or_else(|| SecureStoreError::Custom("No parent directory for data_path".to_string()))?;
+        let dir = self.data_path.parent().ok_or_else(|| {
+            SecureStoreError::Custom("No parent directory for data_path".to_string())
+        })?;
         fs::create_dir_all(dir)?;
         Ok(dir.join(format!("secret_{}.enc", name)))
     }
@@ -223,7 +224,9 @@ impl SecureStore {
         let decoded = BASE64.decode(&raw)?;
 
         if decoded.len() < 12 {
-            return Err(SecureStoreError::Custom("Invalid ciphertext length".to_string()));
+            return Err(SecureStoreError::Custom(
+                "Invalid ciphertext length".to_string(),
+            ));
         }
 
         let nonce: [u8; 12] = decoded[..12]

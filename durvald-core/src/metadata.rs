@@ -1,18 +1,18 @@
 //! Metadata extraction module using lofty
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine as _;
 use image;
 use lofty::file::AudioFile;
 use lofty::file::TaggedFileExt;
 use lofty::read_from_path;
 use lofty::tag::Accessor;
+use lofty::tag::ItemKey;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -21,8 +21,6 @@ pub enum MetadataError {
     Lofty(#[from] lofty::error::LoftyError),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Base64 error: {0}")]
-    Base64(#[from] base64::DecodeError),
     #[error("Image error: {0}")]
     Image(#[from] image::ImageError),
     #[error("{0}")]
@@ -30,6 +28,29 @@ pub enum MetadataError {
 }
 
 pub type MetadataResult<T> = Result<T, MetadataError>;
+
+fn cancellation_requested(cancel_requested: Option<&AtomicBool>) -> bool {
+    cancel_requested.is_some_and(|cancel| cancel.load(Ordering::Acquire))
+}
+
+/// Returns a bounded ReplayGain track adjustment in dB when the file carries
+/// a valid `REPLAYGAIN_TRACK_GAIN` tag. Missing or invalid tags leave audio
+/// playback unchanged.
+pub fn replay_gain_db(path: &str) -> Option<f64> {
+    let tagged_file = read_from_path(path).ok()?;
+    let value = tagged_file
+        .primary_tag()?
+        .get_string(&ItemKey::ReplayGainTrackGain)?;
+    parse_replay_gain_db(value)
+}
+
+fn parse_replay_gain_db(value: &str) -> Option<f64> {
+    let value = value.trim().strip_suffix("dB").unwrap_or(value).trim();
+    let gain = value.parse::<f64>().ok()?;
+    gain.is_finite()
+        .then_some(gain)
+        .filter(|gain| (-24.0..=24.0).contains(gain))
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AudioMetadata {
@@ -44,11 +65,8 @@ pub struct AudioMetadata {
     pub bitrate: Option<u32>,
     pub sample_rate: Option<u32>,
     pub channels: Option<u8>,
-    /// Legacy: embedded base64 data URL. Kept so already-persisted rows and
-    /// the FolderSelector preview keep working unchanged.
-    pub cover_image_base64: Option<String>,
-    /// New: absolute path of the cover file, served via the asset protocol.
-    /// Empty only when the track has no embedded artwork.
+    /// Absolute path of the cover file. Empty only when the track has no
+    /// embedded artwork.
     pub cover_path: Option<String>,
     pub all_fields: HashMap<String, String>,
     pub file_path: String,
@@ -135,33 +153,36 @@ pub fn write_thumbnail(full_path: &Path, bytes: &[u8]) -> MetadataResult<()> {
     Ok(())
 }
 
-/// Parses a legacy `data:<mime>;base64,<payload>` artwork value, writes the
-/// decoded bytes to the covers dir and returns the absolute file path.
-///
-/// Returns `Ok(None)` when the value is not a base64 data URL, so the caller
-/// can leave the row untouched (idempotent migration).
-pub fn cover_path_from_data_url(
-    covers_dir: &Path,
-    data_url: &str,
-) -> MetadataResult<Option<String>> {
-    let rest = data_url.strip_prefix("data:").unwrap_or(data_url);
-    let (mime, payload) = match rest.split_once(";base64,") {
-        Some((m, p)) => (m, p.trim()),
-        None => return Ok(None),
-    };
-
-    let bytes = STANDARD.decode(payload)?;
-    write_cover_file(covers_dir, mime, &bytes)
-}
-
 /// Synchronous core of metadata extraction (lofty read + cover file write).
 /// Runs on a blocking thread (`spawn_blocking`) so the async runtime isn't
 /// blocked. This is the unit the incremental scan parallelizes.
-pub fn extract_metadata_blocking(
+pub fn extract_metadata_blocking(path: &str, covers_dir: &Path) -> MetadataResult<AudioMetadata> {
+    extract_metadata_blocking_with_cancel(path, covers_dir, None)
+}
+
+/// Cancellation-aware variant of [`extract_metadata_blocking`].
+///
+/// `lofty` performs a synchronous decode, so a cancellation request cannot
+/// safely interrupt that individual decoder call. We do, however, check at
+/// every boundary around it and avoid cover writes or accepting its result
+/// after cancellation.
+pub fn extract_metadata_blocking_with_cancel(
     path: &str,
     covers_dir: &Path,
+    cancel_requested: Option<&AtomicBool>,
 ) -> MetadataResult<AudioMetadata> {
+    if cancellation_requested(cancel_requested) {
+        return Err(MetadataError::Custom(
+            "Metadata extraction cancelled".to_string(),
+        ));
+    }
     let tagged_file = read_from_path(path)?;
+
+    if cancellation_requested(cancel_requested) {
+        return Err(MetadataError::Custom(
+            "Metadata extraction cancelled".to_string(),
+        ));
+    }
 
     let properties = tagged_file.properties();
     let mut metadata = AudioMetadata {
@@ -176,7 +197,6 @@ pub fn extract_metadata_blocking(
         bitrate: properties.audio_bitrate(),
         sample_rate: properties.sample_rate(),
         channels: properties.channels(),
-        cover_image_base64: None,
         cover_path: None,
         all_fields: HashMap::new(),
         file_path: path.to_string(),
@@ -192,15 +212,23 @@ pub fn extract_metadata_blocking(
         metadata.track = tag.track();
         metadata.disc = tag.disk();
 
-        // Extract cover: persist as file (new) AND keep base64 (legacy/compat).
+        // Extract cover directly to the managed covers directory.
         if let Some((mime, bytes)) = extract_cover_bytes(tag) {
-            let base64 = STANDARD.encode(&bytes);
-            metadata.cover_image_base64 = Some(format!("data:{};base64,{}", mime, base64));
+            if cancellation_requested(cancel_requested) {
+                return Err(MetadataError::Custom(
+                    "Metadata extraction cancelled".to_string(),
+                ));
+            }
             metadata.cover_path = write_cover_file(covers_dir, &mime, &bytes)?;
         }
 
         // All fields as key-value pairs
         for item in tag.items() {
+            if cancellation_requested(cancel_requested) {
+                return Err(MetadataError::Custom(
+                    "Metadata extraction cancelled".to_string(),
+                ));
+            }
             metadata
                 .all_fields
                 .insert(format!("{:?}", item.key()), format!("{:?}", item.value()));
@@ -208,4 +236,30 @@ pub fn extract_metadata_blocking(
     }
 
     Ok(metadata)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_extraction_stops_before_reading_the_file() {
+        let cancelled = AtomicBool::new(true);
+        let error = extract_metadata_blocking_with_cancel(
+            "/path/that-must-not-be-read.mp3",
+            Path::new("/tmp"),
+            Some(&cancelled),
+        )
+        .expect_err("a cancelled extraction must not read the path");
+
+        assert!(error.to_string().contains("cancelled"));
+    }
+
+    #[test]
+    fn replay_gain_parser_accepts_valid_bounded_db_values() {
+        assert_eq!(parse_replay_gain_db("-7.25 dB"), Some(-7.25));
+        assert_eq!(parse_replay_gain_db("+3.0"), Some(3.0));
+        assert_eq!(parse_replay_gain_db("not a number"), None);
+        assert_eq!(parse_replay_gain_db("25 dB"), None);
+    }
 }

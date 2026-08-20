@@ -28,6 +28,9 @@ tokio = { version = "1.48.0", features = ["full"] }
 tokio-rusqlite = "0.7.0"
 
 # Audio
+# MVP playback formats: MP3, WAV, FLAC, and Ogg Vorbis (.ogg/.oga). Keep this
+# aligned with `audio::SUPPORTED_AUDIO_EXTENSIONS`; Kira 0.11 has no AAC, M4A,
+# Opus, or AIFF decoder feature to enable here.
 kira = { version = "0.11.0", features = ["mp3", "ogg", "flac", "wav"] }
 
 # Metadata
@@ -55,6 +58,8 @@ sys-info = "0.9"
 uniffi = { version = "0.27", features = ["tokio"], optional = true }
 
 [build-dependencies]
+# Required for code generation at build time (always available for build.rs)
+uniffi_build = { version = "0.27", features = ["builtin-bindgen"] }
 
 # Platform-specific dependencies
 [target.'cfg(target_os = "macos")'.dependencies]

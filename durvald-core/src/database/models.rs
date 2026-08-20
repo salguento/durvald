@@ -1,8 +1,4 @@
-use chrono::Utc;
-use rusqlite::{params, Connection, OptionalExtension, Result as RusqliteResult};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
 
 #[derive(Serialize, Clone, Debug)]
 pub struct LibraryPath {
@@ -19,7 +15,7 @@ pub struct Settings {
     pub explicit_content: bool,
     pub autoplay: bool,
     pub preferred_audio_quality: i32,
-    pub preferrend_audio_source: String,
+    pub preferred_audio_source: String,
     pub download_path: String,
     pub open_on_startup: bool,
     pub minimize_on_close: bool,
@@ -90,9 +86,9 @@ pub struct LastSession {
     pub progress_seconds: f64,        // playback position in seconds (fractional)
 
     // Player state
-    pub volume: f64,          // 0.0 – 100.0
+    pub volume: f64, // 0.0 – 100.0
     pub shuffle_enabled: bool,
-    pub repeat_mode: String,  // "none" | "one" | "all"
+    pub repeat_mode: String, // "none" | "one" | "all"
 
     // Queue snapshot: JSON array of song_ids in order, e.g. "[12, 7, 33, 5]"
     // Stored as TEXT so we don't need a separate junction table.
@@ -110,7 +106,7 @@ pub struct LastSession {
 pub struct ReleaseGroup {
     pub title: String,
     pub artist: String,
-    pub cover_image_base64: String,
+    pub artwork: String,
     pub tracks: u32,
     pub disc: u32,
     pub date: u32,

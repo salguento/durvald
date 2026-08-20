@@ -79,6 +79,16 @@ pub struct Track {
     pub suggest_less: bool,
 }
 
+/// One completed playback event.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PlaybackHistoryItem {
+    pub id: i64,
+    pub track_id: i64,
+    pub played_at: String,
+    pub duration_seconds: u64,
+}
+
 /// Release/album DTO
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

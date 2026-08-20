@@ -1,11 +1,18 @@
 # Rust
 /target/
+**/target/
 **/*.rs.bk
-Cargo.lock
+*.udl.bak
+# This repository contains an application crate, so its resolved dependencies
+# are versioned for reproducible builds. Keep a possible root library lockfile
+# ignored instead.
+/Cargo.lock
 
 # UniFFI generated (built locally, not committed)
 /durvald-core/uniffi/
 /durvald-core/src/durvald.uniffi.rs
+/durvald-core/test_parse/
+/durvald-core/test_udl_parse.rs
 
 # Swift / Xcode
 /durvald-swift/*.xcworkspace/
