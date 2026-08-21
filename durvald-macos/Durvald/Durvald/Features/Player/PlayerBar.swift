@@ -7,6 +7,7 @@ struct PlayerBar: View {
     @State private var seeking = false
     @State private var adjustingVolume = false
     @State private var changingPlaybackState = false
+    @State private var showingQueue = false
 
     var body: some View {
         let snapshot = store.playback
@@ -41,6 +42,18 @@ struct PlayerBar: View {
                 )
                 .accessibilityIdentifier("player.playPause")
                 .keyboardShortcut(.space, modifiers: [])
+                Button {
+                    showingQueue.toggle()
+                } label: {
+                    Image(systemName: "list.bullet")
+                }
+                .accessibilityLabel("Mostrar fila")
+                .accessibilityIdentifier("player.queue")
+                .keyboardShortcut("l", modifiers: [.command, .option])
+                .popover(isPresented: $showingQueue) {
+                    QueueView()
+                        .frame(width: 380, height: 460)
+                }
             }
             Slider(value: $position, in: 0...duration, onEditingChanged: { editing in
                 seeking = editing

@@ -10,56 +10,53 @@ import AppKit
 
 struct ContentView: View {
     @EnvironmentObject private var store: DurvaldCoreStore
+    @State private var selection: LibraryDestination? = .songs
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text("Durvald Core conectado")
-            Button("Ler settings") {
-                do {
-                    guard let core = store.core else {
-                        store.errorMessage = "O core ainda está abrindo."
-                        return
-                    }
-                    let settings = try core.settings()
-                    print("Crossfade: \(settings.crossFade)")
-                } catch {
-                    store.errorMessage = String(describing: error)
-                }
+        NavigationSplitView {
+            List(LibraryDestination.allCases, selection: $selection) { item in
+                Label(item.title, systemImage: item.icon)
+                    .tag(item)
+                    .accessibilityIdentifier("sidebar.\(item.rawValue)")
             }
-            Button("Adicionar e escanear biblioteca") {
-                chooseLibraryFolder(store: store)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 220)
+        } detail: {
+            VStack(spacing: 0) {
+                detail
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                Divider()
+                PlayerBar()
             }
-            if let progress = store.scanProgress {
-                Text(verbatim: "\(progress.phase): \(progress.processedFiles)/\(progress.totalFiles)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("Cancelar scan") { store.cancelScan() }
-            }
-            Text("Faixas carregadas: \(store.tracks.count)")
-            List(store.tracks, id: \.id) { track in
-                Button {
-                    Task { await store.play(trackID: track.id) }
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(track.title)
-                        Text(track.artist).foregroundStyle(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(maxWidth: .infinity, minHeight: 260)
         }
-        .safeAreaInset(edge: .bottom) {
-            PlayerBar()
-        }
-        .padding()
-        .alert("Erro", isPresented: Binding(
-            get: { store.errorMessage != nil },
-            set: { if !$0 { store.errorMessage = nil } }
-        )) {
-            Button("OK") { store.errorMessage = nil }
+        .alert(
+            "Erro",
+            isPresented: Binding(
+                get: { store.errorMessage != nil },
+                set: { if !$0 { store.errorMessage = nil } }
+            )
+        ) {
+            Button("OK") {
+                store.errorMessage = nil
+            }
         } message: {
             Text(store.errorMessage ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selection ?? .songs {
+        case .songs:
+            MusicLibraryView()
+        case .albums:
+            AlbumsView()
+        case .artists:
+            ArtistsView()
+        case .playlists:
+            PlaylistsView()
+        case .history:
+            HistoryView()
         }
     }
 }

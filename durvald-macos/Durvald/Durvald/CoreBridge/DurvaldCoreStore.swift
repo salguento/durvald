@@ -6,10 +6,15 @@ import Combine
 @MainActor
 final class DurvaldCoreStore: ObservableObject {
 
-    @Published private(set) var tracks: [Track] = []
     @Published private(set) var playback: PlaybackSnapshot?
     @Published private(set) var scanProgress: ScanProgress?
+    @Published private(set) var tracks: [Track] = []
+    @Published private(set) var releases: [Release] = []
+    @Published private(set) var artists: [Artist] = []
+    @Published private(set) var playlists: [Playlist] = []
+    @Published private(set) var history: [PlaybackHistoryItem] = []
     @Published var errorMessage: String?
+
 
     private(set) var core: DurvaldCore?
     private var playbackPollingTask: Task<Void, Never>?
@@ -17,6 +22,9 @@ final class DurvaldCoreStore: ObservableObject {
     private static let libraryBookmarksKey = "durvald.library-security-bookmarks"
     private var activeLibraryScopes: [URL] = []
     private var volumeTask: Task<Void, Never>?
+    private var isChangingTrack = false
+    private var isMovingQueue = false
+    
 
     func openCoreIfNeeded() async {
         guard core == nil else { return }
@@ -25,11 +33,9 @@ final class DurvaldCoreStore: ObservableObject {
             restoreLibraryAccess()
 
             let openedCore = try await open(config: try makeConfig())
-            let loadedTracks = try openedCore.tracks()
-            let initialPlayback = openedCore.playback()
-
+            let initialPlayback = await openedCore.playback()
             core = openedCore
-            tracks = loadedTracks
+            try reloadLibrary(using: openedCore)
             playback = initialPlayback
 
             startPlaybackPolling()
@@ -45,13 +51,23 @@ final class DurvaldCoreStore: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { return }
 
-                if let core = self.core {
-                    self.playback = core.playback()
+                if let core = self.core,
+                   !self.isChangingTrack,
+                   !self.isMovingQueue {
+                    self.playback = await core.playback()
                 }
 
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }
+    }
+    
+    private func reloadLibrary(using core: DurvaldCore) throws {
+        tracks = try core.tracks()
+        releases = try core.releases()
+        artists = try core.artists()
+        playlists = try core.playlists()
+        history = try core.playbackHistory()
     }
 
     private func makeConfig() throws -> CoreConfig {
@@ -97,8 +113,7 @@ final class DurvaldCoreStore: ObservableObject {
                 print(
                     "Durvald: scan concluído — encontrados: \(result.totalFilesFound), novos: \(result.newTracksAdded), atualizados: \(result.updatedTracks), erros: \(result.errors)"
                 )
-                let loadedTracks = try core.tracks()
-                tracks = loadedTracks
+                try reloadLibrary(using: core)
 
                 if !result.errors.isEmpty {
                     errorMessage = result.errors.joined(separator: "\n")
@@ -135,11 +150,18 @@ final class DurvaldCoreStore: ObservableObject {
     }
 
     func play(trackID: Int64) async {
-        print("Durvald: solicitando reprodução da faixa \(trackID).")
         guard let core else {
             errorMessage = "O core ainda está abrindo."
             return
         }
+
+        guard !isChangingTrack else { return }
+
+        isChangingTrack = true
+        defer { isChangingTrack = false }
+
+        print("Durvald: solicitando reprodução da faixa \(trackID).")
+
         do {
             let snapshot = try await core.play(trackId: trackID)
             playback = snapshot
@@ -193,15 +215,29 @@ final class DurvaldCoreStore: ObservableObject {
     }
 
     func previous() async {
-        guard let core else { return }
-        do { playback = try await core.previousTrack() }
-        catch { errorMessage = String(describing: error) }
+        guard let core, !isChangingTrack else { return }
+
+        isChangingTrack = true
+        defer { isChangingTrack = false }
+
+        do {
+            playback = try await core.previousTrack()
+        } catch {
+            errorMessage = String(describing: error)
+        }
     }
 
     func next() async {
-        guard let core else { return }
-        do { playback = try await core.nextTrack() }
-        catch { errorMessage = String(describing: error) }
+        guard let core, !isChangingTrack else { return }
+
+        isChangingTrack = true
+        defer { isChangingTrack = false }
+
+        do {
+            playback = try await core.nextTrack()
+        } catch {
+            errorMessage = String(describing: error)
+        }
     }
 
     func togglePause() async {
@@ -214,7 +250,7 @@ final class DurvaldCoreStore: ObservableObject {
                 try await core.pause()
             }
 
-            self.playback = core.playback()
+            self.playback = await core.playback()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -224,7 +260,7 @@ final class DurvaldCoreStore: ObservableObject {
         guard let core else { return }
         do {
             try await core.setVolume(volume: Float(min(max(value, 0), 1)))
-            playback = core.playback()
+            playback = await core.playback()
         } catch { errorMessage = String(describing: error) }
     }
 
@@ -232,7 +268,7 @@ final class DurvaldCoreStore: ObservableObject {
         guard let core else { return }
         do {
             try await core.seek(seconds: UInt64(max(0, seconds)))
-            playback = core.playback()
+            playback = await core.playback()
         } catch { errorMessage = String(describing: error) }
     }
 
@@ -256,11 +292,114 @@ final class DurvaldCoreStore: ObservableObject {
 
             do {
                 try await core.setVolume(volume: normalized)
-                self.playback = core.playback()
+                self.playback = await core.playback()
             } catch {
                 guard !Task.isCancelled else { return }
                 self.errorMessage = String(describing: error)
             }
+        }
+    }
+    
+    var queue: [QueueItem] {
+        playback?.queue ?? []
+    }
+
+    func addToQueue(trackID: Int64) async {
+        guard let core else { return }
+
+        do {
+            try await core.addToQueue(trackId: trackID)
+            playback = await core.playback()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func playQueueItem(at position: UInt64) async {
+        guard let core, !isChangingTrack else { return }
+
+        isChangingTrack = true
+        defer { isChangingTrack = false }
+
+        do {
+            playback = try await core.playQueueItem(position: position)
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func removeQueueItem(at position: UInt64) async {
+        guard let core else { return }
+
+        do {
+            try await core.removeFromQueue(position: position)
+            playback = await core.playback()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func moveQueueItem(from: UInt64, to: UInt64) {
+        guard let core else { return }
+        guard !isMovingQueue else { return }
+        guard var optimisticSnapshot = playback else { return }
+        guard let sourceIndex = optimisticSnapshot.queue.firstIndex(
+            where: { $0.position == from }
+        ) else { return }
+        guard let destinationIndex = optimisticSnapshot.queue.firstIndex(
+            where: { $0.position == to }
+        ) else { return }
+        guard sourceIndex > 0, destinationIndex > 0 else { return }
+        guard sourceIndex != destinationIndex else { return }
+
+        isMovingQueue = true
+
+        let previousSnapshot = optimisticSnapshot
+        let movedItem = optimisticSnapshot.queue.remove(
+            at: sourceIndex
+        )
+
+        optimisticSnapshot.queue.insert(
+            movedItem,
+            at: destinationIndex
+        )
+
+        for index in optimisticSnapshot.queue.indices {
+            optimisticSnapshot.queue[index].position = UInt64(index)
+        }
+
+        // Publica a nova ordem imediatamente e confirma com o core em seguida.
+        playback = optimisticSnapshot
+
+        Task {
+            defer {
+                isMovingQueue = false
+            }
+
+            do {
+                try await core.moveQueueItem(
+                    from: from,
+                    to: to
+                )
+
+                let confirmedSnapshot = await core.playback()
+                playback = confirmedSnapshot
+            } catch {
+                // Restaura a fila anterior se o core rejeitar a mudança.
+                playback = previousSnapshot
+                errorMessage = String(describing: error)
+            }
+        }
+    }
+
+    func clearQueue() async {
+        guard let core else { return }
+
+        do {
+            try await core.clearQueue()
+            playback = await core.playback()
+        } catch {
+            errorMessage = String(describing: error)
         }
     }
 
