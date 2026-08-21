@@ -1574,8 +1574,8 @@ impl DurvaldCore {
     }
 
     /// Returns the current playback state.
-    pub fn playback(&self) -> PlaybackSnapshot {
-        let player = self.audio_player.blocking_lock();
+    pub async fn playback(&self) -> PlaybackSnapshot {
+        let player = self.audio_player.lock().await;
         playback_for_player(self, &player)
     }
 }

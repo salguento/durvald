@@ -678,7 +678,7 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Returns the current playback state.
      */
-    func playback()  -> PlaybackSnapshot
+    func playback() async  -> PlaybackSnapshot
     
     /**
      * Returns completed playback events, newest-first as stored by the core.
@@ -1323,11 +1323,22 @@ open func playQueueItem(position: UInt64)async throws  -> PlaybackSnapshot {
     /**
      * Returns the current playback state.
      */
-open func playback() -> PlaybackSnapshot {
-    return try!  FfiConverterTypePlaybackSnapshot.lift(try! rustCall() {
-    uniffi_durvald_core_fn_method_durvaldcore_playback(self.uniffiClonePointer(),$0
-    )
-})
+open func playback()async  -> PlaybackSnapshot {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_playback(
+                    self.uniffiClonePointer()
+                    
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+            errorHandler: nil
+            
+        )
 }
     
     /**
@@ -4497,7 +4508,7 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_play_queue_item() != 38649) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_playback() != 10069) {
+    if (uniffi_durvald_core_checksum_method_durvaldcore_playback() != 9980) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_playback_history() != 50281) {

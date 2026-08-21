@@ -393,7 +393,7 @@ uint64_t uniffi_durvald_core_fn_method_durvaldcore_play_queue_item(void*_Nonnull
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_PLAYBACK
 #define UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_PLAYBACK
-RustBuffer uniffi_durvald_core_fn_method_durvaldcore_playback(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
+uint64_t uniffi_durvald_core_fn_method_durvaldcore_playback(void*_Nonnull ptr
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_PLAYBACK_HISTORY
