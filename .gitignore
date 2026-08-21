@@ -21,6 +21,8 @@
 /durvald-swift/DerivedData/
 /durvald-swift/build/
 /durvald-swift/.swiftpm/
+**/*.xcodeproj/xcuserdata/
+**/*.xcworkspace/xcuserdata/
 
 # Android / Gradle
 /durvald-android/.gradle/
