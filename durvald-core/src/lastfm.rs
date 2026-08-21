@@ -34,6 +34,7 @@ pub type LastFmResult<T> = Result<T, LastFmError>;
 
 const LASTFM_API_ENDPOINT: &str = "https://ws.audioscrobbler.com/2.0/";
 
+#[cfg(any(test, debug_assertions))]
 fn api_key_diagnostic(api_key: &str) -> String {
     if api_key.trim().is_empty() {
         "Store is missing an API key".to_string()
@@ -42,6 +43,7 @@ fn api_key_diagnostic(api_key: &str) -> String {
     }
 }
 
+#[cfg(any(test, debug_assertions))]
 fn credentials_diagnostic(api_key: &str, api_secret: &str) -> String {
     if api_key.trim().is_empty() || api_secret.trim().is_empty() {
         "Last.fm credentials are incomplete".to_string()

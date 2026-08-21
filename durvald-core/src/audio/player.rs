@@ -367,14 +367,6 @@ impl AudioPlayer {
             }
         }
 
-        // Add current song to history if playing
-        if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
-            self.history.push(QueueItem {
-                song_id,
-                path: path.clone(),
-            });
-        }
-
         let next_item = if self.shuffle_enabled && !self.queue.is_empty() {
             let index = (std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -387,17 +379,34 @@ impl AudioPlayer {
         };
 
         if let Some(next_item) = next_item {
+            // A successful transition is the only time the active item moves
+            // into history. Pressing Next with an empty queue must leave the
+            // current track playing and must not manufacture a history entry.
+            if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
+                self.history.push(QueueItem {
+                    song_id,
+                    path: path.clone(),
+                });
+            }
             self.current_song_id = Some(next_item.song_id);
             self.play(next_item.path).await?;
             Ok(true)
-        } else if self.repeat_mode == RepeatMode::All && !self.history.is_empty() {
+        } else if self.repeat_mode == RepeatMode::All
+            && self.current_song_id.is_some()
+            && !self.history.is_empty()
+        {
+            if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
+                self.history.push(QueueItem {
+                    song_id,
+                    path: path.clone(),
+                });
+            }
             let next_item = self.history.remove(0);
             self.queue.extend(self.history.drain(..));
             self.current_song_id = Some(next_item.song_id);
             self.play(next_item.path).await?;
             Ok(true)
         } else {
-            self.stop();
             Ok(false)
         }
     }
@@ -704,6 +713,33 @@ mod tests {
         let expected_path = valid_file.to_string_lossy().into_owned();
         assert_eq!(player.current_path.as_deref(), Some(expected_path.as_str()));
         assert!(!player.is_empty());
+
+        std::fs::remove_dir_all(directory).expect("remove temporary test directory");
+    }
+
+    #[tokio::test]
+    async fn next_with_no_queue_keeps_the_current_track_and_history_unchanged() {
+        let directory = std::env::temp_dir().join(format!(
+            "durvald-player-empty-next-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("current time")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).expect("create temporary test directory");
+        let audio_file = directory.join("playing.wav");
+        std::fs::write(&audio_file, wav_fixture()).expect("write test audio file");
+
+        let mut player = AudioPlayer::new_mock().expect("create mock player");
+        player
+            .play_song(1, audio_file.to_string_lossy().into_owned())
+            .await
+            .expect("play test track");
+
+        assert!(!player.play_next().await.expect("attempt next"));
+        assert_eq!(player.get_current_song_id(), Some(1));
+        assert!(!player.is_empty());
+        assert!(player.history.is_empty());
 
         std::fs::remove_dir_all(directory).expect("remove temporary test directory");
     }

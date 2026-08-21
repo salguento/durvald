@@ -581,7 +581,7 @@ impl DurvaldCore {
     }
 }
 
-#[cfg_attr(feature = "uniffi", uniffi::export)]
+#[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 impl DurvaldCore {
     /// Scans the library at the given paths.
     pub async fn scan_library(&self, paths: Vec<String>) -> CoreResult<ScanResult> {
@@ -1645,7 +1645,7 @@ fn playback_for_player(core: &DurvaldCore, player: &crate::audio::AudioPlayer) -
     }
 }
 
-#[cfg_attr(feature = "uniffi", uniffi::export)]
+#[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 impl DurvaldCore {
     /// Pauses playback.
     pub async fn pause(&self) -> CoreResult<()> {
@@ -2300,7 +2300,7 @@ impl DurvaldCore {
 
 /// Opens a new core engine. Exported to FFI as the factory for `DurvaldCore` handles.
 #[cfg(feature = "uniffi")]
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 pub async fn open(config: CoreConfig) -> CoreResult<Arc<DurvaldCore>> {
     DurvaldCore::open(config).await
 }

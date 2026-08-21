@@ -3,7 +3,7 @@ use crate::metadata::AudioMetadata;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use chrono::Utc;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Row, params, types::ValueRef};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,6 +30,22 @@ pub enum DatabaseError {
 }
 
 pub type DatabaseResult<T> = Result<T, DatabaseError>;
+
+/// Reads a duration from SQLite regardless of whether its INTEGER affinity
+/// stored a whole-second value as `INTEGER` or a fractional value as `REAL`.
+/// The public core model uses whole seconds, so fractional values are truncated.
+fn duration_from_row(row: &Row<'_>, index: usize) -> rusqlite::Result<u64> {
+    match row.get_ref(index)? {
+        ValueRef::Null => Ok(0),
+        ValueRef::Integer(value) => Ok(value.max(0) as u64),
+        ValueRef::Real(value) if value.is_finite() && value >= 0.0 => Ok(value as u64),
+        _ => Err(rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            "duration must be a finite, non-negative SQLite number".into(),
+        )),
+    }
+}
 
 // ===== Schema Management =====
 
@@ -484,7 +500,7 @@ fn refresh_release_statistics(conn: &Connection, release: &ReleaseGroup) -> Data
         "SELECT COUNT(*), COALESCE(MAX(disc_number), 1), COALESCE(SUM(duration), 0)
          FROM songs WHERE release_id = ?1",
         [release_id],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, duration_from_row(row, 2)?)),
     )?;
     conn.execute(
         "UPDATE releases
@@ -712,7 +728,7 @@ pub fn get_songs_by_release_id(
             release_title: row.get(6)?,
             track_number: row.get(7)?,
             disc_number: row.get(8)?,
-            duration: row.get::<_, f64>(9)? as u64,
+            duration: duration_from_row(row, 9)?,
             bitrate: row.get(10)?,
             sample_rate: row.get(11)?,
             play_count: row.get(12)?,
@@ -1062,7 +1078,7 @@ pub fn get_songs_by_artist_id(conn: &Connection, artist_id: &str) -> DatabaseRes
                 release_title: row.get(6)?,
                 track_number: row.get(7)?,
                 disc_number: row.get(8)?,
-                duration: row.get::<_, f64>(9)? as u64,
+                duration: duration_from_row(row, 9)?,
                 bitrate: row.get(10)?,
                 sample_rate: row.get(11)?,
                 play_count: row.get(12)?,
@@ -2331,6 +2347,9 @@ mod tests {
         let first = persist_metadata(&conn, vec![track.clone()], vec![1]).unwrap();
         assert_eq!(first.added_tracks, 1);
         assert_eq!(first.updated_tracks, 0);
+        // `duration` is persisted with INTEGER affinity; listing tracks must
+        // read that representation without requiring SQLite to coerce it to REAL.
+        assert_eq!(get_all_tracks(&conn).unwrap()[0].duration, 180);
 
         let second = persist_metadata(&conn, vec![track], vec![2]).unwrap();
         assert_eq!(second.added_tracks, 0);
@@ -2348,9 +2367,18 @@ mod tests {
         second_track.title = Some("Second Track".to_string());
         second_track.file_path = "/music/second-track.mp3".to_string();
         second_track.disc = Some(2);
-        second_track.duration = 120.0;
+        second_track.duration = 120.5;
         let third = persist_metadata(&conn, vec![second_track], vec![3]).unwrap();
         assert_eq!(third.added_tracks, 1);
+        assert_eq!(
+            get_all_tracks(&conn)
+                .unwrap()
+                .into_iter()
+                .find(|track| track.title == "Second Track")
+                .unwrap()
+                .duration,
+            120
+        );
         let release = get_release_by_id(&conn, "1").unwrap();
         assert_eq!(release.total_tracks, 2);
         assert_eq!(release.total_discs, 2);
