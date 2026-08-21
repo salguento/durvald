@@ -5,7 +5,6 @@ import Combine
 
 @MainActor
 final class DurvaldCoreStore: ObservableObject {
-    nonisolated let objectWillChange = ObservableObjectPublisher()
 
     @Published private(set) var tracks: [Track] = []
     @Published private(set) var playback: PlaybackSnapshot?
@@ -17,32 +16,40 @@ final class DurvaldCoreStore: ObservableObject {
     private var scanProgressPollingTask: Task<Void, Never>?
     private static let libraryBookmarksKey = "durvald.library-security-bookmarks"
     private var activeLibraryScopes: [URL] = []
+    private var volumeTask: Task<Void, Never>?
 
     func openCoreIfNeeded() async {
         guard core == nil else { return }
+
         do {
             restoreLibraryAccess()
+
             let openedCore = try await open(config: try makeConfig())
-            startPlaybackPolling()
-            core = openedCore
             let loadedTracks = try openedCore.tracks()
-            objectWillChange.send()
+            let initialPlayback = openedCore.playback()
+
+            core = openedCore
             tracks = loadedTracks
-            print("Durvald: carregadas \(loadedTracks.count) faixas do banco.")
+            playback = initialPlayback
+
+            startPlaybackPolling()
         } catch {
-            print("Durvald: falha ao abrir/carregar faixas: \(error)")
             errorMessage = String(describing: error)
         }
     }
 
-    func startPlaybackPolling() {
+    private func startPlaybackPolling() {
         playbackPollingTask?.cancel()
+
         playbackPollingTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                guard let core = self.core else { return }
-                self.playback = core.playback()
-                try? await Task.sleep(for: .milliseconds(350))
+
+                if let core = self.core {
+                    self.playback = core.playback()
+                }
+
+                try? await Task.sleep(for: .milliseconds(250))
             }
         }
     }
@@ -91,7 +98,6 @@ final class DurvaldCoreStore: ObservableObject {
                     "Durvald: scan concluído — encontrados: \(result.totalFilesFound), novos: \(result.newTracksAdded), atualizados: \(result.updatedTracks), erros: \(result.errors)"
                 )
                 let loadedTracks = try core.tracks()
-                objectWillChange.send()
                 tracks = loadedTracks
 
                 if !result.errors.isEmpty {
@@ -136,7 +142,6 @@ final class DurvaldCoreStore: ObservableObject {
         }
         do {
             let snapshot = try await core.play(trackId: trackID)
-            objectWillChange.send()
             playback = snapshot
             print("Durvald: reprodução iniciada; pausada: \(snapshot.isPaused).")
         } catch {
@@ -200,11 +205,16 @@ final class DurvaldCoreStore: ObservableObject {
     }
 
     func togglePause() async {
-        guard let core else { return }
+        guard let core, let playback, playback.currentTrack != nil else { return }
+
         do {
-            if playback?.isPaused == true { try await core.resume() }
-            else { try await core.pause() }
-            playback = core.playback()
+            if playback.isPaused {
+                try await core.resume()
+            } else {
+                try await core.pause()
+            }
+
+            self.playback = core.playback()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -214,7 +224,6 @@ final class DurvaldCoreStore: ObservableObject {
         guard let core else { return }
         do {
             try await core.setVolume(volume: Float(min(max(value, 0), 1)))
-            objectWillChange.send()
             playback = core.playback()
         } catch { errorMessage = String(describing: error) }
     }
@@ -223,9 +232,36 @@ final class DurvaldCoreStore: ObservableObject {
         guard let core else { return }
         do {
             try await core.seek(seconds: UInt64(max(0, seconds)))
-            objectWillChange.send()
             playback = core.playback()
         } catch { errorMessage = String(describing: error) }
+    }
+
+    func scheduleVolume(_ value: Double, immediately: Bool = false) {
+        volumeTask?.cancel()
+
+        let normalized = Float(min(max(value, 0), 1))
+
+        // Atualização otimista da interface.
+        if var snapshot = playback {
+            snapshot.volume = normalized
+            playback = snapshot
+        }
+
+        volumeTask = Task { [weak self] in
+            if !immediately {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+
+            guard !Task.isCancelled, let self, let core = self.core else { return }
+
+            do {
+                try await core.setVolume(volume: normalized)
+                self.playback = core.playback()
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.errorMessage = String(describing: error)
+            }
+        }
     }
 
     deinit {
