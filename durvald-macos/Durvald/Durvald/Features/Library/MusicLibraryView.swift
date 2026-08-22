@@ -42,6 +42,13 @@ struct MusicLibraryView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        track.artist.isEmpty
+                            ? track.title
+                            : "\(track.title), \(track.artist)"
+                    )
+                    .accessibilityIdentifier("track.\(track.id)")
+                    .accessibilityHint("Reproduz esta faixa agora")
 
                     Button {
                         Task { await store.addToQueue(trackID: track.id) }
@@ -50,6 +57,8 @@ struct MusicLibraryView: View {
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Adicionar \(track.title) à fila")
+                    .accessibilityIdentifier("track.\(track.id).addToQueue")
+                    .accessibilityHint("Adiciona esta faixa ao fim da fila")
                 }
                 .contextMenu {
                     Button("Reproduzir agora") {

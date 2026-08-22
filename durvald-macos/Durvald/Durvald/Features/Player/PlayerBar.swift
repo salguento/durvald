@@ -42,6 +42,7 @@ struct PlayerBar: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(store.playback?.currentTrack == nil || changingPlaybackState)
+                .accessibilityHint("Alterna entre reproduzir e pausar a faixa atual")
                 .accessibilityLabel(
                     store.playback?.isPaused == true ? "Reproduzir" : "Pausar"
                 )
@@ -52,6 +53,7 @@ struct PlayerBar: View {
                 } label: {
                     Image(systemName: "list.bullet")
                 }
+                .accessibilityHint("Mostra ou oculta a fila de reprodução")
                 .accessibilityLabel("Mostrar fila")
                 .accessibilityIdentifier("player.queue")
                 .keyboardShortcut("l", modifiers: [.command, .option])
@@ -67,6 +69,7 @@ struct PlayerBar: View {
                             store.playback?.shuffleEnabled == true ? .fill : .none
                         )
                 }
+                .accessibilityHint("Alterna a reprodução aleatória da fila")
                 .accessibilityLabel(
                     store.playback?.shuffleEnabled == true
                         ? "Desativar reprodução aleatória"
@@ -79,6 +82,7 @@ struct PlayerBar: View {
                 } label: {
                     Image(systemName: repeatIcon)
                 }
+                .accessibilityHint("Alterna entre repetição desativada, da fila e de uma faixa")
                 .accessibilityLabel(repeatLabel)
                 .accessibilityIdentifier("player.repeat")
             }
@@ -87,6 +91,12 @@ struct PlayerBar: View {
                 if !editing { Task { await store.seek(to: position) } }
             })
             .disabled(snapshot?.currentTrack == nil)
+            .accessibilityLabel("Posição da reprodução")
+            .accessibilityValue(
+                "\(time(seeking ? position : (snapshot?.positionSeconds ?? 0))) " +
+                "de \(time(duration))"
+            )
+            .accessibilityIdentifier("player.progress")
             HStack {
                 Text(time(seeking ? position : (snapshot?.positionSeconds ?? 0)))
                 Spacer()

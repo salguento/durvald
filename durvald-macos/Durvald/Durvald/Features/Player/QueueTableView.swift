@@ -116,6 +116,16 @@ struct QueueTableView: NSViewRepresentable {
             cell.playButton.setAccessibilityLabel(
                 value.position == 0 ? "Tocando agora" : "Reproduzir item da fila"
             )
+            cell.playButton.setAccessibilityIdentifier(
+                value.position == 0
+                    ? "queue.current"
+                    : "queue.item.\(value.position).play"
+            )
+            cell.playButton.setAccessibilityHelp(
+                value.position == 0
+                    ? "Indica a faixa reproduzida atualmente"
+                    : "Reproduz este item da fila agora"
+            )
             cell.toolTip = "\(value.title), \(value.artist)"
             return cell
         }
