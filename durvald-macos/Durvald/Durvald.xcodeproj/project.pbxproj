@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		A19542E53037828B001F7165 /* libdurvald_core.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = A19542E43037828B001F7165 /* libdurvald_core.dylib */; };
 		A19542E730378345001F7165 /* libdurvald_core.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = A19542E43037828B001F7165 /* libdurvald_core.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		A195432330396A9D001F7165 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A195432230396A9D001F7165 /* AppIcon.icon */; };
+		A195434A30397676001F7165 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A195434930397676001F7165 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,9 +45,9 @@
 /* Begin PBXFileReference section */
 		A19542D3303777A7001F7165 /* Durvald.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Durvald.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A19542E43037828B001F7165 /* libdurvald_core.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libdurvald_core.dylib; path = Frameworks/libdurvald_core.dylib; sourceTree = "<group>"; };
-		A195432230396A9D001F7165 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		A195432830396B73001F7165 /* DurvaldTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DurvaldTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A195433530396B9F001F7165 /* DurvaldUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DurvaldUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A195434930397676001F7165 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -102,7 +102,7 @@
 				A195433630396B9F001F7165 /* DurvaldUITests */,
 				A19542E33037828B001F7165 /* Frameworks */,
 				A19542D4303777A7001F7165 /* Products */,
-				A195432230396A9D001F7165 /* AppIcon.icon */,
+				A195434930397676001F7165 /* AppIcon.icon */,
 			);
 			sourceTree = "<group>";
 		};
@@ -245,7 +245,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A195432330396A9D001F7165 /* AppIcon.icon in Resources */,
+				A195434A30397676001F7165 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

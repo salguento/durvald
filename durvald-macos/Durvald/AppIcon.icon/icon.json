@@ -4,12 +4,49 @@
     {
       "layers" : [
         {
-          "fill" : {
-            "linear-gradient" : [
-              "extended-srgb:0.00000,0.76471,0.81569,1.00000",
-              "extended-srgb:0.00000,0.75294,0.90980,1.00000"
-            ]
-          },
+          "fill-specializations" : [
+            {
+              "value" : {
+                "linear-gradient" : [
+                  "extended-srgb:0.00000,0.76471,0.81569,1.00000",
+                  "extended-srgb:0.00000,0.75294,0.90980,1.00000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 1,
+                    "y" : 0
+                  },
+                  "stop" : {
+                    "x" : 0,
+                    "y" : 1
+                  }
+                }
+              }
+            },
+            {
+              "appearance" : "dark",
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.53223,0.98730,0.88916,1.00000",
+                  "display-p3:0.41895,0.90479,0.98730,1.00000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 1,
+                    "y" : 0
+                  },
+                  "stop" : {
+                    "x" : 0,
+                    "y" : 1
+                  }
+                }
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : "automatic"
+            }
+          ],
           "image-name" : "durvald-icon.png",
           "name" : "durvald-icon"
         }
