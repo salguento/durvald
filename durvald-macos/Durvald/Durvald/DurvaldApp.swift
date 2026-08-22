@@ -16,6 +16,9 @@ struct DurvaldApp: App {
             ContentView()
                 .environmentObject(coreStore)
                 .task {
+                    guard !ProcessInfo.processInfo.arguments.contains("--ui-testing") else {
+                        return
+                    }
                     await coreStore.openCoreIfNeeded()
                 }
         }

@@ -26,6 +26,14 @@ final class DurvaldCoreStore: ObservableObject {
     private var isChangingTrack = false
     private var isMovingQueue = false
 
+    init(
+        core: DurvaldCore? = nil,
+        playback: PlaybackSnapshot? = nil
+    ) {
+        self.core = core
+        self.playback = playback
+    }
+
 
     func openCoreIfNeeded() async {
         guard core == nil else { return }
