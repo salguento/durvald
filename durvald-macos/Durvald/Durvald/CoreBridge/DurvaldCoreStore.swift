@@ -24,7 +24,7 @@ final class DurvaldCoreStore: ObservableObject {
     private var volumeTask: Task<Void, Never>?
     private var isChangingTrack = false
     private var isMovingQueue = false
-    
+
 
     func openCoreIfNeeded() async {
         guard core == nil else { return }
@@ -61,7 +61,7 @@ final class DurvaldCoreStore: ObservableObject {
             }
         }
     }
-    
+
     private func reloadLibrary(using core: DurvaldCore) throws {
         tracks = try core.tracks()
         releases = try core.releases()
@@ -398,6 +398,47 @@ final class DurvaldCoreStore: ObservableObject {
         do {
             try await core.clearQueue()
             playback = await core.playback()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func toggleShuffle() async {
+        guard let core else { return }
+
+        do {
+            let enabled = !(playback?.shuffleEnabled ?? false)
+            playback = try await core.setShuffleEnabled(enabled: enabled)
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func cycleRepeatMode() async {
+        guard let core else { return }
+
+        let next: RepeatMode
+        switch playback?.repeatMode ?? .none {
+        case .none:
+            next = .all
+        case .all:
+            next = .one
+        case .one:
+            next = .none
+        }
+
+        do {
+            playback = try await core.setRepeatMode(mode: next)
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func refreshHistory() {
+        guard let core else { return }
+
+        do {
+            history = try core.playbackHistory()
         } catch {
             errorMessage = String(describing: error)
         }

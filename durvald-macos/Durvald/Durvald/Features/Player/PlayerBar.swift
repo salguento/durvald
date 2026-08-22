@@ -15,6 +15,11 @@ struct PlayerBar: View {
 
         VStack(spacing: 8) {
             HStack {
+                ArtworkView(
+                    artworkID: snapshot?.currentTrack?.artworkId,
+                    size: 44
+                )
+
                 VStack(alignment: .leading) {
                     Text(snapshot?.currentTrack?.title ?? "Nada tocando")
                     Text(snapshot?.currentTrack?.artist ?? "")
@@ -54,6 +59,28 @@ struct PlayerBar: View {
                     QueueView()
                         .frame(width: 380, height: 460)
                 }
+                Button {
+                    Task { await store.toggleShuffle() }
+                } label: {
+                    Image(systemName: "shuffle")
+                        .symbolVariant(
+                            store.playback?.shuffleEnabled == true ? .fill : .none
+                        )
+                }
+                .accessibilityLabel(
+                    store.playback?.shuffleEnabled == true
+                        ? "Desativar reprodução aleatória"
+                        : "Ativar reprodução aleatória"
+                )
+                .accessibilityIdentifier("player.shuffle")
+
+                Button {
+                    Task { await store.cycleRepeatMode() }
+                } label: {
+                    Image(systemName: repeatIcon)
+                }
+                .accessibilityLabel(repeatLabel)
+                .accessibilityIdentifier("player.repeat")
             }
             Slider(value: $position, in: 0...duration, onEditingChanged: { editing in
                 seeking = editing
@@ -92,5 +119,21 @@ struct PlayerBar: View {
     private func time(_ seconds: Double) -> String {
         let value = max(0, Int(seconds))
         return String(format: "%d:%02d", value / 60, value % 60)
+    }
+
+    private var repeatIcon: String {
+        switch store.playback?.repeatMode ?? .none {
+        case .none: return "repeat"
+        case .all: return "repeat"
+        case .one: return "repeat.1"
+        }
+    }
+
+    private var repeatLabel: String {
+        switch store.playback?.repeatMode ?? .none {
+        case .none: return "Repetição desativada"
+        case .all: return "Repetir fila"
+        case .one: return "Repetir uma música"
+        }
     }
 }

@@ -22,5 +22,11 @@ struct HistoryView: View {
             }
         }
         .navigationTitle("Histórico")
+        .task {
+            while !Task.isCancelled {
+                store.refreshHistory()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
 }

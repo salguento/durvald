@@ -23,16 +23,9 @@ struct QueueView: View {
 
             Divider()
 
-            if let activeItem = store.queue.first,
-               activeItem.position == 0 {
-                activeRow(activeItem)
-                    .padding(.horizontal, 10)
-                    .frame(height: 46)
-                Divider()
-            }
-
             QueueTableView(
                 rows: tableRows,
+                core: store.core,
                 onMove: { from, to in
                     store.moveQueueItem(from: from, to: to)
                 },
@@ -57,34 +50,15 @@ struct QueueView: View {
     }
 
     private var tableRows: [QueueTableRow] {
-        upcomingItems.map { item in
+        store.queue.map { item in
             let track = store.tracks.first { $0.id == item.trackId }
             return QueueTableRow(
                 trackID: item.trackId,
                 position: item.position,
                 title: track?.title ?? "Música #\(item.trackId)",
-                artist: track?.artist ?? ""
+                artist: track?.artist ?? "",
+                artworkID: track?.artworkId
             )
         }
-    }
-
-    private func activeRow(_ item: QueueItem) -> some View {
-        let track = store.tracks.first { $0.id == item.trackId }
-
-        return HStack {
-            VStack(alignment: .leading) {
-                Text(track?.title ?? "Música #\(item.trackId)")
-                Text(track?.artist ?? "")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Image(systemName: "speaker.wave.2.fill")
-                .accessibilityLabel("Tocando agora")
-        }
-        .contentShape(Rectangle())
-        .accessibilityIdentifier("queue.item.0")
     }
 }

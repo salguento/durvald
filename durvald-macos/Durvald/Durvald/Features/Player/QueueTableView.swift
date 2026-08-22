@@ -6,11 +6,13 @@ struct QueueTableRow: Equatable {
     let position: UInt64
     let title: String
     let artist: String
+    let artworkID: String?
 }
 
 /// Native macOS table used for queue actions and row reordering.
 struct QueueTableView: NSViewRepresentable {
     let rows: [QueueTableRow]
+    let core: DurvaldCore?
     let onMove: (UInt64, UInt64) -> Void
     let onPlay: (UInt64) -> Void
     let onRemove: (UInt64) -> Void
@@ -26,7 +28,7 @@ struct QueueTableView: NSViewRepresentable {
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.rowHeight = 46
-        tableView.usesAlternatingRowBackgroundColors = true
+        tableView.usesAlternatingRowBackgroundColors = false
         tableView.selectionHighlightStyle = .regular
         tableView.delegate = context.coordinator
         tableView.dataSource = context.coordinator
@@ -97,10 +99,23 @@ struct QueueTableView: NSViewRepresentable {
                 cell.playButton.action = #selector(playQueueItem(_:))
             }
 
-            cell.titleLabel.stringValue = value.artist.isEmpty
-                ? value.title
-                : "\(value.title) — \(value.artist)"
+            cell.titleLabel.stringValue = value.title
+            cell.artistLabel.stringValue = value.artist
+            cell.artistLabel.isHidden = value.artist.isEmpty
+            cell.loadArtwork(value.artworkID, using: parent.core)
             cell.playButton.tag = row
+            cell.playButton.image = NSImage(
+                systemSymbolName: value.position == 0
+                    ? "speaker.wave.2.fill"
+                    : "play.fill",
+                accessibilityDescription: value.position == 0
+                    ? "Tocando agora"
+                    : "Reproduzir item da fila"
+            )
+            cell.playButton.isEnabled = value.position != 0
+            cell.playButton.setAccessibilityLabel(
+                value.position == 0 ? "Tocando agora" : "Reproduzir item da fila"
+            )
             cell.toolTip = "\(value.title), \(value.artist)"
             return cell
         }
@@ -109,7 +124,7 @@ struct QueueTableView: NSViewRepresentable {
             _ tableView: NSTableView,
             pasteboardWriterForRow row: Int
         ) -> NSPasteboardWriting? {
-            guard rows.indices.contains(row) else { return nil }
+            guard rows.indices.contains(row), rows[row].position > 0 else { return nil }
 
             let item = NSPasteboardItem()
             item.setString(String(row), forType: Self.queuePasteboardType)
@@ -123,7 +138,7 @@ struct QueueTableView: NSViewRepresentable {
             proposedDropOperation dropOperation: NSTableView.DropOperation
         ) -> NSDragOperation {
             guard sourceRow(from: info) != nil else { return [] }
-            tableView.setDropRow(row, dropOperation: .above)
+            tableView.setDropRow(max(row, 1), dropOperation: .above)
             return .move
         }
 
@@ -138,7 +153,7 @@ struct QueueTableView: NSViewRepresentable {
                   !rows.isEmpty
             else { return false }
 
-            let boundedInsertion = min(max(proposedRow, 0), rows.count)
+            let boundedInsertion = min(max(proposedRow, 1), rows.count)
             let destinationRow = min(
                 boundedInsertion > sourceRow
                     ? boundedInsertion - 1
@@ -146,7 +161,9 @@ struct QueueTableView: NSViewRepresentable {
                 rows.count - 1
             )
 
-            guard destinationRow != sourceRow else { return false }
+            guard destinationRow != sourceRow,
+                  rows[destinationRow].position > 0
+            else { return false }
 
             let from = rows[sourceRow].position
             let to = rows[destinationRow].position
@@ -164,7 +181,8 @@ struct QueueTableView: NSViewRepresentable {
         func menuNeedsUpdate(_ menu: NSMenu) {
             menu.removeAllItems()
             guard let tableView,
-                  rows.indices.contains(tableView.clickedRow)
+                  rows.indices.contains(tableView.clickedRow),
+                  rows[tableView.clickedRow].position > 0
             else { return }
 
             let item = NSMenuItem(
@@ -201,7 +219,14 @@ struct QueueTableView: NSViewRepresentable {
 }
 
 private final class QueueTableCellView: NSTableCellView {
+    private static let placeholderImage = NSImage(
+        systemSymbolName: "music.note",
+        accessibilityDescription: nil
+    )
+
+    let artworkImageView = NSImageView()
     let titleLabel = NSTextField(labelWithString: "")
+    let artistLabel = NSTextField(labelWithString: "")
     let playButton = NSButton(
         image: NSImage(systemSymbolName: "play.fill", accessibilityDescription: "Reproduzir")!,
         target: nil,
@@ -212,24 +237,82 @@ private final class QueueTableCellView: NSTableCellView {
         super.init(frame: .zero)
         self.identifier = identifier
 
+        artworkImageView.translatesAutoresizingMaskIntoConstraints = false
+        artworkImageView.imageScaling = .scaleProportionallyUpOrDown
+        artworkImageView.image = Self.placeholderImage
+        artworkImageView.wantsLayer = true
+        artworkImageView.layer?.cornerRadius = 4
+        artworkImageView.layer?.masksToBounds = true
+        artworkImageView.setAccessibilityHidden(true)
+
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.lineBreakMode = .byTruncatingTail
         textField = titleLabel
+
+        artistLabel.translatesAutoresizingMaskIntoConstraints = false
+        artistLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        artistLabel.textColor = .secondaryLabelColor
+        artistLabel.lineBreakMode = .byTruncatingTail
+
+        let textStack = NSStackView(views: [titleLabel, artistLabel])
+        textStack.translatesAutoresizingMaskIntoConstraints = false
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.distribution = .fill
+        textStack.spacing = 1
 
         playButton.translatesAutoresizingMaskIntoConstraints = false
         playButton.isBordered = false
         playButton.setAccessibilityLabel("Reproduzir item da fila")
 
-        addSubview(titleLabel)
+        addSubview(artworkImageView)
+        addSubview(textStack)
         addSubview(playButton)
 
         NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            titleLabel.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
-            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            artworkImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 5),
+            artworkImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            artworkImageView.widthAnchor.constraint(equalToConstant: 36),
+            artworkImageView.heightAnchor.constraint(equalToConstant: 36),
+            textStack.leadingAnchor.constraint(equalTo: artworkImageView.trailingAnchor, constant: 8),
+            textStack.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
+            textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
             playButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             playButton.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+    }
+
+    func loadArtwork(_ artworkID: String?, using core: DurvaldCore?) {
+        artworkTask?.cancel()
+        representedArtworkID = artworkID
+        artworkImageView.image = Self.placeholderImage
+
+        guard let artworkID, let core else { return }
+
+        if let cached = ArtworkRepository.shared.cachedImage(for: artworkID) {
+            artworkImageView.image = cached
+            return
+        }
+
+        artworkTask = Task { @MainActor [weak self] in
+            let image = try? await ArtworkRepository.shared.image(
+                for: artworkID,
+                using: core
+            )
+
+            guard !Task.isCancelled,
+                  self?.representedArtworkID == artworkID
+            else { return }
+
+            self?.artworkImageView.image = image ?? Self.placeholderImage
+        }
+    }
+
+    private var representedArtworkID: String?
+    private var artworkTask: Task<Void, Never>?
+
+    deinit {
+        artworkTask?.cancel()
     }
 
     @available(*, unavailable)

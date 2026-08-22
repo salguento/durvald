@@ -29,6 +29,8 @@ struct MusicLibraryView: View {
             }
             List(store.tracks, id: \.id) { track in
                 HStack {
+                    ArtworkView(artworkID: track.artworkId, size: 42)
+
                     Button {
                         Task { await store.play(trackID: track.id) }
                     } label: {
