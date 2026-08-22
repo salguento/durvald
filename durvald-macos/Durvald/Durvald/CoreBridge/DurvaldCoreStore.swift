@@ -14,6 +14,7 @@ final class DurvaldCoreStore: ObservableObject {
     @Published private(set) var playlists: [Playlist] = []
     @Published private(set) var history: [PlaybackHistoryItem] = []
     @Published var errorMessage: String?
+    @Published private(set) var appSettings: Settings?
 
 
     private(set) var core: DurvaldCore?
@@ -36,6 +37,7 @@ final class DurvaldCoreStore: ObservableObject {
             let initialPlayback = await openedCore.playback()
             core = openedCore
             try reloadLibrary(using: openedCore)
+            appSettings = try openedCore.settings()
             playback = initialPlayback
 
             startPlaybackPolling()
@@ -439,6 +441,31 @@ final class DurvaldCoreStore: ObservableObject {
 
         do {
             history = try core.playbackHistory()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func updateSettings(
+        crossFade: Bool,
+        crossFadeDuration: UInt32,
+        normalizeVolume: Bool,
+        explicitContent: Bool
+    ) {
+        guard let core else { return }
+
+        do {
+            var settings = try core.settings()
+
+            settings.crossFade = crossFade
+            settings.crossFadeDuration = crossFadeDuration
+            settings.normalizeVolume = normalizeVolume
+            settings.explicitContent = explicitContent
+
+            // Autoplay, fonte, qualidade e opções ainda não implementadas
+            // no cliente macOS permanecem intocados.
+            try core.updateSettings(settings: settings)
+            appSettings = settings
         } catch {
             errorMessage = String(describing: error)
         }
