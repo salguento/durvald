@@ -28,4 +28,32 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertTrue(button.waitForExistence(timeout: 3))
         XCTAssertFalse(button.isEnabled)
     }
+
+    @MainActor
+    func testNavigationShellControlsExist() {
+        let app = XCUIApplication()
+        app.launchArguments.append("--ui-testing")
+        app.launch()
+
+        let sectionPicker = app.descendants(matching: .any)["sidebar.sectionPicker"]
+        XCTAssertTrue(sectionPicker.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields["sidebar.search"].exists)
+        XCTAssertTrue(app.buttons["sidebar.settings"].exists)
+        XCTAssertTrue(app.buttons["navigation.back"].exists)
+        XCTAssertTrue(app.buttons["navigation.forward"].exists)
+    }
+
+    @MainActor
+    func testQueueOpensInRightInspector() {
+        let app = XCUIApplication()
+        app.launchArguments.append("--ui-testing")
+        app.launch()
+
+        let queueButton = app.buttons["player.queue"]
+        XCTAssertTrue(queueButton.waitForExistence(timeout: 3))
+        queueButton.click()
+
+        XCTAssertTrue(app.staticTexts["Fila"].waitForExistence(timeout: 3))
+        XCTAssertEqual(queueButton.label, "Ocultar fila")
+    }
 }

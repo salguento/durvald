@@ -1,34 +1,74 @@
-//
-//  ContentView.swift
-//  Durvald
-//
-//  Created by Humberto Salguento on 20/08/26.
-//
-
 import SwiftUI
-import AppKit
 
 struct ContentView: View {
     @EnvironmentObject private var store: DurvaldCoreStore
-    @State private var selection: LibraryDestination? = .songs
+
+    @State private var navigationHistory = LibraryNavigationHistory()
+    @State private var sidebarSection: SidebarSection = .navigation
+    @State private var searchText = ""
+    @State private var isQueuePresented = false
 
     var body: some View {
         NavigationSplitView {
-            List(LibraryDestination.allCases, selection: $selection) { item in
-                Label(item.title, systemImage: item.icon)
-                    .tag(item)
-                    .accessibilityIdentifier("sidebar.\(item.rawValue)")
-            }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 220)
+            LibrarySidebarView(
+                section: $sidebarSection,
+                searchText: $searchText,
+                destination: destinationBinding
+            )
+            .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
         } detail: {
             VStack(spacing: 0) {
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 Divider()
-                PlayerBar()
+
+                PlayerBar(
+                    isQueuePresented: isQueuePresented,
+                    onToggleQueue: { isQueuePresented.toggle() }
+                )
             }
         }
+        .inspector(isPresented: $isQueuePresented) {
+            QueueView()
+                .inspectorColumnWidth(min: 320, ideal: 360, max: 480)
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                ControlGroup {
+                    Button {
+                        navigationHistory.goBack()
+                    } label: {
+                        Label("Voltar", systemImage: "chevron.left")
+                    }
+                    .disabled(!navigationHistory.canGoBack)
+                    .keyboardShortcut("[", modifiers: .command)
+                    .accessibilityIdentifier("navigation.back")
+
+                    Button {
+                        navigationHistory.goForward()
+                    } label: {
+                        Label("Avançar", systemImage: "chevron.right")
+                    }
+                    .disabled(!navigationHistory.canGoForward)
+                    .keyboardShortcut("]", modifiers: .command)
+                    .accessibilityIdentifier("navigation.forward")
+                }
+                .labelStyle(.iconOnly)
+                .controlGroupStyle(.navigation)
+            }
+
+            ToolbarItem(placement: .navigation) {
+                Text(navigationHistory.current.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .alert(
             "Erro",
             isPresented: Binding(
@@ -44,9 +84,19 @@ struct ContentView: View {
         }
     }
 
+    private var destinationBinding: Binding<LibraryDestination?> {
+        Binding(
+            get: { navigationHistory.current },
+            set: { destination in
+                guard let destination else { return }
+                navigationHistory.navigate(to: destination)
+            }
+        )
+    }
+
     @ViewBuilder
     private var detail: some View {
-        switch selection ?? .songs {
+        switch navigationHistory.current {
         case .songs:
             MusicLibraryView()
         case .albums:
@@ -64,16 +114,4 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environmentObject(DurvaldCoreStore())
-}
-
-@MainActor
-private func chooseLibraryFolder(store: DurvaldCoreStore) {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    panel.prompt = "Adicionar biblioteca"
-    if panel.runModal() == .OK, let url = panel.url {
-        store.addAndScanLibraryFolder(url)
-    }
 }

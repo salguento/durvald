@@ -19,6 +19,5 @@ struct PlaylistsView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("Playlists")
     }
 }

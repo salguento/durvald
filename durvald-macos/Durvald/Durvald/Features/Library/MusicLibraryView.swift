@@ -12,7 +12,7 @@ struct MusicLibraryView: View {
     @EnvironmentObject private var store: DurvaldCoreStore
 
     var body: some View {
-        VStack(spacing: 12) {
+        List {
             HStack {
                 Text("Faixas carregadas: \(store.tracks.count)")
                 Spacer()
@@ -27,7 +27,7 @@ struct MusicLibraryView: View {
                     .foregroundStyle(.secondary)
                 Button("Cancelar scan") { store.cancelScan() }
             }
-            List(store.tracks, id: \.id) { track in
+            ForEach(store.tracks, id: \.id) { track in
                 HStack {
                     ArtworkView(artworkID: track.artworkId, size: 42)
 
@@ -71,8 +71,6 @@ struct MusicLibraryView: View {
                 }
             }
         }
-        .padding()
-        .navigationTitle("Músicas")
     }
 }
 

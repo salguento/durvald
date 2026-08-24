@@ -22,6 +22,7 @@ struct DurvaldApp: App {
                     await coreStore.openCoreIfNeeded()
                 }
         }
+        .windowStyle(.hiddenTitleBar)
         .commands {
             CommandMenu("Reprodução") {
                 Button("Reproduzir ou pausar") {

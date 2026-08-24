@@ -7,7 +7,9 @@ struct PlayerBar: View {
     @State private var seeking = false
     @State private var adjustingVolume = false
     @State private var changingPlaybackState = false
-    @State private var showingQueue = false
+
+    let isQueuePresented: Bool
+    let onToggleQueue: () -> Void
 
     var body: some View {
         let snapshot = store.playback
@@ -48,19 +50,16 @@ struct PlayerBar: View {
                 )
                 .accessibilityIdentifier("player.playPause")
                 .keyboardShortcut(.space, modifiers: [])
-                Button {
-                    showingQueue.toggle()
-                } label: {
+                Button(action: onToggleQueue) {
                     Image(systemName: "list.bullet")
+                        .foregroundStyle(
+                            isQueuePresented ? Color.accentColor : Color.primary
+                        )
                 }
-                .accessibilityHint("Mostra ou oculta a fila de reprodução")
-                .accessibilityLabel("Mostrar fila")
+                .accessibilityHint("Mostra ou oculta a fila lateral de reprodução")
+                .accessibilityLabel(isQueuePresented ? "Ocultar fila" : "Mostrar fila")
                 .accessibilityIdentifier("player.queue")
                 .keyboardShortcut("l", modifiers: [.command, .option])
-                .popover(isPresented: $showingQueue) {
-                    QueueView()
-                        .frame(width: 380, height: 460)
-                }
                 Button {
                     Task { await store.toggleShuffle() }
                 } label: {

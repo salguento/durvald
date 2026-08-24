@@ -17,6 +17,5 @@ struct AlbumsView: View {
                 Text(release.artist).foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("Álbuns")
     }
 }

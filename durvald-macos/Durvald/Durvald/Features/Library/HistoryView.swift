@@ -21,7 +21,6 @@ struct HistoryView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .navigationTitle("Histórico")
         .task {
             while !Task.isCancelled {
                 store.refreshHistory()

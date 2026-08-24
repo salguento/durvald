@@ -14,6 +14,5 @@ struct ArtistsView: View {
         List(store.artists, id: \.id) { artist in
             Text(artist.name)
         }
-        .navigationTitle("Artistas")
     }
 }
