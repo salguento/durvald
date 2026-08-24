@@ -2,7 +2,6 @@ import SwiftUI
 
 struct LibrarySidebarView: View {
     @EnvironmentObject private var store: DurvaldCoreStore
-    @Environment(\.openSettings) private var openSettings
 
     @Binding var section: SidebarSection
     @Binding var searchText: String
@@ -40,12 +39,6 @@ struct LibrarySidebarView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .background {
-            SideBarTitleBarSettingsButton {
-                openSettings()
-            }
-            .frame(width: 0, height: 0)
         }
     }
 

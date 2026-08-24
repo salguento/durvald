@@ -38,7 +38,6 @@ final class DurvaldUITests: XCTestCase {
         let sectionPicker = app.descendants(matching: .any)["sidebar.sectionPicker"]
         XCTAssertTrue(sectionPicker.waitForExistence(timeout: 3))
         XCTAssertTrue(app.textFields["sidebar.search"].exists)
-        XCTAssertTrue(app.buttons["sidebar.settings"].exists)
         XCTAssertTrue(app.buttons["navigation.back"].exists)
         XCTAssertTrue(app.buttons["navigation.forward"].exists)
     }
