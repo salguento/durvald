@@ -6,28 +6,22 @@
 //
 
 import SwiftUI
-import AppKit
 
 struct MusicLibraryView: View {
     @EnvironmentObject private var store: DurvaldCoreStore
+    @State private var selectedTrackIDs = Set<Int64>()
+
+    let searchText: String
 
     var body: some View {
-        List {
-            HStack {
-                Text("Faixas carregadas: \(store.tracks.count)")
-                Spacer()
-                Button("Adicionar biblioteca") {
-                    chooseLibraryFolder(store: store)
-                }
-            }
-
+        List(selection: $selectedTrackIDs) {
             if let progress = store.scanProgress {
                 Text(verbatim: "\(progress.phase): \(progress.processedFiles)/\(progress.totalFiles)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("Cancelar scan") { store.cancelScan() }
             }
-            ForEach(store.tracks, id: \.id) { track in
+            ForEach(visibleTracks, id: \.id) { track in
                 HStack {
                     ArtworkView(artworkID: track.artworkId, size: 42)
 
@@ -60,6 +54,7 @@ struct MusicLibraryView: View {
                     .accessibilityIdentifier("track.\(track.id).addToQueue")
                     .accessibilityHint("Adiciona esta faixa ao fim da fila")
                 }
+                .tag(track.id)
                 .contextMenu {
                     Button("Reproduzir agora") {
                         Task { await store.play(trackID: track.id) }
@@ -71,18 +66,30 @@ struct MusicLibraryView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            LibraryStatusFooter(
+                allTracks: store.tracks,
+                visibleTracks: visibleTracks,
+                selectedTrackIDs: selectedTrackIDs,
+                isFiltering: !normalizedQuery.isEmpty
+            )
+        }
+        .onChange(of: visibleTracks.map(\.id)) { _, visibleIDs in
+            selectedTrackIDs.formIntersection(visibleIDs)
+        }
     }
-}
+    
+    private var normalizedQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
-@MainActor
-private func chooseLibraryFolder(store: DurvaldCoreStore) {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    panel.prompt = "Adicionar biblioteca"
+    private var visibleTracks: [Track] {
+        guard !normalizedQuery.isEmpty else { return store.tracks }
 
-    if panel.runModal() == .OK, let url = panel.url {
-        store.addAndScanLibraryFolder(url)
+        return store.tracks.filter { track in
+            track.title.localizedStandardContains(normalizedQuery)
+                || track.artist.localizedStandardContains(normalizedQuery)
+                || track.release.localizedStandardContains(normalizedQuery)
+        }
     }
 }

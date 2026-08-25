@@ -34,12 +34,16 @@ struct SettingsView: View {
             }
             .padding()
             .tabItem { Label("Geral", systemImage: "gearshape") }
-
+            LibrarySettingsView()
+                .padding()
+                .tabItem {
+                    Label("Biblioteca", systemImage: "books.vertical")
+                }
             LastFmSettingsView()
                 .padding()
                 .tabItem { Label("Last.fm", systemImage: "dot.radiowaves.left.and.right") }
         }
-        .frame(width: 520, height: 360)
+        .frame(width: 600, height: 420)
         .task { apply(store.appSettings) }
         .onChange(of: store.appSettings) { _, settings in
             apply(settings)

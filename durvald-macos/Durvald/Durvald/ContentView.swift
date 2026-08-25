@@ -98,7 +98,7 @@ struct ContentView: View {
     private var detail: some View {
         switch navigationHistory.current {
         case .songs:
-            MusicLibraryView()
+            MusicLibraryView(searchText: searchText)
         case .albums:
             AlbumsView()
         case .artists:

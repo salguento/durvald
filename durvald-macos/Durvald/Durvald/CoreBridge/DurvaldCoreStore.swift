@@ -15,6 +15,7 @@ final class DurvaldCoreStore: ObservableObject {
     @Published private(set) var history: [PlaybackHistoryItem] = []
     @Published var errorMessage: String?
     @Published private(set) var appSettings: Settings?
+    @Published private(set) var libraryPaths: [String] = []
 
 
     private(set) var core: DurvaldCore?
@@ -45,6 +46,7 @@ final class DurvaldCoreStore: ObservableObject {
             let initialPlayback = await openedCore.playback()
             core = openedCore
             try reloadLibrary(using: openedCore)
+            libraryPaths = try openedCore.libraryPaths()
             appSettings = try openedCore.settings()
             playback = initialPlayback
 
@@ -119,6 +121,7 @@ final class DurvaldCoreStore: ObservableObject {
                     scanProgress = nil
                 }
                 try core.addLibraryPath(path: url.path)
+                libraryPaths = try core.libraryPaths()
                 let result = try await core.scanConfiguredLibrary()
                 print(
                     "Durvald: scan concluído — encontrados: \(result.totalFilesFound), novos: \(result.newTracksAdded), atualizados: \(result.updatedTracks), erros: \(result.errors)"
@@ -135,6 +138,25 @@ final class DurvaldCoreStore: ObservableObject {
             } catch {
                 errorMessage = String(describing: error)
             }
+        }
+    }
+    
+    func removeLibraryFolder(path: String) {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
+            return
+        }
+
+        do {
+            try core.removeLibraryPath(path: path)
+            removeLibraryAccess(forPath: path)
+
+            libraryPaths.removeAll { configuredPath in
+                standardizedLibraryPath(configuredPath)
+                    == standardizedLibraryPath(path)
+            }
+        } catch {
+            errorMessage = String(describing: error)
         }
     }
 
@@ -204,6 +226,39 @@ final class DurvaldCoreStore: ObservableObject {
             throw CocoaError(.fileReadNoPermission)
         }
         activeLibraryScopes.append(scopedURL)
+    }
+    
+    private func removeLibraryAccess(forPath path: String) {
+        let canonicalPath = standardizedLibraryPath(path)
+
+        var bookmarks = UserDefaults.standard.dictionary(
+            forKey: Self.libraryBookmarksKey
+        ) ?? [:]
+
+        bookmarks.removeValue(forKey: canonicalPath)
+
+        UserDefaults.standard.set(
+            bookmarks,
+            forKey: Self.libraryBookmarksKey
+        )
+
+        let removedScopes = activeLibraryScopes.filter { url in
+            standardizedLibraryPath(url.path) == canonicalPath
+        }
+
+        removedScopes.forEach {
+            $0.stopAccessingSecurityScopedResource()
+        }
+
+        activeLibraryScopes.removeAll { url in
+            standardizedLibraryPath(url.path) == canonicalPath
+        }
+    }
+
+    private func standardizedLibraryPath(_ path: String) -> String {
+        URL(fileURLWithPath: path, isDirectory: true)
+            .standardizedFileURL
+            .path
     }
 
     private func restoreLibraryAccess() {
