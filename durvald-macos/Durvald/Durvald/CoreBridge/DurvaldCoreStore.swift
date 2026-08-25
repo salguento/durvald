@@ -27,6 +27,10 @@ final class DurvaldCoreStore: ObservableObject {
     private var isChangingTrack = false
     private var isMovingQueue = false
 
+    private struct SendableCore: @unchecked Sendable {
+        let value: DurvaldCore
+    }
+
     init(
         core: DurvaldCore? = nil,
         playback: PlaybackSnapshot? = nil
@@ -80,6 +84,33 @@ final class DurvaldCoreStore: ObservableObject {
         artists = try core.artists()
         playlists = try core.playlists()
         history = try core.playbackHistory()
+    }
+
+    func searchLibrary(query: String) async -> SearchResults {
+        guard let core else {
+            return SearchResults(
+                tracks: [],
+                releases: [],
+                artists: [],
+                playlists: []
+            )
+        }
+
+        let sendableCore = SendableCore(value: core)
+
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                try sendableCore.value.search(query: query)
+            }.value
+        } catch {
+            errorMessage = String(describing: error)
+            return SearchResults(
+                tracks: [],
+                releases: [],
+                artists: [],
+                playlists: []
+            )
+        }
     }
 
     private func makeConfig() throws -> CoreConfig {

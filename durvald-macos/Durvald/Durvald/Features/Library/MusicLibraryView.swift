@@ -11,8 +11,6 @@ struct MusicLibraryView: View {
     @EnvironmentObject private var store: DurvaldCoreStore
     @State private var selectedTrackIDs = Set<Int64>()
 
-    let searchText: String
-
     var body: some View {
         List(selection: $selectedTrackIDs) {
             if let progress = store.scanProgress {
@@ -21,7 +19,7 @@ struct MusicLibraryView: View {
                     .foregroundStyle(.secondary)
                 Button("Cancelar scan") { store.cancelScan() }
             }
-            ForEach(visibleTracks, id: \.id) { track in
+            ForEach(store.tracks, id: \.id) { track in
                 HStack {
                     ArtworkView(artworkID: track.artworkId, size: 42)
 
@@ -69,27 +67,10 @@ struct MusicLibraryView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             LibraryStatusFooter(
                 allTracks: store.tracks,
-                visibleTracks: visibleTracks,
+                visibleTracks: store.tracks,
                 selectedTrackIDs: selectedTrackIDs,
-                isFiltering: !normalizedQuery.isEmpty
+                isFiltering: false
             )
-        }
-        .onChange(of: visibleTracks.map(\.id)) { _, visibleIDs in
-            selectedTrackIDs.formIntersection(visibleIDs)
-        }
-    }
-    
-    private var normalizedQuery: String {
-        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var visibleTracks: [Track] {
-        guard !normalizedQuery.isEmpty else { return store.tracks }
-
-        return store.tracks.filter { track in
-            track.title.localizedStandardContains(normalizedQuery)
-                || track.artist.localizedStandardContains(normalizedQuery)
-                || track.release.localizedStandardContains(normalizedQuery)
         }
     }
 }

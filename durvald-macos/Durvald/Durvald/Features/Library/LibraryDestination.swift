@@ -13,8 +13,17 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
     case artists
     case playlists
     case history
+    case search
 
     var id: Self { self }
+
+    static let navigationItems: [LibraryDestination] = [
+        .songs,
+        .albums,
+        .artists,
+        .playlists,
+        .history,
+    ]
 
     var title: String {
         switch self {
@@ -23,6 +32,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
         case .artists: "Artistas"
         case .playlists: "Playlists"
         case .history: "Histórico"
+        case .search: "Pesquisa"
         }
     }
 
@@ -33,6 +43,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
         case .artists: "music.mic"
         case .playlists: "music.note.list"
         case .history: "clock.arrow.circlepath"
+        case .search: "magnifyingglass"
         }
     }
 }
