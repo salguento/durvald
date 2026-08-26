@@ -49,7 +49,7 @@ lazy_static = "1.5.0"
 chrono = "0.4.42"
 thiserror = "2.0.17"
 once_cell = "1.21.3"
-keyring = "3.6.3"
+keyring = { version = "3.6.3", features = ["apple-native"] }
 
 # Utilities
 sys-info = "0.9"
