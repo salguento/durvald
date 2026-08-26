@@ -6,9 +6,24 @@ struct LibrarySidebarView: View {
     @Binding var section: SidebarSection
     @Binding var destination: LibraryDestination?
 
+    let onSelectAlbum: (Release) -> Void
+
     @State private var isLocalSearchExpanded = false
     @State private var localSearchText = ""
     @State private var committedLocalQuery = ""
+
+    private let albumGridColumnCount = 3
+
+    private var albumGridColumns: [GridItem] {
+        Array(
+            repeating: GridItem(
+                .fixed(60),
+                spacing: 6,
+                alignment: .top
+            ),
+            count: albumGridColumnCount
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -97,19 +112,49 @@ struct LibrarySidebarView: View {
             .listStyle(.sidebar)
 
         case .albums:
-            List(localAlbums, id: \.id) { album in
-                Button {
-                    destination = .albums
-                } label: {
-                    SidebarItemLabel(
-                        title: album.title,
-                        subtitle: album.artist,
-                        systemImage: "square.stack"
-                    )
+            ScrollView {
+                LazyVGrid(
+                    columns: albumGridColumns,
+                    alignment: .leading,
+                    spacing: 6
+                ) {
+                    ForEach(localAlbums, id: \.id) { album in
+                        Button {
+                            destination = .albums
+                            onSelectAlbum(album)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                ArtworkView(
+                                    artworkID: album.artworkId,
+                                    size: 60
+                                )
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(album.title)
+                                        .font(.caption)
+                                        .lineLimit(1)
+
+                                    Text(album.artist)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                                .frame(width: 60, alignment: .leading)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .help("\(album.title) — \(album.artist)")
+                        .accessibilityLabel(
+                            album.artist.isEmpty
+                                ? album.title
+                                : "\(album.title), \(album.artist)"
+                        )
+                        .accessibilityIdentifier("sidebar.album.\(album.id)")
+                    }
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
             }
-            .listStyle(.sidebar)
 
         case .artists:
             List(localArtists, id: \.id) { artist in

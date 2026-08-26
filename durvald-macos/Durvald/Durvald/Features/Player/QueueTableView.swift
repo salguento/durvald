@@ -28,6 +28,7 @@ struct QueueTableView: NSViewRepresentable {
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.rowHeight = 46
+        tableView.backgroundColor = .clear
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.selectionHighlightStyle = .regular
         tableView.delegate = context.coordinator
@@ -45,8 +46,11 @@ struct QueueTableView: NSViewRepresentable {
 
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.verticalScroller?.knobStyle = .default
         scrollView.documentView = tableView
         return scrollView
     }
@@ -126,6 +130,7 @@ struct QueueTableView: NSViewRepresentable {
                     ? "Indica a faixa reproduzida atualmente"
                     : "Reproduz este item da fila agora"
             )
+            cell.configureHover(isCurrentItem: value.position == 0)
             cell.toolTip = "\(value.title), \(value.artist)"
             return cell
         }
@@ -273,6 +278,13 @@ private final class QueueTableCellView: NSTableCellView {
 
         playButton.translatesAutoresizingMaskIntoConstraints = false
         playButton.isBordered = false
+        playButton.imagePosition = .imageOnly
+        playButton.contentTintColor = .white
+        playButton.wantsLayer = true
+        playButton.layer?.backgroundColor = NSColor.black
+            .withAlphaComponent(0.62)
+            .cgColor
+        playButton.layer?.cornerRadius = 13
         playButton.setAccessibilityLabel("Reproduzir item da fila")
 
         addSubview(artworkImageView)
@@ -285,11 +297,76 @@ private final class QueueTableCellView: NSTableCellView {
             artworkImageView.widthAnchor.constraint(equalToConstant: 36),
             artworkImageView.heightAnchor.constraint(equalToConstant: 36),
             textStack.leadingAnchor.constraint(equalTo: artworkImageView.trailingAnchor, constant: 8),
-            textStack.trailingAnchor.constraint(equalTo: playButton.leadingAnchor, constant: -8),
+            textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            playButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            playButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            playButton.centerXAnchor.constraint(equalTo: artworkImageView.centerXAnchor),
+            playButton.centerYAnchor.constraint(equalTo: artworkImageView.centerYAnchor),
+            playButton.widthAnchor.constraint(equalToConstant: 26),
+            playButton.heightAnchor.constraint(equalToConstant: 26),
         ])
+    }
+
+    private var isCurrentItem = false
+    private var isPointerInside = false
+    private var isRowSelected = false
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override var backgroundStyle: NSView.BackgroundStyle {
+        didSet {
+            isRowSelected = backgroundStyle == .emphasized
+            updateHoverAppearance()
+        }
+    }
+
+    func configureHover(isCurrentItem: Bool) {
+        self.isCurrentItem = isCurrentItem
+        isPointerInside = false
+        updateHoverAppearance()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let newTrackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [
+                .mouseEnteredAndExited,
+                .activeInKeyWindow,
+                .inVisibleRect,
+            ],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(newTrackingArea)
+        hoverTrackingArea = newTrackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerInside = true
+        updateHoverAppearance()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerInside = false
+        updateHoverAppearance()
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        isCurrentItem = false
+        isPointerInside = false
+        isRowSelected = false
+        updateHoverAppearance()
+    }
+
+    private func updateHoverAppearance() {
+        let showsControl = isCurrentItem || isPointerInside || isRowSelected
+        playButton.isHidden = !showsControl
+        artworkImageView.alphaValue = showsControl ? 0.62 : 1
     }
 
     func loadArtwork(_ artworkID: String?, using core: DurvaldCore?) {

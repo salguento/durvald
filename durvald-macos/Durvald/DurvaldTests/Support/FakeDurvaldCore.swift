@@ -2,8 +2,10 @@
 
 final class FakeDurvaldCore: DurvaldCore {
     var snapshot: PlaybackSnapshot
+    var releaseTrackResults: [Track] = []
     private(set) var pauseCallCount = 0
     private(set) var resumeCallCount = 0
+    private(set) var playbackOperations: [String] = []
 
     init(snapshot: PlaybackSnapshot) {
         self.snapshot = snapshot
@@ -28,5 +30,22 @@ final class FakeDurvaldCore: DurvaldCore {
         resumeCallCount += 1
         snapshot.isPaused = false
         snapshot.isPlaying = true
+    }
+
+    override func releaseTracks(releaseId: Int64) throws -> [Track] {
+        releaseTrackResults
+    }
+
+    override func clearQueue() async throws {
+        playbackOperations.append("clear")
+    }
+
+    override func play(trackId: Int64) async throws -> PlaybackSnapshot {
+        playbackOperations.append("play:\(trackId)")
+        return snapshot
+    }
+
+    override func addToQueue(trackId: Int64) async throws {
+        playbackOperations.append("enqueue:\(trackId)")
     }
 }

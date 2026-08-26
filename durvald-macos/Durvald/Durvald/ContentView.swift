@@ -10,12 +10,14 @@ struct ContentView: View {
     @State private var searchFocusRequest = 0
     @State private var isSearchFocused = false
     @State private var isQueuePresented = false
+    @State private var selectedAlbum: Release?
 
     var body: some View {
         NavigationSplitView {
             LibrarySidebarView(
                 section: $sidebarSection,
-                destination: destinationBinding
+                destination: destinationBinding,
+                onSelectAlbum: showAlbum
             )
             .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
         } detail: {
@@ -39,11 +41,17 @@ struct ContentView: View {
             ToolbarItem(placement: .navigation) {
                 ControlGroup {
                     Button {
-                        navigationHistory.goBack()
+                        if selectedAlbum != nil {
+                            selectedAlbum = nil
+                        } else {
+                            navigationHistory.goBack()
+                        }
                     } label: {
                         Label("Voltar", systemImage: "chevron.left")
                     }
-                    .disabled(!navigationHistory.canGoBack)
+                    .disabled(
+                        selectedAlbum == nil && !navigationHistory.canGoBack
+                    )
                     .keyboardShortcut("[", modifiers: .command)
                     .accessibilityIdentifier("navigation.back")
 
@@ -52,7 +60,9 @@ struct ContentView: View {
                     } label: {
                         Label("Avançar", systemImage: "chevron.right")
                     }
-                    .disabled(!navigationHistory.canGoForward)
+                    .disabled(
+                        selectedAlbum != nil || !navigationHistory.canGoForward
+                    )
                     .keyboardShortcut("]", modifiers: .command)
                     .accessibilityIdentifier("navigation.forward")
                 }
@@ -61,7 +71,7 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .navigation) {
-                Text(navigationHistory.current == .search ? "" : navigationHistory.current.title)
+                Text(toolbarTitle)
                     .font(.headline)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -80,6 +90,8 @@ struct ContentView: View {
                         focusRequest: searchFocusRequest
                     )
                     .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Pesquisar na biblioteca")
+                    .accessibilityIdentifier("search.field")
 
                     Button {
                         searchText = ""
@@ -97,6 +109,7 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 12)
                 .frame(width: 300, height: 36)
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("search.container")
                 .glassEffect(
                     .regular
@@ -124,6 +137,10 @@ struct ContentView: View {
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .scrollEdgeEffectStyle(.soft, for: .top)
         .onChange(of: navigationHistory.current, initial: true) { _, destination in
+            if destination != .albums {
+                selectedAlbum = nil
+            }
+
             if destination == .search {
                 requestSearchFocus()
             } else {
@@ -150,6 +167,7 @@ struct ContentView: View {
             get: { navigationHistory.current },
             set: { destination in
                 guard let destination else { return }
+                selectedAlbum = nil
                 if destination == .search && navigationHistory.current == .search {
                     requestSearchFocus()
                 }
@@ -162,6 +180,21 @@ struct ContentView: View {
         searchFocusRequest &+= 1
     }
 
+    private var toolbarTitle: String {
+        if let selectedAlbum {
+            return selectedAlbum.title
+        }
+
+        return navigationHistory.current == .search
+            ? ""
+            : navigationHistory.current.title
+    }
+
+    private func showAlbum(_ album: Release) {
+        navigationHistory.navigate(to: .albums)
+        selectedAlbum = album
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch navigationHistory.current {
@@ -170,7 +203,11 @@ struct ContentView: View {
         case .songs:
             MusicLibraryView()
         case .albums:
-            AlbumsView()
+            if let selectedAlbum {
+                AlbumView(album: selectedAlbum)
+            } else {
+                AlbumsView(onSelectAlbum: showAlbum)
+            }
         case .artists:
             ArtistsView()
         case .playlists:

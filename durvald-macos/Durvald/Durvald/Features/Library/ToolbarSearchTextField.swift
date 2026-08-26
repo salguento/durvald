@@ -21,6 +21,9 @@ struct ToolbarSearchTextField: NSViewRepresentable {
         textField.focusRingType = .none
         textField.font = .systemFont(ofSize: NSFont.systemFontSize)
         textField.placeholderString = "Músicas, álbuns, artistas e playlists"
+        textField.setAccessibilityElement(true)
+        textField.setAccessibilityRole(.textField)
+        textField.setAccessibilityLabel("Pesquisar na biblioteca")
         textField.setAccessibilityIdentifier("search.field")
         context.coordinator.installFocusDismissalMonitor(for: textField)
         return textField

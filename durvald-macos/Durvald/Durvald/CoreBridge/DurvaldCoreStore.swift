@@ -113,6 +113,33 @@ final class DurvaldCoreStore: ObservableObject {
         }
     }
 
+    func tracks(forReleaseID releaseID: Int64) async -> [Track] {
+        guard let core else { return [] }
+
+        let sendableCore = SendableCore(value: core)
+
+        do {
+            let tracks = try await Task.detached(priority: .userInitiated) {
+                try sendableCore.value.releaseTracks(releaseId: releaseID)
+            }.value
+
+            return tracks.sorted { lhs, rhs in
+                if lhs.discNumber != rhs.discNumber {
+                    return lhs.discNumber < rhs.discNumber
+                }
+
+                if lhs.trackNumber != rhs.trackNumber {
+                    return lhs.trackNumber < rhs.trackNumber
+                }
+
+                return lhs.id < rhs.id
+            }
+        } catch {
+            errorMessage = String(describing: error)
+            return []
+        }
+    }
+
     private func makeConfig() throws -> CoreConfig {
         let appSupport = try FileManager.default.url(
             for: .applicationSupportDirectory,
@@ -231,6 +258,43 @@ final class DurvaldCoreStore: ObservableObject {
             print("Durvald: reprodução iniciada; pausada: \(snapshot.isPaused).")
         } catch {
             print("Durvald: falha ao iniciar reprodução: \(error)")
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func playRelease(releaseID: Int64) async {
+        guard let core, !isChangingTrack else { return }
+
+        isChangingTrack = true
+        defer { isChangingTrack = false }
+
+        do {
+            let tracks = try core.releaseTracks(releaseId: releaseID).sorted {
+                if $0.discNumber != $1.discNumber {
+                    return $0.discNumber < $1.discNumber
+                }
+
+                if $0.trackNumber != $1.trackNumber {
+                    return $0.trackNumber < $1.trackNumber
+                }
+
+                return $0.id < $1.id
+            }
+
+            guard let firstTrack = tracks.first else {
+                errorMessage = "Este álbum não possui faixas."
+                return
+            }
+
+            try await core.clearQueue()
+            playback = try await core.play(trackId: firstTrack.id)
+
+            for track in tracks.dropFirst() {
+                try await core.addToQueue(trackId: track.id)
+            }
+
+            playback = await core.playback()
+        } catch {
             errorMessage = String(describing: error)
         }
     }

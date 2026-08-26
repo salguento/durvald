@@ -43,6 +43,7 @@ struct QueueView: View {
             .frame(maxWidth: .infinity, minHeight: 300, maxHeight: .infinity)
             .layoutPriority(1)
         }
+        .background(.bar, ignoresSafeAreaEdges: .all)
     }
 
     private var upcomingItems: [QueueItem] {

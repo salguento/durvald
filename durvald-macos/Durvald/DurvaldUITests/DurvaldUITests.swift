@@ -11,11 +11,20 @@ final class DurvaldUITests: XCTestCase {
         app.launchArguments.append("--ui-testing")
         app.launch()
 
-        XCTAssertTrue(app.staticTexts["Músicas"].exists)
-        XCTAssertTrue(app.staticTexts["Álbuns"].exists)
-        XCTAssertTrue(app.staticTexts["Artistas"].exists)
-        XCTAssertTrue(app.staticTexts["Playlists"].exists)
-        XCTAssertTrue(app.staticTexts["Histórico"].exists)
+        let sectionIdentifiers = [
+            "sidebar.songs",
+            "sidebar.albums",
+            "sidebar.artists",
+            "sidebar.playlists",
+            "sidebar.history",
+        ]
+
+        for identifier in sectionIdentifiers {
+            XCTAssertTrue(
+                app.buttons[identifier].waitForExistence(timeout: 3),
+                "A seção \(identifier) não apareceu na barra lateral."
+            )
+        }
     }
 
     @MainActor
@@ -52,7 +61,7 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertTrue(searchButton.waitForExistence(timeout: 3))
         searchButton.click()
 
-        let searchField = app.textFields["search.field"]
+        let searchField = app.descendants(matching: .any)["search.field"]
         XCTAssertTrue(searchField.waitForExistence(timeout: 3))
         XCTAssertEqual(
             searchField.value(forKey: "hasKeyboardFocus") as? Bool,

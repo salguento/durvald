@@ -2,15 +2,23 @@
 
 enum Fixtures {
     static var track: Track {
+        track(id: 1, trackNumber: 1, discNumber: 1)
+    }
+
+    static func track(
+        id: Int64,
+        trackNumber: UInt8,
+        discNumber: UInt8
+    ) -> Track {
         Track(
-            id: 1,
-            title: "Faixa de teste",
+            id: id,
+            title: "Faixa \(id)",
             artist: "Artista",
             artistId: 1,
             release: "Álbum",
             releaseId: 1,
-            trackNumber: 1,
-            discNumber: 1,
+            trackNumber: trackNumber,
+            discNumber: discNumber,
             durationSeconds: 180,
             filePath: "/tmp/durvald-test.mp3",
             artworkId: nil,
