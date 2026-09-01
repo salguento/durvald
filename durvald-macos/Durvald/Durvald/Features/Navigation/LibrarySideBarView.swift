@@ -83,6 +83,12 @@ struct LibrarySidebarView: View {
                         accessibilityIdentifier: "sidebar.search.open"
                     )
 
+                    SidebarNavigationButton(
+                        item: .home,
+                        selection: $destination,
+                        accessibilityIdentifier: "sidebar.home"
+                    )
+
                     ForEach(LibraryDestination.navigationItems) { item in
                         SidebarNavigationButton(
                             item: item,
@@ -198,26 +204,26 @@ struct LibrarySidebarView: View {
 }
 
 private struct SidebarNavigationButton: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let item: LibraryDestination
-
     @Binding var selection: LibraryDestination?
-
     let accessibilityIdentifier: String
-
-    @State private var isHovered = false
 
     private var isSelected: Bool {
         selection == item
     }
 
-    private var backgroundColor: Color {
+    private var foregroundColor: Color {
         if isSelected {
             return .accentColor
         }
 
-        return isHovered
-            ? Color.primary.opacity(0.08)
-            : .clear
+        return item == .search ? .secondary : .primary
+    }
+
+    private var selectionBackground: Color {
+        Color.black.opacity(colorScheme == .dark ? 0.30 : 0.12)
     }
 
     var body: some View {
@@ -233,9 +239,7 @@ private struct SidebarNavigationButton: View {
 
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(
-                isSelected ? Color.white : Color.primary
-            )
+            .foregroundStyle(foregroundColor)
             .padding(.horizontal, 8)
             .frame(
                 maxWidth: .infinity,
@@ -244,21 +248,18 @@ private struct SidebarNavigationButton: View {
             )
             .contentShape(Rectangle())
             .background {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(backgroundColor)
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(selectionBackground)
+                }
             }
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
         .help(item.title)
         .accessibilityLabel(item.title)
-        .accessibilityAddTraits(
-            isSelected ? .isSelected : []
-        )
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(accessibilityIdentifier)
-        .onHover { hovering in
-            isHovered = hovering
-        }
     }
 }
 

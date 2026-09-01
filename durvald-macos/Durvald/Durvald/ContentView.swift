@@ -19,7 +19,7 @@ struct ContentView: View {
                 destination: destinationBinding,
                 onSelectAlbum: showAlbum
             )
-            .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
         } detail: {
             VStack(spacing: 0) {
                 detail
@@ -35,7 +35,7 @@ struct ContentView: View {
         }
         .inspector(isPresented: $isQueuePresented) {
             QueueView()
-                .inspectorColumnWidth(min: 320, ideal: 360, max: 480)
+                .inspectorColumnWidth(min: 180, ideal: 220, max: 300)
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -79,57 +79,62 @@ struct ContentView: View {
             .sharedBackgroundVisibility(.hidden)
 
             ToolbarItem(placement: .principal) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
+                if navigationHistory.current == .search {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
 
-                    ToolbarSearchTextField(
-                        text: $searchText,
-                        isFocused: $isSearchFocused,
-                        isPresented: navigationHistory.current == .search,
-                        focusRequest: searchFocusRequest
-                    )
-                    .frame(maxWidth: .infinity)
-                    .accessibilityLabel("Pesquisar na biblioteca")
-                    .accessibilityIdentifier("search.field")
-
-                    Button {
-                        searchText = ""
-                        requestSearchFocus()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .opacity(searchText.isEmpty ? 0 : 1)
-                    .allowsHitTesting(!searchText.isEmpty)
-                    .accessibilityHidden(searchText.isEmpty)
-                    .accessibilityLabel("Limpar pesquisa")
-                    .accessibilityIdentifier("search.clear")
-                }
-                .padding(.horizontal, 12)
-                .frame(width: 300, height: 36)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("search.container")
-                .glassEffect(
-                    .regular
-                        .interactive(),
-                    in: .capsule
-                )
-                .overlay {
-                    Capsule()
-                        .strokeBorder(Color.accentColor, lineWidth: 2)
-                        .opacity(
-                            isSearchFocused && controlActiveState != .inactive
-                                ? 1
-                                : 0
+                        ToolbarSearchTextField(
+                            text: $searchText,
+                            isFocused: $isSearchFocused,
+                            isPresented: true,
+                            focusRequest: searchFocusRequest
                         )
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel("Pesquisar na biblioteca")
+                        .accessibilityIdentifier("search.field")
+
+                        Button {
+                            searchText = ""
+                            requestSearchFocus()
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                        .opacity(searchText.isEmpty ? 0 : 1)
+                        .allowsHitTesting(!searchText.isEmpty)
+                        .accessibilityHidden(searchText.isEmpty)
+                        .accessibilityLabel("Limpar pesquisa")
+                        .accessibilityIdentifier("search.clear")
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(
+                        minWidth: 180,
+                        idealWidth: 260,
+                        maxWidth: 300,
+                        minHeight: 36,
+                        maxHeight: 36
+                    )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("search.container")
+                    .glassEffect(
+                        .regular
+                            .interactive(),
+                        in: .capsule
+                    )
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(Color.accentColor, lineWidth: 2)
+                            .opacity(
+                                isSearchFocused && controlActiveState != .inactive
+                                    ? 1
+                                    : 0
+                            )
+                    }
+                    .animation(.easeOut(duration: 0.15), value: isSearchFocused)
+                    .animation(.easeOut(duration: 0.15), value: controlActiveState)
                 }
-                .animation(.easeOut(duration: 0.15), value: isSearchFocused)
-                .animation(.easeOut(duration: 0.15), value: controlActiveState)
-                .opacity(navigationHistory.current == .search ? 1 : 0)
-                .allowsHitTesting(navigationHistory.current == .search)
-                .accessibilityHidden(navigationHistory.current != .search)
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -200,6 +205,10 @@ struct ContentView: View {
         switch navigationHistory.current {
         case .search:
             LibrarySearchView(searchText: $searchText)
+        case .home:
+            HomeView { destination in
+                navigationHistory.navigate(to: destination)
+            }
         case .songs:
             MusicLibraryView()
         case .albums:

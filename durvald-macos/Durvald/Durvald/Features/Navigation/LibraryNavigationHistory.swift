@@ -1,5 +1,5 @@
 struct LibraryNavigationHistory {
-    private var entries: [LibraryDestination] = [.songs]
+    private var entries: [LibraryDestination] = [.home]
     private var currentIndex = 0
 
     var current: LibraryDestination {

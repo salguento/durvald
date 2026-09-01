@@ -12,6 +12,7 @@ final class DurvaldUITests: XCTestCase {
         app.launch()
 
         let sectionIdentifiers = [
+            "sidebar.home",
             "sidebar.songs",
             "sidebar.albums",
             "sidebar.artists",
@@ -97,5 +98,53 @@ final class DurvaldUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Fila"].waitForExistence(timeout: 3))
         XCTAssertEqual(queueButton.label, "Ocultar fila")
+    }
+
+    @MainActor
+    func testAppLaunchesOnHomeAndPlacesItBelowSearch() {
+        let app = XCUIApplication()
+        app.launchArguments.append("--ui-testing")
+        app.launch()
+
+        let homePage = app.descendants(matching: .any)["home.page"]
+        let searchButton = app.buttons["sidebar.search.open"]
+        let homeButton = app.buttons["sidebar.home"]
+
+        XCTAssertTrue(homePage.waitForExistence(timeout: 3))
+        XCTAssertTrue(searchButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(homeButton.waitForExistence(timeout: 3))
+        XCTAssertLessThan(searchButton.frame.minY, homeButton.frame.minY)
+    }
+
+    @MainActor
+    func testHomeCardNavigatesToSongs() {
+        let app = XCUIApplication()
+        app.launchArguments.append("--ui-testing")
+        app.launch()
+
+        let songsCard = app.buttons["home.songs"]
+        XCTAssertTrue(songsCard.waitForExistence(timeout: 3))
+        songsCard.click()
+
+        XCTAssertTrue(app.buttons["sidebar.songs"].isSelected)
+    }
+
+    @MainActor
+    func testOpeningQueueKeepsWindowWidthStable() {
+        let app = XCUIApplication()
+        app.launchArguments.append("--ui-testing")
+        app.launch()
+
+        let window = app.windows.firstMatch
+        let queueButton = app.buttons["player.queue"]
+
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        XCTAssertTrue(queueButton.waitForExistence(timeout: 3))
+
+        let widthBefore = window.frame.width
+        queueButton.click()
+
+        XCTAssertTrue(app.staticTexts["Fila"].waitForExistence(timeout: 3))
+        XCTAssertEqual(window.frame.width, widthBefore, accuracy: 2)
     }
 }

@@ -24,8 +24,14 @@ struct PlayerBar: View {
 
                 VStack(alignment: .leading) {
                     Text(snapshot?.currentTrack?.title ?? "Nada tocando")
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
                     Text(snapshot?.currentTrack?.artist ?? "")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 Spacer()
                 Button {
@@ -87,8 +93,11 @@ struct PlayerBar: View {
             }
             Slider(value: $position, in: 0...duration, onEditingChanged: { editing in
                 seeking = editing
-                if !editing { Task { await store.seek(to: position) } }
+                if !editing {
+                    Task { await store.seek(to: position) }
+                }
             })
+            .tint(.accentColor)
             .disabled(snapshot?.currentTrack == nil)
             .accessibilityLabel("Posição da reprodução")
             .accessibilityValue(
@@ -98,9 +107,16 @@ struct PlayerBar: View {
             .accessibilityIdentifier("player.progress")
             HStack {
                 Text(time(seeking ? position : (snapshot?.positionSeconds ?? 0)))
+                    .foregroundStyle(.secondary)
+
                 Spacer()
+
                 Text(time(duration))
+                    .foregroundStyle(.secondary)
+
                 Image(systemName: "speaker.fill")
+                    .foregroundStyle(.secondary)
+
                 Slider(value: $volume, in: 0...1) { editing in
                     adjustingVolume = editing
 
@@ -108,6 +124,7 @@ struct PlayerBar: View {
                         store.scheduleVolume(volume, immediately: true)
                     }
                 }
+                .tint(.accentColor)
                 .frame(width: 120)
                 .onChange(of: volume) { _, newValue in
                     guard adjustingVolume else { return }
@@ -115,7 +132,8 @@ struct PlayerBar: View {
                 }
                 .accessibilityLabel("Volume")
                 .accessibilityIdentifier("player.volume")
-            }.font(.caption).foregroundStyle(.secondary)
+            }
+            .font(.caption)
         }
         .padding().background(.bar)
         .onChange(of: store.playback) { _, snapshot in

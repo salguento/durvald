@@ -47,3 +47,23 @@ final class DurvaldCoreStoreTests: XCTestCase {
         XCTAssertEqual(store.errorMessage, "Este álbum não possui faixas.")
     }
 }
+
+final class LibraryNavigationHistoryTests: XCTestCase {
+    func testInitialDestinationIsHome() {
+        let history = LibraryNavigationHistory()
+
+        XCTAssertEqual(history.current, .home)
+        XCTAssertFalse(history.canGoBack)
+        XCTAssertFalse(history.canGoForward)
+    }
+
+    func testBackReturnsFromSongsToHome() {
+        var history = LibraryNavigationHistory()
+
+        history.navigate(to: .songs)
+        history.goBack()
+
+        XCTAssertEqual(history.current, .home)
+        XCTAssertTrue(history.canGoForward)
+    }
+}

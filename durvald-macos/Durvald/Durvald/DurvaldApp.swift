@@ -23,6 +23,8 @@ struct DurvaldApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 900, height: 620)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandMenu("Reprodução") {
                 Button("Reproduzir ou pausar") {
