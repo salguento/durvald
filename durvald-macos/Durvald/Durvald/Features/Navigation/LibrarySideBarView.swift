@@ -7,6 +7,7 @@ struct LibrarySidebarView: View {
     @Binding var destination: LibraryDestination?
 
     let onSelectAlbum: (Release) -> Void
+    let onSelectArtist: (Artist) -> Void
 
     @State private var isLocalSearchExpanded = false
     @State private var localSearchText = ""
@@ -166,7 +167,7 @@ struct LibrarySidebarView: View {
         case .artists:
             List(localArtists, id: \.id) { artist in
                 Button {
-                    destination = .artists
+                    onSelectArtist(artist)
                 } label: {
                     SidebarItemLabel(
                         title: artist.name,
@@ -222,18 +223,9 @@ private struct SidebarNavigationButton: View {
         return Color.accentColor.opacity(appearsActive ? 1 : 0.63)
     }
 
-    private var selectionBackgroundColor: Color {
-        guard colorScheme == .dark else { return .black }
-
-        // Active: #2A2B33. Inactive: #2F3138. The sidebar material remains visible.
-        return appearsActive
-            ? Color(.sRGB, red: 42.0 / 255, green: 43.0 / 255, blue: 51.0 / 255)
-            : Color(.sRGB, red: 47.0 / 255, green: 49.0 / 255, blue: 56.0 / 255)
-    }
-
     private var selectionBackgroundOpacity: Double {
         if colorScheme == .dark {
-            return 0.80
+            return appearsActive ? 0.08 : 0.10
         }
 
         return appearsActive ? 0.10 : 0.06
@@ -270,7 +262,8 @@ private struct SidebarNavigationButton: View {
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(selectionBackgroundColor.opacity(selectionBackgroundOpacity))
+                    // A semantic neutral lets the material retain the user's theme tint.
+                    .fill(Color.primary.opacity(selectionBackgroundOpacity))
             }
         }
         .help(item.title)
@@ -286,6 +279,23 @@ private struct SidebarNavigationButton: View {
 private struct SidebarSectionPicker: View {
     @Binding var selection: SidebarSection
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.self) private var environment
+
+    private var selectedForeground: Color {
+        guard appearsActive else { return .secondary }
+
+        let accent = Color.accentColor.resolve(in: environment)
+        let color = NSColor(
+            srgbRed: CGFloat(accent.red),
+            green: CGFloat(accent.green),
+            blue: CGFloat(accent.blue),
+            alpha: CGFloat(accent.opacity)
+        )
+        // Match yellow by hue, including its light and dark appearance variants.
+        let isYellow = (0.12...0.20).contains(color.hueComponent)
+            && color.saturationComponent > 0.35
+        return isYellow ? .black : .white
+    }
 
     var body: some View {
         HStack(spacing: 3) {
@@ -303,7 +313,7 @@ private struct SidebarSectionPicker: View {
                     }
                     .foregroundStyle(
                         item == selection
-                            ? (appearsActive ? Color.white : Color.secondary)
+                            ? selectedForeground
                             : Color.secondary
                     )
                     .frame(height: 24)

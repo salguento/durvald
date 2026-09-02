@@ -1,8 +1,26 @@
+enum LibraryRoute: Equatable {
+    case section(LibraryDestination)
+    case album(Release)
+    case artist(Artist)
+
+    var destination: LibraryDestination {
+        switch self {
+        case .section(let destination): destination
+        case .album: .albums
+        case .artist: .artists
+        }
+    }
+}
+
 struct LibraryNavigationHistory {
-    private var entries: [LibraryDestination] = [.home]
+    private var entries: [LibraryRoute] = [.section(.home)]
     private var currentIndex = 0
 
     var current: LibraryDestination {
+        currentRoute.destination
+    }
+
+    var currentRoute: LibraryRoute {
         entries[currentIndex]
     }
 
@@ -15,14 +33,18 @@ struct LibraryNavigationHistory {
     }
 
     mutating func navigate(to destination: LibraryDestination) {
-        guard destination != current else { return }
+        navigate(to: .section(destination))
+    }
+
+    mutating func navigate(to route: LibraryRoute) {
+        guard route != currentRoute else { return }
 
         let firstForwardIndex = currentIndex + 1
         if firstForwardIndex < entries.count {
             entries.removeSubrange(firstForwardIndex...)
         }
 
-        entries.append(destination)
+        entries.append(route)
         currentIndex = entries.count - 1
     }
 

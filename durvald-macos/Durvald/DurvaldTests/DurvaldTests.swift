@@ -4,6 +4,37 @@ import Combine
 
 final class DurvaldCoreStoreTests: XCTestCase {
     @MainActor
+    func testFavoritePersistsAndUpdatesLibraryAndPlayer() async {
+        let snapshot = Fixtures.playingSnapshot
+        let fake = FakeDurvaldCore(snapshot: snapshot)
+        let store = DurvaldCoreStore(core: fake, playback: snapshot, tracks: [Fixtures.track])
+
+        for favorite in [true, false] {
+            store.setTrackFavorite(trackID: Fixtures.track.id, favorite: favorite)
+            XCTAssertEqual(store.playback?.currentTrack?.isFavorite, favorite)
+            XCTAssertEqual(store.tracks.first?.isFavorite, favorite)
+            await store.refreshPlayback()
+            XCTAssertEqual(store.playback?.currentTrack?.isFavorite, favorite)
+        }
+        XCTAssertEqual(fake.favoriteChanges, [true, false])
+        XCTAssertNil(store.errorMessage)
+    }
+
+    @MainActor
+    func testFailedFavoritePreservesCurrentState() {
+        let snapshot = Fixtures.playingSnapshot
+        let fake = FakeDurvaldCore(snapshot: snapshot)
+        fake.favoriteError = NSError(domain: "FavoriteTest", code: 1)
+        let store = DurvaldCoreStore(core: fake, playback: snapshot, tracks: [Fixtures.track])
+
+        store.setTrackFavorite(trackID: Fixtures.track.id, favorite: true)
+
+        XCTAssertEqual(store.playback?.currentTrack?.isFavorite, false)
+        XCTAssertEqual(store.tracks.first?.isFavorite, false)
+        XCTAssertNotNil(store.errorMessage)
+    }
+
+    @MainActor
     func testPauseRefreshesSnapshotImmediately() async {
         let snapshot = Fixtures.playingSnapshot
         let fake = FakeDurvaldCore(snapshot: snapshot)
@@ -266,6 +297,41 @@ final class DurvaldCoreStoreTests: XCTestCase {
 }
 
 final class LibraryNavigationHistoryTests: XCTestCase {
+    @MainActor
+    func testDetailsPreserveTheirIdentityWhenGoingBackAndForward() {
+        let album = Fixtures.release
+        let artist = Artist(id: 7, name: "Artista")
+        var history = LibraryNavigationHistory()
+
+        history.navigate(to: .songs)
+        history.navigate(to: .album(album))
+        history.navigate(to: .artist(artist))
+        XCTAssertEqual(history.current, .artists)
+        history.goBack()
+        XCTAssertEqual(history.currentRoute, .album(album))
+        history.goBack()
+        XCTAssertEqual(history.current, .songs)
+        history.goForward()
+        XCTAssertEqual(history.currentRoute, .album(album))
+        history.goForward()
+        XCTAssertEqual(history.currentRoute, .artist(artist))
+    }
+
+    func testOpeningANewDetailReplacesForwardHistoryAndDeduplicatesCurrentRoute() {
+        var history = LibraryNavigationHistory()
+        let first = Artist(id: 1, name: "Mesmo nome")
+        let second = Artist(id: 2, name: "Mesmo nome")
+        history.navigate(to: .artist(first))
+        history.navigate(to: .artist(second))
+        history.goBack()
+        XCTAssertEqual(history.currentRoute, .artist(first))
+        history.navigate(to: .songs)
+        XCTAssertFalse(history.canGoForward)
+        history.navigate(to: .songs)
+        history.goBack()
+        XCTAssertEqual(history.currentRoute, .artist(first))
+    }
+
     func testInitialDestinationIsHome() {
         let history = LibraryNavigationHistory()
 

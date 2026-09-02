@@ -9,7 +9,20 @@ import SwiftUI
 
 @main
 struct DurvaldApp: App {
-    @StateObject private var coreStore = DurvaldCoreStore()
+    @StateObject private var coreStore: DurvaldCoreStore
+
+    init() {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-testing"), arguments.contains("--player-navigation-fixture") {
+            _coreStore = StateObject(wrappedValue: PlayerNavigationFixture.makeStore(
+                longMetadata: arguments.contains("--long-player-metadata")
+            ))
+            return
+        }
+        #endif
+        _coreStore = StateObject(wrappedValue: DurvaldCoreStore())
+    }
 
     var body: some Scene {
         WindowGroup {

@@ -11,14 +11,16 @@ struct ContentView: View {
     @State private var searchFocusRequest = 0
     @State private var isSearchFocused = false
     @State private var isQueuePresented = false
-    @State private var selectedAlbum: Release?
     @State private var inspectorLayout = InspectorLayoutController()
 
     private enum Layout {
-        static let contentMinimumWidth: CGFloat = 360
+        static let contentMinimumWidth: CGFloat = 440
         static let queueMinimumWidth: CGFloat = 260
         static let queueIdealWidth: CGFloat = 300
         static let queueMaximumWidth: CGFloat = 380
+        static let playerMaximumWidth: CGFloat = 760
+        static let playerHorizontalMargin: CGFloat = 16
+        static let playerVerticalMargin: CGFloat = 12
     }
 
     var body: some View {
@@ -26,7 +28,8 @@ struct ContentView: View {
             LibrarySidebarView(
                 section: $sidebarSection,
                 destination: destinationBinding,
-                onSelectAlbum: showAlbum
+                onSelectAlbum: showAlbum,
+                onSelectArtist: showArtist
             )
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
         } detail: {
@@ -59,7 +62,7 @@ struct ContentView: View {
                         Label("Voltar", systemImage: "chevron.left")
                     }
                     .disabled(
-                        selectedAlbum == nil && !navigationHistory.canGoBack
+                        !navigationHistory.canGoBack
                     )
                     .keyboardShortcut("[", modifiers: .command)
                     .accessibilityIdentifier("navigation.back")
@@ -70,7 +73,7 @@ struct ContentView: View {
                         Label("Avançar", systemImage: "chevron.right")
                     }
                     .disabled(
-                        selectedAlbum != nil || !navigationHistory.canGoForward
+                        !navigationHistory.canGoForward
                     )
                     .keyboardShortcut("]", modifiers: .command)
                     .accessibilityIdentifier("navigation.forward")
@@ -171,10 +174,6 @@ struct ContentView: View {
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         .scrollEdgeEffectStyle(.soft, for: .top)
         .onChange(of: navigationHistory.current, initial: true) { _, destination in
-            if destination != .albums {
-                selectedAlbum = nil
-            }
-
             if destination == .search {
                 requestSearchFocus()
             } else {
@@ -197,15 +196,16 @@ struct ContentView: View {
     }
 
     private var contentColumn: some View {
-        VStack(spacing: 0) {
-            detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Divider()
-
-            PlayerBar()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        detail
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
+                    .frame(maxWidth: Layout.playerMaximumWidth)
+                    .padding(.horizontal, Layout.playerHorizontalMargin)
+                    .padding(.vertical, Layout.playerVerticalMargin)
+                    .frame(maxWidth: .infinity)
+            }
+            .scrollEdgeEffectStyle(.soft, for: .bottom)
     }
 
     private var destinationBinding: Binding<LibraryDestination?> {
@@ -213,7 +213,6 @@ struct ContentView: View {
             get: { navigationHistory.current },
             set: { destination in
                 guard let destination else { return }
-                selectedAlbum = nil
                 if destination == .search && navigationHistory.current == .search {
                     requestSearchFocus()
                 }
@@ -227,11 +226,7 @@ struct ContentView: View {
     }
 
     private func navigateBack() {
-        if selectedAlbum != nil {
-            selectedAlbum = nil
-        } else {
-            navigationHistory.goBack()
-        }
+        navigationHistory.goBack()
     }
 
     private func toggleQueue() {
@@ -247,8 +242,10 @@ struct ContentView: View {
     }
 
     private var toolbarTitle: String {
-        if let selectedAlbum {
-            return selectedAlbum.title
+        switch navigationHistory.currentRoute {
+        case .album(let album): return album.title
+        case .artist(let artist): return artist.name
+        case .section: break
         }
 
         return navigationHistory.current == .search
@@ -257,13 +254,30 @@ struct ContentView: View {
     }
 
     private func showAlbum(_ album: Release) {
-        navigationHistory.navigate(to: .albums)
-        selectedAlbum = album
+        navigationHistory.navigate(to: .album(album))
+    }
+
+    private func showArtist(_ artist: Artist) {
+        navigationHistory.navigate(to: .artist(artist))
     }
 
     @ViewBuilder
     private var detail: some View {
-        switch navigationHistory.current {
+        switch navigationHistory.currentRoute {
+        case .album(let album):
+            AlbumView(album: album)
+                .id(album.id)
+        case .artist(let artist):
+            ArtistView(artist: artist, onSelectAlbum: showAlbum)
+                .id(artist.id)
+        case .section(let destination):
+            sectionContent(destination)
+        }
+    }
+
+    @ViewBuilder
+    private func sectionContent(_ destination: LibraryDestination) -> some View {
+        switch destination {
         case .search:
             LibrarySearchView(searchText: $searchText)
         case .home:
@@ -273,13 +287,9 @@ struct ContentView: View {
         case .songs:
             MusicLibraryView()
         case .albums:
-            if let selectedAlbum {
-                AlbumView(album: selectedAlbum)
-            } else {
-                AlbumsView(onSelectAlbum: showAlbum)
-            }
+            AlbumsView(onSelectAlbum: showAlbum)
         case .artists:
-            ArtistsView()
+            ArtistsView(onSelectArtist: showArtist)
         case .playlists:
             PlaylistsView()
         case .history:

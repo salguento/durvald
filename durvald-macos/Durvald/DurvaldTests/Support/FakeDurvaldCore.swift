@@ -3,6 +3,8 @@
 final class FakeDurvaldCore: DurvaldCore {
     var snapshot: PlaybackSnapshot
     var releaseTrackResults: [Track] = []
+    var favoriteError: Error?
+    private(set) var favoriteChanges: [Bool] = []
     var onSeek: ((UInt64) -> Void)?
     var playbackHandler: (() async -> PlaybackSnapshot)?
     var seekHandler: ((UInt64) async throws -> Void)?
@@ -31,6 +33,14 @@ final class FakeDurvaldCore: DurvaldCore {
             return await playbackHandler()
         }
         return snapshot
+    }
+
+    override func setTrackFavorite(trackId: Int64, favorite: Bool) throws {
+        if let favoriteError { throw favoriteError }
+        favoriteChanges.append(favorite)
+        if snapshot.currentTrack?.id == trackId {
+            snapshot.currentTrack?.isFavorite = favorite
+        }
     }
 
     override func pause() async throws {

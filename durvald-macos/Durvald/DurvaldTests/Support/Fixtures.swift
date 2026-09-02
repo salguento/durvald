@@ -1,6 +1,14 @@
 @testable import Durvald
 
 enum Fixtures {
+    static var release: Release {
+        Release(
+            id: 1, title: "Álbum", artist: "Artista", artistId: 1,
+            releaseDate: nil, totalTracks: 1, totalDiscs: 1, durationSeconds: 180,
+            artworkId: nil, isFavorite: false, isHidden: false, suggestLess: false, rating: nil
+        )
+    }
+
     static var track: Track {
         track(id: 1, trackNumber: 1, discNumber: 1)
     }

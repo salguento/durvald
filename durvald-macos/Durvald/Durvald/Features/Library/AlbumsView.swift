@@ -65,7 +65,7 @@ struct AlbumsView: View {
     }
 }
 
-private struct AlbumCard: View {
+struct AlbumCard: View {
     @EnvironmentObject private var store: DurvaldCoreStore
 
     let release: Release

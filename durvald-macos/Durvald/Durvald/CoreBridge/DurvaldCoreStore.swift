@@ -43,10 +43,16 @@ final class DurvaldCoreStore: ObservableObject {
 
     init(
         core: DurvaldCore? = nil,
-        playback: PlaybackSnapshot? = nil
+        playback: PlaybackSnapshot? = nil,
+        tracks: [Track] = [],
+        releases: [Release] = [],
+        artists: [Artist] = []
     ) {
         self.core = core
         self.playback = playback
+        self.tracks = tracks
+        self.releases = releases
+        self.artists = artists
     }
 
 
@@ -605,6 +611,25 @@ final class DurvaldCoreStore: ObservableObject {
     
     var queue: [QueueItem] {
         playback?.queue ?? []
+    }
+
+    func setTrackFavorite(trackID: Int64, favorite: Bool) {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
+            return
+        }
+
+        do {
+            try core.setTrackFavorite(trackId: trackID, favorite: favorite)
+            if let index = tracks.firstIndex(where: { $0.id == trackID }) {
+                tracks[index].isFavorite = favorite
+            }
+            if playback?.currentTrack?.id == trackID {
+                playback?.currentTrack?.isFavorite = favorite
+            }
+        } catch {
+            errorMessage = String(describing: error)
+        }
     }
 
     func addToQueue(trackID: Int64) async {
