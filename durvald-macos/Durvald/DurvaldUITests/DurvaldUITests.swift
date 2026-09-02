@@ -86,19 +86,7 @@ final class DurvaldUITests: XCTestCase {
         )
     }
 
-    @MainActor
-    func testQueueOpensInRightInspector() {
-        let app = XCUIApplication()
-        app.launchArguments.append("--ui-testing")
-        app.launch()
 
-        let queueButton = app.buttons["player.queue"]
-        XCTAssertTrue(queueButton.waitForExistence(timeout: 3))
-        queueButton.click()
-
-        XCTAssertTrue(app.staticTexts["Fila"].waitForExistence(timeout: 3))
-        XCTAssertEqual(queueButton.label, "Ocultar fila")
-    }
 
     @MainActor
     func testAppLaunchesOnHomeAndPlacesItBelowSearch() {
@@ -130,7 +118,7 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
-    func testOpeningQueueKeepsWindowWidthStable() {
+    func testQueueOpensWithoutGrowingWindowAndUsesResizableWidth() {
         let app = XCUIApplication()
         app.launchArguments.append("--ui-testing")
         app.launch()
@@ -140,11 +128,21 @@ final class DurvaldUITests: XCTestCase {
 
         XCTAssertTrue(window.waitForExistence(timeout: 3))
         XCTAssertTrue(queueButton.waitForExistence(timeout: 3))
+        XCTAssertLessThan(
+            window.frame.maxX - queueButton.frame.maxX,
+            80,
+            "O botão da fila deve permanecer na extremidade direita da toolbar."
+        )
 
-        let widthBefore = window.frame.width
+        let windowWidthBefore = window.frame.width
         queueButton.click()
 
-        XCTAssertTrue(app.staticTexts["Fila"].waitForExistence(timeout: 3))
-        XCTAssertEqual(window.frame.width, widthBefore, accuracy: 2)
+        let queue = app.descendants(matching: .any)["queue.sidebar"]
+        XCTAssertTrue(queue.waitForExistence(timeout: 3))
+        XCTAssertEqual(window.frame.width, windowWidthBefore, accuracy: 2)
+        XCTAssertGreaterThanOrEqual(queue.frame.width, 260)
+        XCTAssertLessThanOrEqual(queue.frame.width, 380)
+        XCTAssertEqual(queueButton.label, "Ocultar fila")
+        XCTAssertTrue(app.splitters.firstMatch.exists)
     }
 }

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var store: DurvaldCoreStore
-    @Environment(\.controlActiveState) private var controlActiveState
+    @Environment(\.appearsActive) private var appearsActive
 
     @State private var navigationHistory = LibraryNavigationHistory()
     @State private var sidebarSection: SidebarSection = .navigation
@@ -11,6 +11,13 @@ struct ContentView: View {
     @State private var isSearchFocused = false
     @State private var isQueuePresented = false
     @State private var selectedAlbum: Release?
+
+    private enum Layout {
+        static let contentMinimumWidth: CGFloat = 360
+        static let queueMinimumWidth: CGFloat = 260
+        static let queueIdealWidth: CGFloat = 300
+        static let queueMaximumWidth: CGFloat = 380
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -21,31 +28,31 @@ struct ContentView: View {
             )
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
         } detail: {
-            VStack(spacing: 0) {
-                detail
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                Divider()
-
-                PlayerBar(
-                    isQueuePresented: isQueuePresented,
-                    onToggleQueue: { isQueuePresented.toggle() }
+            contentColumn
+                .frame(
+                    minWidth: Layout.contentMinimumWidth,
+                    maxWidth: .infinity,
+                    maxHeight: .infinity
                 )
-            }
         }
         .inspector(isPresented: $isQueuePresented) {
             QueueView()
-                .inspectorColumnWidth(min: 180, ideal: 220, max: 300)
+                .background {
+                    InspectorSplitLayout()
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .inspectorColumnWidth(
+                    min: Layout.queueMinimumWidth,
+                    ideal: Layout.queueIdealWidth,
+                    max: Layout.queueMaximumWidth
+                )
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 ControlGroup {
                     Button {
-                        if selectedAlbum != nil {
-                            selectedAlbum = nil
-                        } else {
-                            navigationHistory.goBack()
-                        }
+                        navigateBack()
                     } label: {
                         Label("Voltar", systemImage: "chevron.left")
                     }
@@ -126,17 +133,37 @@ struct ContentView: View {
                     .overlay {
                         Capsule()
                             .strokeBorder(Color.accentColor, lineWidth: 2)
-                            .opacity(
-                                isSearchFocused && controlActiveState != .inactive
-                                    ? 1
-                                    : 0
-                            )
+                            .opacity(isSearchFocused && appearsActive ? 1 : 0)
+                            .animation(.easeOut(duration: 0.15), value: appearsActive)
                     }
-                    .animation(.easeOut(duration: 0.15), value: isSearchFocused)
-                    .animation(.easeOut(duration: 0.15), value: controlActiveState)
+                    .animation(.easeOut(duration: 0.15), value: appearsActive)
+                } else {
+                    Color.clear
+                        .frame(width: 1, height: 36)
+                        .accessibilityHidden(true)
                 }
             }
             .sharedBackgroundVisibility(.hidden)
+
+            ToolbarSpacer(.flexible)
+
+            ToolbarItem(placement: .automatic) {
+                Button {
+                    toggleQueue()
+                } label: {
+                    Image(systemName: "sidebar.trailing")
+                        .foregroundStyle(
+                            isQueuePresented && appearsActive
+                                ? Color.accentColor
+                                : Color.secondary
+                        )
+                }
+                .help(isQueuePresented ? "Ocultar fila" : "Mostrar fila")
+                .accessibilityHint("Mostra ou oculta a fila lateral de reprodução")
+                .accessibilityLabel(isQueuePresented ? "Ocultar fila" : "Mostrar fila")
+                .accessibilityIdentifier("player.queue")
+                .keyboardShortcut("l", modifiers: [.command, .option])
+            }
         }
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
@@ -167,6 +194,18 @@ struct ContentView: View {
         }
     }
 
+    private var contentColumn: some View {
+        VStack(spacing: 0) {
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+
+            PlayerBar()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     private var destinationBinding: Binding<LibraryDestination?> {
         Binding(
             get: { navigationHistory.current },
@@ -183,6 +222,23 @@ struct ContentView: View {
 
     private func requestSearchFocus() {
         searchFocusRequest &+= 1
+    }
+
+    private func navigateBack() {
+        if selectedAlbum != nil {
+            selectedAlbum = nil
+        } else {
+            navigationHistory.goBack()
+        }
+    }
+
+    private func toggleQueue() {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+
+        withTransaction(transaction) {
+            isQueuePresented.toggle()
+        }
     }
 
     private var toolbarTitle: String {

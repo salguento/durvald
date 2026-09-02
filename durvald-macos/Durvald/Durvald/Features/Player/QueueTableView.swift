@@ -7,14 +7,18 @@ struct QueueTableRow: Equatable {
     let title: String
     let artist: String
     let artworkID: String?
+    let isCurrent: Bool
+    let isPaused: Bool
 }
 
 /// Native macOS table used for queue actions and row reordering.
 struct QueueTableView: NSViewRepresentable {
     let rows: [QueueTableRow]
     let core: DurvaldCore?
+    let isWindowActive: Bool
     let onMove: (UInt64, UInt64) -> Void
     let onPlay: (UInt64) -> Void
+    let onTogglePlayback: () -> Void
     let onRemove: (UInt64) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -24,8 +28,11 @@ struct QueueTableView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let tableView = NSTableView()
         let column = NSTableColumn(identifier: Coordinator.columnIdentifier)
+        column.minWidth = 0
         column.resizingMask = .autoresizingMask
         tableView.addTableColumn(column)
+        tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        tableView.autoresizingMask = [.width]
         tableView.headerView = nil
         tableView.rowHeight = 46
         tableView.backgroundColor = .clear
@@ -42,24 +49,34 @@ struct QueueTableView: NSViewRepresentable {
 
         context.coordinator.tableView = tableView
         context.coordinator.rows = rows
+        context.coordinator.isWindowActive = isWindowActive
         tableView.reloadData()
 
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
         scrollView.backgroundColor = .clear
+        // The clip view is a separate drawing surface; keep the inspector's
+        // native glass visible in the viewport, including empty/overscroll areas.
+        scrollView.contentView.drawsBackground = false
+        scrollView.contentView.backgroundColor = .clear
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
         scrollView.verticalScroller?.knobStyle = .default
         scrollView.documentView = tableView
+        scrollView.borderType = .noBorder
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
 
-        guard context.coordinator.rows != rows else { return }
+        let requiresReload = context.coordinator.rows != rows
+            || context.coordinator.isWindowActive != isWindowActive
+
+        guard requiresReload else { return }
         context.coordinator.rows = rows
+        context.coordinator.isWindowActive = isWindowActive
         context.coordinator.tableView?.reloadData()
     }
 
@@ -73,6 +90,7 @@ struct QueueTableView: NSViewRepresentable {
 
         var parent: QueueTableView
         var rows: [QueueTableRow] = []
+        var isWindowActive = true
         weak var tableView: NSTableView?
 
         init(parent: QueueTableView) {
@@ -107,30 +125,36 @@ struct QueueTableView: NSViewRepresentable {
             cell.artistLabel.stringValue = value.artist
             cell.artistLabel.isHidden = value.artist.isEmpty
             cell.loadArtwork(value.artworkID, using: parent.core)
+
+            cell.titleLabel.textColor = value.isCurrent
+                ? (isWindowActive ? .controlAccentColor : .secondaryLabelColor)
+                : .labelColor
+
+            let symbolName: String
+            let actionLabel: String
+
+            if value.isCurrent {
+                symbolName = value.isPaused ? "play.fill" : "pause.fill"
+                actionLabel = value.isPaused ? "Reproduzir" : "Pausar"
+            } else {
+                symbolName = "play.fill"
+                actionLabel = "Reproduzir item da fila"
+            }
+
             cell.playButton.tag = row
             cell.playButton.image = NSImage(
-                systemSymbolName: value.position == 0
-                    ? "speaker.wave.2.fill"
-                    : "play.fill",
-                accessibilityDescription: value.position == 0
-                    ? "Tocando agora"
-                    : "Reproduzir item da fila"
+                systemSymbolName: symbolName,
+                accessibilityDescription: actionLabel
             )
-            cell.playButton.isEnabled = value.position != 0
-            cell.playButton.setAccessibilityLabel(
-                value.position == 0 ? "Tocando agora" : "Reproduzir item da fila"
-            )
+            cell.playButton.isEnabled = true
+            cell.playButton.setAccessibilityLabel(actionLabel)
             cell.playButton.setAccessibilityIdentifier(
-                value.position == 0
-                    ? "queue.current"
+                value.isCurrent
+                    ? "queue.current.togglePlayback"
                     : "queue.item.\(value.position).play"
             )
-            cell.playButton.setAccessibilityHelp(
-                value.position == 0
-                    ? "Indica a faixa reproduzida atualmente"
-                    : "Reproduz este item da fila agora"
-            )
-            cell.configureHover(isCurrentItem: value.position == 0)
+            cell.playButton.setAccessibilityHelp(actionLabel)
+            cell.configureHover()
             cell.toolTip = "\(value.title), \(value.artist)"
             return cell
         }
@@ -212,7 +236,13 @@ struct QueueTableView: NSViewRepresentable {
 
         @objc private func playQueueItem(_ sender: NSButton) {
             guard rows.indices.contains(sender.tag) else { return }
-            parent.onPlay(rows[sender.tag].position)
+            let row = rows[sender.tag]
+
+            if row.isCurrent {
+                parent.onTogglePlayback()
+            } else {
+                parent.onPlay(row.position)
+            }
         }
 
         @objc private func removeQueueItem(_ sender: NSMenuItem) {
@@ -262,12 +292,14 @@ private final class QueueTableCellView: NSTableCellView {
 
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textField = titleLabel
 
         artistLabel.translatesAutoresizingMaskIntoConstraints = false
         artistLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         artistLabel.textColor = .secondaryLabelColor
         artistLabel.lineBreakMode = .byTruncatingTail
+        artistLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let textStack = NSStackView(views: [titleLabel, artistLabel])
         textStack.translatesAutoresizingMaskIntoConstraints = false
@@ -282,9 +314,10 @@ private final class QueueTableCellView: NSTableCellView {
         playButton.contentTintColor = .white
         playButton.wantsLayer = true
         playButton.layer?.backgroundColor = NSColor.black
-            .withAlphaComponent(0.62)
+            .withAlphaComponent(0.18)
             .cgColor
-        playButton.layer?.cornerRadius = 13
+        playButton.layer?.cornerRadius = 4
+        playButton.layer?.masksToBounds = true
         playButton.setAccessibilityLabel("Reproduzir item da fila")
 
         addSubview(artworkImageView)
@@ -301,12 +334,11 @@ private final class QueueTableCellView: NSTableCellView {
             textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
             playButton.centerXAnchor.constraint(equalTo: artworkImageView.centerXAnchor),
             playButton.centerYAnchor.constraint(equalTo: artworkImageView.centerYAnchor),
-            playButton.widthAnchor.constraint(equalToConstant: 26),
-            playButton.heightAnchor.constraint(equalToConstant: 26),
+            playButton.widthAnchor.constraint(equalTo: artworkImageView.widthAnchor),
+            playButton.heightAnchor.constraint(equalTo: artworkImageView.heightAnchor),
         ])
     }
 
-    private var isCurrentItem = false
     private var isPointerInside = false
     private var isRowSelected = false
     private var hoverTrackingArea: NSTrackingArea?
@@ -318,8 +350,7 @@ private final class QueueTableCellView: NSTableCellView {
         }
     }
 
-    func configureHover(isCurrentItem: Bool) {
-        self.isCurrentItem = isCurrentItem
+    func configureHover() {
         isPointerInside = false
         updateHoverAppearance()
     }
@@ -357,16 +388,15 @@ private final class QueueTableCellView: NSTableCellView {
 
     override func prepareForReuse() {
         super.prepareForReuse()
-        isCurrentItem = false
         isPointerInside = false
         isRowSelected = false
         updateHoverAppearance()
     }
 
     private func updateHoverAppearance() {
-        let showsControl = isCurrentItem || isPointerInside || isRowSelected
+        let showsControl = isPointerInside || isRowSelected
         playButton.isHidden = !showsControl
-        artworkImageView.alphaValue = showsControl ? 0.62 : 1
+        artworkImageView.alphaValue = 1
     }
 
     func loadArtwork(_ artworkID: String?, using core: DurvaldCore?) {
