@@ -5,6 +5,7 @@ struct PlayerBar: View {
     @State private var position = 0.0
     @State private var volume = 0.5
     @State private var seeking = false
+    @State private var scrubbingTrackID: Int64?
     @State private var adjustingVolume = false
     @State private var changingPlaybackState = false
 
@@ -92,12 +93,24 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.repeat")
             }
             Slider(value: $position, in: 0...duration, onEditingChanged: { editing in
-                seeking = editing
-                if !editing {
-                    Task { await store.seek(to: position) }
+                if editing {
+                    scrubbingTrackID = store.playback?.currentTrack?.id
+                    seeking = true
+                } else {
+                    if scrubbingTrackID == store.playback?.currentTrack?.id {
+                        store.seek(to: position)
+                    }
+                    position = store.playback?.positionSeconds ?? 0
+                    scrubbingTrackID = nil
+                    seeking = false
                 }
             })
-            .tint(.accentColor)
+            .transaction { transaction in
+                if seeking || store.isSeeking {
+                    transaction.animation = nil
+                }
+            }
+            .tint(Color(nsColor: .controlAccentColor))
             .disabled(snapshot?.currentTrack == nil)
             .accessibilityLabel("Posição da reprodução")
             .accessibilityValue(
@@ -124,7 +137,7 @@ struct PlayerBar: View {
                         store.scheduleVolume(volume, immediately: true)
                     }
                 }
-                .tint(.accentColor)
+                .tint(Color(nsColor: .controlAccentColor))
                 .frame(width: 120)
                 .onChange(of: volume) { _, newValue in
                     guard adjustingVolume else { return }
@@ -136,9 +149,28 @@ struct PlayerBar: View {
             .font(.caption)
         }
         .padding().background(.bar)
-        .onChange(of: store.playback) { _, snapshot in
-            guard let snapshot else { return }
-            if !seeking { position = snapshot.positionSeconds }
+        .onChange(of: store.playback, initial: true) { previous, _ in
+            // Read the latest publication, not an older value captured by a
+            // view update while the user was releasing the slider.
+            guard let snapshot = store.playback else {
+                seeking = false
+                scrubbingTrackID = nil
+                position = 0
+                return
+            }
+            let changedTrack = previous?.currentTrack?.id != snapshot.currentTrack?.id
+            if changedTrack {
+                seeking = false
+                scrubbingTrackID = nil
+            }
+            if !seeking {
+                let delta = snapshot.positionSeconds - position
+                let animateProgress = !changedTrack && !store.isSeeking
+                    && snapshot.isPlaying && delta > 0 && delta <= 1
+                withAnimation(animateProgress ? .linear(duration: 0.25) : nil) {
+                    position = snapshot.positionSeconds
+                }
+            }
             if !adjustingVolume { volume = Double(snapshot.volume) }
         }
     }

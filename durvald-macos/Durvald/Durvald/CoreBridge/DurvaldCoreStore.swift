@@ -7,6 +7,7 @@ import Combine
 final class DurvaldCoreStore: ObservableObject {
 
     @Published private(set) var playback: PlaybackSnapshot?
+    @Published private(set) var isSeeking = false
     @Published private(set) var scanProgress: ScanProgress?
     @Published private(set) var tracks: [Track] = []
     @Published private(set) var releases: [Release] = []
@@ -26,6 +27,15 @@ final class DurvaldCoreStore: ObservableObject {
     private var volumeTask: Task<Void, Never>?
     private var isChangingTrack = false
     private var isMovingQueue = false
+    private var seekTask: Task<Void, Never>?
+    private var seekRequestID = 0
+    private var pendingSeek: SeekRequest?
+
+    private struct SeekRequest {
+        let id: Int
+        let trackID: Int64
+        let seconds: UInt64
+    }
 
     private struct SendableCore: @unchecked Sendable {
         let value: DurvaldCore
@@ -69,8 +79,15 @@ final class DurvaldCoreStore: ObservableObject {
 
                 if let core = self.core,
                    !self.isChangingTrack,
-                   !self.isMovingQueue {
-                    self.playback = await core.playback()
+                   !self.isMovingQueue,
+                   !self.isSeeking {
+                    let revision = self.seekRequestID
+                    let snapshot = await core.playback()
+                    // A seek/track change can start while this read is suspended.
+                    guard !Task.isCancelled else { return }
+                    if !self.isChangingTrack, !self.isMovingQueue, !self.isSeeking {
+                        self.publishPlayback(snapshot, revision: revision)
+                    }
                 }
 
                 try? await Task.sleep(for: .milliseconds(250))
@@ -248,7 +265,11 @@ final class DurvaldCoreStore: ObservableObject {
         guard !isChangingTrack else { return }
 
         isChangingTrack = true
-        defer { isChangingTrack = false }
+        await finishSeekBeforeChangingTrack()
+        defer {
+            isChangingTrack = false
+            seekRequestID &+= 1
+        }
 
         print("Durvald: solicitando reprodução da faixa \(trackID).")
 
@@ -266,7 +287,11 @@ final class DurvaldCoreStore: ObservableObject {
         guard let core, !isChangingTrack else { return }
 
         isChangingTrack = true
-        defer { isChangingTrack = false }
+        await finishSeekBeforeChangingTrack()
+        defer {
+            isChangingTrack = false
+            seekRequestID &+= 1
+        }
 
         do {
             let tracks = try core.releaseTracks(releaseId: releaseID).sorted {
@@ -293,7 +318,7 @@ final class DurvaldCoreStore: ObservableObject {
                 try await core.addToQueue(trackId: track.id)
             }
 
-            playback = await core.playback()
+            await refreshPlayback()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -378,7 +403,11 @@ final class DurvaldCoreStore: ObservableObject {
         guard let core, !isChangingTrack else { return }
 
         isChangingTrack = true
-        defer { isChangingTrack = false }
+        await finishSeekBeforeChangingTrack()
+        defer {
+            isChangingTrack = false
+            seekRequestID &+= 1
+        }
 
         do {
             playback = try await core.previousTrack()
@@ -391,7 +420,11 @@ final class DurvaldCoreStore: ObservableObject {
         guard let core, !isChangingTrack else { return }
 
         isChangingTrack = true
-        defer { isChangingTrack = false }
+        await finishSeekBeforeChangingTrack()
+        defer {
+            isChangingTrack = false
+            seekRequestID &+= 1
+        }
 
         do {
             playback = try await core.nextTrack()
@@ -410,7 +443,7 @@ final class DurvaldCoreStore: ObservableObject {
                 try await core.pause()
             }
 
-            self.playback = await core.playback()
+            await self.refreshPlayback()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -420,16 +453,126 @@ final class DurvaldCoreStore: ObservableObject {
         guard let core else { return }
         do {
             try await core.setVolume(volume: Float(min(max(value, 0), 1)))
-            playback = await core.playback()
+            await refreshPlayback()
         } catch { errorMessage = String(describing: error) }
     }
 
-    func seek(to seconds: Double) async {
+    func seek(to seconds: Double) {
+        guard let core, !isChangingTrack, seconds.isFinite,
+              var optimisticSnapshot = playback,
+              let trackID = optimisticSnapshot.currentTrack?.id,
+              let duration = optimisticSnapshot.durationSeconds,
+              duration.isFinite, duration > 0
+        else { return }
+
+        // The current FFI accepts whole seconds. Show the same target we send,
+        // rather than first showing a fraction and then snapping back on receipt.
+        let target = min(max(seconds, 0).rounded(), duration.rounded(.down))
+        guard let coreSeconds = UInt64(exactly: target) else { return }
+        seekRequestID &+= 1
+        pendingSeek = SeekRequest(id: seekRequestID, trackID: trackID, seconds: coreSeconds)
+        isSeeking = true
+        optimisticSnapshot.positionSeconds = target
+        playback = optimisticSnapshot
+
+        // One worker owns the FFI calls. Cancelling a Swift task does not undo
+        // a command already sent to the audio engine; queue only the latest target.
+        guard seekTask == nil else { return }
+        seekTask = Task { [weak self] in
+            await self?.performPendingSeeks(using: core)
+        }
+    }
+
+    private func performPendingSeeks(using core: DurvaldCore) async {
+        defer {
+            seekTask = nil
+            isSeeking = false
+        }
+
+        while let request = pendingSeek {
+            do {
+                // Coalesce quick successive clicks without seeking continuously
+                // while the slider is being dragged.
+                try await Task.sleep(for: .milliseconds(60))
+                guard pendingSeek?.id == request.id else { continue }
+                try await core.seek(seconds: request.seconds)
+                let clock = ContinuousClock()
+                let started = clock.now
+                let deadline = started.advanced(by: .seconds(3))
+                var consecutiveConfirmations = 0
+
+                while pendingSeek?.id == request.id {
+                    try Task.checkCancellation()
+                    let snapshot = await core.playback()
+                    guard pendingSeek?.id == request.id else { break }
+
+                    let elapsed = started.duration(to: clock.now).components
+                    let elapsedSeconds = Double(elapsed.seconds)
+                        + Double(elapsed.attoseconds) / 1e18
+                    let target = Double(request.seconds)
+                    let upperTolerance = snapshot.isPlaying ? elapsedSeconds + 0.25 : 0.25
+                    let arrived = snapshot.positionSeconds >= target - 0.10
+                        && snapshot.positionSeconds <= target + upperTolerance
+                    let changedTrack = snapshot.currentTrack?.id != request.trackID
+                    consecutiveConfirmations = arrived ? consecutiveConfirmations + 1 : 0
+                    let confirmed = consecutiveConfirmations >= 2
+
+                    if confirmed || changedTrack || clock.now >= deadline {
+                        pendingSeek = nil
+                        // Invalidate reads started before the acknowledgement too.
+                        seekRequestID &+= 1
+                        publishPlayback(snapshot, revision: seekRequestID)
+                        if !confirmed && !changedTrack {
+                            errorMessage = "O áudio não confirmou a nova posição. Tente novamente."
+                        }
+                        break
+                    }
+
+                    // Kira queues seek_to; returning from the FFI is not an audio
+                    // acknowledgement. Keep the target until the decoder catches up.
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+            } catch {
+                if Task.isCancelled {
+                    pendingSeek = nil
+                    return
+                }
+                guard pendingSeek?.id == request.id else { continue }
+                pendingSeek = nil
+                seekRequestID &+= 1
+                let revision = seekRequestID
+                let snapshot = await core.playback()
+                guard revision == seekRequestID else { continue }
+                // Recover from the actual engine state, never an old full snapshot.
+                publishPlayback(snapshot, revision: revision)
+                errorMessage = String(describing: error)
+            }
+        }
+    }
+
+    /// Shared by polling and non-seek actions such as volume, pause and queue edits.
+    func refreshPlayback() async {
         guard let core else { return }
-        do {
-            try await core.seek(seconds: UInt64(max(0, seconds)))
-            playback = await core.playback()
-        } catch { errorMessage = String(describing: error) }
+        let revision = seekRequestID
+        let snapshot = await core.playback()
+        publishPlayback(snapshot, revision: revision)
+    }
+
+    private func publishPlayback(_ snapshot: PlaybackSnapshot, revision: Int) {
+        guard revision == seekRequestID else { return }
+        var snapshot = snapshot
+        if let request = pendingSeek {
+            guard snapshot.currentTrack?.id == request.trackID else { return }
+            snapshot.positionSeconds = Double(request.seconds)
+        }
+        playback = snapshot
+    }
+
+    private func finishSeekBeforeChangingTrack() async {
+        seekRequestID &+= 1
+        pendingSeek = nil
+        // Let an already dispatched command finish before loading another track.
+        await seekTask?.value
     }
 
     func scheduleVolume(_ value: Double, immediately: Bool = false) {
@@ -452,7 +595,7 @@ final class DurvaldCoreStore: ObservableObject {
 
             do {
                 try await core.setVolume(volume: normalized)
-                self.playback = await core.playback()
+                await self.refreshPlayback()
             } catch {
                 guard !Task.isCancelled else { return }
                 self.errorMessage = String(describing: error)
@@ -469,7 +612,7 @@ final class DurvaldCoreStore: ObservableObject {
 
         do {
             try await core.addToQueue(trackId: trackID)
-            playback = await core.playback()
+            await refreshPlayback()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -479,7 +622,11 @@ final class DurvaldCoreStore: ObservableObject {
         guard let core, !isChangingTrack else { return }
 
         isChangingTrack = true
-        defer { isChangingTrack = false }
+        await finishSeekBeforeChangingTrack()
+        defer {
+            isChangingTrack = false
+            seekRequestID &+= 1
+        }
 
         do {
             playback = try await core.playQueueItem(position: position)
@@ -493,7 +640,7 @@ final class DurvaldCoreStore: ObservableObject {
 
         do {
             try await core.removeFromQueue(position: position)
-            playback = await core.playback()
+            await refreshPlayback()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -537,16 +684,20 @@ final class DurvaldCoreStore: ObservableObject {
             }
 
             do {
+                let revision = seekRequestID
                 try await core.moveQueueItem(
                     from: from,
                     to: to
                 )
 
                 let confirmedSnapshot = await core.playback()
-                playback = confirmedSnapshot
+                publishPlayback(confirmedSnapshot, revision: revision)
             } catch {
-                // Restaura a fila anterior se o core rejeitar a mudança.
-                playback = previousSnapshot
+                // Roll back only the queue, not a position superseded by a seek.
+                if var snapshot = playback {
+                    snapshot.queue = previousSnapshot.queue
+                    playback = snapshot
+                }
                 errorMessage = String(describing: error)
             }
         }
@@ -557,7 +708,7 @@ final class DurvaldCoreStore: ObservableObject {
 
         do {
             try await core.clearQueue()
-            playback = await core.playback()
+            await refreshPlayback()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -568,7 +719,9 @@ final class DurvaldCoreStore: ObservableObject {
 
         do {
             let enabled = !(playback?.shuffleEnabled ?? false)
-            playback = try await core.setShuffleEnabled(enabled: enabled)
+            let revision = seekRequestID
+            let snapshot = try await core.setShuffleEnabled(enabled: enabled)
+            publishPlayback(snapshot, revision: revision)
         } catch {
             errorMessage = String(describing: error)
         }
@@ -588,7 +741,9 @@ final class DurvaldCoreStore: ObservableObject {
         }
 
         do {
-            playback = try await core.setRepeatMode(mode: next)
+            let revision = seekRequestID
+            let snapshot = try await core.setRepeatMode(mode: next)
+            publishPlayback(snapshot, revision: revision)
         } catch {
             errorMessage = String(describing: error)
         }
@@ -632,6 +787,7 @@ final class DurvaldCoreStore: ObservableObject {
     deinit {
         playbackPollingTask?.cancel()
         scanProgressPollingTask?.cancel()
+        seekTask?.cancel()
         activeLibraryScopes.forEach { $0.stopAccessingSecurityScopedResource() }
     }
 }

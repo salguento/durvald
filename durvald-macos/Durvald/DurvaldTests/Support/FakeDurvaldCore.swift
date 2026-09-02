@@ -3,9 +3,19 @@
 final class FakeDurvaldCore: DurvaldCore {
     var snapshot: PlaybackSnapshot
     var releaseTrackResults: [Track] = []
+    var onSeek: ((UInt64) -> Void)?
+    var playbackHandler: (() async -> PlaybackSnapshot)?
+    var seekHandler: ((UInt64) async throws -> Void)?
+    var suspendedPlayback: CheckedContinuation<PlaybackSnapshot, Never>?
+    var suspendedSeek: CheckedContinuation<Void, Never>?
+
     private(set) var pauseCallCount = 0
     private(set) var resumeCallCount = 0
     private(set) var playbackOperations: [String] = []
+    private(set) var seekCalls: [UInt64] = []
+    private(set) var maximumConcurrentSeeks = 0
+    private var activeSeeks = 0
+
 
     init(snapshot: PlaybackSnapshot) {
         self.snapshot = snapshot
@@ -17,7 +27,10 @@ final class FakeDurvaldCore: DurvaldCore {
     }
 
     override func playback() async -> PlaybackSnapshot {
-        snapshot
+        if let playbackHandler {
+            return await playbackHandler()
+        }
+        return snapshot
     }
 
     override func pause() async throws {
@@ -47,5 +60,18 @@ final class FakeDurvaldCore: DurvaldCore {
 
     override func addToQueue(trackId: Int64) async throws {
         playbackOperations.append("enqueue:\(trackId)")
+    }
+
+    override func seek(seconds: UInt64) async throws {
+        seekCalls.append(seconds)
+        activeSeeks += 1
+        maximumConcurrentSeeks = max(maximumConcurrentSeeks, activeSeeks)
+        defer { activeSeeks -= 1 }
+        if let seekHandler {
+            try await seekHandler(seconds)
+        } else {
+            snapshot.positionSeconds = Double(seconds)
+        }
+        onSeek?(seconds)
     }
 }
