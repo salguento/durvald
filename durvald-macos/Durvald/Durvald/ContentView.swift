@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ContentView: View {
@@ -11,6 +12,7 @@ struct ContentView: View {
     @State private var isSearchFocused = false
     @State private var isQueuePresented = false
     @State private var selectedAlbum: Release?
+    @State private var inspectorLayout = InspectorLayoutController()
 
     private enum Layout {
         static let contentMinimumWidth: CGFloat = 360
@@ -35,13 +37,13 @@ struct ContentView: View {
                     maxHeight: .infinity
                 )
         }
+        .background {
+            InspectorSplitLayout(controller: inspectorLayout)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .inspector(isPresented: $isQueuePresented) {
             QueueView()
-                .background {
-                    InspectorSplitLayout()
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
                 .inspectorColumnWidth(
                     min: Layout.queueMinimumWidth,
                     ideal: Layout.queueIdealWidth,
@@ -233,6 +235,9 @@ struct ContentView: View {
     }
 
     private func toggleQueue() {
+        // Configure the collapsed inspector before its first layout can grow
+        // the window. A helper inside QueueView would only run after opening.
+        inspectorLayout.configure()
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
 
@@ -279,6 +284,93 @@ struct ContentView: View {
             PlaylistsView()
         case .history:
             HistoryView()
+        }
+    }
+}
+
+/// Configure the outer split from its always-present content, even while the
+/// inspector is collapsed. Keep the nested navigation sidebar's glass unchanged.
+@MainActor
+private final class InspectorLayoutController {
+    weak var anchor: NSView?
+
+    func configure() {
+        guard let anchor else { return }
+        var ancestor = anchor.superview
+
+        while let view = ancestor {
+            if let splitView = view as? NSSplitView,
+               let controller = splitView.delegate as? NSSplitViewController,
+               let inspector = controller.splitViewItems.first(where: { $0.behavior == .inspector }),
+               let content = controller.splitViewItems.first(where: {
+                   $0 !== inspector && anchor.isDescendant(of: $0.viewController.view)
+               }) {
+                // Avoid counting the queue's safe area twice through nested splits.
+                if content.automaticallyAdjustsSafeAreaInsets {
+                    content.automaticallyAdjustsSafeAreaInsets = false
+                }
+                if inspector.collapseBehavior != .preferResizingSiblingsWithFixedSplitView {
+                    inspector.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
+                }
+                return
+            }
+            ancestor = view.superview
+        }
+    }
+}
+
+private struct InspectorSplitLayout: NSViewRepresentable {
+    let controller: InspectorLayoutController
+
+    func makeNSView(context: Context) -> ConfigurationView {
+        ConfigurationView(controller: controller)
+    }
+
+    func updateNSView(_ view: ConfigurationView, context: Context) {
+        view.scheduleConfiguration()
+    }
+
+    final class ConfigurationView: NSView {
+        private let controller: InspectorLayoutController
+        private var configurationScheduled = false
+
+        init(controller: InspectorLayoutController) {
+            self.controller = controller
+            super.init(frame: .zero)
+            controller.anchor = self
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) is unavailable")
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            scheduleConfiguration()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            scheduleConfiguration()
+        }
+
+        override func layout() {
+            super.layout()
+            scheduleConfiguration()
+        }
+
+        func scheduleConfiguration() {
+            guard !configurationScheduled else { return }
+            configurationScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.configurationScheduled = false
+                self.controller.anchor = self
+                self.controller.configure()
+            }
         }
     }
 }

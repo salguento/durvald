@@ -144,5 +144,17 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertLessThanOrEqual(queue.frame.width, 380)
         XCTAssertEqual(queueButton.label, "Ocultar fila")
         XCTAssertTrue(app.splitters.firstMatch.exists)
+
+        queueButton.click()
+        let hidden = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"),
+            object: queue
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [hidden], timeout: 3), .completed)
+        XCTAssertEqual(window.frame.width, windowWidthBefore, accuracy: 2)
+
+        queueButton.click()
+        XCTAssertTrue(queue.waitForExistence(timeout: 3))
+        XCTAssertEqual(window.frame.width, windowWidthBefore, accuracy: 2)
     }
 }
