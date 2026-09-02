@@ -54,7 +54,6 @@ struct HomeView: View {
                     )
                 }
             }
-            .frame(maxWidth: 900, alignment: .leading)
             .padding(24)
         }
         .accessibilityIdentifier("home.page")
@@ -62,6 +61,9 @@ struct HomeView: View {
 }
 
 private struct HomeLibraryCard: View {
+    @Environment(\.appearsActive) private var appearsActive
+    @State private var isHovered = false
+
     let title: String
     let count: Int
     let systemImage: String
@@ -91,10 +93,25 @@ private struct HomeLibraryCard: View {
             .contentShape(Rectangle())
             .background(
                 .quaternary,
-                in: RoundedRectangle(cornerRadius: 10)
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        Color.black.opacity(
+                            isHovered ? (appearsActive ? 0.055 : 0.025) : 0
+                        )
+                    )
+                    .allowsHitTesting(false)
+            }
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: appearsActive)
         .accessibilityLabel("\(title), \(count) itens")
         .accessibilityHint("Abre \(title.lowercased())")
         .accessibilityIdentifier("home.\(destination.rawValue)")

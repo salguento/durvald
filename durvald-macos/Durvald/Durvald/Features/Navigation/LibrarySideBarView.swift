@@ -99,8 +99,9 @@ struct LibrarySidebarView: View {
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 10)
-                .padding(.top, 12)
             }
+            .clipped()
+            .padding(.top, 12)
 
         case .playlists:
             List(localPlaylists, id: \.id) { playlist in
@@ -204,26 +205,38 @@ struct LibrarySidebarView: View {
 }
 
 private struct SidebarNavigationButton: View {
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
 
     let item: LibraryDestination
     @Binding var selection: LibraryDestination?
     let accessibilityIdentifier: String
 
-    private var isSelected: Bool {
-        selection == item
+    private var isSelected: Bool { selection == item }
+
+    private var foreground: Color {
+        guard isSelected else {
+            return item == .search ? .secondary : .primary
+        }
+        // Dim the user's accent in inactive windows without replacing its hue.
+        return Color.accentColor.opacity(appearsActive ? 1 : 0.63)
     }
 
-    private var foregroundColor: Color {
-        if isSelected {
-            return .accentColor
+    private var selectionBackgroundColor: Color {
+        guard colorScheme == .dark else { return .black }
+
+        // Active: #2A2B33. Inactive: #2F3138. The sidebar material remains visible.
+        return appearsActive
+            ? Color(.sRGB, red: 42.0 / 255, green: 43.0 / 255, blue: 51.0 / 255)
+            : Color(.sRGB, red: 47.0 / 255, green: 49.0 / 255, blue: 56.0 / 255)
+    }
+
+    private var selectionBackgroundOpacity: Double {
+        if colorScheme == .dark {
+            return 0.80
         }
 
-        return item == .search ? .secondary : .primary
-    }
-
-    private var selectionBackground: Color {
-        Color.black.opacity(colorScheme == .dark ? 0.30 : 0.12)
+        return appearsActive ? 0.10 : 0.06
     }
 
     var body: some View {
@@ -232,39 +245,47 @@ private struct SidebarNavigationButton: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: item.icon)
-                    .frame(width: 18)
+                    .font(.system(size: 16, weight: .regular))
+                    .symbolRenderingMode(.monochrome)
+                    .frame(width: 20)
 
                 Text(item.title)
+                    .font(.body)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(foregroundColor)
+            .foregroundStyle(foreground)
             .padding(.horizontal, 8)
             .frame(
                 maxWidth: .infinity,
-                minHeight: 30,
+                minHeight: 32,
+                maxHeight: 32,
                 alignment: .leading
             )
             .contentShape(Rectangle())
-            .background {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(selectionBackground)
-                }
-            }
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(selectionBackgroundColor.opacity(selectionBackgroundOpacity))
+            }
+        }
         .help(item.title)
         .accessibilityLabel(item.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(accessibilityIdentifier)
+        .animation(.easeOut(duration: 0.15), value: appearsActive)
     }
 }
 
+
+
 private struct SidebarSectionPicker: View {
     @Binding var selection: SidebarSection
+    @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
         HStack(spacing: 3) {
@@ -282,7 +303,7 @@ private struct SidebarSectionPicker: View {
                     }
                     .foregroundStyle(
                         item == selection
-                            ? Color.white
+                            ? (appearsActive ? Color.white : Color.secondary)
                             : Color.secondary
                     )
                     .frame(height: 24)
@@ -293,10 +314,16 @@ private struct SidebarSectionPicker: View {
                     .contentShape(Rectangle())
                     .background {
                         if item == selection {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.accentColor)
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(
+                                    appearsActive
+                                        ? Color.accentColor
+                                        : Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+                                )
                                 .shadow(
-                                    color: Color.accentColor.opacity(0.24),
+                                    color: appearsActive
+                                        ? Color.accentColor.opacity(0.20)
+                                        : .clear,
                                     radius: 1,
                                     y: 1
                                 )
@@ -317,8 +344,9 @@ private struct SidebarSectionPicker: View {
         .padding(3)
         .background(
             .quaternary,
-            in: RoundedRectangle(cornerRadius: 8)
+            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
         )
+        .animation(.easeOut(duration: 0.15), value: appearsActive)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Conteúdo da barra lateral")
         .accessibilityIdentifier("sidebar.sectionPicker")
@@ -338,7 +366,9 @@ private struct SidebarSectionSearchField: View {
             if isExpanded {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .frame(width: 18)
+                        .font(.system(size: 16, weight: .regular))
+                        .symbolRenderingMode(.monochrome)
+                        .frame(width: 20)
                         .foregroundStyle(.secondary)
 
                     TextField("Pesquisar em \(scope)", text: $text)
@@ -380,7 +410,7 @@ private struct SidebarSectionSearchField: View {
                 .padding(.horizontal, 8)
                 .frame(
                     maxWidth: .infinity,
-                    minHeight: 30,
+                    minHeight: 32,
                     alignment: .leading
                 )
                 .accessibilityIdentifier("sidebar.sectionSearch.container")
@@ -396,7 +426,9 @@ private struct SidebarSectionSearchField: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "magnifyingglass")
-                            .frame(width: 18)
+                            .font(.system(size: 16, weight: .regular))
+                            .symbolRenderingMode(.monochrome)
+                            .frame(width: 20)
                             .foregroundStyle(.secondary)
 
                         Spacer(minLength: 0)
@@ -404,7 +436,7 @@ private struct SidebarSectionSearchField: View {
                     .padding(.horizontal, 8)
                     .frame(
                         maxWidth: .infinity,
-                        minHeight: 30,
+                        minHeight: 32,
                         alignment: .leading
                     )
                     .contentShape(Rectangle())
