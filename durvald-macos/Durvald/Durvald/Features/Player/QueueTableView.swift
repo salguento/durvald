@@ -358,9 +358,9 @@ private final class QueueTableCellView: NSTableCellView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
 
-        if let hoverTrackingArea {
-            removeTrackingArea(hoverTrackingArea)
-        }
+        // AppKit keeps an inVisibleRect area aligned during scrolling; avoid
+        // reallocating a tracking area for every visible cell on every frame.
+        guard hoverTrackingArea == nil else { return }
 
         let newTrackingArea = NSTrackingArea(
             rect: .zero,
@@ -388,6 +388,10 @@ private final class QueueTableCellView: NSTableCellView {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        artworkTask?.cancel()
+        artworkTask = nil
+        representedArtworkID = nil
+        artworkImageView.image = Self.placeholderImage
         isPointerInside = false
         isRowSelected = false
         updateHoverAppearance()
@@ -406,7 +410,8 @@ private final class QueueTableCellView: NSTableCellView {
 
         guard let artworkID, let core else { return }
 
-        if let cached = ArtworkRepository.shared.cachedImage(for: artworkID) {
+        let pixelSize = ArtworkRepository.pixelSize(for: 36, scale: window?.backingScaleFactor ?? 2)
+        if let cached = ArtworkRepository.shared.cachedImage(for: artworkID, pixelSize: pixelSize, using: core) {
             artworkImageView.image = cached
             return
         }
@@ -414,6 +419,7 @@ private final class QueueTableCellView: NSTableCellView {
         artworkTask = Task { @MainActor [weak self] in
             let image = try? await ArtworkRepository.shared.image(
                 for: artworkID,
+                pixelSize: pixelSize,
                 using: core
             )
 

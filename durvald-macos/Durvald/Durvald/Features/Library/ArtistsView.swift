@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ArtistsView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     let onSelectArtist: (Artist) -> Void
 

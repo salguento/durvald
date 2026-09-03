@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     let onNavigate: (LibraryDestination) -> Void
 
@@ -120,5 +120,5 @@ private struct HomeLibraryCard: View {
 
 #Preview {
     HomeView(onNavigate: { _ in })
-        .environmentObject(DurvaldCoreStore())
+        .environment(DurvaldCoreStore())
 }

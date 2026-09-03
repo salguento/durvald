@@ -1,5 +1,6 @@
 import XCTest
-import Combine
+import AppKit
+import Observation
 @testable import Durvald
 
 final class DurvaldCoreStoreTests: XCTestCase {
@@ -126,19 +127,13 @@ final class DurvaldCoreStoreTests: XCTestCase {
         var reads = 0
         fake.playbackHandler = {
             reads += 1
+            XCTAssertEqual(store.playback?.positionSeconds, 90)
             return reads <= 2 ? original : fake.snapshot
         }
-        var positions: [Double] = []
-        let subscription = store.$playback.dropFirst().sink {
-            if let position = $0?.positionSeconds { positions.append(position) }
-        }
-        defer { subscription.cancel() }
-
         store.seek(to: 90)
         try await waitForSeekCompletion(store)
 
         XCTAssertGreaterThanOrEqual(reads, 3)
-        XCTAssertFalse(positions.contains(original.positionSeconds))
         XCTAssertEqual(store.playback?.positionSeconds, 90)
     }
 
@@ -150,19 +145,13 @@ final class DurvaldCoreStoreTests: XCTestCase {
         var reads = 0
         fake.playbackHandler = {
             reads += 1
+            XCTAssertEqual(store.playback?.positionSeconds, 90)
             return reads == 2 ? original : fake.snapshot
         }
-        var positions: [Double] = []
-        let subscription = store.$playback.dropFirst().sink {
-            if let position = $0?.positionSeconds { positions.append(position) }
-        }
-        defer { subscription.cancel() }
-
         store.seek(to: 90)
         try await waitForSeekCompletion(store)
 
         XCTAssertGreaterThanOrEqual(reads, 4)
-        XCTAssertFalse(positions.contains(original.positionSeconds))
         XCTAssertEqual(store.playback?.positionSeconds, 90)
     }
 
@@ -368,5 +357,186 @@ final class AlbumGridLayoutTests: XCTestCase {
         )
         XCTAssertEqual(AlbumGridLayout.cardWidth, 160)
         XCTAssertEqual(AlbumGridLayout.spacing, 12)
+    }
+}
+
+
+final class ScrollObservationTests: XCTestCase {
+    @MainActor
+    func testPlaybackTicksDoNotInvalidateLibrarySidebarOrQueue() async {
+        var snapshot = Fixtures.playingSnapshot
+        snapshot.queue = [QueueItem(trackId: 1, position: 0)]
+        let fake = FakeDurvaldCore(snapshot: snapshot)
+        let store = DurvaldCoreStore(core: fake, playback: snapshot, tracks: [Fixtures.track])
+
+        withObservationTracking {
+            _ = store.tracks
+            _ = store.releases
+            _ = store.artists
+            _ = store.playlists
+            _ = store.history
+            _ = store.scanProgress
+            _ = store.errorMessage
+            _ = store.core
+            _ = store.queue
+            _ = store.isPlaybackPaused
+            _ = store.activeTrackID
+        } onChange: {
+            XCTFail("A playback tick invalidated scrolling content")
+        }
+
+        let playerUpdated = expectation(description: "Player still receives clock updates")
+        withObservationTracking {
+            _ = store.playback
+        } onChange: {
+            playerUpdated.fulfill()
+        }
+
+        for tick in 1...120 {
+            fake.snapshot.positionSeconds = 10 + Double(tick) * 0.25
+            await store.refreshPlayback()
+        }
+        await fulfillment(of: [playerUpdated], timeout: 1)
+        XCTAssertEqual(store.playback?.positionSeconds, 40)
+        XCTAssertEqual(store.queue, snapshot.queue)
+    }
+
+    @MainActor
+    func testQueueAndPauseChangesStillNotifyObservers() async {
+        let fake = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        let store = DurvaldCoreStore(core: fake, playback: fake.snapshot)
+        let queueUpdated = expectation(description: "Queue insertion updates the table")
+        let pauseUpdated = expectation(description: "Pause updates the queue control")
+        withObservationTracking {
+            _ = store.queue
+        } onChange: { queueUpdated.fulfill() }
+        withObservationTracking {
+            _ = store.isPlaybackPaused
+        } onChange: { pauseUpdated.fulfill() }
+
+        fake.snapshot.queue = [QueueItem(trackId: 1, position: 0), QueueItem(trackId: 2, position: 1)]
+        await store.refreshPlayback()
+        await store.togglePause()
+
+        await fulfillment(of: [queueUpdated, pauseUpdated], timeout: 1)
+        XCTAssertEqual(store.queue, fake.snapshot.queue)
+        XCTAssertTrue(store.isPlaybackPaused)
+    }
+
+    @MainActor
+    func testActiveTrackFollowsTransitionsAndClearsWhenPlaybackEnds() async {
+        let fake = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        let store = DurvaldCoreStore(core: fake, playback: fake.snapshot)
+        XCTAssertEqual(store.activeTrackID, 1)
+
+        let trackChanged = expectation(description: "Titles update on track transition")
+        withObservationTracking {
+            _ = store.activeTrackID
+        } onChange: { trackChanged.fulfill() }
+
+        // Match by identity even when two different tracks have the same title.
+        var nextTrack = Fixtures.track(id: 2, trackNumber: 2, discNumber: 1)
+        nextTrack.title = Fixtures.track.title
+        fake.snapshot.currentTrack = nextTrack
+        await store.refreshPlayback()
+        await fulfillment(of: [trackChanged], timeout: 1)
+        XCTAssertEqual(store.activeTrackID, 2)
+
+        let trackCleared = expectation(description: "Titles restore when no track is active")
+        withObservationTracking {
+            _ = store.activeTrackID
+        } onChange: { trackCleared.fulfill() }
+        fake.snapshot.currentTrack = nil
+        fake.snapshot.isPlaying = false
+        await store.refreshPlayback()
+        await fulfillment(of: [trackCleared], timeout: 1)
+        XCTAssertNil(store.activeTrackID)
+    }
+
+    @MainActor
+    func testPauseAndResumeKeepTheSameActiveTrack() async {
+        let fake = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        let store = DurvaldCoreStore(core: fake, playback: fake.snapshot)
+        withObservationTracking {
+            _ = store.activeTrackID
+        } onChange: {
+            XCTFail("Pause and resume should preserve the active title")
+        }
+
+        await store.togglePause()
+        XCTAssertEqual(store.activeTrackID, 1)
+        await store.togglePause()
+        XCTAssertEqual(store.activeTrackID, 1)
+        XCTAssertNil(DurvaldCoreStore().activeTrackID)
+    }
+}
+
+final class ArtworkRepositoryTests: XCTestCase {
+    @MainActor
+    func testConcurrentRequestsShareDecodedThumbnailAndCache() async throws {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 2048, pixelsHigh: 1024,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        let core = ArtworkTestCore(data: data)
+        let repository = ArtworkRepository()
+
+        async let firstRequest = repository.image(for: "cover", pixelSize: 128, using: core)
+        async let secondRequest = repository.image(for: "cover", pixelSize: 128, using: core)
+        let (first, second) = try await (firstRequest, secondRequest)
+        let image = try XCTUnwrap(first)
+        XCTAssertTrue(image === second)
+        XCTAssertEqual(image.size.width, 128)
+        XCTAssertEqual(image.size.height, 64)
+        XCTAssertEqual(core.readCount, 1)
+        XCTAssertFalse(core.readOnMainThread)
+
+        let cached = try await repository.image(for: "cover", pixelSize: 128, using: core)
+        XCTAssertTrue(image === cached)
+        XCTAssertEqual(core.readCount, 1)
+
+        let larger = try await repository.image(for: "cover", pixelSize: 512, using: core)
+        XCTAssertEqual(larger?.size.width, 512)
+        XCTAssertEqual(core.readCount, 2)
+    }
+
+    @MainActor
+    func testMissingArtworkIsCachedWithoutRepeatedDiskReads() async throws {
+        let core = ArtworkTestCore(data: nil)
+        let repository = ArtworkRepository()
+        for _ in 0..<5 {
+            let image = try await repository.image(for: "missing", pixelSize: 128, using: core)
+            XCTAssertNil(image)
+        }
+        XCTAssertEqual(core.readCount, 1)
+        XCTAssertFalse(core.readOnMainThread)
+    }
+}
+
+private final class ArtworkTestCore: DurvaldCore {
+    private let data: Data?
+    private let lock = NSLock()
+    private var reads = 0
+    private var usedMainThread = false
+    var readCount: Int { lock.withLock { reads } }
+    var readOnMainThread: Bool { lock.withLock { usedMainThread } }
+
+    init(data: Data?) {
+        self.data = data
+        super.init(noPointer: .init())
+    }
+
+    required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        fatalError("ArtworkTestCore does not use the Rust backend")
+    }
+
+    override func artworkBytes(artworkId: String) throws -> Data? {
+        lock.withLock {
+            reads += 1
+            usedMainThread = usedMainThread || Thread.isMainThread
+        }
+        return data
     }
 }

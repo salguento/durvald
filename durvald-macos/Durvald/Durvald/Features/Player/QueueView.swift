@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct QueueView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
@@ -19,7 +19,7 @@ struct QueueView: View {
                         await store.clearQueue()
                     }
                 }
-                .disabled(upcomingItems.isEmpty)
+                .disabled(store.queue.count <= 1)
                 .accessibilityIdentifier("queue.clear")
             }
             .padding()
@@ -62,13 +62,11 @@ struct QueueView: View {
         .accessibilityIdentifier("queue.sidebar")
     }
 
-    private var upcomingItems: [QueueItem] {
-        Array(store.queue.dropFirst())
-    }
-
     private var tableRows: [QueueTableRow] {
-        store.queue.map { item in
-            let track = store.tracks.first { $0.id == item.trackId }
+        let tracksByID = Dictionary(store.tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let isPaused = store.isPlaybackPaused
+        return store.queue.map { item in
+            let track = tracksByID[item.trackId]
             let isCurrent = item.position == 0
 
             return QueueTableRow(
@@ -78,7 +76,7 @@ struct QueueView: View {
                 artist: track?.artist ?? "",
                 artworkID: track?.artworkId,
                 isCurrent: isCurrent,
-                isPaused: isCurrent && (store.playback?.isPaused ?? true)
+                isPaused: isCurrent && isPaused
             )
         }
     }

@@ -20,6 +20,11 @@ struct ToolbarSearchTextField: NSViewRepresentable {
         textField.drawsBackground = false
         textField.focusRingType = .none
         textField.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textField.usesSingleLineMode = true
+        textField.cell?.wraps = false
+        textField.cell?.isScrollable = true
+        textField.lineBreakMode = .byClipping
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textField.placeholderString = "Músicas, álbuns, artistas e playlists"
         textField.setAccessibilityElement(true)
         textField.setAccessibilityRole(.textField)

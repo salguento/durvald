@@ -1,35 +1,50 @@
 import Foundation
 import SwiftUI
-import Combine
+import Observation
 // import DurvaldCoreFFI // substitua pelo módulo efetivamente gerado
 
 @MainActor
-final class DurvaldCoreStore: ObservableObject {
+@Observable
+final class DurvaldCoreStore {
 
-    @Published private(set) var playback: PlaybackSnapshot?
-    @Published private(set) var isSeeking = false
-    @Published private(set) var scanProgress: ScanProgress?
-    @Published private(set) var tracks: [Track] = []
-    @Published private(set) var releases: [Release] = []
-    @Published private(set) var artists: [Artist] = []
-    @Published private(set) var playlists: [Playlist] = []
-    @Published private(set) var history: [PlaybackHistoryItem] = []
-    @Published var errorMessage: String?
-    @Published private(set) var appSettings: Settings?
-    @Published private(set) var libraryPaths: [String] = []
+    // Observation tracks only the properties each view reads. The playback clock
+    // must not invalidate library lists, the sidebar or every artwork cell.
+    private(set) var playback: PlaybackSnapshot? {
+        didSet {
+            let trackID = playback?.currentTrack?.id
+            if activeTrackID != trackID { activeTrackID = trackID }
+            let updatedQueue = playback?.queue ?? []
+            if queue != updatedQueue { queue = updatedQueue }
+            let paused = playback?.isPaused ?? true
+            if isPlaybackPaused != paused { isPlaybackPaused = paused }
+        }
+    }
+    private(set) var activeTrackID: Int64?
+    private(set) var queue: [QueueItem] = []
+    private(set) var isPlaybackPaused = true
+    private(set) var isSeeking = false
+    private(set) var scanProgress: ScanProgress?
+    private(set) var tracks: [Track] = []
+    private(set) var releases: [Release] = []
+    private(set) var artists: [Artist] = []
+    private(set) var playlists: [Playlist] = []
+    private(set) var history: [PlaybackHistoryItem] = []
+    var errorMessage: String?
+    private(set) var appSettings: Settings?
+    private(set) var libraryPaths: [String] = []
 
 
     private(set) var core: DurvaldCore?
-    private var playbackPollingTask: Task<Void, Never>?
-    private var scanProgressPollingTask: Task<Void, Never>?
+    @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
+    @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
     private static let libraryBookmarksKey = "durvald.library-security-bookmarks"
-    private var activeLibraryScopes: [URL] = []
-    private var volumeTask: Task<Void, Never>?
-    private var isChangingTrack = false
-    private var isMovingQueue = false
-    private var seekTask: Task<Void, Never>?
-    private var seekRequestID = 0
-    private var pendingSeek: SeekRequest?
+    @ObservationIgnored private var activeLibraryScopes: [URL] = []
+    @ObservationIgnored private var volumeTask: Task<Void, Never>?
+    @ObservationIgnored private var isChangingTrack = false
+    @ObservationIgnored private var isMovingQueue = false
+    @ObservationIgnored private var seekTask: Task<Void, Never>?
+    @ObservationIgnored private var seekRequestID = 0
+    @ObservationIgnored private var pendingSeek: SeekRequest?
 
     private struct SeekRequest {
         let id: Int
@@ -50,6 +65,9 @@ final class DurvaldCoreStore: ObservableObject {
     ) {
         self.core = core
         self.playback = playback
+        self.activeTrackID = playback?.currentTrack?.id
+        self.queue = playback?.queue ?? []
+        self.isPlaybackPaused = playback?.isPaused ?? true
         self.tracks = tracks
         self.releases = releases
         self.artists = artists
@@ -76,7 +94,7 @@ final class DurvaldCoreStore: ObservableObject {
         }
     }
 
-    private func startPlaybackPolling() {
+    func startPlaybackPolling() {
         playbackPollingTask?.cancel()
 
         playbackPollingTask = Task { [weak self] in
@@ -581,6 +599,11 @@ final class DurvaldCoreStore: ObservableObject {
         await seekTask?.value
     }
 
+    func adjustVolume(by delta: Double) {
+        guard let playback else { return }
+        scheduleVolume(Double(playback.volume) + delta, immediately: true)
+    }
+
     func scheduleVolume(_ value: Double, immediately: Bool = false) {
         volumeTask?.cancel()
 
@@ -609,9 +632,6 @@ final class DurvaldCoreStore: ObservableObject {
         }
     }
     
-    var queue: [QueueItem] {
-        playback?.queue ?? []
-    }
 
     func setTrackFavorite(trackID: Int64, favorite: Bool) {
         guard let core else {

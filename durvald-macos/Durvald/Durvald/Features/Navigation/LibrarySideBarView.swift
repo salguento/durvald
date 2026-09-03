@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LibrarySidebarView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     @Binding var section: SidebarSection
     @Binding var destination: LibraryDestination?
@@ -13,39 +13,19 @@ struct LibrarySidebarView: View {
     @State private var localSearchText = ""
     @State private var committedLocalQuery = ""
 
-    private let albumGridColumnCount = 3
-
-    private var albumGridColumns: [GridItem] {
-        Array(
-            repeating: GridItem(
-                .fixed(60),
-                spacing: 6,
-                alignment: .top
-            ),
-            count: albumGridColumnCount
-        )
-    }
+    private let albumGridColumns = [
+        GridItem(.adaptive(minimum: 60, maximum: 60), spacing: 6, alignment: .top)
+    ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            SidebarSectionPicker(selection: $section)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 10)
-
-            if section != .navigation {
-                SidebarSectionSearchField(
-                    scope: section.title,
-                    text: $localSearchText,
-                    isExpanded: $isLocalSearchExpanded
-                )
-                .padding(.horizontal, 10)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
+        selectedSectionContent
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Keep controls fixed while the scroll view extends behind them.
+            // The system supplies the backdrop and scroll-edge treatment.
+            .safeAreaBar(edge: .top, spacing: 0) {
+                fixedControls
             }
-
-            selectedSectionContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
+            .scrollEdgeEffectStyle(.soft, for: .top)
         .task(id: localSearchText) {
             let normalized = localSearchText.trimmingCharacters(
                 in: .whitespacesAndNewlines
@@ -72,6 +52,25 @@ struct LibrarySidebarView: View {
         }
     }
 
+    private var fixedControls: some View {
+        GlassEffectContainer(spacing: 12) {
+            VStack(spacing: 12) {
+                SidebarSectionPicker(selection: $section)
+                    .frame(maxWidth: .infinity)
+
+                if section != .navigation {
+                    SidebarSectionSearchField(
+                        scope: section.title,
+                        text: $localSearchText,
+                        isExpanded: $isLocalSearchExpanded
+                    )
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, section == .navigation ? 12 : 10)
+        }
+    }
+
     @ViewBuilder
     private var selectedSectionContent: some View {
         switch section {
@@ -90,19 +89,33 @@ struct LibrarySidebarView: View {
                         accessibilityIdentifier: "sidebar.home"
                     )
 
-                    ForEach(LibraryDestination.navigationItems) { item in
+                    SidebarNavigationButton(
+                        item: .history,
+                        selection: $destination,
+                        accessibilityIdentifier: "sidebar.history"
+                    )
+
+                    navigationSectionHeader("Biblioteca")
+
+                    ForEach([LibraryDestination.artists, .albums, .songs]) { item in
                         SidebarNavigationButton(
                             item: item,
                             selection: $destination,
                             accessibilityIdentifier: "sidebar.\(item.rawValue)"
                         )
                     }
+
+                    navigationSectionHeader("Playlists")
+
+                    SidebarNavigationButton(
+                        item: .playlists,
+                        selection: $destination,
+                        accessibilityIdentifier: "sidebar.playlists"
+                    )
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 10)
             }
-            .clipped()
-            .padding(.top, 12)
 
         case .playlists:
             List(localPlaylists, id: \.id) { playlist in
@@ -160,6 +173,10 @@ struct LibrarySidebarView: View {
                         .accessibilityIdentifier("sidebar.album.\(album.id)")
                     }
                 }
+                // At most three covers, but allow two in a narrow sidebar
+                // instead of forcing the split column to expand on tab changes.
+                .frame(maxWidth: 192, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 4)
             }
@@ -179,6 +196,17 @@ struct LibrarySidebarView: View {
             }
             .listStyle(.sidebar)
         }
+    }
+
+    private func navigationSectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.top, 16)
+            .padding(.bottom, 4)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private var localPlaylists: [Playlist] {
@@ -298,18 +326,48 @@ private struct SidebarSectionPicker: View {
     }
 
     var body: some View {
-        HStack(spacing: 3) {
+        // Read the column's allocated width without contributing a label-driven
+        // ideal width to NavigationSplitView's sizing negotiations.
+        GeometryReader { geometry in
+            tabs(availableWidth: max(0, geometry.size.width - 6))
+                .padding(3)
+        }
+        .frame(height: 30)
+        .glassEffect(.regular, in: .rect(cornerRadius: 6))
+        .animation(.easeOut(duration: 0.15), value: appearsActive)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Conteúdo da barra lateral")
+        .accessibilityIdentifier("sidebar.sectionPicker")
+    }
+
+    private func tabs(availableWidth: CGFloat) -> some View {
+        let otherTabsWidth = CGFloat(SidebarSection.allCases.count - 1) * (28 + 3)
+        let selectedWidth = max(0, availableWidth - otherTabsWidth)
+
+        return HStack(spacing: 3) {
             ForEach(SidebarSection.allCases) { item in
                 Button {
                     selection = item
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: item.icon)
-
+                    ViewThatFits(in: .horizontal) {
                         if item == selection {
-                            Text(item.title)
-                                .lineLimit(1)
+                            // Every tab uses the same fitting threshold, based
+                            // on the widest complete label in the current font.
+                            ZStack {
+                                ForEach(SidebarSection.allCases) { candidate in
+                                    HStack(spacing: 5) {
+                                        Image(systemName: candidate.icon)
+                                        Text(candidate.title)
+                                            .lineLimit(1)
+                                    }
+                                    .opacity(candidate == item ? 1 : 0)
+                                    .accessibilityHidden(candidate != item)
+                                }
+                            }
+                            .fixedSize(horizontal: true, vertical: false)
                         }
+
+                        Image(systemName: item.icon)
                     }
                     .foregroundStyle(
                         item == selection
@@ -317,10 +375,7 @@ private struct SidebarSectionPicker: View {
                             : Color.secondary
                     )
                     .frame(height: 24)
-                    .frame(
-                        minWidth: item == selection ? 76 : 28,
-                        maxWidth: item == selection ? .infinity : 28
-                    )
+                    .frame(width: item == selection ? selectedWidth : 28)
                     .contentShape(Rectangle())
                     .background {
                         if item == selection {
@@ -351,15 +406,6 @@ private struct SidebarSectionPicker: View {
                 )
             }
         }
-        .padding(3)
-        .background(
-            .quaternary,
-            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-        )
-        .animation(.easeOut(duration: 0.15), value: appearsActive)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Conteúdo da barra lateral")
-        .accessibilityIdentifier("sidebar.sectionPicker")
     }
 }
 
@@ -423,41 +469,29 @@ private struct SidebarSectionSearchField: View {
                     minHeight: 32,
                     alignment: .leading
                 )
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("sidebar.sectionSearch.container")
-                .background(
-                    .quaternary,
-                    in: RoundedRectangle(cornerRadius: 7)
-                )
+                .glassEffect(.regular, in: .rect(cornerRadius: 7))
                 .transition(.opacity)
 
             } else {
                 Button {
                     isExpanded = true
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 16, weight: .regular))
-                            .symbolRenderingMode(.monochrome)
-                            .frame(width: 20)
-                            .foregroundStyle(.secondary)
-
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 8)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: 32,
-                        alignment: .leading
-                    )
-                    .contentShape(Rectangle())
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 16, weight: .regular))
+                        .symbolRenderingMode(.monochrome)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 36, height: 32)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .frame(maxWidth: .infinity)
                 .help("Pesquisar em \(scope)")
                 .accessibilityLabel("Pesquisar em \(scope)")
                 .accessibilityIdentifier(
                     "sidebar.sectionSearch.toggle"
                 )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .onChange(of: isFocused) { _, focused in

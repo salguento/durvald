@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct LibrarySettingsView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
     @State private var pathPendingRemoval: String?
 
     var body: some View {

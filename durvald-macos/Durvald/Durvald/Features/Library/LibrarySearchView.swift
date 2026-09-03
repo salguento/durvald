@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LibrarySearchView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     @Binding var searchText: String
     @State private var committedQuery = ""
@@ -127,6 +127,7 @@ struct LibrarySearchView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.title)
+                        .activeTrackTitle(trackID: track.id)
                         .lineLimit(1)
                     Text(track.artist)
                         .font(.caption)

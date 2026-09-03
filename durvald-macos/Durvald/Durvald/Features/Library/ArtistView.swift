@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ArtistView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     let artist: Artist
     let onSelectAlbum: (Release) -> Void
@@ -86,6 +86,7 @@ struct ArtistView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(track.title)
+                        .activeTrackTitle(trackID: track.id)
                     Text(track.release)
                         .font(.caption)
                         .foregroundStyle(.secondary)

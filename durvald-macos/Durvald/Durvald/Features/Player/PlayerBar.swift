@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct PlayerBar: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var position = 0.0
     @State private var volume = 0.5
@@ -111,14 +111,6 @@ struct PlayerBar: View {
             if changedTrack {
                 seeking = false
                 scrubbingTrackID = nil
-            }
-            if !seeking {
-                let delta = snapshot.positionSeconds - position
-                let animateProgress = !changedTrack && !store.isSeeking
-                    && snapshot.isPlaying && delta > 0 && delta <= 1
-                withAnimation(animateProgress ? .linear(duration: 0.25) : nil) {
-                    position = snapshot.positionSeconds
-                }
             }
             if !adjustingVolume {
                 volume = Double(snapshot.volume)
@@ -339,7 +331,7 @@ struct PlayerBar: View {
                 store.playback?.isPaused == true ? "Reproduzir" : "Pausar"
             )
             .accessibilityIdentifier("player.playPause")
-            .keyboardShortcut(.space, modifiers: [])
+            .keyboardShortcut(AppKeyboardShortcuts.playPause)
 
             Button {
                 Task { await store.next() }
@@ -377,7 +369,8 @@ struct PlayerBar: View {
         let snapshot = store.playback
         let duration = max(snapshot?.durationSeconds ?? 0, 0.01)
         let expanded = isProgressHovered || seeking
-        let elapsed = time(seeking ? position : (snapshot?.positionSeconds ?? 0))
+        let displayedPosition = seeking ? position : (snapshot?.positionSeconds ?? 0)
+        let elapsed = time(displayedPosition)
 
         return HStack(spacing: 10) {
             Text(elapsed)
@@ -385,7 +378,8 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.elapsed")
 
             PlayerBarSlider(
-                value: $position,
+                value: displayedPosition,
+                onValueChange: { position = $0 },
                 upperBound: duration,
                 expanded: expanded,
                 onEditingChanged: updateSeeking
@@ -399,18 +393,18 @@ struct PlayerBar: View {
             .focusable(snapshot?.currentTrack != nil)
             .focusEffectDisabled()
             .onHover { isProgressHovered = $0 }
-            .onKeyPress(.leftArrow) {
+            .onKeyPress(AppKeyboardShortcuts.Slider.decrease) {
                 adjustProgress(by: -5, duration: duration)
                 return .handled
             }
-            .onKeyPress(.rightArrow) {
+            .onKeyPress(AppKeyboardShortcuts.Slider.increase) {
                 adjustProgress(by: 5, duration: duration)
                 return .handled
             }
             .accessibilityRepresentation {
                 Slider(
                     value: Binding(
-                        get: { position },
+                        get: { displayedPosition },
                         set: { newValue in
                             updateSeeking(true)
                             position = newValue
@@ -437,6 +431,7 @@ struct PlayerBar: View {
 
     private func updateSeeking(_ editing: Bool) {
         if editing {
+            position = store.playback?.positionSeconds ?? 0
             scrubbingTrackID = store.playback?.currentTrack?.id
             seeking = true
         } else {
@@ -472,10 +467,8 @@ struct PlayerBar: View {
             .accessibilityIdentifier("player.mute")
 
             PlayerBarSlider(
-                value: Binding(
-                    get: { volume },
-                    set: { updateVolume($0, immediately: !adjustingVolume) }
-                ),
+                value: volume,
+                onValueChange: { updateVolume($0, immediately: !adjustingVolume) },
                 upperBound: 1,
                 expanded: true,
                 fillColor: .white,
@@ -490,11 +483,11 @@ struct PlayerBar: View {
             .frame(minWidth: 34, maxWidth: .infinity)
             .focusable()
             .focusEffectDisabled()
-            .onKeyPress(.leftArrow) {
+            .onKeyPress(AppKeyboardShortcuts.Slider.decrease) {
                 updateVolume(volume - 0.05)
                 return .handled
             }
-            .onKeyPress(.rightArrow) {
+            .onKeyPress(AppKeyboardShortcuts.Slider.increase) {
                 updateVolume(volume + 0.05)
                 return .handled
             }
@@ -571,7 +564,8 @@ struct PlayerBar: View {
 
 /// Shared track and interaction geometry for playback progress and volume.
 private struct PlayerBarSlider: View {
-    @Binding var value: Double
+    let value: Double
+    let onValueChange: (Double) -> Void
     let upperBound: Double
     let expanded: Bool
     var fillColor: Color = .secondary
@@ -631,11 +625,11 @@ private struct PlayerBarSlider: View {
                             isEditing = true
                             onEditingChanged(true)
                         }
-                        value = min(max(gesture.location.x / width, 0), 1) * upperBound
+                        onValueChange(min(max(gesture.location.x / width, 0), 1) * upperBound)
                     }
                     .onEnded { gesture in
                         guard isEditing else { return }
-                        value = min(max(gesture.location.x / width, 0), 1) * upperBound
+                        onValueChange(min(max(gesture.location.x / width, 0), 1) * upperBound)
                         finishEditing()
                     }
             )

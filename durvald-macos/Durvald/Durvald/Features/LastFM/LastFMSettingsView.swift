@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LastFmSettingsView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
     @StateObject private var viewModel = LastFmViewModel()
 
     var body: some View {

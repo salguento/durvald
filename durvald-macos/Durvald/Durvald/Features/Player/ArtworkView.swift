@@ -5,13 +5,32 @@ struct ArtworkView: View {
     let artworkID: String?
     let size: CGFloat
 
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
+    @Environment(\.displayScale) private var displayScale
     @State private var image: NSImage?
+    @State private var loadedRequest: Request?
+
+    private struct Request: Equatable {
+        let artworkID: String?
+        let pixelSize: Int
+        let coreID: ObjectIdentifier?
+    }
 
     var body: some View {
+        let core = store.core
+        let request = Request(
+            artworkID: artworkID,
+            pixelSize: ArtworkRepository.pixelSize(for: size, scale: displayScale),
+            coreID: core.map(ObjectIdentifier.init)
+        )
+        let cached = artworkID.flatMap { id in
+            core.flatMap { ArtworkRepository.shared.cachedImage(for: id, pixelSize: request.pixelSize, using: $0) }
+        }
+        let displayedImage = loadedRequest == request ? image : cached
+
         Group {
-            if let image {
-                Image(nsImage: image)
+            if let displayedImage {
+                Image(nsImage: displayedImage)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -24,21 +43,22 @@ struct ArtworkView: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 6))
-        .task(id: artworkID) {
-            image = nil
-
-            guard
-                let artworkID,
-                let core = store.core
-            else {
+        .task(id: request) {
+            guard let artworkID, let core else {
                 image = nil
+                loadedRequest = request
                 return
             }
 
-            image = try? await ArtworkRepository.shared.image(
+            let loaded = try? await ArtworkRepository.shared.image(
                 for: artworkID,
+                pixelSize: request.pixelSize,
                 using: core
             )
+            // A recycled/disappearing cell must not receive an older cover.
+            guard !Task.isCancelled else { return }
+            image = loaded
+            loadedRequest = request
         }
         .accessibilityHidden(true)
     }

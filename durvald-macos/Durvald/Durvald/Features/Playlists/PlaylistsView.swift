@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct PlaylistsView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     var body: some View {
         List(store.playlists, id: \.id) { playlist in

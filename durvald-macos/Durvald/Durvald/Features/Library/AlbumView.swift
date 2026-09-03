@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct AlbumView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     let album: Release
 
@@ -76,17 +76,14 @@ struct AlbumView: View {
 
     private func trackRow(_ track: Track) -> some View {
         HStack(spacing: 12) {
-            Text(trackNumber(for: track))
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .frame(width: 34, alignment: .trailing)
+            AlbumTrackPosition(trackID: track.id, number: trackNumber(for: track))
 
             Button {
                 Task { await store.play(trackID: track.id) }
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.title)
+                        .activeTrackTitle(trackID: track.id)
                         .lineLimit(1)
 
                     if !track.artist.isEmpty && track.artist != album.artist {
@@ -124,6 +121,7 @@ struct AlbumView: View {
                 Task { await store.addToQueue(trackID: track.id) }
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("album.track.\(track.id)")
     }
 

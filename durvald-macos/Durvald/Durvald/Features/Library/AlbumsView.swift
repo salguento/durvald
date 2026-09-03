@@ -37,7 +37,7 @@ enum AlbumGridLayout {
 }
 
 struct AlbumsView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     let onSelectAlbum: (Release) -> Void
 
@@ -66,7 +66,7 @@ struct AlbumsView: View {
 }
 
 struct AlbumCard: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     let release: Release
     let onSelectAlbum: (Release) -> Void

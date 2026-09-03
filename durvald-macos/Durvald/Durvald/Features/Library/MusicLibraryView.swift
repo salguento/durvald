@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct MusicLibraryView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
     @State private var selectedTrackIDs = Set<Int64>()
 
     var body: some View {
@@ -28,6 +28,7 @@ struct MusicLibraryView: View {
                     } label: {
                         VStack(alignment: .leading) {
                             Text(track.title)
+                                .activeTrackTitle(trackID: track.id)
                             Text(track.artist)
                                 .foregroundStyle(.secondary)
                         }

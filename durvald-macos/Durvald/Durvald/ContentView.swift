@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.appearsActive) private var appearsActive
 
     @State private var navigationHistory = LibraryNavigationHistory()
@@ -53,126 +53,10 @@ struct ContentView: View {
                     max: Layout.queueMaximumWidth
                 )
         }
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                ControlGroup {
-                    Button {
-                        navigateBack()
-                    } label: {
-                        Label("Voltar", systemImage: "chevron.left")
-                    }
-                    .disabled(
-                        !navigationHistory.canGoBack
-                    )
-                    .keyboardShortcut("[", modifiers: .command)
-                    .accessibilityIdentifier("navigation.back")
-
-                    Button {
-                        navigationHistory.goForward()
-                    } label: {
-                        Label("Avançar", systemImage: "chevron.right")
-                    }
-                    .disabled(
-                        !navigationHistory.canGoForward
-                    )
-                    .keyboardShortcut("]", modifiers: .command)
-                    .accessibilityIdentifier("navigation.forward")
-                }
-                .labelStyle(.iconOnly)
-                .controlGroupStyle(.navigation)
-            }
-
-            ToolbarItem(placement: .navigation) {
-                Text(toolbarTitle)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-            }
-            .sharedBackgroundVisibility(.hidden)
-
-            ToolbarItem(placement: .principal) {
-                if navigationHistory.current == .search {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundStyle(.secondary)
-
-                        ToolbarSearchTextField(
-                            text: $searchText,
-                            isFocused: $isSearchFocused,
-                            isPresented: true,
-                            focusRequest: searchFocusRequest
-                        )
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Pesquisar na biblioteca")
-                        .accessibilityIdentifier("search.field")
-
-                        Button {
-                            searchText = ""
-                            requestSearchFocus()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .opacity(searchText.isEmpty ? 0 : 1)
-                        .allowsHitTesting(!searchText.isEmpty)
-                        .accessibilityHidden(searchText.isEmpty)
-                        .accessibilityLabel("Limpar pesquisa")
-                        .accessibilityIdentifier("search.clear")
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(
-                        minWidth: 180,
-                        idealWidth: 260,
-                        maxWidth: 300,
-                        minHeight: 36,
-                        maxHeight: 36
-                    )
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("search.container")
-                    .glassEffect(
-                        .regular
-                            .interactive(),
-                        in: .capsule
-                    )
-                    .overlay {
-                        Capsule()
-                            .strokeBorder(Color.accentColor, lineWidth: 2)
-                            .opacity(isSearchFocused && appearsActive ? 1 : 0)
-                            .animation(.easeOut(duration: 0.15), value: appearsActive)
-                    }
-                    .animation(.easeOut(duration: 0.15), value: appearsActive)
-                } else {
-                    Color.clear
-                        .frame(width: 1, height: 36)
-                        .accessibilityHidden(true)
-                }
-            }
-            .sharedBackgroundVisibility(.hidden)
-
-            ToolbarSpacer(.flexible)
-
-            ToolbarItem(placement: .automatic) {
-                Button {
-                    toggleQueue()
-                } label: {
-                    Image(systemName: "sidebar.trailing")
-                        .foregroundStyle(
-                            isQueuePresented && appearsActive
-                                ? Color.accentColor
-                                : Color.secondary
-                        )
-                }
-                .help(isQueuePresented ? "Ocultar fila" : "Mostrar fila")
-                .accessibilityHint("Mostra ou oculta a fila lateral de reprodução")
-                .accessibilityLabel(isQueuePresented ? "Ocultar fila" : "Mostrar fila")
-                .accessibilityIdentifier("player.queue")
-                .keyboardShortcut("l", modifiers: [.command, .option])
-            }
-        }
         .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .focusedSceneValue(\.openLibrarySearch) {
+            destinationBinding.wrappedValue = .search
+        }
         .onChange(of: navigationHistory.current, initial: true) { _, destination in
             if destination == .search {
                 requestSearchFocus()
@@ -205,7 +89,130 @@ struct ContentView: View {
                     .padding(.vertical, Layout.playerVerticalMargin)
                     .frame(maxWidth: .infinity)
             }
-            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            // Keep the toolbar and its scroll views in the same split column.
+            // macOS owns the backdrop and its transition as content scrolls
+            // behind the controls, including when the side panels resize.
+            .toolbar { contentToolbar }
+            .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+    }
+
+    @ToolbarContentBuilder
+    private var contentToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            ControlGroup {
+                Button {
+                    navigateBack()
+                } label: {
+                    Label("Voltar", systemImage: "chevron.left")
+                }
+                .disabled(
+                    !navigationHistory.canGoBack
+                )
+                .keyboardShortcut(AppKeyboardShortcuts.goBack)
+                .accessibilityIdentifier("navigation.back")
+
+                Button {
+                    navigationHistory.goForward()
+                } label: {
+                    Label("Avançar", systemImage: "chevron.right")
+                }
+                .disabled(
+                    !navigationHistory.canGoForward
+                )
+                .keyboardShortcut(AppKeyboardShortcuts.goForward)
+                .accessibilityIdentifier("navigation.forward")
+            }
+            .labelStyle(.iconOnly)
+            .controlGroupStyle(.navigation)
+        }
+
+        ToolbarItem(placement: .navigation) {
+            Text(toolbarTitle)
+                .font(.headline)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .sharedBackgroundVisibility(.hidden)
+
+        ToolbarItem(placement: .principal) {
+            if navigationHistory.current == .search {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+
+                    ToolbarSearchTextField(
+                        text: $searchText,
+                        isFocused: $isSearchFocused,
+                        isPresented: true,
+                        focusRequest: searchFocusRequest
+                    )
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel("Pesquisar na biblioteca")
+                    .accessibilityIdentifier("search.field")
+
+                    Button {
+                        searchText = ""
+                        requestSearchFocus()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .opacity(searchText.isEmpty ? 0 : 1)
+                    .allowsHitTesting(!searchText.isEmpty)
+                    .accessibilityHidden(searchText.isEmpty)
+                    .accessibilityLabel("Limpar pesquisa")
+                    .accessibilityIdentifier("search.clear")
+                }
+                .padding(.horizontal, 12)
+                .frame(
+                    minWidth: 180,
+                    idealWidth: 260,
+                    maxWidth: 300,
+                    minHeight: 36,
+                    maxHeight: 36
+                )
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("search.container")
+                .glassEffect(
+                    .regular
+                        .interactive(),
+                    in: .capsule
+                )
+                .overlay {
+                    Capsule()
+                        .strokeBorder(Color.accentColor, lineWidth: 2)
+                        .opacity(isSearchFocused && appearsActive ? 1 : 0)
+                        .animation(.easeOut(duration: 0.15), value: appearsActive)
+                }
+                .animation(.easeOut(duration: 0.15), value: appearsActive)
+            } else {
+                Color.clear
+                    .frame(width: 1, height: 36)
+                    .accessibilityHidden(true)
+            }
+        }
+        .sharedBackgroundVisibility(.hidden)
+
+        ToolbarSpacer(.flexible)
+
+        ToolbarItem(placement: .automatic) {
+            Button {
+                toggleQueue()
+            } label: {
+                Image(systemName: "sidebar.trailing")
+                    .foregroundStyle(
+                        isQueuePresented && appearsActive
+                            ? Color.accentColor
+                            : Color.secondary
+                    )
+            }
+            .help(isQueuePresented ? "Ocultar fila" : "Mostrar fila")
+            .accessibilityHint("Mostra ou oculta a fila lateral de reprodução")
+            .accessibilityLabel(isQueuePresented ? "Ocultar fila" : "Mostrar fila")
+            .accessibilityIdentifier("player.queue")
+            .keyboardShortcut(AppKeyboardShortcuts.toggleQueue)
+        }
     }
 
     private var destinationBinding: Binding<LibraryDestination?> {
@@ -387,5 +394,5 @@ private struct InspectorSplitLayout: NSViewRepresentable {
 
 #Preview {
     ContentView()
-        .environmentObject(DurvaldCoreStore())
+        .environment(DurvaldCoreStore())
 }

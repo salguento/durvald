@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
     @State private var crossFade = false
     @State private var crossFadeDuration = 5
     @State private var normalizeVolume = false

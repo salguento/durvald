@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct HistoryView: View {
-    @EnvironmentObject private var store: DurvaldCoreStore
+    @Environment(DurvaldCoreStore.self) private var store
 
     var body: some View {
         List(store.history, id: \.id) { item in
@@ -16,6 +16,7 @@ struct HistoryView: View {
 
             VStack(alignment: .leading) {
                 Text(track?.title ?? "Música #\(item.trackId)")
+                    .activeTrackTitle(trackID: item.trackId)
                 Text(item.playedAt)
                     .font(.caption)
                     .foregroundStyle(.secondary)

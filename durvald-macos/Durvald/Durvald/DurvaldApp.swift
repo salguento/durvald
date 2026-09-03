@@ -9,67 +9,50 @@ import SwiftUI
 
 @main
 struct DurvaldApp: App {
-    @StateObject private var coreStore: DurvaldCoreStore
+    @State private var coreStore: DurvaldCoreStore
 
     init() {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--ui-testing"), arguments.contains("--player-navigation-fixture") {
-            _coreStore = StateObject(wrappedValue: PlayerNavigationFixture.makeStore(
-                longMetadata: arguments.contains("--long-player-metadata")
+            _coreStore = State(initialValue: PlayerNavigationFixture.makeStore(
+                longMetadata: arguments.contains("--long-player-metadata"),
+                scrollable: arguments.contains("--scroll-effect-fixture"),
+                livePlayback: arguments.contains("--playback-clock-fixture"),
+                autoAdvance: arguments.contains("--album-transition-fixture")
             ))
             return
         }
         #endif
-        _coreStore = StateObject(wrappedValue: DurvaldCoreStore())
+        _coreStore = State(initialValue: DurvaldCoreStore())
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(coreStore)
+                .environment(coreStore)
                 .task {
                     guard !ProcessInfo.processInfo.arguments.contains("--ui-testing") else {
+                        #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--playback-clock-fixture") {
+                            coreStore.startPlaybackPolling()
+                        }
+                        #endif
                         return
                     }
                     await coreStore.openCoreIfNeeded()
                 }
         }
-        .windowStyle(.hiddenTitleBar)
+        // Keep the standard titlebar compositor for native scroll-edge blur.
+        // ContentView removes only the title; hiddenTitleBar disables the effect.
         .defaultSize(width: 900, height: 620)
         .windowResizability(.contentMinSize)
         .commands {
-            CommandMenu("Reprodução") {
-                Button("Reproduzir ou pausar") {
-                    Task { await coreStore.togglePause() }
-                }
-
-                Button("Próxima música") {
-                    Task { await coreStore.next() }
-                }
-                .keyboardShortcut(.rightArrow, modifiers: [.command])
-
-                Button("Música anterior") {
-                    Task { await coreStore.previous() }
-                }
-                .keyboardShortcut(.leftArrow, modifiers: [.command])
-
-                Divider()
-
-                Button("Ativar ou desativar aleatório") {
-                    Task { await coreStore.toggleShuffle() }
-                }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
-
-                Button("Alternar repetição") {
-                    Task { await coreStore.cycleRepeatMode() }
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-            }
+            AppCommands(store: coreStore)
         }
         SwiftUI.Settings {
             SettingsView()
-                .environmentObject(coreStore)
+                .environment(coreStore)
         }
     }
 }
