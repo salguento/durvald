@@ -317,11 +317,15 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(progress.value as? NSNumber).doubleValue, nextPosition + 0.5)
 
         app.buttons["player.playPause"].click()
-        XCTAssertEqual(nextIndicator.label, "Faixa atual, pausada")
+        let nextNumber = app.staticTexts["album.track.101.number"]
+        XCTAssertTrue(nextNumber.waitForExistence(timeout: 3))
+        XCTAssertFalse(nextIndicator.exists)
         let pausedPosition = try XCTUnwrap(progress.value as? NSNumber).doubleValue
         Thread.sleep(forTimeInterval: 1)
         XCTAssertEqual(try XCTUnwrap(progress.value as? NSNumber).doubleValue, pausedPosition, accuracy: 0.01)
         app.buttons["player.playPause"].click()
+        XCTAssertTrue(nextIndicator.waitForExistence(timeout: 3))
+        XCTAssertFalse(nextNumber.exists)
         XCTAssertEqual(nextIndicator.label, "Em reprodução")
         Thread.sleep(forTimeInterval: 1)
         XCTAssertGreaterThan(try XCTUnwrap(progress.value as? NSNumber).doubleValue, pausedPosition + 0.5)

@@ -307,7 +307,7 @@ final class DurvaldCoreStore {
         }
     }
 
-    func playRelease(releaseID: Int64) async {
+    func playRelease(releaseID: Int64, startingAt trackID: Int64? = nil) async {
         guard let core, !isChangingTrack else { return }
 
         isChangingTrack = true
@@ -330,15 +330,29 @@ final class DurvaldCoreStore {
                 return $0.id < $1.id
             }
 
-            guard let firstTrack = tracks.first else {
+            guard !tracks.isEmpty else {
                 errorMessage = "Este álbum não possui faixas."
                 return
             }
 
+            let startIndex: Array<Track>.Index
+            if let trackID {
+                guard let selectedIndex = tracks.firstIndex(where: { $0.id == trackID }) else {
+                    errorMessage = "A faixa selecionada não pertence a este álbum."
+                    return
+                }
+                startIndex = selectedIndex
+            } else {
+                startIndex = tracks.startIndex
+            }
+
+            let selectedTracks = tracks[startIndex...]
+            guard let firstTrack = selectedTracks.first else { return }
+
             try await core.clearQueue()
             playback = try await core.play(trackId: firstTrack.id)
 
-            for track in tracks.dropFirst() {
+            for track in selectedTracks.dropFirst() {
                 try await core.addToQueue(trackId: track.id)
             }
 

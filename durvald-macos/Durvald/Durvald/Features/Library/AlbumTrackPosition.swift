@@ -9,25 +9,23 @@ struct AlbumTrackPosition: View {
 
     var body: some View {
         Group {
-            if store.activeTrackID == trackID {
+            if store.activeTrackID == trackID && !store.isPlaybackPaused {
                 // Keep the number's layout slot and center the wider symbol on it.
                 Text(number)
                     .monospacedDigit()
                     .hidden()
                     .overlay {
                         PlaybackActivityIndicator(
-                            isAnimating: !store.isPlaybackPaused && !reduceMotion
+                            isAnimating: !reduceMotion
                         )
                             .frame(width: 14, height: 14)
                             .allowsHitTesting(false)
-                            .accessibilityLabel(
-                                store.isPlaybackPaused ? "Faixa atual, pausada" : "Em reprodução"
-                            )
+                            .accessibilityLabel("Em reprodução")
                             .accessibilityIdentifier("album.track.\(trackID).playbackIndicator")
                     }
             } else {
                 Text(number)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(store.activeTrackID == trackID ? Color.accentColor : Color.secondary)
                     .monospacedDigit()
                     .accessibilityIdentifier("album.track.\(trackID).number")
             }

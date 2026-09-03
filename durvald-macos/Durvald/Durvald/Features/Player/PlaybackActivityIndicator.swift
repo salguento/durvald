@@ -27,8 +27,8 @@ struct PlaybackActivityIndicator: NSViewRepresentable {
 }
 
 final class PlaybackActivityView: NSView {
-    private let bars = (0..<3).map { _ in CALayer() }
-    private let restingScales: [CGFloat] = [0.45, 0.8, 0.6]
+    private let bars = (0..<4).map { _ in CALayer() }
+    private let restingScales: [CGFloat] = [0.45, 0.8, 0.6, 0.35]
     private var shouldAnimate = false
     private let animationKey = "playback.level"
 
@@ -37,7 +37,7 @@ final class PlaybackActivityView: NSView {
         wantsLayer = true
         for (index, bar) in bars.enumerated() {
             bar.anchorPoint = CGPoint(x: 0.5, y: 0)
-            bar.cornerRadius = 1.25
+            bar.cornerRadius = 1
             bar.transform = CATransform3DMakeScale(1, restingScales[index], 1)
             layer?.addSublayer(bar)
         }
@@ -56,8 +56,8 @@ final class PlaybackActivityView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for (index, bar) in bars.enumerated() {
-            bar.bounds = CGRect(x: 0, y: 0, width: 3, height: bounds.height)
-            bar.position = CGPoint(x: bounds.midX + CGFloat(index - 1) * 5, y: 0)
+            bar.bounds = CGRect(x: 0, y: 0, width: 2, height: bounds.height)
+            bar.position = CGPoint(x: bounds.midX + (CGFloat(index) - 1.5) * 4, y: 0)
         }
         CATransaction.commit()
     }
@@ -90,9 +90,9 @@ final class PlaybackActivityView: NSView {
             // Model publications must not restart an animation already running.
             guard bar.animation(forKey: animationKey) == nil else { continue }
             let animation = CABasicAnimation(keyPath: "transform.scale.y")
-            animation.fromValue = [0.2, 0.35, 0.25][index]
-            animation.toValue = [0.85, 1.0, 0.9][index]
-            animation.duration = [0.42, 0.57, 0.49][index]
+            animation.fromValue = [0.2, 0.35, 0.25, 0.15][index]
+            animation.toValue = [0.85, 1.0, 0.9, 0.75][index]
+            animation.duration = [0.42, 0.57, 0.49, 0.63][index]
             animation.autoreverses = true
             animation.repeatCount = .infinity
             animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)

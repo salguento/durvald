@@ -13,7 +13,7 @@ struct PlayerMarqueeText: View {
     @State private var pausedAt: Date?
 
     private let copySpacing: CGFloat = 32
-    private let pointsPerSecond = 28.0
+    private let pointsPerSecond = 22.0
     private let initialPause = 1.4
 
     private var shouldScroll: Bool {

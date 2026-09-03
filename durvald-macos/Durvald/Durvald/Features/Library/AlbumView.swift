@@ -79,7 +79,7 @@ struct AlbumView: View {
             AlbumTrackPosition(trackID: track.id, number: trackNumber(for: track))
 
             Button {
-                Task { await store.play(trackID: track.id) }
+                Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.title)
@@ -114,7 +114,7 @@ struct AlbumView: View {
         .contentShape(Rectangle())
         .contextMenu {
             Button("Reproduzir agora") {
-                Task { await store.play(trackID: track.id) }
+                Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
             }
 
             Button("Adicionar à fila") {

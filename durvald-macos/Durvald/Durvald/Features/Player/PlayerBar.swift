@@ -48,7 +48,7 @@ struct PlayerBar: View {
 
             playbackProgress
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 14)
         .padding(.top, 14)
         .padding(.bottom, 6)
         .glassEffect(
