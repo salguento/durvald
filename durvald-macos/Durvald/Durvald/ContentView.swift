@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var searchFocusRequest = 0
     @State private var isSearchFocused = false
     @State private var isQueuePresented = false
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var sidebarLayout = SidebarLayoutController()
     @State private var inspectorLayout = InspectorLayoutController()
     @State private var playlistCreation = PlaylistCreationCoordinator()
 
@@ -25,7 +27,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             LibrarySidebarView(
                 section: $sidebarSection,
                 destination: destinationBinding,
@@ -34,21 +36,25 @@ struct ContentView: View {
                 onSelectArtist: showArtist,
                 onSelectPlaylist: showPlaylist
             )
-            .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+            .navigationSplitViewColumnWidth(min: 230, ideal: 240, max: 280)
+            .background {
+                SidebarSplitLayout(controller: sidebarLayout)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .toolbar(removing: .sidebarToggle)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button("Criar playlist") {
-                            playlistCreation.request(for: nil)
-                        }
-                        .accessibilityIdentifier("playlist.create")
-                    } label: {
-                        Image(systemName: "plus")
+                if columnVisibility != .detailOnly {
+                    ToolbarItem(placement: .primaryAction) {
+                        sidebarToggleButton
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .menuIndicator(.hidden)
-                    .help("Adicionar")
-                    .accessibilityLabel("Adicionar")
-                    .accessibilityIdentifier("library.addMenu")
+                    .sharedBackgroundVisibility(.hidden)
+
+                    ToolbarItem(placement: .primaryAction) {
+                        addPlaylistButton
+                    }
+                    .sharedBackgroundVisibility(.hidden)
                 }
             }
         } detail: {
@@ -58,6 +64,21 @@ struct ContentView: View {
                     maxWidth: .infinity,
                     maxHeight: .infinity
                 )
+        }
+        .toolbar {
+            if columnVisibility == .detailOnly {
+                ToolbarItem(placement: .navigation) {
+                    sidebarToggleButton
+                        .glassEffect(.regular.interactive(), in: .capsule)
+                }
+                .sharedBackgroundVisibility(.hidden)
+
+                ToolbarItem(placement: .navigation) {
+                    addPlaylistButton
+                        .glassEffect(.regular.interactive(), in: .capsule)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
         }
         .background {
             InspectorSplitLayout(controller: inspectorLayout)
@@ -101,7 +122,24 @@ struct ContentView: View {
             get: { playlistCreation.isPresented },
             set: { playlistCreation.isPresented = $0 }
         )) {
-            CreatePlaylistSheet { title, description, artworkBase64 in
+            let editingPlaylist = playlistCreation.editingPlaylist.map { playlist in
+                store.playlists.first(where: { $0.id == playlist.id }) ?? playlist
+            }
+            CreatePlaylistSheet(playlist: editingPlaylist) { title, description, artworkBase64 in
+                if let editingPlaylist {
+                    guard let updatedPlaylist = store.updatePlaylist(
+                        id: editingPlaylist.id,
+                        name: title,
+                        description: description,
+                        artworkBase64: artworkBase64
+                    ) else { return false }
+                    if case .playlist(let currentPlaylist) = navigationHistory.currentRoute,
+                       currentPlaylist.id == updatedPlaylist.id {
+                        navigationHistory.replaceCurrent(with: .playlist(updatedPlaylist))
+                    }
+                    return true
+                }
+
                 guard let playlist = store.createPlaylist(
                     named: title,
                     description: description,
@@ -116,7 +154,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: playlistCreation.isPresented) { _, isPresented in
-            if !isPresented { playlistCreation.pendingTrackID = nil }
+            if !isPresented { playlistCreation.reset() }
         }
     }
 
@@ -166,14 +204,6 @@ struct ContentView: View {
             .labelStyle(.iconOnly)
             .controlGroupStyle(.navigation)
         }
-
-        ToolbarItem(placement: .navigation) {
-            Text(toolbarTitle)
-                .font(.headline)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-        }
-        .sharedBackgroundVisibility(.hidden)
 
         ToolbarItem(placement: .principal) {
             if navigationHistory.current == .search {
@@ -256,6 +286,37 @@ struct ContentView: View {
         }
     }
 
+    private var sidebarToggleButton: some View {
+        Button {
+            columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
+        } label: {
+            Label(
+                columnVisibility == .detailOnly
+                    ? "Mostrar barra lateral"
+                    : "Ocultar barra lateral",
+                systemImage: "sidebar.leading"
+            )
+        }
+        .labelStyle(.iconOnly)
+        .help(
+            columnVisibility == .detailOnly
+                ? "Mostrar barra lateral"
+                : "Ocultar barra lateral"
+        )
+        .accessibilityIdentifier("navigation.sidebar")
+    }
+
+    private var addPlaylistButton: some View {
+        Button {
+            playlistCreation.request(for: nil)
+        } label: {
+            Label("Adicionar", systemImage: "plus")
+        }
+        .labelStyle(.iconOnly)
+        .help("Adicionar")
+        .accessibilityIdentifier("library.addMenu")
+    }
+
     private var destinationBinding: Binding<LibraryDestination?> {
         Binding(
             get: { navigationHistory.current },
@@ -292,19 +353,6 @@ struct ContentView: View {
         withTransaction(transaction) {
             isQueuePresented.toggle()
         }
-    }
-
-    private var toolbarTitle: String {
-        switch navigationHistory.currentRoute {
-        case .album(let album): return album.title
-        case .artist(let artist): return artist.name
-        case .playlist(let playlist): return playlist.name
-        case .section: break
-        }
-
-        return navigationHistory.current == .search
-            ? ""
-            : navigationHistory.current.title
     }
 
     private func showAlbum(_ album: Release) {
@@ -355,6 +403,85 @@ struct ContentView: View {
             PlaylistsView()
         case .history:
             HistoryView()
+        }
+    }
+}
+
+@MainActor
+private final class SidebarLayoutController {
+    weak var anchor: NSView?
+
+    func configure() {
+        guard let anchor else { return }
+        var ancestor = anchor.superview
+
+        while let view = ancestor {
+            if let splitView = view as? NSSplitView,
+               let controller = splitView.delegate as? NSSplitViewController,
+               let sidebar = controller.splitViewItems.first(where: {
+                   anchor.isDescendant(of: $0.viewController.view)
+               }),
+               sidebar.behavior != .inspector {
+                sidebar.minimumThickness = 230
+                return
+            }
+            ancestor = view.superview
+        }
+    }
+}
+
+private struct SidebarSplitLayout: NSViewRepresentable {
+    let controller: SidebarLayoutController
+
+    func makeNSView(context: Context) -> ConfigurationView {
+        ConfigurationView(controller: controller)
+    }
+
+    func updateNSView(_ view: ConfigurationView, context: Context) {
+        view.scheduleConfiguration()
+    }
+
+    final class ConfigurationView: NSView {
+        private let controller: SidebarLayoutController
+        private var configurationScheduled = false
+
+        init(controller: SidebarLayoutController) {
+            self.controller = controller
+            super.init(frame: .zero)
+            controller.anchor = self
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) is unavailable")
+        }
+
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            scheduleConfiguration()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            scheduleConfiguration()
+        }
+
+        override func layout() {
+            super.layout()
+            scheduleConfiguration()
+        }
+
+        func scheduleConfiguration() {
+            guard !configurationScheduled else { return }
+            configurationScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.configurationScheduled = false
+                self.controller.anchor = self
+                self.controller.configure()
+            }
         }
     }
 }

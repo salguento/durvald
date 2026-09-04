@@ -152,7 +152,6 @@ struct LibrarySidebarView: View {
                 ) {
                     ForEach(localAlbums, id: \.id) { album in
                         Button {
-                            destination = .albums
                             onSelectAlbum(album)
                         } label: {
                             VStack(alignment: .leading, spacing: 5) {

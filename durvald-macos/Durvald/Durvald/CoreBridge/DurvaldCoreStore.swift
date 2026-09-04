@@ -156,6 +156,41 @@ final class DurvaldCoreStore {
     }
 
     @discardableResult
+    func updatePlaylist(
+        id: Int64,
+        name: String,
+        description: String,
+        artworkBase64: String?
+    ) -> Playlist? {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo."
+            return nil
+        }
+
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else { return nil }
+
+        do {
+            try core.updatePlaylist(
+                playlistId: id,
+                name: normalizedName,
+                description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+                artworkBase64: artworkBase64
+            )
+            let playlist = try core.playlist(playlistId: id)
+            if let index = playlists.firstIndex(where: { $0.id == id }) {
+                playlists[index] = playlist
+            } else {
+                playlists.append(playlist)
+            }
+            return playlist
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    @discardableResult
     func addTrack(_ trackID: Int64, to playlist: Playlist) -> Bool {
         guard let core else {
             errorMessage = "O core ainda está abrindo."
@@ -228,6 +263,34 @@ final class DurvaldCoreStore {
 
                 return lhs.id < rhs.id
             }
+        } catch {
+            errorMessage = String(describing: error)
+            return []
+        }
+    }
+
+    func tracks(forArtistID artistID: Int64) async -> [Track] {
+        guard let core else { return [] }
+        let sendableCore = SendableCore(value: core)
+
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                try sendableCore.value.artistTracks(artistId: artistID)
+            }.value
+        } catch {
+            errorMessage = String(describing: error)
+            return []
+        }
+    }
+
+    func releases(forArtistID artistID: Int64) async -> [Release] {
+        guard let core else { return [] }
+        let sendableCore = SendableCore(value: core)
+
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                try sendableCore.value.artistReleases(artistId: artistID)
+            }.value
         } catch {
             errorMessage = String(describing: error)
             return []
@@ -417,7 +480,11 @@ final class DurvaldCoreStore {
                 startIndex = tracks.startIndex
             }
 
-            let selectedTracks = tracks[startIndex...]
+            var selectedTracks = Array(tracks[startIndex...])
+            if shuffleEnabled == true {
+                selectedTracks.shuffle()
+            }
+
             guard let firstTrack = selectedTracks.first else { return }
 
             try await core.clearQueue()
@@ -458,7 +525,11 @@ final class DurvaldCoreStore {
                 return
             }
 
-            let selectedTracks = tracks[position...]
+            var selectedTracks = Array(tracks[position...])
+            if shuffleEnabled == true {
+                selectedTracks.shuffle()
+            }
+
             guard let firstTrack = selectedTracks.first else { return }
             try await core.clearQueue()
             playback = try await core.play(trackId: firstTrack.id)
@@ -775,6 +846,38 @@ final class DurvaldCoreStore {
             }
             if playback?.currentTrack?.id == trackID {
                 playback?.currentTrack?.isFavorite = favorite
+            }
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func setReleaseFavorite(releaseID: Int64, favorite: Bool) {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
+            return
+        }
+
+        do {
+            try core.setReleaseFavorite(releaseId: releaseID, favorite: favorite)
+            if let index = releases.firstIndex(where: { $0.id == releaseID }) {
+                releases[index].isFavorite = favorite
+            }
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func setPlaylistFavorite(playlistID: Int64, favorite: Bool) {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
+            return
+        }
+
+        do {
+            try core.setPlaylistFavorite(playlistId: playlistID, favorite: favorite)
+            if let index = playlists.firstIndex(where: { $0.id == playlistID }) {
+                playlists[index].isFavorite = favorite
             }
         } catch {
             errorMessage = String(describing: error)

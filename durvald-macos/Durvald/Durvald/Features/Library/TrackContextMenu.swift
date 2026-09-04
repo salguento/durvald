@@ -7,10 +7,23 @@ import SwiftUI
 final class PlaylistCreationCoordinator {
     var isPresented = false
     var pendingTrackID: Int64?
+    var editingPlaylist: Playlist?
 
     func request(for trackID: Int64?) {
         pendingTrackID = trackID
+        editingPlaylist = nil
         isPresented = true
+    }
+
+    func requestEdit(_ playlist: Playlist) {
+        pendingTrackID = nil
+        editingPlaylist = playlist
+        isPresented = true
+    }
+
+    func reset() {
+        pendingTrackID = nil
+        editingPlaylist = nil
     }
 }
 

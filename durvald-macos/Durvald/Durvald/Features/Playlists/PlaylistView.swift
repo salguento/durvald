@@ -1,13 +1,42 @@
 import SwiftUI
 
 struct PlaylistView: View {
+    private enum TrackOrder: String, CaseIterable, Identifiable {
+        case playlist
+        case title
+        case artist
+        case duration
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .playlist: "Ordem da playlist"
+            case .title: "Título"
+            case .artist: "Artista"
+            case .duration: "Duração"
+            }
+        }
+    }
+
+    private struct TrackEntry: Identifiable {
+        let position: Int
+        let track: Track
+
+        var id: Int { position }
+    }
+
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
 
     let playlist: Playlist
 
     @State private var tracks: [Track] = []
     @State private var isLoading = true
     @State private var selectedTrackPosition: Int?
+    @State private var trackSearchText = ""
+    @State private var trackOrder: TrackOrder = .playlist
+    @FocusState private var isTrackSearchFocused: Bool
 
     private let artworkSize: CGFloat = 268
 
@@ -39,35 +68,54 @@ struct PlaylistView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .bottom, spacing: 24) {
-            PlaylistArtworkThumbnail(
-                playlistID: playlist.id,
-                artworkBase64: playlist.artworkId,
-                size: artworkSize
-            )
+        VStack(alignment: .leading, spacing: 28) {
+            HStack(alignment: .top, spacing: 24) {
+                PlaylistArtworkThumbnail(
+                    playlistID: currentPlaylist.id,
+                    artworkBase64: currentPlaylist.artworkId,
+                    size: artworkSize
+                )
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(playlist.name)
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .multilineTextAlignment(.leading)
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        playlistCreation.requestEdit(currentPlaylist)
+                    } label: {
+                        Text(currentPlaylist.name)
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.plain)
                     .padding(.top, 24)
+                    .help("Editar playlist")
+                    .accessibilityLabel("Editar playlist \(currentPlaylist.name)")
+                    .accessibilityIdentifier("playlist.edit")
 
-                if !playlist.description.isEmpty {
-                    Text(playlist.description)
-                        .font(.title2)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.leading)
+                    if !currentPlaylist.description.isEmpty {
+                        Text(currentPlaylist.description)
+                            .font(.title2)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.leading)
+                    }
+
+                    Text("\(currentPlaylist.trackCount) músicas")
+                        .font(.subheadline)
+                        .foregroundStyle(.tertiary)
                 }
+                .frame(maxWidth: .infinity, minHeight: artworkSize, alignment: .topLeading)
+            }
 
-                Text("\(currentPlaylist.trackCount) músicas")
-                    .font(.subheadline)
-                    .foregroundStyle(.tertiary)
-
-                Spacer(minLength: 12)
-
+            HStack(spacing: 10) {
                 CollectionPlaybackControls(
                     isEnabled: !isLoading && !tracks.isEmpty,
+                    presentation: .groupedCompactShuffle,
+                    isFavorite: currentPlaylist.isFavorite,
+                    onToggleFavorite: {
+                        store.setPlaylistFavorite(
+                            playlistID: playlist.id,
+                            favorite: !currentPlaylist.isFavorite
+                        )
+                    },
                     onPlay: {
                         guard !tracks.isEmpty else { return }
                         Task {
@@ -89,9 +137,44 @@ struct PlaylistView: View {
                         }
                     }
                 )
+
+                Spacer(minLength: 24)
+
+                Menu {
+                    Picker("Organizar", selection: $trackOrder) {
+                        ForEach(TrackOrder.allCases) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .frame(width: 34, height: 34)
+                }
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .background(Color.primary.opacity(0.08), in: .capsule)
+                .help("Organizar ou filtrar faixas")
+                .accessibilityLabel("Organizar ou filtrar faixas")
+                .accessibilityIdentifier("playlist.tracks.organize")
+
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+
+                    TextField("Pesquisar", text: $trackSearchText)
+                        .textFieldStyle(.plain)
+                        .focused($isTrackSearchFocused)
+                        .onExitCommand {
+                            trackSearchText = ""
+                            isTrackSearchFocused = false
+                        }
+                }
+                .padding(.horizontal, 12)
+                .frame(width: 147, height: 34)
+                .background(Color.primary.opacity(0.08), in: .capsule)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("playlist.tracks.search")
             }
-            .frame(maxWidth: .infinity, minHeight: artworkSize, maxHeight: artworkSize,
-                   alignment: .leading)
         }
     }
 
@@ -107,13 +190,44 @@ struct PlaylistView: View {
                 description: Text("Esta playlist ainda não possui músicas.")
             )
             .frame(maxWidth: .infinity)
+        } else if visibleTracks.isEmpty {
+            ContentUnavailableView.search(text: trackSearchText)
+                .frame(maxWidth: .infinity)
         } else {
             LazyVStack(spacing: 1) {
-                ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
-                    trackRow(track, position: index + 1)
+                ForEach(visibleTracks) { entry in
+                    trackRow(entry.track, position: entry.position)
                 }
             }
         }
+    }
+
+    private var visibleTracks: [TrackEntry] {
+        let query = trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var entries = tracks.enumerated().map {
+            TrackEntry(position: $0.offset + 1, track: $0.element)
+        }
+
+        if !query.isEmpty {
+            entries = entries.filter {
+                $0.track.title.localizedStandardContains(query)
+                    || $0.track.artist.localizedStandardContains(query)
+                    || $0.track.release.localizedStandardContains(query)
+            }
+        }
+
+        switch trackOrder {
+        case .playlist:
+            break
+        case .title:
+            entries.sort { $0.track.title.localizedStandardCompare($1.track.title) == .orderedAscending }
+        case .artist:
+            entries.sort { $0.track.artist.localizedStandardCompare($1.track.artist) == .orderedAscending }
+        case .duration:
+            entries.sort { $0.track.durationSeconds < $1.track.durationSeconds }
+        }
+
+        return entries
     }
 
     private func trackRow(_ track: Track, position: Int) -> some View {

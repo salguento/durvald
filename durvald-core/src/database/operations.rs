@@ -9,6 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+const CURRENT_METADATA_VERSION: i64 = 3;
+
 #[derive(Error, Debug)]
 pub enum DatabaseError {
     #[error("Rusqlite error: {0}")]
@@ -136,10 +138,24 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             file_path TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            file_mtime INTEGER
+            file_mtime INTEGER,
+            metadata_version INTEGER NOT NULL DEFAULT 1
         )",
         (),
     )?;
+
+    let has_metadata_version = conn
+        .prepare("PRAGMA table_info(songs)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .any(|column| column == "metadata_version");
+    if !has_metadata_version {
+        conn.execute(
+            "ALTER TABLE songs ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS playlist_songs (
@@ -158,6 +174,18 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
         "CREATE TABLE IF NOT EXISTS artists (
             artist_id   INTEGER PRIMARY KEY,
             name TEXT
+        )",
+        (),
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS song_artists (
+            song_id INTEGER NOT NULL,
+            artist_id INTEGER NOT NULL,
+            position INTEGER NOT NULL,
+            PRIMARY KEY (song_id, artist_id),
+            FOREIGN KEY (song_id) REFERENCES songs(song_id) ON DELETE CASCADE,
+            FOREIGN KEY (artist_id) REFERENCES artists(artist_id) ON DELETE CASCADE
         )",
         (),
     )?;
@@ -291,6 +319,7 @@ fn ensure_indexes(conn: &Connection) -> DatabaseResult<()> {
     const INDEXES: &[&str] = &[
         "CREATE INDEX IF NOT EXISTS idx_songs_release ON songs(release_id)",
         "CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist_id)",
+        "CREATE INDEX IF NOT EXISTS idx_song_artists_artist ON song_artists(artist_id)",
         "CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title)",
         "CREATE INDEX IF NOT EXISTS idx_songs_dedupe ON songs(title, artist_id, release_id)",
         "CREATE INDEX IF NOT EXISTS idx_releases_artist ON releases(artist_id)",
@@ -512,25 +541,48 @@ fn refresh_release_statistics(conn: &Connection, release: &ReleaseGroup) -> Data
 }
 
 fn lookup_artist_id(conn: &Connection, song: &AudioMetadata) -> DatabaseResult<i64> {
+    let artist = song
+        .track_artists
+        .first()
+        .or(song.artist.as_ref())
+        .ok_or_else(|| DatabaseError::Custom("Track artist is missing".to_string()))?;
     let id: Option<i64> = conn
         .query_row(
             "SELECT artist_id FROM artists WHERE name = ?1",
-            params![&song.artist],
+            params![artist],
             |row| row.get(0),
         )
         .optional()?;
-    id.ok_or_else(|| DatabaseError::Custom(format!("Artist '{:?}' not found", song.artist)))
+    id.ok_or_else(|| DatabaseError::Custom(format!("Artist '{artist}' not found")))
+}
+
+fn replace_song_artists(
+    conn: &Connection,
+    song_id: i64,
+    artists: &[String],
+) -> DatabaseResult<()> {
+    conn.execute("DELETE FROM song_artists WHERE song_id = ?1", [song_id])?;
+    for (position, artist) in artists.iter().enumerate() {
+        conn.execute(
+            "INSERT OR IGNORE INTO song_artists (song_id, artist_id, position)
+             SELECT ?1, artist_id, ?2 FROM artists WHERE name = ?3",
+            params![song_id, position, artist],
+        )?;
+    }
+    Ok(())
 }
 
 fn lookup_release_id(
     conn: &Connection,
     song: &AudioMetadata,
-    artist_id: i64,
 ) -> DatabaseResult<i64> {
     let id: Option<i64> = conn
         .query_row(
-            "SELECT release_id FROM releases WHERE title = ?1 AND artist_id = ?2",
-            params![&song.release, artist_id],
+            "SELECT releases.release_id
+             FROM releases
+             JOIN artists ON artists.artist_id = releases.artist_id
+             WHERE releases.title = ?1 AND artists.name = ?2",
+            params![&song.release, &song.album_artist],
             |row| row.get(0),
         )
         .optional()?;
@@ -560,9 +612,9 @@ pub(crate) fn add_song(
 
     if let Some(song_id) = existing_id {
         let artist_id = lookup_artist_id(conn, &song)?;
-        let release_id = lookup_release_id(conn, &song, artist_id)?;
+        let release_id = lookup_release_id(conn, &song)?;
         conn.execute(
-            "UPDATE songs SET title=?1, artwork=?2, artist_id=?3, artist_name=?4, release_id=?5, release_title=?6, track_number=?7, disc_number=?8, duration=?9, file_mtime=?10, updated_at=CURRENT_TIMESTAMP WHERE song_id=?11",
+            "UPDATE songs SET title=?1, artwork=?2, artist_id=?3, artist_name=?4, release_id=?5, release_title=?6, track_number=?7, disc_number=?8, duration=?9, file_mtime=?10, metadata_version=?11, updated_at=CURRENT_TIMESTAMP WHERE song_id=?12",
             params![
                 &song.title,
                 artwork,
@@ -574,14 +626,16 @@ pub(crate) fn add_song(
                 &song.disc.unwrap_or(1),
                 &song.duration,
                 mtime,
+                CURRENT_METADATA_VERSION,
                 song_id,
             ],
         )?;
+        replace_song_artists(conn, song_id, &song.track_artists)?;
         return Ok(SongWriteResult::Updated);
     }
 
     let artist_id = lookup_artist_id(conn, &song)?;
-    let release_id = lookup_release_id(conn, &song, artist_id)?;
+    let release_id = lookup_release_id(conn, &song)?;
 
     let exists: bool = conn.query_row(
         "SELECT COUNT(*) FROM songs WHERE title = ?1 AND artist_id = ?2 AND release_id = ?3",
@@ -591,7 +645,7 @@ pub(crate) fn add_song(
 
     if !exists {
         conn.execute(
-            "INSERT INTO songs (title, artwork, artist_id, artist_name, release_id, release_title, duration, track_number, disc_number, file_path, file_mtime) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO songs (title, artwork, artist_id, artist_name, release_id, release_title, duration, track_number, disc_number, file_path, file_mtime, metadata_version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 &song.title,
                 artwork,
@@ -604,8 +658,10 @@ pub(crate) fn add_song(
                 &song.disc.unwrap_or(1),
                 &song.file_path,
                 mtime,
+                CURRENT_METADATA_VERSION,
             ],
         )?;
+        replace_song_artists(conn, conn.last_insert_rowid(), &song.track_artists)?;
         return Ok(SongWriteResult::Added);
     }
 
@@ -615,7 +671,12 @@ pub(crate) fn add_song(
 pub fn group_artists(array: &[AudioMetadata]) -> Vec<String> {
     let artists: std::collections::HashSet<String> = array
         .iter()
-        .filter_map(|item| item.artist.as_ref().cloned())
+        .flat_map(|item| {
+            item.track_artists
+                .iter()
+                .chain(item.album_artist.iter())
+        })
+        .cloned()
         .collect();
 
     artists.into_iter().collect()
@@ -627,7 +688,10 @@ pub fn group_releases(array: &Vec<AudioMetadata>) -> Vec<ReleaseGroup> {
     for item in array {
         let artwork = item.cover_path.clone().unwrap_or_default();
         let title = item.release.as_deref().unwrap_or("Unknown Album");
-        let artist = item.artist.as_deref().unwrap_or("Unknown Artist");
+        let artist = item
+            .album_artist
+            .as_deref()
+            .unwrap_or("Unknown Artist");
         let year = item.year.unwrap_or_default();
         let key = format!("{}|{}|{}", title, artist, year);
 
@@ -667,7 +731,7 @@ pub fn get_releases(conn: &Connection) -> DatabaseResult<Vec<Releases>> {
                 .unwrap_or_default(),
             total_tracks: row.get(5)?,
             total_discs: row.get(6)?,
-            duration: row.get::<_, Option<u64>>(7)?.unwrap_or_default(),
+            duration: duration_from_row(row, 7)?,
             artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
             created_at: row.get::<_, String>(9)?.to_string(),
             updated_at: row.get::<_, String>(10)?.to_string(),
@@ -698,7 +762,7 @@ pub fn get_release_by_id(conn: &Connection, release_id: &str) -> DatabaseResult<
                     .unwrap_or_default(),
                 total_tracks: row.get(5)?,
                 total_discs: row.get(6)?,
-                duration: row.get::<_, Option<u64>>(7)?.unwrap_or_default(),
+                duration: duration_from_row(row, 7)?,
                 artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
                 created_at: row.get::<_, String>(9)?.to_string(),
                 updated_at: row.get::<_, String>(10)?.to_string(),
@@ -1015,7 +1079,7 @@ pub fn get_all_releases(conn: &Connection) -> DatabaseResult<Vec<Releases>> {
                 .unwrap_or_default(),
             total_tracks: row.get(5)?,
             total_discs: row.get(6)?,
-            duration: row.get::<_, Option<u64>>(7)?.unwrap_or_default(),
+            duration: duration_from_row(row, 7)?,
             artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
             created_at: row.get::<_, String>(9)?.to_string(),
             updated_at: row.get::<_, String>(10)?.to_string(),
@@ -1064,8 +1128,12 @@ pub fn get_artist_by_id(conn: &Connection, artist_id: &str) -> DatabaseResult<Ar
 }
 
 pub fn get_songs_by_artist_id(conn: &Connection, artist_id: &str) -> DatabaseResult<Vec<SongItem>> {
-    let mut stmt = conn
-        .prepare("SELECT * FROM songs WHERE artist_id = ?1 ORDER BY disc_number, track_number")?;
+    let mut stmt = conn.prepare(
+        "SELECT songs.* FROM songs
+         JOIN song_artists ON song_artists.song_id = songs.song_id
+         WHERE song_artists.artist_id = ?1
+         ORDER BY songs.release_title, songs.disc_number, songs.track_number",
+    )?;
     let songs = stmt
         .query_map([artist_id], |row| {
             Ok(SongItem {
@@ -1102,7 +1170,11 @@ pub fn get_releases_by_artist_id(
     artist_id: &str,
 ) -> DatabaseResult<Vec<Releases>> {
     let mut stmt = conn.prepare(
-        "SELECT * FROM releases WHERE artist_id = ?1 ORDER BY release_date DESC, title COLLATE NOCASE",
+        "SELECT DISTINCT releases.* FROM releases
+         LEFT JOIN songs ON songs.release_id = releases.release_id
+         LEFT JOIN song_artists ON song_artists.song_id = songs.song_id
+         WHERE releases.artist_id = ?1 OR song_artists.artist_id = ?1
+         ORDER BY releases.release_date DESC, releases.title COLLATE NOCASE",
     )?;
     let releases = stmt
         .query_map([artist_id], |row| {
@@ -1117,7 +1189,7 @@ pub fn get_releases_by_artist_id(
                     .unwrap_or_default(),
                 total_tracks: row.get(5)?,
                 total_discs: row.get(6)?,
-                duration: row.get::<_, Option<u64>>(7)?.unwrap_or_default(),
+                duration: duration_from_row(row, 7)?,
                 artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
@@ -1201,7 +1273,7 @@ pub fn search_library(conn: &Connection, query: &str) -> DatabaseResult<LibraryS
                     .unwrap_or_default(),
                 total_tracks: row.get(5)?,
                 total_discs: row.get(6)?,
-                duration: row.get::<_, Option<u64>>(7)?.unwrap_or_default(),
+                duration: duration_from_row(row, 7)?,
                 artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
@@ -1260,39 +1332,7 @@ pub fn create_playlist(
     cover: String,
     description: String,
 ) -> DatabaseResult<Playlist> {
-    let cover_blob = if !cover.is_empty() {
-        let base64_data = if cover.starts_with("data:") {
-            if let Some(pos) = cover.find("base64,") {
-                &cover[pos + 7..]
-            } else if let Some(pos) = cover.find(',') {
-                &cover[pos + 1..]
-            } else {
-                return Err(DatabaseError::Custom(
-                    "Invalid Data URL: no base64 data found".to_string(),
-                ));
-            }
-        } else {
-            &cover
-        };
-
-        let base64_data = base64_data.trim();
-        match STANDARD.decode(base64_data) {
-            Ok(data) => Some(data),
-            Err(e) => {
-                return Err(DatabaseError::Custom(format!(
-                    "Failed to decode base64 image: {} (data: '{}')",
-                    e,
-                    if base64_data.len() > 50 {
-                        format!("{}...", &base64_data[..50])
-                    } else {
-                        base64_data.to_string()
-                    }
-                )));
-            }
-        }
-    } else {
-        None
-    };
+    let cover_blob = decode_playlist_cover(&cover)?;
 
     let mut stmt = conn.prepare(
         "INSERT INTO playlists (name, cover, description)
@@ -1314,6 +1354,42 @@ pub fn create_playlist(
     })?;
 
     Ok(playlist)
+}
+
+fn decode_playlist_cover(cover: &str) -> DatabaseResult<Option<Vec<u8>>> {
+    if !cover.is_empty() {
+        let base64_data = if cover.starts_with("data:") {
+            if let Some(pos) = cover.find("base64,") {
+                &cover[pos + 7..]
+            } else if let Some(pos) = cover.find(',') {
+                &cover[pos + 1..]
+            } else {
+                return Err(DatabaseError::Custom(
+                    "Invalid Data URL: no base64 data found".to_string(),
+                ));
+            }
+        } else {
+            &cover
+        };
+
+        let base64_data = base64_data.trim();
+        match STANDARD.decode(base64_data) {
+            Ok(data) => Ok(Some(data)),
+            Err(e) => {
+                Err(DatabaseError::Custom(format!(
+                    "Failed to decode base64 image: {} (data: '{}')",
+                    e,
+                    if base64_data.len() > 50 {
+                        format!("{}...", &base64_data[..50])
+                    } else {
+                        base64_data.to_string()
+                    }
+                )))
+            }
+        }
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn get_all_playlists(conn: &Connection) -> DatabaseResult<Vec<Playlist>> {
@@ -1363,10 +1439,12 @@ pub fn update_playlist(
     playlist_id: u64,
     name: String,
     description: String,
+    cover: String,
 ) -> DatabaseResult<bool> {
+    let cover_blob = decode_playlist_cover(&cover)?;
     Ok(conn.execute(
-        "UPDATE playlists SET name = ?1, description = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?3",
-        params![name, description, playlist_id],
+        "UPDATE playlists SET name = ?1, description = ?2, cover = ?3, updated_at = CURRENT_TIMESTAMP WHERE id = ?4",
+        params![name, description, cover_blob, playlist_id],
     )? > 0)
 }
 
@@ -1878,8 +1956,10 @@ pub(crate) fn prepare_database_update_with_cancel(
     let discovered_paths = all_files.iter().map(|file| file.path.clone()).collect();
 
     // Incremental scan: skip files whose path + mtime already match the DB.
-    let mut unchanged =
-        conn.prepare("SELECT COUNT(*) FROM songs WHERE file_path = ?1 AND file_mtime = ?2")?;
+    let mut unchanged = conn.prepare(
+        "SELECT COUNT(*) FROM songs
+         WHERE file_path = ?1 AND file_mtime = ?2 AND metadata_version = ?3",
+    )?;
     let mut to_process: Vec<(FileInfo, i64)> = Vec::new();
 
     for file in all_files {
@@ -1887,9 +1967,10 @@ pub(crate) fn prepare_database_update_with_cancel(
             break;
         }
         let mtime = file_mtime(&file.path)?;
-        let is_unchanged: bool = unchanged.query_row(params![&file.path, mtime], |row| {
-            Ok(row.get::<_, i64>(0)? > 0)
-        })?;
+        let is_unchanged: bool = unchanged.query_row(
+            params![&file.path, mtime, CURRENT_METADATA_VERSION],
+            |row| Ok(row.get::<_, i64>(0)? > 0),
+        )?;
         if !is_unchanged {
             to_process.push((file, mtime));
         }
@@ -2085,10 +2166,6 @@ pub(crate) fn remove_missing_songs_in_folder(
         })
         .map(|(song_id, _)| song_id)
         .collect();
-    if missing_ids.is_empty() {
-        return Ok(0);
-    }
-
     let transaction = conn.unchecked_transaction()?;
     for song_id in &missing_ids {
         transaction.execute("DELETE FROM songs WHERE song_id = ?1", [song_id])?;
@@ -2107,7 +2184,10 @@ pub(crate) fn remove_missing_songs_in_folder(
         [],
     )?;
     transaction.execute(
-        "DELETE FROM artists WHERE NOT EXISTS (SELECT 1 FROM releases WHERE releases.artist_id = artists.artist_id)",
+        "DELETE FROM artists
+         WHERE NOT EXISTS (SELECT 1 FROM releases WHERE releases.artist_id = artists.artist_id)
+           AND NOT EXISTS (SELECT 1 FROM songs WHERE songs.artist_id = artists.artist_id)
+           AND NOT EXISTS (SELECT 1 FROM song_artists WHERE song_artists.artist_id = artists.artist_id)",
         [],
     )?;
     transaction.commit()?;
@@ -2124,6 +2204,16 @@ fn normalize_metadata(mut metadata: AudioMetadata) -> AudioMetadata {
     }
     if metadata.artist.as_deref().is_none_or(str::is_empty) {
         metadata.artist = Some("Unknown Artist".to_string());
+    }
+    if metadata.track_artists.is_empty() {
+        metadata.track_artists = metadata
+            .artist
+            .as_deref()
+            .map(crate::metadata::split_artist_credit)
+            .unwrap_or_else(|| vec!["Unknown Artist".to_string()]);
+    }
+    if metadata.album_artist.as_deref().is_none_or(str::is_empty) {
+        metadata.album_artist = metadata.artist.clone();
     }
     if metadata.release.as_deref().is_none_or(str::is_empty) {
         metadata.release = Some("Unknown Album".to_string());
@@ -2168,6 +2258,8 @@ mod tests {
         AudioMetadata {
             title: Some("Track".to_string()),
             artist: Some(artist.to_string()),
+            track_artists: vec![artist.to_string()],
+            album_artist: Some(artist.to_string()),
             release: Some(release.to_string()),
             genre: None,
             year: Some(year),
@@ -2511,6 +2603,7 @@ mod tests {
                 playlist.id,
                 "Updated Road Trip".to_string(),
                 "Updated description".to_string(),
+                "data:image/png;base64,AQIDBA==".to_string(),
             )
             .unwrap()
         );

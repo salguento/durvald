@@ -6,30 +6,12 @@ struct ArtistView: View {
     let artist: Artist
     let onSelectAlbum: (Release) -> Void
 
-    private var tracks: [Track] {
-        store.tracks.filter { $0.artistId == artist.id }
-            .sorted {
-                if $0.release != $1.release {
-                    return $0.release.localizedStandardCompare($1.release) == .orderedAscending
-                }
-                if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
-                if $0.trackNumber != $1.trackNumber { return $0.trackNumber < $1.trackNumber }
-                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
-            }
-    }
-
-    private func albums(containing tracks: [Track]) -> [Release] {
-        // Include contributions to compilations whose album artist is different.
-        let releaseIDs = Set(tracks.map(\.releaseId))
-        return store.releases.filter { $0.artistId == artist.id || releaseIDs.contains($0.id) }
-            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
-    }
+    @State private var tracks: [Track] = []
+    @State private var albums: [Release] = []
+    @State private var isLoading = true
 
     var body: some View {
-        let tracks = tracks
-        let albums = albums(containing: tracks)
-
-        return GeometryReader { geometry in
+        GeometryReader { geometry in
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     Text(artist.name)
@@ -62,7 +44,10 @@ struct ArtistView: View {
                         }
                     }
 
-                    if albums.isEmpty && tracks.isEmpty {
+                    if isLoading {
+                        ProgressView("Carregando artista…")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    } else if albums.isEmpty && tracks.isEmpty {
                         ContentUnavailableView(
                             "Nenhuma música disponível",
                             systemImage: "music.mic",
@@ -73,6 +58,24 @@ struct ArtistView: View {
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+        .task(id: artist.id) {
+            isLoading = true
+            async let loadedTracks = store.tracks(forArtistID: artist.id)
+            async let loadedAlbums = store.releases(forArtistID: artist.id)
+            let (resolvedTracks, resolvedAlbums) = await (loadedTracks, loadedAlbums)
+            tracks = resolvedTracks.sorted {
+                if $0.release != $1.release {
+                    return $0.release.localizedStandardCompare($1.release) == .orderedAscending
+                }
+                if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
+                if $0.trackNumber != $1.trackNumber { return $0.trackNumber < $1.trackNumber }
+                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+            albums = resolvedAlbums.sorted {
+                $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+            isLoading = false
         }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
     }

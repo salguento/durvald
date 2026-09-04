@@ -588,7 +588,7 @@ RustBuffer uniffi_durvald_core_fn_method_durvaldcore_tracks(void*_Nonnull ptr, R
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_UPDATE_PLAYLIST
 #define UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_UPDATE_PLAYLIST
-void uniffi_durvald_core_fn_method_durvaldcore_update_playlist(void*_Nonnull ptr, int64_t playlist_id, RustBuffer name, RustBuffer description, RustCallStatus *_Nonnull out_status
+void uniffi_durvald_core_fn_method_durvaldcore_update_playlist(void*_Nonnull ptr, int64_t playlist_id, RustBuffer name, RustBuffer description, RustBuffer artwork_base64, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_UPDATE_SETTINGS

@@ -50,6 +50,10 @@ struct LibraryNavigationHistory {
         currentIndex = entries.count - 1
     }
 
+    mutating func replaceCurrent(with route: LibraryRoute) {
+        entries[currentIndex] = route
+    }
+
     mutating func goBack() {
         guard canGoBack else { return }
         currentIndex -= 1

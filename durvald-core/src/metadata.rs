@@ -56,6 +56,8 @@ fn parse_replay_gain_db(value: &str) -> Option<f64> {
 pub struct AudioMetadata {
     pub title: Option<String>,
     pub artist: Option<String>,
+    pub track_artists: Vec<String>,
+    pub album_artist: Option<String>,
     pub release: Option<String>,
     pub genre: Option<String>,
     pub year: Option<u32>,
@@ -188,6 +190,8 @@ pub fn extract_metadata_blocking_with_cancel(
     let mut metadata = AudioMetadata {
         title: None,
         artist: None,
+        track_artists: Vec::new(),
+        album_artist: None,
         release: None,
         genre: None,
         year: None,
@@ -206,6 +210,20 @@ pub fn extract_metadata_blocking_with_cancel(
         // Standard fields
         metadata.title = tag.title().map(|s| s.to_string());
         metadata.artist = tag.artist().map(|s| s.to_string());
+        metadata.track_artists = tag
+            .get_strings(&ItemKey::TrackArtists)
+            .flat_map(split_artist_credit)
+            .collect();
+        if metadata.track_artists.is_empty() {
+            metadata.track_artists = metadata
+                .artist
+                .as_deref()
+                .map(split_artist_credit)
+                .unwrap_or_default();
+        }
+        metadata.album_artist = tag
+            .get_string(&ItemKey::AlbumArtist)
+            .map(|artist| artist.to_string());
         metadata.release = tag.album().map(|s| s.to_string());
         metadata.genre = tag.genre().map(|s| s.to_string());
         metadata.year = tag.year();
@@ -236,6 +254,48 @@ pub fn extract_metadata_blocking_with_cancel(
     }
 
     Ok(metadata)
+}
+
+pub(crate) fn split_artist_credit(credit: &str) -> Vec<String> {
+    if credit.contains(" / ") {
+        let mut artists = Vec::new();
+        for artist in credit.split(" / ").flat_map(split_artist_credit) {
+            if !artists
+                .iter()
+                .any(|existing: &String| existing.eq_ignore_ascii_case(&artist))
+            {
+                artists.push(artist);
+            }
+        }
+        return artists;
+    }
+
+    let lower = credit.to_ascii_lowercase();
+    let feature = [" feat. ", " feat ", " featuring ", " ft. ", " ft "]
+        .into_iter()
+        .find_map(|marker| lower.find(marker).map(|index| (index, marker.len())));
+
+    let Some((index, marker_length)) = feature else {
+        let artist = credit.trim();
+        return (!artist.is_empty()).then(|| artist.to_string()).into_iter().collect();
+    };
+
+    let mut artists = Vec::new();
+    let primary = credit[..index].trim();
+    if !primary.is_empty() {
+        artists.push(primary.to_string());
+    }
+
+    let guests = credit[index + marker_length..]
+        .replace(" & ", "\n")
+        .replace(", ", "\n")
+        .replace("; ", "\n");
+    for guest in guests.lines().map(str::trim).filter(|artist| !artist.is_empty()) {
+        if !artists.iter().any(|artist| artist.eq_ignore_ascii_case(guest)) {
+            artists.push(guest.to_string());
+        }
+    }
+    artists
 }
 
 #[cfg(test)]

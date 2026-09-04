@@ -871,9 +871,9 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func tracks() throws  -> [Track]
     
     /**
-     * Renames a playlist and updates its description.
+     * Updates a playlist's name, description, and optional artwork.
      */
-    func updatePlaylist(playlistId: Int64, name: String, description: String) throws 
+    func updatePlaylist(playlistId: Int64, name: String, description: String, artworkBase64: String?) throws
     
     /**
      * Updates application settings.
@@ -1841,13 +1841,14 @@ open func tracks()throws  -> [Track] {
 }
     
     /**
-     * Renames a playlist and updates its description.
+     * Updates a playlist's name, description, and optional artwork.
      */
-open func updatePlaylist(playlistId: Int64, name: String, description: String)throws  {try rustCallWithError(FfiConverterTypeCoreError.lift) {
+open func updatePlaylist(playlistId: Int64, name: String, description: String, artworkBase64: String?)throws  {try rustCallWithError(FfiConverterTypeCoreError.lift) {
     uniffi_durvald_core_fn_method_durvaldcore_update_playlist(self.uniffiClonePointer(),
         FfiConverterInt64.lower(playlistId),
         FfiConverterString.lower(name),
-        FfiConverterString.lower(description),$0
+        FfiConverterString.lower(description),
+        FfiConverterOptionString.lower(artworkBase64),$0
     )
 }
 }
@@ -4625,7 +4626,7 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_tracks() != 47377) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_update_playlist() != 35649) {
+    if (uniffi_durvald_core_checksum_method_durvaldcore_update_playlist() != 32411) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_update_settings() != 16518) {

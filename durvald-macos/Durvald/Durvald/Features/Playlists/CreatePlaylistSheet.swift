@@ -6,14 +6,27 @@ struct CreatePlaylistSheet: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focusedField: Field?
 
-    @State private var title = ""
-    @State private var playlistDescription = ""
+    @State private var title: String
+    @State private var playlistDescription: String
     @State private var artwork: NSImage?
     @State private var artworkBase64: String?
     @State private var isChoosingArtwork = false
     @State private var imageError: String?
 
-    let onCreate: (String, String, String?) -> Bool
+    private let playlist: Playlist?
+    let onSave: (String, String, String?) -> Bool
+
+    init(
+        playlist: Playlist? = nil,
+        onSave: @escaping (String, String, String?) -> Bool
+    ) {
+        self.playlist = playlist
+        self.onSave = onSave
+        _title = State(initialValue: playlist?.name ?? "")
+        _playlistDescription = State(initialValue: playlist?.description ?? "")
+        _artworkBase64 = State(initialValue: playlist?.artworkId)
+        _artwork = State(initialValue: Self.decodeArtwork(playlist?.artworkId))
+    }
 
     private enum Field {
         case title
@@ -26,7 +39,7 @@ struct CreatePlaylistSheet: View {
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Nova playlist")
+            Text(playlist == nil ? "Nova playlist" : "Editar playlist")
                 .font(.title2.weight(.semibold))
                 .frame(maxWidth: .infinity, alignment: .center)
 
@@ -53,8 +66,8 @@ struct CreatePlaylistSheet: View {
 
                 Spacer()
 
-                Button("Criar") {
-                    guard onCreate(normalizedTitle, playlistDescription, artworkBase64) else {
+                Button(playlist == nil ? "Criar" : "Salvar") {
+                    guard onSave(normalizedTitle, playlistDescription, artworkBase64) else {
                         return
                     }
                     dismiss()
@@ -146,5 +159,17 @@ struct CreatePlaylistSheet: View {
         } catch {
             imageError = error.localizedDescription
         }
+    }
+
+    private static func decodeArtwork(_ value: String?) -> NSImage? {
+        guard let value, !value.isEmpty else { return nil }
+        let base64: String
+        if value.hasPrefix("data:"), let range = value.range(of: "base64,") {
+            base64 = String(value[range.upperBound...])
+        } else {
+            base64 = value
+        }
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        return NSImage(data: data)
     }
 }

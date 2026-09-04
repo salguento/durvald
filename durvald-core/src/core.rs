@@ -1189,12 +1189,13 @@ impl DurvaldCore {
         })
     }
 
-    /// Renames a playlist and updates its description.
+    /// Updates a playlist's name, description, and optional artwork.
     pub fn update_playlist(
         &self,
         playlist_id: i64,
         name: String,
         description: String,
+        artwork_base64: Option<String>,
     ) -> CoreResult<()> {
         if name.trim().is_empty() {
             return Err(CoreError::InvalidInput {
@@ -1205,10 +1206,16 @@ impl DurvaldCore {
         let conn = self.db_pool.get().map_err(|e| CoreError::Storage {
             message: e.to_string(),
         })?;
-        if !crate::database::operations::update_playlist(&conn, playlist_id, name, description)
-            .map_err(|e| CoreError::Storage {
-                message: e.to_string(),
-            })?
+        if !crate::database::operations::update_playlist(
+            &conn,
+            playlist_id,
+            name,
+            description,
+            artwork_base64.unwrap_or_default(),
+        )
+        .map_err(|e| CoreError::Storage {
+            message: e.to_string(),
+        })?
         {
             return Err(CoreError::NotFound {
                 message: format!("Playlist {playlist_id} not found"),

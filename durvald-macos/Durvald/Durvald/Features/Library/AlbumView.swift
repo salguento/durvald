@@ -1,6 +1,24 @@
 import SwiftUI
 
 struct AlbumView: View {
+    private enum TrackOrder: String, CaseIterable, Identifiable {
+        case album
+        case title
+        case artist
+        case duration
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .album: "Ordem do álbum"
+            case .title: "Título"
+            case .artist: "Artista"
+            case .duration: "Duração"
+            }
+        }
+    }
+
     @Environment(DurvaldCoreStore.self) private var store
 
     let album: Release
@@ -8,8 +26,15 @@ struct AlbumView: View {
 
     @State private var tracks: [Track] = []
     @State private var isLoading = true
+    @State private var trackSearchText = ""
+    @State private var trackOrder: TrackOrder = .album
+    @FocusState private var isTrackSearchFocused: Bool
 
     private let artworkSize: CGFloat = 268
+
+    private var currentAlbum: Release {
+        store.releases.first(where: { $0.id == album.id }) ?? album
+    }
 
     var body: some View {
         ScrollView {
@@ -29,39 +54,50 @@ struct AlbumView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .bottom, spacing: 24) {
-            ArtworkView(
-                artworkID: album.artworkId,
-                size: artworkSize
-            )
+        VStack(alignment: .leading, spacing: 28) {
+            HStack(alignment: .top, spacing: 24) {
+                ArtworkView(
+                    artworkID: album.artworkId,
+                    size: artworkSize
+                )
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(album.title)
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                    .multilineTextAlignment(.leading)
-                    .padding(.top, 24)
-
-                Button {
-                    guard let artist = store.artists.first(where: { $0.id == album.artistId }) else {
-                        return
-                    }
-                    onSelectArtist(artist)
-                } label: {
-                    Text(album.artist)
-                        .font(.title)
-                        .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(album.title)
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
                         .multilineTextAlignment(.leading)
+                        .padding(.top, 24)
+
+                    Button {
+                        guard let artist = store.artists.first(where: { $0.id == album.artistId }) else {
+                            return
+                        }
+                        onSelectArtist(artist)
+                    } label: {
+                        Text(album.artist)
+                            .font(.title)
+                            .foregroundStyle(Color.accentColor)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Abrir artista \(album.artist)")
+                    .accessibilityLabel("Abrir artista \(album.artist)")
+                    .accessibilityIdentifier("album.artist")
                 }
-                .buttonStyle(.plain)
-                .help("Abrir artista \(album.artist)")
-                .accessibilityLabel("Abrir artista \(album.artist)")
-                .accessibilityIdentifier("album.artist")
+                .frame(maxWidth: .infinity, minHeight: artworkSize, alignment: .topLeading)
+            }
 
-                Spacer(minLength: 12)
-
+            HStack(spacing: 10) {
                 CollectionPlaybackControls(
                     isEnabled: !isLoading && !tracks.isEmpty,
+                    presentation: .groupedCompactShuffle,
+                    isFavorite: currentAlbum.isFavorite,
+                    onToggleFavorite: {
+                        store.setReleaseFavorite(
+                            releaseID: album.id,
+                            favorite: !currentAlbum.isFavorite
+                        )
+                    },
                     onPlay: {
                         Task {
                             await store.playRelease(
@@ -79,9 +115,44 @@ struct AlbumView: View {
                         }
                     }
                 )
+
+                Spacer(minLength: 24)
+
+                Menu {
+                    Picker("Organizar", selection: $trackOrder) {
+                        ForEach(TrackOrder.allCases) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .frame(width: 34, height: 34)
+                }
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .background(Color.primary.opacity(0.08), in: .capsule)
+                .help("Organizar ou filtrar faixas")
+                .accessibilityLabel("Organizar ou filtrar faixas")
+                .accessibilityIdentifier("album.tracks.organize")
+
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+
+                    TextField("Pesquisar", text: $trackSearchText)
+                        .textFieldStyle(.plain)
+                        .focused($isTrackSearchFocused)
+                        .onExitCommand {
+                            trackSearchText = ""
+                            isTrackSearchFocused = false
+                        }
+                }
+                .padding(.horizontal, 12)
+                .frame(width: 147, height: 34)
+                .background(Color.primary.opacity(0.08), in: .capsule)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("album.tracks.search")
             }
-            .frame(maxWidth: .infinity, minHeight: artworkSize, maxHeight: artworkSize,
-                   alignment: .leading)
         }
     }
 
@@ -97,17 +168,45 @@ struct AlbumView: View {
                 description: Text("Este álbum não possui faixas disponíveis.")
             )
             .frame(maxWidth: .infinity)
+        } else if visibleTracks.isEmpty {
+            ContentUnavailableView.search(text: trackSearchText)
+                .frame(maxWidth: .infinity)
         } else {
             LazyVStack(spacing: 0) {
-                ForEach(tracks, id: \.id) { track in
+                ForEach(visibleTracks, id: \.id) { track in
                     trackRow(track)
 
-                    if track.id != tracks.last?.id {
+                    if track.id != visibleTracks.last?.id {
                         Divider()
                     }
                 }
             }
         }
+    }
+
+    private var visibleTracks: [Track] {
+        let query = trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var visibleTracks = tracks
+
+        if !query.isEmpty {
+            visibleTracks = visibleTracks.filter {
+                $0.title.localizedStandardContains(query)
+                    || $0.artist.localizedStandardContains(query)
+            }
+        }
+
+        switch trackOrder {
+        case .album:
+            break
+        case .title:
+            visibleTracks.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .artist:
+            visibleTracks.sort { $0.artist.localizedStandardCompare($1.artist) == .orderedAscending }
+        case .duration:
+            visibleTracks.sort { $0.durationSeconds < $1.durationSeconds }
+        }
+
+        return visibleTracks
     }
 
     private func trackRow(_ track: Track) -> some View {
