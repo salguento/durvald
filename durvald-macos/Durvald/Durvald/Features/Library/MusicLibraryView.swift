@@ -23,18 +23,13 @@ struct MusicLibraryView: View {
                 HStack {
                     ArtworkView(artworkID: track.artworkId, size: 42)
 
-                    Button {
-                        Task { await store.play(trackID: track.id) }
-                    } label: {
-                        VStack(alignment: .leading) {
-                            Text(track.title)
-                                .activeTrackTitle(trackID: track.id)
-                            Text(track.artist)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading) {
+                        Text(track.title)
+                            .activeTrackTitle(trackID: track.id)
+                        Text(track.artist)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel(
                         track.artist.isEmpty
                             ? track.title
@@ -54,14 +49,11 @@ struct MusicLibraryView: View {
                     .accessibilityHint("Adiciona esta faixa ao fim da fila")
                 }
                 .tag(track.id)
-                .contextMenu {
-                    Button("Reproduzir agora") {
-                        Task { await store.play(trackID: track.id) }
-                    }
-
-                    Button("Adicionar à fila") {
-                        Task { await store.addToQueue(trackID: track.id) }
-                    }
+                .playTrackOnDoubleClick {
+                    Task { await store.play(trackID: track.id) }
+                }
+                .trackContextMenu(track: track) {
+                    Task { await store.play(trackID: track.id) }
                 }
             }
         }

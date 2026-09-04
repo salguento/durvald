@@ -46,6 +46,11 @@ final class DurvaldUITests: XCTestCase {
         app.links["player.trackTitle"].rightClick()
         XCTAssertTrue(app.menuItems["Favoritar faixa"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.menuItems["Adicionar à fila"].exists)
+        let addToPlaylist = app.menuItems["Adicionar à playlist"]
+        XCTAssertTrue(addToPlaylist.exists)
+        addToPlaylist.hover()
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 2))
+        XCTAssertEqual(app.searchFields.firstMatch.placeholderValue, "Pesquisar playlists")
         XCTAssertFalse(app.menuItems["Reproduzir álbum"].exists)
         app.typeKey(.escape, modifierFlags: [])
 

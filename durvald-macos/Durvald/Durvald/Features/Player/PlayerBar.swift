@@ -169,15 +169,42 @@ struct PlayerBar: View {
 
     private func trackMetadata(_ track: Track?, album: Release?, artist: Artist?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            PlayerMetadataLink(
-                title: track?.title ?? "Nada tocando",
-                destinationLabel: album.map { "Abrir álbum \($0.title)" },
-                action: { if let album { onSelectAlbum(album) } }
-            )
-            .font(.subheadline.weight(.medium))
-            .accessibilityIdentifier("player.trackTitle")
-            .contextMenu {
-                trackContextMenu(track, album: album, artist: artist)
+            if let track {
+                PlayerMetadataLink(
+                    title: track.title,
+                    destinationLabel: album.map { "Abrir álbum \($0.title)" },
+                    action: { if let album { onSelectAlbum(album) } }
+                )
+                .font(.subheadline.weight(.medium))
+                .accessibilityIdentifier("player.trackTitle")
+                .trackContextMenu(
+                    track: track,
+                    onPlay: { Task { await store.play(trackID: track.id) } },
+                    additionalActions: [
+                        TrackMenuAction(
+                        track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
+                        systemImage: track.isFavorite ? "star.slash" : "star"
+                        ) {
+                        store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+                        },
+                        TrackMenuAction("Abrir álbum", systemImage: "square.stack",
+                                        isEnabled: album != nil) {
+                            if let album { onSelectAlbum(album) }
+                        },
+                        TrackMenuAction("Abrir artista", systemImage: "music.mic",
+                                        isEnabled: artist != nil) {
+                            if let artist { onSelectArtist(artist) }
+                        }
+                    ]
+                )
+            } else {
+                PlayerMetadataLink(
+                    title: "Nada tocando",
+                    destinationLabel: nil,
+                    action: {}
+                )
+                .font(.subheadline.weight(.medium))
+                .accessibilityIdentifier("player.trackTitle")
             }
 
             PlayerMetadataLink(
@@ -227,7 +254,26 @@ struct PlayerBar: View {
             .accessibilityIdentifier("player.favorite")
 
             Menu {
-                trackContextMenu(track, album: album, artist: artist)
+                if let track {
+                    Button(
+                        track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
+                        systemImage: track.isFavorite ? "star.slash" : "star"
+                    ) {
+                        store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+                    }
+                    Button("Adicionar à fila", systemImage: "text.badge.plus") {
+                        Task { await store.addToQueue(trackID: track.id) }
+                    }
+                    Divider()
+                    Button("Abrir álbum", systemImage: "square.stack") {
+                        if let album { onSelectAlbum(album) }
+                    }
+                    .disabled(album == nil)
+                    Button("Abrir artista", systemImage: "music.mic") {
+                        if let artist { onSelectArtist(artist) }
+                    }
+                    .disabled(artist == nil)
+                }
             } label: {
                 Image(systemName: "ellipsis")
                     .foregroundStyle(.secondary)
@@ -245,30 +291,6 @@ struct PlayerBar: View {
         .frame(width: 24)
         .fixedSize()
         .disabled(track == nil)
-    }
-
-    @ViewBuilder
-    private func trackContextMenu(_ track: Track?, album: Release?, artist: Artist?) -> some View {
-        if let track {
-            Button(
-                track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
-                systemImage: track.isFavorite ? "star.slash" : "star"
-            ) {
-                store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
-            }
-            Button("Adicionar à fila", systemImage: "text.badge.plus") {
-                Task { await store.addToQueue(trackID: track.id) }
-            }
-            Divider()
-            Button("Abrir álbum", systemImage: "square.stack") {
-                if let album { onSelectAlbum(album) }
-            }
-            .disabled(album == nil)
-            Button("Abrir artista", systemImage: "music.mic") {
-                if let artist { onSelectArtist(artist) }
-            }
-            .disabled(artist == nil)
-        }
     }
 
     private var playbackControls: some View {

@@ -40,6 +40,8 @@ struct QueueTableView: NSViewRepresentable {
         tableView.selectionHighlightStyle = .regular
         tableView.delegate = context.coordinator
         tableView.dataSource = context.coordinator
+        tableView.target = context.coordinator
+        tableView.doubleAction = #selector(Coordinator.playDoubleClickedRow(_:))
         tableView.registerForDraggedTypes([Coordinator.queuePasteboardType])
         tableView.setDraggingSourceOperationMask(.move, forLocal: true)
 
@@ -240,6 +242,17 @@ struct QueueTableView: NSViewRepresentable {
 
             if row.isCurrent {
                 parent.onTogglePlayback()
+            } else {
+                parent.onPlay(row.position)
+            }
+        }
+
+        @objc func playDoubleClickedRow(_ sender: NSTableView) {
+            guard rows.indices.contains(sender.clickedRow) else { return }
+            let row = rows[sender.clickedRow]
+
+            if row.isCurrent {
+                if row.isPaused { parent.onTogglePlayback() }
             } else {
                 parent.onPlay(row.position)
             }

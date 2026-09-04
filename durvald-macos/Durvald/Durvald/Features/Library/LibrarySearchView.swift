@@ -122,21 +122,16 @@ struct LibrarySearchView: View {
         HStack(spacing: 10) {
             ArtworkView(artworkID: track.artworkId, size: 42)
 
-            Button {
-                Task { await store.play(trackID: track.id) }
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(track.title)
-                        .activeTrackTitle(trackID: track.id)
-                        .lineLimit(1)
-                    Text(track.artist)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title)
+                    .activeTrackTitle(trackID: track.id)
+                    .lineLimit(1)
+                Text(track.artist)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel(
                 track.artist.isEmpty
                     ? track.title
@@ -154,14 +149,11 @@ struct LibrarySearchView: View {
             .accessibilityLabel("Adicionar \(track.title) à fila")
             .accessibilityIdentifier("search.track.\(track.id).addToQueue")
         }
-        .contextMenu {
-            Button("Reproduzir agora") {
-                Task { await store.play(trackID: track.id) }
-            }
-
-            Button("Adicionar à fila") {
-                Task { await store.addToQueue(trackID: track.id) }
-            }
+        .playTrackOnDoubleClick {
+            Task { await store.play(trackID: track.id) }
+        }
+        .trackContextMenu(track: track) {
+            Task { await store.play(trackID: track.id) }
         }
     }
 }

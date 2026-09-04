@@ -127,6 +127,59 @@ final class DurvaldCoreStore {
         history = try core.playbackHistory()
     }
 
+    @discardableResult
+    func createPlaylist(
+        named name: String,
+        description: String = "",
+        artworkBase64: String? = nil
+    ) -> Playlist? {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo."
+            return nil
+        }
+
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else { return nil }
+
+        do {
+            let playlist = try core.createPlaylist(
+                name: normalizedName,
+                description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+                artworkBase64: artworkBase64
+            )
+            playlists.append(playlist)
+            return playlist
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    @discardableResult
+    func addTrack(_ trackID: Int64, to playlist: Playlist) -> Bool {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo."
+            return false
+        }
+
+        do {
+            let currentTrackCount = playlists.first(where: { $0.id == playlist.id })?.trackCount
+                ?? playlist.trackCount
+            _ = try core.addTrackToPlaylist(
+                playlistId: playlist.id,
+                trackId: trackID,
+                position: currentTrackCount
+            )
+            if let index = playlists.firstIndex(where: { $0.id == playlist.id }) {
+                playlists[index].trackCount += 1
+            }
+            return true
+        } catch {
+            errorMessage = String(describing: error)
+            return false
+        }
+    }
+
     func searchLibrary(query: String) async -> SearchResults {
         guard let core else {
             return SearchResults(
@@ -175,6 +228,20 @@ final class DurvaldCoreStore {
 
                 return lhs.id < rhs.id
             }
+        } catch {
+            errorMessage = String(describing: error)
+            return []
+        }
+    }
+
+    func tracks(forPlaylistID playlistID: Int64) async -> [Track] {
+        guard let core else { return [] }
+        let sendableCore = SendableCore(value: core)
+
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                try sendableCore.value.playlistTracks(playlistId: playlistID)
+            }.value
         } catch {
             errorMessage = String(describing: error)
             return []
@@ -307,7 +374,11 @@ final class DurvaldCoreStore {
         }
     }
 
-    func playRelease(releaseID: Int64, startingAt trackID: Int64? = nil) async {
+    func playRelease(
+        releaseID: Int64,
+        startingAt trackID: Int64? = nil,
+        shuffleEnabled: Bool? = nil
+    ) async {
         guard let core, !isChangingTrack else { return }
 
         isChangingTrack = true
@@ -354,6 +425,50 @@ final class DurvaldCoreStore {
 
             for track in selectedTracks.dropFirst() {
                 try await core.addToQueue(trackId: track.id)
+            }
+
+            if let shuffleEnabled {
+                playback = try await core.setShuffleEnabled(enabled: shuffleEnabled)
+            }
+
+            await refreshPlayback()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func playPlaylist(
+        playlistID: Int64,
+        startingAtPosition position: Int,
+        shuffleEnabled: Bool? = nil
+    ) async {
+        guard let core, !isChangingTrack else { return }
+
+        isChangingTrack = true
+        await finishSeekBeforeChangingTrack()
+        defer {
+            isChangingTrack = false
+            seekRequestID &+= 1
+        }
+
+        do {
+            let tracks = try core.playlistTracks(playlistId: playlistID)
+            guard tracks.indices.contains(position) else {
+                errorMessage = "A posição selecionada não pertence a esta playlist."
+                return
+            }
+
+            let selectedTracks = tracks[position...]
+            guard let firstTrack = selectedTracks.first else { return }
+            try await core.clearQueue()
+            playback = try await core.play(trackId: firstTrack.id)
+
+            for track in selectedTracks.dropFirst() {
+                try await core.addToQueue(trackId: track.id)
+            }
+
+            if let shuffleEnabled {
+                playback = try await core.setShuffleEnabled(enabled: shuffleEnabled)
             }
 
             await refreshPlayback()

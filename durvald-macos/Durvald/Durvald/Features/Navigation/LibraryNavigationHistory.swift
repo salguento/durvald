@@ -2,12 +2,14 @@ enum LibraryRoute: Equatable {
     case section(LibraryDestination)
     case album(Release)
     case artist(Artist)
+    case playlist(Playlist)
 
     var destination: LibraryDestination {
         switch self {
         case .section(let destination): destination
         case .album: .albums
         case .artist: .artists
+        case .playlist: .playlists
         }
     }
 }

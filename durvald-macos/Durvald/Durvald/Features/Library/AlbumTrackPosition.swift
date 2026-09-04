@@ -6,10 +6,15 @@ struct AlbumTrackPosition: View {
 
     let trackID: Int64
     let number: String
+    var isActiveOverride: Bool? = nil
+
+    private var isActive: Bool {
+        isActiveOverride ?? (store.activeTrackID == trackID)
+    }
 
     var body: some View {
         Group {
-            if store.activeTrackID == trackID && !store.isPlaybackPaused {
+            if isActive && !store.isPlaybackPaused {
                 // Keep the number's layout slot and center the wider symbol on it.
                 Text(number)
                     .monospacedDigit()
@@ -25,7 +30,7 @@ struct AlbumTrackPosition: View {
                     }
             } else {
                 Text(number)
-                    .foregroundStyle(store.activeTrackID == trackID ? Color.accentColor : Color.secondary)
+                    .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
                     .monospacedDigit()
                     .accessibilityIdentifier("album.track.\(trackID).number")
             }

@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var isSearchFocused = false
     @State private var isQueuePresented = false
     @State private var inspectorLayout = InspectorLayoutController()
+    @State private var playlistCreation = PlaylistCreationCoordinator()
 
     private enum Layout {
         static let contentMinimumWidth: CGFloat = 440
@@ -28,10 +29,28 @@ struct ContentView: View {
             LibrarySidebarView(
                 section: $sidebarSection,
                 destination: destinationBinding,
+                selectedPlaylistID: selectedPlaylistID,
                 onSelectAlbum: showAlbum,
-                onSelectArtist: showArtist
+                onSelectArtist: showArtist,
+                onSelectPlaylist: showPlaylist
             )
             .navigationSplitViewColumnWidth(min: 180, ideal: 210, max: 280)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button("Criar playlist") {
+                            playlistCreation.request(for: nil)
+                        }
+                        .accessibilityIdentifier("playlist.create")
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .menuIndicator(.hidden)
+                    .help("Adicionar")
+                    .accessibilityLabel("Adicionar")
+                    .accessibilityIdentifier("library.addMenu")
+                }
+            }
         } detail: {
             contentColumn
                 .frame(
@@ -54,6 +73,7 @@ struct ContentView: View {
                 )
         }
         .toolbar(removing: .title)
+        .environment(playlistCreation)
         .focusedSceneValue(\.openLibrarySearch) {
             destinationBinding.wrappedValue = .search
         }
@@ -76,6 +96,27 @@ struct ContentView: View {
             }
         } message: {
             Text(store.errorMessage ?? "")
+        }
+        .sheet(isPresented: Binding(
+            get: { playlistCreation.isPresented },
+            set: { playlistCreation.isPresented = $0 }
+        )) {
+            CreatePlaylistSheet { title, description, artworkBase64 in
+                guard let playlist = store.createPlaylist(
+                    named: title,
+                    description: description,
+                    artworkBase64: artworkBase64
+                ) else { return false }
+                if let trackID = playlistCreation.pendingTrackID {
+                    store.addTrack(trackID, to: playlist)
+                }
+                let updatedPlaylist = store.playlists.first { $0.id == playlist.id } ?? playlist
+                showPlaylist(updatedPlaylist)
+                return true
+            }
+        }
+        .onChange(of: playlistCreation.isPresented) { _, isPresented in
+            if !isPresented { playlistCreation.pendingTrackID = nil }
         }
     }
 
@@ -228,6 +269,11 @@ struct ContentView: View {
         )
     }
 
+    private var selectedPlaylistID: Int64? {
+        guard case .playlist(let playlist) = navigationHistory.currentRoute else { return nil }
+        return playlist.id
+    }
+
     private func requestSearchFocus() {
         searchFocusRequest &+= 1
     }
@@ -252,6 +298,7 @@ struct ContentView: View {
         switch navigationHistory.currentRoute {
         case .album(let album): return album.title
         case .artist(let artist): return artist.name
+        case .playlist(let playlist): return playlist.name
         case .section: break
         }
 
@@ -268,15 +315,22 @@ struct ContentView: View {
         navigationHistory.navigate(to: .artist(artist))
     }
 
+    private func showPlaylist(_ playlist: Playlist) {
+        navigationHistory.navigate(to: .playlist(playlist))
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch navigationHistory.currentRoute {
         case .album(let album):
-            AlbumView(album: album)
+            AlbumView(album: album, onSelectArtist: showArtist)
                 .id(album.id)
         case .artist(let artist):
             ArtistView(artist: artist, onSelectAlbum: showAlbum)
                 .id(artist.id)
+        case .playlist(let playlist):
+            PlaylistView(playlist: playlist)
+                .id(playlist.id)
         case .section(let destination):
             sectionContent(destination)
         }

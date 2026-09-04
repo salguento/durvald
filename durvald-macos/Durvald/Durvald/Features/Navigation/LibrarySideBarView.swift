@@ -5,9 +5,11 @@ struct LibrarySidebarView: View {
 
     @Binding var section: SidebarSection
     @Binding var destination: LibraryDestination?
+    let selectedPlaylistID: Int64?
 
     let onSelectAlbum: (Release) -> Void
     let onSelectArtist: (Artist) -> Void
+    let onSelectPlaylist: (Playlist) -> Void
 
     @State private var isLocalSearchExpanded = false
     @State private var localSearchText = ""
@@ -110,8 +112,17 @@ struct LibrarySidebarView: View {
                     SidebarNavigationButton(
                         item: .playlists,
                         selection: $destination,
-                        accessibilityIdentifier: "sidebar.playlists"
+                        accessibilityIdentifier: "sidebar.playlists",
+                        allowsSelectionHighlight: selectedPlaylistID == nil
                     )
+
+                    ForEach(store.playlists, id: \.id) { playlist in
+                        SidebarPlaylistButton(
+                            playlist: playlist,
+                            isSelected: selectedPlaylistID == playlist.id,
+                            action: { onSelectPlaylist(playlist) }
+                        )
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 10)
@@ -120,7 +131,7 @@ struct LibrarySidebarView: View {
         case .playlists:
             List(localPlaylists, id: \.id) { playlist in
                 Button {
-                    destination = .playlists
+                    onSelectPlaylist(playlist)
                 } label: {
                     SidebarItemLabel(
                         title: playlist.name,
@@ -240,8 +251,9 @@ private struct SidebarNavigationButton: View {
     let item: LibraryDestination
     @Binding var selection: LibraryDestination?
     let accessibilityIdentifier: String
+    var allowsSelectionHighlight = true
 
-    private var isSelected: Bool { selection == item }
+    private var isSelected: Bool { allowsSelectionHighlight && selection == item }
 
     private var foreground: Color {
         guard isSelected else {
@@ -302,6 +314,62 @@ private struct SidebarNavigationButton: View {
     }
 }
 
+private struct SidebarPlaylistButton: View {
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.colorScheme) private var colorScheme
+
+    let playlist: Playlist
+    let isSelected: Bool
+    let action: () -> Void
+
+    private var foreground: Color {
+        isSelected ? Color.accentColor.opacity(appearsActive ? 1 : 0.63) : .primary
+    }
+
+    private var selectionBackgroundOpacity: Double {
+        if colorScheme == .dark {
+            return appearsActive ? 0.08 : 0.10
+        }
+        return appearsActive ? 0.10 : 0.06
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                PlaylistArtworkThumbnail(
+                    playlistID: playlist.id,
+                    artworkBase64: playlist.artworkId,
+                    size: 24
+                )
+
+                Text(playlist.name)
+                    .font(.body)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(foreground)
+            .padding(.leading, 16)
+            .padding(.trailing, 8)
+            .frame(maxWidth: .infinity, minHeight: 32, maxHeight: 32)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(selectionBackgroundOpacity))
+            }
+        }
+        .help(playlist.name)
+        .accessibilityLabel(playlist.name)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("sidebar.playlist.\(playlist.id)")
+        .animation(.easeOut(duration: 0.15), value: appearsActive)
+    }
+}
+
 
 
 private struct SidebarSectionPicker: View {
@@ -333,7 +401,7 @@ private struct SidebarSectionPicker: View {
                 .padding(3)
         }
         .frame(height: 30)
-        .glassEffect(.regular, in: .rect(cornerRadius: 6))
+        .glassEffect(.regular, in: .capsule)
         .animation(.easeOut(duration: 0.15), value: appearsActive)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Conteúdo da barra lateral")
@@ -379,7 +447,7 @@ private struct SidebarSectionPicker: View {
                     .contentShape(Rectangle())
                     .background {
                         if item == selection {
-                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            Capsule()
                                 .fill(
                                     appearsActive
                                         ? Color.accentColor

@@ -4,11 +4,12 @@ struct AlbumView: View {
     @Environment(DurvaldCoreStore.self) private var store
 
     let album: Release
+    let onSelectArtist: (Artist) -> Void
 
     @State private var tracks: [Track] = []
     @State private var isLoading = true
 
-    private let artworkSize: CGFloat = 320
+    private let artworkSize: CGFloat = 268
 
     var body: some View {
         ScrollView {
@@ -28,24 +29,59 @@ struct AlbumView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 24) {
+        HStack(alignment: .bottom, spacing: 24) {
             ArtworkView(
                 artworkID: album.artworkId,
                 size: artworkSize
             )
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(album.title)
                     .font(.largeTitle)
                     .fontWeight(.bold)
                     .multilineTextAlignment(.leading)
+                    .padding(.top, 24)
 
-                Text(album.artist)
-                    .font(.title2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
+                Button {
+                    guard let artist = store.artists.first(where: { $0.id == album.artistId }) else {
+                        return
+                    }
+                    onSelectArtist(artist)
+                } label: {
+                    Text(album.artist)
+                        .font(.title)
+                        .foregroundStyle(Color.accentColor)
+                        .multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.plain)
+                .help("Abrir artista \(album.artist)")
+                .accessibilityLabel("Abrir artista \(album.artist)")
+                .accessibilityIdentifier("album.artist")
+
+                Spacer(minLength: 12)
+
+                CollectionPlaybackControls(
+                    isEnabled: !isLoading && !tracks.isEmpty,
+                    onPlay: {
+                        Task {
+                            await store.playRelease(
+                                releaseID: album.id,
+                                shuffleEnabled: false
+                            )
+                        }
+                    },
+                    onShuffle: {
+                        Task {
+                            await store.playRelease(
+                                releaseID: album.id,
+                                shuffleEnabled: true
+                            )
+                        }
+                    }
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: artworkSize, maxHeight: artworkSize,
+                   alignment: .leading)
         }
     }
 
@@ -78,24 +114,19 @@ struct AlbumView: View {
         HStack(spacing: 12) {
             AlbumTrackPosition(trackID: track.id, number: trackNumber(for: track))
 
-            Button {
-                Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(track.title)
-                        .activeTrackTitle(trackID: track.id)
-                        .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title)
+                    .activeTrackTitle(trackID: track.id)
+                    .lineLimit(1)
 
-                    if !track.artist.isEmpty && track.artist != album.artist {
-                        Text(track.artist)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
+                if !track.artist.isEmpty && track.artist != album.artist {
+                    Text(track.artist)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(durationText(track.durationSeconds))
                 .font(.caption)
@@ -111,15 +142,11 @@ struct AlbumView: View {
             .accessibilityLabel("Adicionar \(track.title) à fila")
         }
         .padding(.vertical, 9)
-        .contentShape(Rectangle())
-        .contextMenu {
-            Button("Reproduzir agora") {
-                Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
-            }
-
-            Button("Adicionar à fila") {
-                Task { await store.addToQueue(trackID: track.id) }
-            }
+        .playTrackOnDoubleClick {
+            Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
+        }
+        .trackContextMenu(track: track) {
+            Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("album.track.\(track.id)")

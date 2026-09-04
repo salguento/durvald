@@ -81,21 +81,15 @@ struct ArtistView: View {
         HStack(spacing: 12) {
             ArtworkView(artworkID: track.artworkId, size: 36)
 
-            Button {
-                Task { await store.play(trackID: track.id) }
-            } label: {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(track.title)
-                        .activeTrackTitle(trackID: track.id)
-                    Text(track.release)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(track.title)
+                    .activeTrackTitle(trackID: track.id)
+                Text(track.release)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel("Reproduzir \(track.title)")
 
             Button {
@@ -107,6 +101,12 @@ struct ArtistView: View {
             .accessibilityLabel("Adicionar \(track.title) à fila")
         }
         .padding(.vertical, 8)
+        .playTrackOnDoubleClick {
+            Task { await store.play(trackID: track.id) }
+        }
+        .trackContextMenu(track: track) {
+            Task { await store.play(trackID: track.id) }
+        }
         .accessibilityIdentifier("artist.track.\(track.id)")
     }
 }

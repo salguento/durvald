@@ -43,8 +43,13 @@ struct ToolbarSearchTextField: NSViewRepresentable {
 
     func updateNSView(_ textField: NSTextField, context: Context) {
         context.coordinator.parent = self
+        let hasNewFocusRequest = context.coordinator.lastFocusRequest != focusRequest
 
-        if textField.stringValue != text {
+        // While the field editor is active, it is the source of truth. Writing a
+        // slightly older Binding value back here resets the insertion point and
+        // can select the complete query while results are updating.
+        if textField.stringValue != text,
+           textField.currentEditor() == nil || hasNewFocusRequest {
             textField.stringValue = text
         }
 
@@ -55,7 +60,7 @@ struct ToolbarSearchTextField: NSViewRepresentable {
             return
         }
 
-        guard context.coordinator.lastFocusRequest != focusRequest else {
+        guard hasNewFocusRequest else {
             return
         }
 
@@ -67,8 +72,19 @@ struct ToolbarSearchTextField: NSViewRepresentable {
             guard let textField, let coordinator,
                   let window = textField.window else { return }
 
+            if textField.currentEditor() === window.firstResponder {
+                coordinator.parent.isFocused = true
+                return
+            }
+
             if window.makeFirstResponder(textField) {
                 coordinator.parent.isFocused = true
+                let insertionPoint = (textField.stringValue as NSString).length
+                if let editor = textField.currentEditor() as? NSTextView {
+                    editor.setSelectedRange(
+                        NSRange(location: insertionPoint, length: 0)
+                    )
+                }
             }
         }
     }

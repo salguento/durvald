@@ -42,7 +42,7 @@ struct ArtworkView: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .artworkGlassBorder(size: size)
         .task(id: request) {
             guard let artworkID, let core else {
                 image = nil
@@ -61,5 +61,13 @@ struct ArtworkView: View {
             loadedRequest = request
         }
         .accessibilityHidden(true)
+    }
+}
+
+extension View {
+    func artworkGlassBorder(size: CGFloat) -> some View {
+        let cornerRadius = min(12, max(4, size * 0.045))
+        return clipShape(.rect(cornerRadius: cornerRadius))
+            .glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
     }
 }
