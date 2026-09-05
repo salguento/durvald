@@ -277,7 +277,10 @@ pub(crate) fn split_artist_credit(credit: &str) -> Vec<String> {
 
     let Some((index, marker_length)) = feature else {
         let artist = credit.trim();
-        return (!artist.is_empty()).then(|| artist.to_string()).into_iter().collect();
+        return (!artist.is_empty())
+            .then(|| artist.to_string())
+            .into_iter()
+            .collect();
     };
 
     let mut artists = Vec::new();
@@ -290,8 +293,15 @@ pub(crate) fn split_artist_credit(credit: &str) -> Vec<String> {
         .replace(" & ", "\n")
         .replace(", ", "\n")
         .replace("; ", "\n");
-    for guest in guests.lines().map(str::trim).filter(|artist| !artist.is_empty()) {
-        if !artists.iter().any(|artist| artist.eq_ignore_ascii_case(guest)) {
+    for guest in guests
+        .lines()
+        .map(str::trim)
+        .filter(|artist| !artist.is_empty())
+    {
+        if !artists
+            .iter()
+            .any(|artist| artist.eq_ignore_ascii_case(guest))
+        {
             artists.push(guest.to_string());
         }
     }

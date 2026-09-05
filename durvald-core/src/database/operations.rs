@@ -556,11 +556,7 @@ fn lookup_artist_id(conn: &Connection, song: &AudioMetadata) -> DatabaseResult<i
     id.ok_or_else(|| DatabaseError::Custom(format!("Artist '{artist}' not found")))
 }
 
-fn replace_song_artists(
-    conn: &Connection,
-    song_id: i64,
-    artists: &[String],
-) -> DatabaseResult<()> {
+fn replace_song_artists(conn: &Connection, song_id: i64, artists: &[String]) -> DatabaseResult<()> {
     conn.execute("DELETE FROM song_artists WHERE song_id = ?1", [song_id])?;
     for (position, artist) in artists.iter().enumerate() {
         conn.execute(
@@ -572,10 +568,7 @@ fn replace_song_artists(
     Ok(())
 }
 
-fn lookup_release_id(
-    conn: &Connection,
-    song: &AudioMetadata,
-) -> DatabaseResult<i64> {
+fn lookup_release_id(conn: &Connection, song: &AudioMetadata) -> DatabaseResult<i64> {
     let id: Option<i64> = conn
         .query_row(
             "SELECT releases.release_id
@@ -671,11 +664,7 @@ pub(crate) fn add_song(
 pub fn group_artists(array: &[AudioMetadata]) -> Vec<String> {
     let artists: std::collections::HashSet<String> = array
         .iter()
-        .flat_map(|item| {
-            item.track_artists
-                .iter()
-                .chain(item.album_artist.iter())
-        })
+        .flat_map(|item| item.track_artists.iter().chain(item.album_artist.iter()))
         .cloned()
         .collect();
 
@@ -688,10 +677,7 @@ pub fn group_releases(array: &Vec<AudioMetadata>) -> Vec<ReleaseGroup> {
     for item in array {
         let artwork = item.cover_path.clone().unwrap_or_default();
         let title = item.release.as_deref().unwrap_or("Unknown Album");
-        let artist = item
-            .album_artist
-            .as_deref()
-            .unwrap_or("Unknown Artist");
+        let artist = item.album_artist.as_deref().unwrap_or("Unknown Artist");
         let year = item.year.unwrap_or_default();
         let key = format!("{}|{}|{}", title, artist, year);
 
@@ -1369,23 +1355,21 @@ fn decode_playlist_cover(cover: &str) -> DatabaseResult<Option<Vec<u8>>> {
                 ));
             }
         } else {
-            &cover
+            cover
         };
 
         let base64_data = base64_data.trim();
         match STANDARD.decode(base64_data) {
             Ok(data) => Ok(Some(data)),
-            Err(e) => {
-                Err(DatabaseError::Custom(format!(
-                    "Failed to decode base64 image: {} (data: '{}')",
-                    e,
-                    if base64_data.len() > 50 {
-                        format!("{}...", &base64_data[..50])
-                    } else {
-                        base64_data.to_string()
-                    }
-                )))
-            }
+            Err(e) => Err(DatabaseError::Custom(format!(
+                "Failed to decode base64 image: {} (data: '{}')",
+                e,
+                if base64_data.len() > 50 {
+                    format!("{}...", &base64_data[..50])
+                } else {
+                    base64_data.to_string()
+                }
+            ))),
         }
     } else {
         Ok(None)
@@ -2683,9 +2667,9 @@ mod tests {
         conn.execute(
             "INSERT INTO songs (
                 title, artist_id, artist_name, release_id, release_title,
-                track_number, disc_number, duration, file_path, file_mtime
-             ) VALUES ('Track', 1, 'Artist', 1, 'Album', 1, 1, 180, ?1, ?2)",
-            params![path, mtime],
+                track_number, disc_number, duration, file_path, file_mtime, metadata_version
+             ) VALUES ('Track', 1, 'Artist', 1, 'Album', 1, 1, 180, ?1, ?2, ?3)",
+            params![path, mtime, CURRENT_METADATA_VERSION],
         )
         .unwrap();
 

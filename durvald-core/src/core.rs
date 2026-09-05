@@ -1215,8 +1215,7 @@ impl DurvaldCore {
         )
         .map_err(|e| CoreError::Storage {
             message: e.to_string(),
-        })?
-        {
+        })? {
             return Err(CoreError::NotFound {
                 message: format!("Playlist {playlist_id} not found"),
             });
