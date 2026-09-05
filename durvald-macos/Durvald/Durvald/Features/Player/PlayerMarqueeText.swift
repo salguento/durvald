@@ -14,7 +14,7 @@ struct PlayerMarqueeText: View {
 
     private let copySpacing: CGFloat = 32
     private let pointsPerSecond = 22.0
-    private let initialPause = 1.4
+    private let cyclePause = 1.0
 
     private var shouldScroll: Bool {
         textWidth - availableWidth > 1 && availableWidth > 0
@@ -111,10 +111,19 @@ struct PlayerMarqueeText: View {
 
     private func scrollingOffset(at date: Date) -> CGFloat {
         guard shouldScroll else { return 0 }
-        let elapsed = max(0, (pausedAt ?? date).timeIntervalSince(cycleStart) - initialPause)
+        let elapsed = max(0, (pausedAt ?? date).timeIntervalSince(cycleStart))
         let cycleWidth = Double(textWidth + copySpacing)
+        let scrollingDuration = cycleWidth / pointsPerSecond
+        let cycleDuration = cyclePause + scrollingDuration
+        let cyclePosition = elapsed.truncatingRemainder(dividingBy: cycleDuration)
+
+        // At the end of each pass, return the first copy to the leading edge
+        // and hold it there before starting the next pass.
+        guard cyclePosition >= cyclePause else { return 0 }
+        let scrollingElapsed = cyclePosition - cyclePause
+
         // The second copy occupies the first copy's position at the wrap point,
         // making the reset visually seamless without reversing direction.
-        return -CGFloat((elapsed * pointsPerSecond).truncatingRemainder(dividingBy: cycleWidth))
+        return -CGFloat(scrollingElapsed * pointsPerSecond)
     }
 }

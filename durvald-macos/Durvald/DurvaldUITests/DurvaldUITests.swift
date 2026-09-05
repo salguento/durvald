@@ -7,6 +7,42 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testTemporaryToolbarAppearanceReference() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        let sidebarButton = app.buttons["navigation.sidebar"]
+        XCTAssertTrue(sidebarButton.waitForExistence(timeout: 3))
+        let addButtons = app.buttons.matching(identifier: "library.addMenu")
+        XCTAssertTrue(addButtons.firstMatch.waitForExistence(timeout: 3))
+        guard let openAddButton = addButtons.allElementsBoundByIndex.first(where: \.isHittable) else {
+            XCTFail("O botão de adicionar visível não foi encontrado")
+            return
+        }
+        XCTAssertTrue(openAddButton.isHittable)
+        let openAttachment = XCTAttachment(screenshot: window.screenshot())
+        openAttachment.name = "Toolbar sidebar open reference"
+        openAttachment.lifetime = .keepAlways
+        add(openAttachment)
+
+        sidebarButton.click()
+        XCTAssertTrue(sidebarButton.waitForExistence(timeout: 3))
+        guard let closedAddButton = addButtons.allElementsBoundByIndex.first(where: \.isHittable) else {
+            XCTFail("O botão de adicionar visível não foi encontrado")
+            return
+        }
+        XCTAssertTrue(closedAddButton.isHittable)
+
+        let closedAttachment = XCTAttachment(screenshot: window.screenshot())
+        closedAttachment.name = "Toolbar sidebar closed reference"
+        closedAttachment.lifetime = .keepAlways
+        add(closedAttachment)
+    }
+
+    @MainActor
     func testSidebarContainsMVPSections() {
         let app = XCUIApplication()
         app.launchArguments.append("--ui-testing")
@@ -62,7 +98,7 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
-    func testCompactPlayerShowsTrackTooltipOnHover() {
+    func testCompactPlayerKeepsMetadataWithoutArtworkTooltip() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--long-player-metadata"]
         app.launch()
@@ -74,21 +110,16 @@ final class DurvaldUITests: XCTestCase {
 
         let artwork = app.buttons["player.artwork"]
         XCTAssertTrue(artwork.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.links["player.trackTitle"].waitForNonExistence(timeout: 3))
-        XCTAssertFalse(app.links["player.artist"].exists)
+        XCTAssertTrue(app.links["player.trackTitle"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.links["player.artist"].exists)
         let tooltip = app.descendants(matching: .any)["player.trackTooltip"].firstMatch
         XCTAssertFalse(tooltip.exists)
         artwork.hover()
-        XCTAssertTrue(tooltip.waitForExistence(timeout: 3))
+        XCTAssertFalse(tooltip.waitForExistence(timeout: 1))
         let attachment = XCTAttachment(screenshot: window.screenshot())
-        attachment.name = "Compact player tooltip"
+        attachment.name = "Compact player without artwork tooltip"
         attachment.lifetime = .keepAlways
         add(attachment)
-        XCTAssertEqual(tooltip.value as? String, "Faixa de teste com título extenso — gravação ao vivo e versão completa\nArtista de teste com nome extenso e convidados especiais")
-        XCTAssertLessThan(tooltip.frame.maxY, artwork.frame.minY)
-
-        app.buttons["sidebar.home"].hover()
-        XCTAssertTrue(tooltip.waitForNonExistence(timeout: 2))
         artwork.click()
         XCTAssertTrue(app.descendants(matching: .any)["album.detail.42"].waitForExistence(timeout: 3))
     }
@@ -109,13 +140,22 @@ final class DurvaldUITests: XCTestCase {
         let artistFrame = artist.frame
         let favorite = app.buttons["player.favorite"]
         let options = app.descendants(matching: .any)["player.options"].firstMatch
+        let volume = app.sliders["player.volume"]
+        let progress = app.sliders["player.progress"]
+        let artwork = app.buttons["player.artwork"]
         XCTAssertTrue(favorite.exists)
         XCTAssertTrue(options.exists)
+        XCTAssertTrue(volume.exists)
+        XCTAssertTrue(progress.exists)
+        XCTAssertTrue(artwork.exists)
+        XCTAssertGreaterThanOrEqual(progress.frame.minY, artistFrame.maxY)
+        XCTAssertEqual(progress.frame.maxY, artwork.frame.maxY, accuracy: 1)
         XCTAssertGreaterThanOrEqual(favorite.frame.minX, max(titleFrame.maxX, artistFrame.maxX))
-        XCTAssertEqual(favorite.frame.midX, options.frame.midX, accuracy: 1)
-        XCTAssertLessThanOrEqual(favorite.frame.maxY, options.frame.minY)
+        XCTAssertLessThanOrEqual(favorite.frame.maxX, options.frame.minX)
+        XCTAssertEqual(favorite.frame.midY, options.frame.midY, accuracy: 1)
+        XCTAssertLessThanOrEqual(options.frame.maxX, volume.frame.minX)
         let playerAttachment = XCTAttachment(screenshot: app.screenshot())
-        playerAttachment.name = "Player actions beside long metadata"
+        playerAttachment.name = "Player actions beside volume"
         playerAttachment.lifetime = .keepAlways
         add(playerAttachment)
         let titleBefore = title.screenshot()

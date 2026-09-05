@@ -13,86 +13,42 @@ struct PlayerBar: View {
     @State private var adjustingVolume = false
     @State private var changingPlaybackState = false
     @State private var isProgressHovered = false
-    @State private var isTrackInformationHovered = false
-    @State private var availableWidth: CGFloat = 760
-    @State private var isTrackTooltipPresented = false
+    @State private var availableWidth: CGFloat = 360
 
-    private var isCompact: Bool { availableWidth < 500 }
-
-    private var trackTooltip: String {
-        guard let track = store.playback?.currentTrack else { return "Nada tocando" }
-        return [track.title, track.artist].filter { !$0.isEmpty }.joined(separator: "\n")
-    }
+    private var isNarrow: Bool { availableWidth < 600 }
 
     let onSelectAlbum: (Release) -> Void
     let onSelectArtist: (Artist) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 8) {
+            HStack(alignment: .center, spacing: 4) {
                 trackInformation
-                    .frame(minWidth: isCompact ? 76 : 112, maxWidth: .infinity, alignment: .leading)
+                    .frame(
+                        minWidth: 112,
+                        maxWidth: .infinity,
+                        alignment: .leading
+                    )
+                    .frame(height: 44, alignment: .center)
                     .contentShape(Rectangle())
-                    .onHover {
-                        isTrackInformationHovered = $0
-                        if !$0 { isTrackTooltipPresented = false }
-                    }
 
                 playbackControls
-                    .frame(minWidth: 184, maxWidth: .infinity)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: isNarrow ? 80 : 184)
+                    .frame(height: 44, alignment: .center)
 
-                volumeControl
-                    .frame(maxWidth: 120)
-                    .frame(minWidth: 64, maxWidth: .infinity, alignment: .trailing)
+                if !isNarrow {
+                    trailingControls
+                        .frame(minWidth: 120, maxWidth: .infinity)
+                        .frame(height: 44, alignment: .center)
+                }
             }
-
-            playbackProgress
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 14)
-        .padding(.bottom, 6)
+        .padding(14)
         .glassEffect(
             .regular.interactive(),
             in: .rect(cornerRadius: 20)
         )
-        .overlay(alignment: .topLeading) {
-            if isCompact && isTrackTooltipPresented {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(store.playback?.currentTrack?.title ?? "Nada tocando")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
-
-                    if let artist = store.playback?.currentTrack?.artist, !artist.isEmpty {
-                        Text(artist)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                    .multilineTextAlignment(.leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background(.regularMaterial, in: .rect(cornerRadius: 8))
-                    .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
-                    .padding(.leading, 16)
-                    .visualEffect { content, geometry in
-                        content.offset(y: -geometry.size.height - 8)
-                    }
-                    .allowsHitTesting(false)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(trackTooltip)
-                    .accessibilityIdentifier("player.trackTooltip")
-            }
-        }
-        .task(id: isCompact && isTrackInformationHovered) {
-            isTrackTooltipPresented = false
-            guard isCompact && isTrackInformationHovered else { return }
-            do {
-                try await Task.sleep(for: .milliseconds(450))
-                try Task.checkCancellation()
-                isTrackTooltipPresented = true
-            } catch { }
-        }
         .onGeometryChange(for: CGFloat.self) { geometry in
             geometry.size.width
         } action: { availableWidth = $0 }
@@ -127,7 +83,7 @@ struct PlayerBar: View {
         let album = store.releases.first { $0.id == track?.releaseId }
         let artist = store.artists.first { $0.id == track?.artistId }
 
-        return HStack(spacing: 8) {
+        return HStack(alignment: .top, spacing: 8) {
             Button {
                 if let album { onSelectAlbum(album) }
             } label: {
@@ -148,34 +104,26 @@ struct PlayerBar: View {
                 }
             }
 
-            if isCompact {
-                trackActions(track, album: album, artist: artist)
-            } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 6) {
-                        trackMetadata(track, album: album, artist: artist)
-                            .fixedSize(horizontal: true, vertical: false)
-                        trackActions(track, album: album, artist: artist)
-                    }
+            VStack(alignment: .leading, spacing: 0) {
+                trackMetadata(track, album: album, artist: artist)
 
-                    HStack(spacing: 6) {
-                        trackMetadata(track, album: album, artist: artist)
-                        trackActions(track, album: album, artist: artist)
-                    }
-                }
+                Spacer(minLength: 0)
+
+                playbackProgress
             }
+            .frame(height: 44, alignment: .top)
         }
     }
 
     private func trackMetadata(_ track: Track?, album: Release?, artist: Artist?) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 0) {
             if let track {
                 PlayerMetadataLink(
                     title: track.title,
                     destinationLabel: album.map { "Abrir álbum \($0.title)" },
                     action: { if let album { onSelectAlbum(album) } }
                 )
-                .font(.subheadline.weight(.medium))
+                .font(.caption.weight(.medium))
                 .accessibilityIdentifier("player.trackTitle")
                 .trackContextMenu(
                     track: track,
@@ -203,7 +151,7 @@ struct PlayerBar: View {
                     destinationLabel: nil,
                     action: {}
                 )
-                .font(.subheadline.weight(.medium))
+                .font(.caption.weight(.medium))
                 .accessibilityIdentifier("player.trackTitle")
             }
 
@@ -212,7 +160,7 @@ struct PlayerBar: View {
                 destinationLabel: artist.map { "Abrir artista \($0.name)" },
                 action: { if let artist { onSelectArtist(artist) } }
             )
-            .font(.caption)
+            .font(.caption2)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("player.artist")
             .contextMenu {
@@ -235,7 +183,7 @@ struct PlayerBar: View {
         let isFavorite = track?.isFavorite == true
         let favoriteLabel = isFavorite ? "Desfavoritar faixa" : "Favoritar faixa"
 
-        return VStack(spacing: 2) {
+        return HStack(spacing: 8) {
             Button {
                 if let track {
                     store.setTrackFavorite(trackID: track.id, favorite: !isFavorite)
@@ -243,8 +191,7 @@ struct PlayerBar: View {
             } label: {
                 Image(systemName: isFavorite ? "star.fill" : "star")
                     .foregroundStyle(isFavorite ? Color.accentColor : .secondary)
-                    .opacity(isFavorite || isTrackInformationHovered ? 1 : 0)
-                    .frame(width: 24, height: 20)
+                    .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -253,82 +200,103 @@ struct PlayerBar: View {
             .accessibilityValue(isFavorite ? "Favorita" : "Não favorita")
             .accessibilityIdentifier("player.favorite")
 
-            Menu {
-                if let track {
-                    Button(
-                        track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
-                        systemImage: track.isFavorite ? "star.slash" : "star"
-                    ) {
-                        store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+            if !isNarrow {
+                Menu {
+                    if let track {
+                        Button(
+                            track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
+                            systemImage: track.isFavorite ? "star.slash" : "star"
+                        ) {
+                            store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+                        }
+                        Button("Adicionar à fila", systemImage: "text.badge.plus") {
+                            Task { await store.addToQueue(trackID: track.id) }
+                        }
+                        Divider()
+                        Button("Abrir álbum", systemImage: "square.stack") {
+                            if let album { onSelectAlbum(album) }
+                        }
+                        .disabled(album == nil)
+                        Button("Abrir artista", systemImage: "music.mic") {
+                            if let artist { onSelectArtist(artist) }
+                        }
+                        .disabled(artist == nil)
                     }
-                    Button("Adicionar à fila", systemImage: "text.badge.plus") {
-                        Task { await store.addToQueue(trackID: track.id) }
-                    }
-                    Divider()
-                    Button("Abrir álbum", systemImage: "square.stack") {
-                        if let album { onSelectAlbum(album) }
-                    }
-                    .disabled(album == nil)
-                    Button("Abrir artista", systemImage: "music.mic") {
-                        if let artist { onSelectArtist(artist) }
-                    }
-                    .disabled(artist == nil)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
                 }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 20)
-                    .contentShape(Rectangle())
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Opções da faixa")
+                .accessibilityLabel("Opções da faixa")
+                .accessibilityIdentifier("player.options")
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Opções da faixa")
-            .accessibilityLabel("Opções da faixa")
-            .accessibilityIdentifier("player.options")
         }
-        .font(.system(size: 12))
-        .frame(width: 24)
+        .font(.system(size: 15))
         .fixedSize()
         .disabled(track == nil)
     }
 
-    private var playbackControls: some View {
-        HStack(spacing: 14) {
-            Button {
-                Task { await store.toggleShuffle() }
-            } label: {
-                Image(systemName: "shuffle")
-                    .foregroundStyle(
-                        store.playback?.shuffleEnabled == true
-                            ? Color.accentColor : Color.secondary
-                    )
-                    .symbolVariant(
-                        store.playback?.shuffleEnabled == true ? .fill : .none
-                    )
-                    .frame(height: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityHint("Alterna a reprodução aleatória da fila")
-            .accessibilityLabel(
-                store.playback?.shuffleEnabled == true
-                    ? "Desativar reprodução aleatória"
-                    : "Ativar reprodução aleatória"
-            )
-            .accessibilityIdentifier("player.shuffle")
+    private var trailingControls: some View {
+        let track = store.playback?.currentTrack
+        let album = store.releases.first { $0.id == track?.releaseId }
+        let artist = store.artists.first { $0.id == track?.artistId }
 
-            Button {
-                Task { await store.previous() }
-            } label: {
-                Image(systemName: "backward.fill")
-                    .frame(height: 44)
-                    .contentShape(Rectangle())
+        return HStack(spacing: 8) {
+            trackActions(track, album: album, artist: artist)
+                .frame(maxWidth: .infinity, alignment: .center)
+
+            if !isNarrow {
+                volumeControl
+                    .frame(minWidth: 64, maxWidth: 120)
             }
-            .disabled(store.playback?.currentTrack == nil)
-            .help("Faixa anterior")
-            .accessibilityLabel("Faixa anterior")
-            .accessibilityHint("Volta para a faixa anterior")
-            .accessibilityIdentifier("player.previous")
+        }
+    }
+
+    private var playbackControls: some View {
+        HStack(spacing: isNarrow ? 12 : 14) {
+            if !isNarrow {
+                Button {
+                    Task { await store.toggleShuffle() }
+                } label: {
+                    Image(systemName: "shuffle")
+                        .foregroundStyle(
+                            store.playback?.shuffleEnabled == true
+                                ? Color.accentColor : Color.secondary
+                        )
+                        .symbolVariant(
+                            store.playback?.shuffleEnabled == true ? .fill : .none
+                        )
+                        .frame(height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityHint("Alterna a reprodução aleatória da fila")
+                .accessibilityLabel(
+                    store.playback?.shuffleEnabled == true
+                        ? "Desativar reprodução aleatória"
+                        : "Ativar reprodução aleatória"
+                )
+                .accessibilityIdentifier("player.shuffle")
+            }
+
+            if !isNarrow {
+                Button {
+                    Task { await store.previous() }
+                } label: {
+                    Image(systemName: "backward.fill")
+                        .frame(height: 44)
+                        .contentShape(Rectangle())
+                }
+                .disabled(store.playback?.currentTrack == nil)
+                .help("Faixa anterior")
+                .accessibilityLabel("Faixa anterior")
+                .accessibilityHint("Volta para a faixa anterior")
+                .accessibilityIdentifier("player.previous")
+            }
 
             Button {
                 changingPlaybackState = true
@@ -368,20 +336,22 @@ struct PlayerBar: View {
             .accessibilityHint("Avança para a próxima faixa")
             .accessibilityIdentifier("player.next")
 
-            Button {
-                Task { await store.cycleRepeatMode() }
-            } label: {
-                Image(systemName: repeatIcon)
-                    .foregroundStyle(
-                        (store.playback?.repeatMode ?? RepeatMode.none) == RepeatMode.none
-                            ? Color.secondary : Color.accentColor
-                    )
-                    .frame(height: 44)
-                    .contentShape(Rectangle())
+            if !isNarrow {
+                Button {
+                    Task { await store.cycleRepeatMode() }
+                } label: {
+                    Image(systemName: repeatIcon)
+                        .foregroundStyle(
+                            (store.playback?.repeatMode ?? RepeatMode.none) == RepeatMode.none
+                                ? Color.secondary : Color.accentColor
+                        )
+                        .frame(height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityHint("Alterna entre repetição desativada, da fila e de uma faixa")
+                .accessibilityLabel(repeatLabel)
+                .accessibilityIdentifier("player.repeat")
             }
-            .accessibilityHint("Alterna entre repetição desativada, da fila e de uma faixa")
-            .accessibilityLabel(repeatLabel)
-            .accessibilityIdentifier("player.repeat")
         }
         .buttonStyle(.plain)
         .font(.system(size: 14))
@@ -394,7 +364,7 @@ struct PlayerBar: View {
         let displayedPosition = seeking ? position : (snapshot?.positionSeconds ?? 0)
         let elapsed = time(displayedPosition)
 
-        return HStack(spacing: 10) {
+        return HStack(spacing: 4) {
             Text(elapsed)
                 .fixedSize()
                 .accessibilityIdentifier("player.elapsed")
@@ -404,6 +374,7 @@ struct PlayerBar: View {
                 onValueChange: { position = $0 },
                 upperBound: duration,
                 expanded: expanded,
+                controlHeight: 12,
                 onEditingChanged: updateSeeking
             )
             .transaction { transaction in
@@ -441,13 +412,10 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.progress")
             }
 
-            Text(time(duration))
-                .fixedSize()
-                .accessibilityIdentifier("player.duration")
         }
-        .font(.caption2.monospacedDigit())
+        .font(.system(size: 9).monospacedDigit())
         .foregroundStyle(.tertiary)
-        .frame(height: 24)
+        .frame(height: 12)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: expanded)
     }
 
@@ -475,18 +443,7 @@ struct PlayerBar: View {
 
     private var volumeControl: some View {
         HStack(spacing: 6) {
-            Button(action: toggleMute) {
-                Image(systemName: volumeIcon)
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(isVolumeMuted || volume == 0 ? "Desmutar volume" : "Mutar volume")
-            .accessibilityLabel(isVolumeMuted || volume == 0 ? "Desmutar volume" : "Mutar volume")
-            .accessibilityValue(volumeDescription)
-            .accessibilityIdentifier("player.mute")
+            muteButton
 
             PlayerBarSlider(
                 value: volume,
@@ -547,6 +504,21 @@ struct PlayerBar: View {
         }
     }
 
+    private var muteButton: some View {
+        Button(action: toggleMute) {
+            Image(systemName: volumeIcon)
+                .font(.system(size: 14))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(isVolumeMuted || volume == 0 ? "Desmutar volume" : "Mutar volume")
+        .accessibilityLabel(isVolumeMuted || volume == 0 ? "Desmutar volume" : "Mutar volume")
+        .accessibilityValue(volumeDescription)
+        .accessibilityIdentifier("player.mute")
+    }
+
     private var volumeIcon: String {
         if isVolumeMuted { return "speaker.slash.fill" }
         if volume == 0 { return "speaker.fill" }
@@ -594,6 +566,7 @@ private struct PlayerBarSlider: View {
     var activeFillColor: Color = .accentColor
     var trackStyle: HierarchicalShapeStyle = .quaternary
     var showsGlow = true
+    var controlHeight: CGFloat = 24
     let onEditingChanged: (Bool) -> Void
 
     @Environment(\.isEnabled) private var isEnabled
@@ -656,7 +629,7 @@ private struct PlayerBarSlider: View {
                     }
             )
         }
-        .frame(height: 24)
+        .frame(height: controlHeight)
         .clipped()
         .onHover { isHovered = $0 }
         .onChange(of: isDragging) { _, dragging in

@@ -67,7 +67,15 @@ struct ArtworkView: View {
 extension View {
     func artworkGlassBorder(size: CGFloat) -> some View {
         let cornerRadius = min(12, max(4, size * 0.045))
+        let borderWidth: CGFloat = size < 80 ? 0.5 : 0.75
+
         return clipShape(.rect(cornerRadius: cornerRadius))
-            .glassEffect(.clear, in: .rect(cornerRadius: cornerRadius))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        Color.white.opacity(size < 80 ? 0.14 : 0.18),
+                        lineWidth: borderWidth
+                    )
+            }
     }
 }

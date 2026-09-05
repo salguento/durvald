@@ -17,13 +17,17 @@ struct ContentView: View {
     @State private var playlistCreation = PlaylistCreationCoordinator()
 
     private enum Layout {
-        static let contentMinimumWidth: CGFloat = 440
+        static let contentViewMinimumWidth: CGFloat = 360
+        static let windowMinimumHeight: CGFloat = 360
+        static let compactNavigationWidth: CGFloat = 700
+        static let sidebarMinimumWidth: CGFloat = 180
+        static let contentMinimumWidth: CGFloat = 360
         static let queueMinimumWidth: CGFloat = 260
         static let queueIdealWidth: CGFloat = 300
         static let queueMaximumWidth: CGFloat = 380
         static let playerMaximumWidth: CGFloat = 760
         static let playerHorizontalMargin: CGFloat = 16
-        static let playerVerticalMargin: CGFloat = 12
+        static let playerTopMargin: CGFloat = 12
     }
 
     var body: some View {
@@ -36,7 +40,11 @@ struct ContentView: View {
                 onSelectArtist: showArtist,
                 onSelectPlaylist: showPlaylist
             )
-            .navigationSplitViewColumnWidth(min: 230, ideal: 240, max: 280)
+            .navigationSplitViewColumnWidth(
+                min: Layout.sidebarMinimumWidth,
+                ideal: 240,
+                max: 280
+            )
             .background {
                 SidebarSplitLayout(controller: sidebarLayout)
                     .allowsHitTesting(false)
@@ -46,15 +54,12 @@ struct ContentView: View {
             .toolbar {
                 if columnVisibility != .detailOnly {
                     ToolbarItem(placement: .primaryAction) {
-                        sidebarToggleButton
-                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        ControlGroup {
+                            sidebarToggleButton
+                            addPlaylistButton
+                        }
+                        .controlGroupStyle(.navigation)
                     }
-                    .sharedBackgroundVisibility(.hidden)
-
-                    ToolbarItem(placement: .primaryAction) {
-                        addPlaylistButton
-                    }
-                    .sharedBackgroundVisibility(.hidden)
                 }
             }
         } detail: {
@@ -64,21 +69,6 @@ struct ContentView: View {
                     maxWidth: .infinity,
                     maxHeight: .infinity
                 )
-        }
-        .toolbar {
-            if columnVisibility == .detailOnly {
-                ToolbarItem(placement: .navigation) {
-                    sidebarToggleButton
-                        .glassEffect(.regular.interactive(), in: .capsule)
-                }
-                .sharedBackgroundVisibility(.hidden)
-
-                ToolbarItem(placement: .navigation) {
-                    addPlaylistButton
-                        .glassEffect(.regular.interactive(), in: .capsule)
-                }
-                .sharedBackgroundVisibility(.hidden)
-            }
         }
         .background {
             InspectorSplitLayout(controller: inspectorLayout)
@@ -94,6 +84,17 @@ struct ContentView: View {
                 )
         }
         .toolbar(removing: .title)
+        .frame(
+            minWidth: Layout.contentViewMinimumWidth,
+            minHeight: Layout.windowMinimumHeight
+        )
+        .onGeometryChange(for: CGFloat.self) { geometry in
+            geometry.size.width
+        } action: { width in
+            guard width < Layout.compactNavigationWidth else { return }
+            columnVisibility = .detailOnly
+            isQueuePresented = false
+        }
         .environment(playlistCreation)
         .focusedSceneValue(\.openLibrarySearch) {
             destinationBinding.wrappedValue = .search
@@ -165,7 +166,8 @@ struct ContentView: View {
                 PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
                     .frame(maxWidth: Layout.playerMaximumWidth)
                     .padding(.horizontal, Layout.playerHorizontalMargin)
-                    .padding(.vertical, Layout.playerVerticalMargin)
+                    .padding(.top, Layout.playerTopMargin)
+                    .padding(.bottom, Layout.playerHorizontalMargin)
                     .frame(maxWidth: .infinity)
             }
             // Keep the toolbar and its scroll views in the same split column.
@@ -177,6 +179,16 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var contentToolbar: some ToolbarContent {
+        if columnVisibility == .detailOnly {
+            ToolbarItem(placement: .navigation) {
+                ControlGroup {
+                    sidebarToggleButton
+                    addPlaylistButton
+                }
+                .controlGroupStyle(.navigation)
+            }
+        }
+
         ToolbarItem(placement: .navigation) {
             ControlGroup {
                 Button {
@@ -494,6 +506,7 @@ private final class InspectorLayoutController {
 
     func configure() {
         guard let anchor else { return }
+        anchor.window?.titlebarSeparatorStyle = .none
         var ancestor = anchor.superview
 
         while let view = ancestor {
