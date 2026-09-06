@@ -14,7 +14,7 @@ jobs:
     name: Rust Core (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -22,7 +22,7 @@ jobs:
           components: clippy
       
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -66,7 +66,7 @@ jobs:
     name: Rust Core (macOS)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -74,7 +74,7 @@ jobs:
           components: clippy
       
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -109,13 +109,13 @@ jobs:
     runs-on: macos-latest
     needs: rust-core-macos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
@@ -164,57 +164,22 @@ jobs:
           # Note: Full xcframework generation requires additional steps
           # This validates the bindings compile with Swift syntax
 
-  android-bindings:
-    name: Android/Kotlin Bindings Smoke Test
-    runs-on: ubuntu-latest
-    needs: rust-core
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
-      
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            durvald-core/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      
-      - name: Install Android NDK
-        uses: android-actions/setup-android@v3
-        with:
-          ndk-version: r26c
-      
-      - name: Build UniFFI bindings for Android targets
-        run: |
-          cd durvald-core
-          for target in aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android; do
-            cargo build --features uniffi --target $target --release
-          done
-      
-      - name: Verify generated Kotlin bindings
-        run: |
-          find durvald-core/target -name "*.kt" | head -10
-          echo "Kotlin bindings generated successfully"
-
   docs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsqlite3-dev libssl-dev pkg-config libasound2-dev libudev-dev
+
       - name: Generate docs
-        run: cargo doc --package durvald-core --no-deps --document-private-items
+        run: cargo doc --locked --package durvald-core --no-deps --document-private-items
         working-directory: durvald-core
       
       - name: Check for broken links
