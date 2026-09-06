@@ -576,6 +576,13 @@ final class DurvaldUITests: XCTestCase {
             handle.press(forDuration: 0.1, thenDragTo: handle.withOffset(CGVector(dx: offset, dy: 0)))
             let originalPickerWidth = picker.frame.width
             let originalWindowWidth = window.frame.width
+            let actualSidebarWidth = splitter.frame.midX - window.frame.minX - 8
+            XCTAssertEqual(
+                actualSidebarWidth,
+                targetWidth,
+                accuracy: 4,
+                "The sidebar must reach the requested \(Int(targetWidth))-point width."
+            )
             for section in ["playlists", "albums", "artists", "navigation"] {
                 app.buttons["sidebar.section.\(section)"].click()
                 XCTAssertEqual(picker.frame.width, originalPickerWidth, accuracy: 1,

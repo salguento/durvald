@@ -1,6 +1,7 @@
 import XCTest
 import AppKit
 import Observation
+import SwiftUI
 @testable import Durvald
 
 final class DurvaldCoreStoreTests: XCTestCase {
@@ -485,6 +486,43 @@ final class ScrollObservationTests: XCTestCase {
         await store.togglePause()
         XCTAssertEqual(store.activeTrackID, 1)
         XCTAssertNil(DurvaldCoreStore().activeTrackID)
+    }
+}
+
+final class ContentShellStateTests: XCTestCase {
+    @MainActor
+    func testCompactWidthHidesSidebarAndQueue() {
+        var state = ContentShellState()
+        state.isQueuePresented = true
+
+        state.adaptToWidth(699, compactThreshold: 700)
+
+        XCTAssertEqual(state.columnVisibility, .detailOnly)
+        XCTAssertFalse(state.isQueuePresented)
+    }
+
+    @MainActor
+    func testNonCompactWidthPreservesPresentation() {
+        var state = ContentShellState()
+        state.isQueuePresented = true
+
+        state.adaptToWidth(700, compactThreshold: 700)
+
+        XCTAssertEqual(state.columnVisibility, .all)
+        XCTAssertTrue(state.isQueuePresented)
+    }
+
+    @MainActor
+    func testDestinationChangesManageSearchFocus() {
+        var state = ContentShellState()
+        state.isSearchFocused = true
+
+        state.handleDestinationChange(.search)
+        XCTAssertEqual(state.searchFocusRequest, 1)
+        XCTAssertTrue(state.isSearchFocused)
+
+        state.handleDestinationChange(.home)
+        XCTAssertFalse(state.isSearchFocused)
     }
 }
 
