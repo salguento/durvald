@@ -53,3 +53,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# LLVM profiling and coverage output
+*.profraw
+*.profdata
