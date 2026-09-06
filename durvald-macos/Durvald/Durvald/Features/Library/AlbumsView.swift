@@ -74,6 +74,8 @@ struct AlbumCard: View {
     let release: Release
     let onSelectAlbum: (Release) -> Void
 
+    var subtitle: String? = nil
+
     @State private var isHovered = false
     @FocusState private var isPlayFocused: Bool
 
@@ -97,7 +99,7 @@ struct AlbumCard: View {
                             .font(.headline)
                             .lineLimit(1)
 
-                        Text(release.artist)
+                        Text(subtitle ?? release.artist)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

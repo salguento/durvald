@@ -83,13 +83,12 @@ struct CollectionPlaybackControls: View {
                 if let isFavorite, let onToggleFavorite {
                     Button(action: onToggleFavorite) {
                         Image(systemName: isFavorite ? "star.fill" : "star")
-                            .padding(.horizontal, 14)
-                            .frame(height: 34)
+                            .frame(width: 34, height: 34)
                             .background {
-                                Capsule()
+                                Circle()
                                     .fill(Color.primary.opacity(backgroundOpacity))
                             }
-                            .contentShape(.capsule)
+                            .contentShape(.circle)
                     }
                     .buttonStyle(.plain)
                     .help(isFavorite ? "Desfavoritar álbum" : "Favoritar álbum")

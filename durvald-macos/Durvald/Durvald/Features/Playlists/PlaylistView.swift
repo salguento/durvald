@@ -141,21 +141,26 @@ struct PlaylistView: View {
                 Spacer(minLength: 24)
 
                 Menu {
-                    Picker("Organizar", selection: $trackOrder) {
-                        ForEach(TrackOrder.allCases) { order in
-                            Text(order.title).tag(order)
-                        }
+                    Button("Editar playlist", systemImage: "pencil") {
+                        playlistCreation.requestEdit(currentPlaylist)
+                    }
+                    Button(currentPlaylist.isFavorite ? "Desfavoritar playlist" : "Favoritar playlist",
+                           systemImage: currentPlaylist.isFavorite ? "star.slash" : "star") {
+                        store.setPlaylistFavorite(
+                            playlistID: playlist.id,
+                            favorite: !currentPlaylist.isFavorite
+                        )
                     }
                 } label: {
-                    Image(systemName: "line.3.horizontal.decrease")
+                    Image(systemName: "ellipsis")
                         .frame(width: 34, height: 34)
                 }
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
-                .background(Color.primary.opacity(0.08), in: .capsule)
-                .help("Organizar ou filtrar faixas")
-                .accessibilityLabel("Organizar ou filtrar faixas")
-                .accessibilityIdentifier("playlist.tracks.organize")
+                .background(Color.primary.opacity(0.08), in: .circle)
+                .help("Opções")
+                .accessibilityLabel("Opções")
+                .accessibilityIdentifier("playlist.options")
 
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
@@ -174,6 +179,23 @@ struct PlaylistView: View {
                 .background(Color.primary.opacity(0.08), in: .capsule)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("playlist.tracks.search")
+
+                Menu {
+                    Picker("Organizar", selection: $trackOrder) {
+                        ForEach(TrackOrder.allCases) { order in
+                            Text(order.title).tag(order)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .frame(width: 34, height: 34)
+                }
+                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .background(Color.primary.opacity(0.08), in: .capsule)
+                .help("Organizar ou filtrar faixas")
+                .accessibilityLabel("Organizar ou filtrar faixas")
+                .accessibilityIdentifier("playlist.tracks.organize")
             }
         }
     }

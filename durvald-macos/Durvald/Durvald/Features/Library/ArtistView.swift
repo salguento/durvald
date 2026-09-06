@@ -27,7 +27,11 @@ struct ArtistView: View {
                             spacing: AlbumGridLayout.spacing
                         ) {
                             ForEach(albums, id: \.id) { album in
-                                AlbumCard(release: album, onSelectAlbum: onSelectAlbum)
+                                AlbumCard(
+                                    release: album,
+                                    onSelectAlbum: onSelectAlbum,
+                                    subtitle: releaseYear(for: album)
+                                )
                             }
                         }
                     }
@@ -78,6 +82,16 @@ struct ArtistView: View {
             isLoading = false
         }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
+    }
+
+    private func releaseYear(for album: Release) -> String {
+        guard let date = album.releaseDate?.trimmingCharacters(in: .whitespacesAndNewlines),
+              date.count >= 4,
+              let year = Int(date.prefix(4)),
+              year > 0 else {
+            return "Ano desconhecido"
+        }
+        return String(year)
     }
 
     private func trackRow(_ track: Track) -> some View {

@@ -15,10 +15,6 @@ struct LibrarySidebarView: View {
     @State private var localSearchText = ""
     @State private var committedLocalQuery = ""
 
-    private let albumGridColumns = [
-        GridItem(.adaptive(minimum: 60, maximum: 60), spacing: 6, alignment: .top)
-    ]
-
     var body: some View {
         selectedSectionContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -144,54 +140,61 @@ struct LibrarySidebarView: View {
             .listStyle(.sidebar)
 
         case .albums:
-            ScrollView {
-                LazyVGrid(
-                    columns: albumGridColumns,
-                    alignment: .leading,
-                    spacing: 6
-                ) {
-                    ForEach(localAlbums, id: \.id) { album in
-                        Button {
-                            onSelectAlbum(album)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                ArtworkView(
-                                    artworkID: album.artworkId,
-                                    size: 60
-                                )
+            GeometryReader { proxy in
+                let availableWidth = max(0, proxy.size.width - 20)
+                let columnCount = min(3, max(1, Int((availableWidth + 6) / 66)))
+                let artworkSize = max(0, (availableWidth - CGFloat(columnCount - 1) * 6) / CGFloat(columnCount))
+                let columns = Array(
+                    repeating: GridItem(.flexible(minimum: 0), spacing: 6, alignment: .top),
+                    count: columnCount
+                )
 
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(album.title)
-                                        .font(.caption)
-                                        .lineLimit(1)
+                ScrollView {
+                    LazyVGrid(
+                        columns: columns,
+                        alignment: .leading,
+                        spacing: 6
+                    ) {
+                        ForEach(localAlbums, id: \.id) { album in
+                            Button {
+                                onSelectAlbum(album)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    ArtworkView(
+                                        artworkID: album.artworkId,
+                                        size: artworkSize
+                                    )
 
-                                    Text(album.artist)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(album.title)
+                                            .font(.caption)
+                                            .lineLimit(1)
+
+                                        Text(album.artist)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    .frame(width: artworkSize, alignment: .leading)
                                 }
-                                .frame(width: 60, alignment: .leading)
+                            }
+                            .buttonStyle(.plain)
+                            .help("\(album.title) — \(album.artist)")
+                            .accessibilityLabel(
+                                album.artist.isEmpty
+                                    ? album.title
+                                    : "\(album.title), \(album.artist)"
+                            )
+                            .accessibilityIdentifier("sidebar.album.\(album.id)")
+                            .task {
+                                await store.loadMoreReleases(ifNeededAfter: album.id)
                             }
                         }
-                        .buttonStyle(.plain)
-                        .help("\(album.title) — \(album.artist)")
-                        .accessibilityLabel(
-                            album.artist.isEmpty
-                                ? album.title
-                                : "\(album.title), \(album.artist)"
-                        )
-                        .accessibilityIdentifier("sidebar.album.\(album.id)")
-                        .task {
-                            await store.loadMoreReleases(ifNeededAfter: album.id)
-                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
                 }
-                // At most three covers, but allow two in a narrow sidebar
-                // instead of forcing the split column to expand on tab changes.
-                .frame(maxWidth: 192, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
             }
 
         case .artists:

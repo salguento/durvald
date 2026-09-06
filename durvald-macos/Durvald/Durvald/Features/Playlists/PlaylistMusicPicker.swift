@@ -114,8 +114,7 @@ struct PlaylistMusicPicker: View {
             case .artist(let artist): artistContent(artist)
             }
         } else if committedQuery.isEmpty {
-            Text("Digite um termo para pesquisar na biblioteca.")
-                .foregroundStyle(.secondary)
+            EmptyView()
         } else if isSearching {
             ProgressView("Pesquisando…")
                 .controlSize(.small)

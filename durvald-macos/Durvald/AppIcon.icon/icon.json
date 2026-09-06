@@ -1,5 +1,20 @@
 {
-  "fill" : "system-light",
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.48282,0.90505,0.82053,1.00000",
+      "display-p3:0.36818,0.80212,0.87544,1.00000"
+    ],
+    "orientation" : {
+      "start" : {
+        "x" : 0.5,
+        "y" : 0
+      },
+      "stop" : {
+        "x" : 0.5,
+        "y" : 0.7
+      }
+    }
+  },
   "groups" : [
     {
       "layers" : [
@@ -8,16 +23,16 @@
             {
               "value" : {
                 "linear-gradient" : [
-                  "extended-srgb:0.00000,0.76471,0.81569,1.00000",
-                  "extended-srgb:0.00000,0.75294,0.90980,1.00000"
+                  "display-p3:0.93859,0.98426,1.00000,1.00000",
+                  "display-p3:0.99251,0.98866,1.00000,0.65800"
                 ],
                 "orientation" : {
                   "start" : {
-                    "x" : 1,
+                    "x" : 0,
                     "y" : 0
                   },
                   "stop" : {
-                    "x" : 0,
+                    "x" : 1,
                     "y" : 1
                   }
                 }
@@ -32,11 +47,11 @@
                 ],
                 "orientation" : {
                   "start" : {
-                    "x" : 1,
+                    "x" : 0,
                     "y" : 0
                   },
                   "stop" : {
-                    "x" : 0,
+                    "x" : 1,
                     "y" : 1
                   }
                 }
@@ -44,11 +59,35 @@
             },
             {
               "appearance" : "tinted",
-              "value" : "automatic"
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.95622,0.96464,1.00000,1.00000",
+                  "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0,
+                    "y" : 0
+                  },
+                  "stop" : {
+                    "x" : 1,
+                    "y" : 1
+                  }
+                }
+              }
             }
           ],
+          "glass" : true,
+          "hidden" : false,
           "image-name" : "durvald-icon.png",
-          "name" : "durvald-icon"
+          "name" : "durvald-icon",
+          "position" : {
+            "scale" : 0.95,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
         }
       ],
       "shadow" : {
