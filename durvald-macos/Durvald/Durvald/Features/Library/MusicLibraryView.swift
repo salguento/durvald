@@ -55,6 +55,9 @@ struct MusicLibraryView: View {
                 .trackContextMenu(track: track) {
                     Task { await store.play(trackID: track.id) }
                 }
+                .task {
+                    await store.loadMoreTracks(ifNeededAfter: track.id)
+                }
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {

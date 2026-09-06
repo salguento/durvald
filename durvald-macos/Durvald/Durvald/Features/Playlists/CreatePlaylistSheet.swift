@@ -11,14 +11,15 @@ struct CreatePlaylistSheet: View {
     @State private var artwork: NSImage?
     @State private var artworkBase64: String?
     @State private var isChoosingArtwork = false
+    @State private var isSaving = false
     @State private var imageError: String?
 
     private let playlist: Playlist?
-    let onSave: (String, String, String?) -> Bool
+    let onSave: (String, String, String?) async -> Bool
 
     init(
         playlist: Playlist? = nil,
-        onSave: @escaping (String, String, String?) -> Bool
+        onSave: @escaping (String, String, String?) async -> Bool
     ) {
         self.playlist = playlist
         self.onSave = onSave
@@ -67,16 +68,22 @@ struct CreatePlaylistSheet: View {
                 Spacer()
 
                 Button(playlist == nil ? "Criar" : "Salvar") {
-                    guard onSave(normalizedTitle, playlistDescription, artworkBase64) else {
-                        return
+                    Task {
+                        isSaving = true
+                        defer { isSaving = false }
+                        guard await onSave(
+                            normalizedTitle,
+                            playlistDescription,
+                            artworkBase64
+                        ) else { return }
+                        dismiss()
                     }
-                    dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .disabled(normalizedTitle.isEmpty)
+                .disabled(normalizedTitle.isEmpty || isSaving)
                 .accessibilityIdentifier("playlist.new.create")
             }
         }
@@ -120,7 +127,7 @@ struct CreatePlaylistSheet: View {
                         .font(.caption.weight(.medium))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(.regularMaterial, in: .capsule)
+                        .glassEffect(.regular, in: .capsule)
                         .padding(8)
                 } else {
                     VStack(spacing: 8) {

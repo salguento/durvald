@@ -45,11 +45,7 @@ struct ContentView: View {
             .toolbar {
                 if shell.columnVisibility != .detailOnly {
                     ToolbarItem(placement: .primaryAction) {
-                        ControlGroup {
-                            sidebarToggleButton
-                            addPlaylistButton
-                        }
-                        .controlGroupStyle(.navigation)
+                        sidebarToolbarButtons
                     }
                 }
             }
@@ -113,7 +109,7 @@ struct ContentView: View {
             }
             CreatePlaylistSheet(playlist: editingPlaylist) { title, description, artworkBase64 in
                 if let editingPlaylist {
-                    guard let updatedPlaylist = store.updatePlaylist(
+                    guard let updatedPlaylist = await store.updatePlaylist(
                         id: editingPlaylist.id,
                         name: title,
                         description: description,
@@ -126,7 +122,7 @@ struct ContentView: View {
                     return true
                 }
 
-                guard let playlist = store.createPlaylist(
+                guard let playlist = await store.createPlaylist(
                     named: title,
                     description: description,
                     artworkBase64: artworkBase64
@@ -166,11 +162,7 @@ struct ContentView: View {
     private var contentToolbar: some ToolbarContent {
         if shell.columnVisibility == .detailOnly {
             ToolbarItem(placement: .navigation) {
-                ControlGroup {
-                    sidebarToggleButton
-                    addPlaylistButton
-                }
-                .controlGroupStyle(.navigation)
+                sidebarToolbarButtons
             }
         }
 
@@ -181,9 +173,7 @@ struct ContentView: View {
                 } label: {
                     Label("Voltar", systemImage: "chevron.left")
                 }
-                .disabled(
-                    !shell.navigationHistory.canGoBack
-                )
+                .disabled(!shell.navigationHistory.canGoBack)
                 .keyboardShortcut(AppKeyboardShortcuts.goBack)
                 .accessibilityIdentifier("navigation.back")
 
@@ -192,9 +182,7 @@ struct ContentView: View {
                 } label: {
                     Label("Avançar", systemImage: "chevron.right")
                 }
-                .disabled(
-                    !shell.navigationHistory.canGoForward
-                )
+                .disabled(!shell.navigationHistory.canGoForward)
                 .keyboardShortcut(AppKeyboardShortcuts.goForward)
                 .accessibilityIdentifier("navigation.forward")
             }
@@ -242,11 +230,7 @@ struct ContentView: View {
                 )
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("search.container")
-                .glassEffect(
-                    .regular
-                        .interactive(),
-                    in: .capsule
-                )
+                .glassEffect(.regular.interactive(), in: .capsule)
                 .overlay {
                     Capsule()
                         .strokeBorder(Color.accentColor, lineWidth: 2)
@@ -303,6 +287,13 @@ struct ContentView: View {
         .accessibilityIdentifier("navigation.sidebar")
     }
 
+    private var sidebarToolbarButtons: some View {
+        HStack(spacing: shell.columnVisibility == .detailOnly ? 4 : 6) {
+            sidebarToggleButton
+            addPlaylistButton
+        }
+    }
+
     private var addPlaylistButton: some View {
         Button {
             playlistCreation.request(for: nil)
@@ -311,6 +302,7 @@ struct ContentView: View {
         }
         .labelStyle(.iconOnly)
         .help("Adicionar")
+        .accessibilityLabel("Adicionar playlist")
         .accessibilityIdentifier("library.addMenu")
     }
 

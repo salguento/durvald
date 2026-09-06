@@ -112,7 +112,7 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         }
     }
 
-    override func releaseTracks(releaseId: Int64) throws -> [Track] {
+    override func releaseTracks(releaseId: Int64) async throws -> [Track] {
         lock.withLock {
             tracks.filter { $0.releaseId == releaseId }
         }

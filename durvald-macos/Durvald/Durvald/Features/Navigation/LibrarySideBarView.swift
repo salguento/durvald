@@ -181,6 +181,9 @@ struct LibrarySidebarView: View {
                                 : "\(album.title), \(album.artist)"
                         )
                         .accessibilityIdentifier("sidebar.album.\(album.id)")
+                        .task {
+                            await store.loadMoreReleases(ifNeededAfter: album.id)
+                        }
                     }
                 }
                 // At most three covers, but allow two in a narrow sidebar

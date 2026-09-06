@@ -58,27 +58,24 @@ final class ArtworkRepository {
 
         let sendableCore = SendableCore(value: core)
         let task = Task { @MainActor () throws -> NSImage? in
+            let bytes = try await sendableCore.value.artworkBytes(artworkId: artworkID)
             let thumbnail: CGImage? = try await withCheckedThrowingContinuation { continuation in
                 decodingQueue.async {
-                    do {
-                        let thumbnail: CGImage? = try autoreleasepool {
-                            guard let bytes = try sendableCore.value.artworkBytes(artworkId: artworkID),
-                                  let source = CGImageSourceCreateWithData(bytes as CFData, [
+                    let thumbnail: CGImage? = autoreleasepool {
+                        guard let bytes,
+                              let source = CGImageSourceCreateWithData(bytes as CFData, [
                                     kCGImageSourceShouldCache: false
                                   ] as CFDictionary)
-                            else { return nil }
+                        else { return nil }
 
-                            return CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                kCGImageSourceCreateThumbnailWithTransform: true,
-                                kCGImageSourceThumbnailMaxPixelSize: pixelSize,
-                                kCGImageSourceShouldCacheImmediately: true
-                            ] as CFDictionary)
-                        }
-                        continuation.resume(returning: thumbnail)
-                    } catch {
-                        continuation.resume(throwing: error)
+                        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                            kCGImageSourceCreateThumbnailFromImageAlways: true,
+                            kCGImageSourceCreateThumbnailWithTransform: true,
+                            kCGImageSourceThumbnailMaxPixelSize: pixelSize,
+                            kCGImageSourceShouldCacheImmediately: true
+                        ] as CFDictionary)
                     }
+                    continuation.resume(returning: thumbnail)
                 }
             }
             let image = thumbnail.map { NSImage(cgImage: $0, size: .zero) }

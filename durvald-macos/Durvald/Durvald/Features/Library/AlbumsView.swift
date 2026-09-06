@@ -56,6 +56,9 @@ struct AlbumsView: View {
                             release: release,
                             onSelectAlbum: onSelectAlbum
                         )
+                        .task {
+                            await store.loadMoreReleases(ifNeededAfter: release.id)
+                        }
                     }
                 }
                 .padding(.horizontal, AlbumGridLayout.horizontalPadding)

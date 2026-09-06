@@ -21,10 +21,13 @@ struct HistoryView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .task {
+                await store.loadMoreHistory(ifNeededAfter: item.id)
+            }
         }
         .task {
             while !Task.isCancelled {
-                store.refreshHistory()
+                await store.refreshHistory()
                 try? await Task.sleep(for: .seconds(1))
             }
         }

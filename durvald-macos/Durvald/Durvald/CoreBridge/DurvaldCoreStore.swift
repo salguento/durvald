@@ -45,6 +45,14 @@ final class DurvaldCoreStore {
     @ObservationIgnored private var seekTask: Task<Void, Never>?
     @ObservationIgnored private var seekRequestID = 0
     @ObservationIgnored private var pendingSeek: SeekRequest?
+    @ObservationIgnored private var nextTracksOffset: UInt64?
+    @ObservationIgnored private var nextReleasesOffset: UInt64?
+    @ObservationIgnored private var nextHistoryOffset: UInt64?
+    @ObservationIgnored private var isLoadingTracksPage = false
+    @ObservationIgnored private var isLoadingReleasesPage = false
+    @ObservationIgnored private var isLoadingHistoryPage = false
+    private static let libraryPageSize: UInt64 = 100
+    private static let pagePrefetchDistance = 12
 
     private struct SeekRequest {
         let id: Int
@@ -83,9 +91,9 @@ final class DurvaldCoreStore {
             let openedCore = try await open(config: try makeConfig())
             let initialPlayback = await openedCore.playback()
             core = openedCore
-            try reloadLibrary(using: openedCore)
-            libraryPaths = try openedCore.libraryPaths()
-            appSettings = try openedCore.settings()
+            try await reloadLibrary(using: openedCore)
+            libraryPaths = try await openedCore.libraryPaths()
+            appSettings = try await openedCore.settings()
             playback = initialPlayback
 
             startPlaybackPolling()
@@ -119,12 +127,120 @@ final class DurvaldCoreStore {
         }
     }
 
-    private func reloadLibrary(using core: DurvaldCore) throws {
-        tracks = try core.tracks()
-        releases = try core.releases()
-        artists = try core.artists()
-        playlists = try core.playlists()
-        history = try core.playbackHistory()
+    private func reloadLibrary(using core: DurvaldCore) async throws {
+        async let loadedTracks = core.tracksPage(
+            pageSize: Self.libraryPageSize,
+            offset: 0
+        )
+        async let loadedReleases = core.releasesPage(
+            pageSize: Self.libraryPageSize,
+            offset: 0
+        )
+        async let loadedArtists = core.artists()
+        async let loadedPlaylists = core.playlists()
+        async let loadedHistory = core.playbackHistoryPage(
+            pageSize: Self.libraryPageSize,
+            offset: 0
+        )
+        let result = try await (
+            loadedTracks,
+            loadedReleases,
+            loadedArtists,
+            loadedPlaylists,
+            loadedHistory
+        )
+        tracks = result.0.items
+        nextTracksOffset = result.0.nextOffset
+        releases = result.1.items
+        nextReleasesOffset = result.1.nextOffset
+        artists = result.2
+        playlists = result.3
+        history = result.4.items
+        nextHistoryOffset = result.4.nextOffset
+    }
+
+    func loadMoreTracks(ifNeededAfter trackID: Int64) async {
+        guard shouldPrefetch(after: trackID, in: tracks),
+              let core,
+              let offset = nextTracksOffset,
+              !isLoadingTracksPage else { return }
+
+        isLoadingTracksPage = true
+        defer { isLoadingTracksPage = false }
+        do {
+            let page = try await core.tracksPage(
+                pageSize: Self.libraryPageSize,
+                offset: offset
+            )
+            let loadedIDs = Set(tracks.map(\.id))
+            tracks.append(contentsOf: page.items.filter { !loadedIDs.contains($0.id) })
+            nextTracksOffset = page.nextOffset
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func loadMoreReleases(ifNeededAfter releaseID: Int64) async {
+        guard shouldPrefetch(after: releaseID, in: releases),
+              let core,
+              let offset = nextReleasesOffset,
+              !isLoadingReleasesPage else { return }
+
+        isLoadingReleasesPage = true
+        defer { isLoadingReleasesPage = false }
+        do {
+            let page = try await core.releasesPage(
+                pageSize: Self.libraryPageSize,
+                offset: offset
+            )
+            let loadedIDs = Set(releases.map(\.id))
+            releases.append(contentsOf: page.items.filter { !loadedIDs.contains($0.id) })
+            nextReleasesOffset = page.nextOffset
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func loadMoreHistory(ifNeededAfter historyID: Int64) async {
+        guard shouldPrefetch(after: historyID, in: history),
+              let core,
+              let offset = nextHistoryOffset,
+              !isLoadingHistoryPage else { return }
+
+        isLoadingHistoryPage = true
+        defer { isLoadingHistoryPage = false }
+        do {
+            let page = try await core.playbackHistoryPage(
+                pageSize: Self.libraryPageSize,
+                offset: offset
+            )
+            let loadedIDs = Set(history.map(\.id))
+            history.append(contentsOf: page.items.filter { !loadedIDs.contains($0.id) })
+            nextHistoryOffset = page.nextOffset
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    private func shouldPrefetch<Item>(
+        after id: Int64,
+        in items: [Item],
+        id itemID: (Item) -> Int64
+    ) -> Bool {
+        guard let index = items.firstIndex(where: { itemID($0) == id }) else { return false }
+        return index >= max(items.count - Self.pagePrefetchDistance, 0)
+    }
+
+    private func shouldPrefetch(after id: Int64, in items: [Track]) -> Bool {
+        shouldPrefetch(after: id, in: items, id: \.id)
+    }
+
+    private func shouldPrefetch(after id: Int64, in items: [Release]) -> Bool {
+        shouldPrefetch(after: id, in: items, id: \.id)
+    }
+
+    private func shouldPrefetch(after id: Int64, in items: [PlaybackHistoryItem]) -> Bool {
+        shouldPrefetch(after: id, in: items, id: \.id)
     }
 
     @discardableResult
@@ -132,7 +248,7 @@ final class DurvaldCoreStore {
         named name: String,
         description: String = "",
         artworkBase64: String? = nil
-    ) -> Playlist? {
+    ) async -> Playlist? {
         guard let core else {
             errorMessage = "O core ainda está abrindo."
             return nil
@@ -142,7 +258,7 @@ final class DurvaldCoreStore {
         guard !normalizedName.isEmpty else { return nil }
 
         do {
-            let playlist = try core.createPlaylist(
+            let playlist = try await core.createPlaylist(
                 name: normalizedName,
                 description: description.trimmingCharacters(in: .whitespacesAndNewlines),
                 artworkBase64: artworkBase64
@@ -161,7 +277,7 @@ final class DurvaldCoreStore {
         name: String,
         description: String,
         artworkBase64: String?
-    ) -> Playlist? {
+    ) async -> Playlist? {
         guard let core else {
             errorMessage = "O core ainda está abrindo."
             return nil
@@ -171,13 +287,13 @@ final class DurvaldCoreStore {
         guard !normalizedName.isEmpty else { return nil }
 
         do {
-            try core.updatePlaylist(
+            try await core.updatePlaylist(
                 playlistId: id,
                 name: normalizedName,
                 description: description.trimmingCharacters(in: .whitespacesAndNewlines),
                 artworkBase64: artworkBase64
             )
-            let playlist = try core.playlist(playlistId: id)
+            let playlist = try await core.playlist(playlistId: id)
             if let index = playlists.firstIndex(where: { $0.id == id }) {
                 playlists[index] = playlist
             } else {
@@ -197,22 +313,23 @@ final class DurvaldCoreStore {
             return false
         }
 
-        do {
-            let currentTrackCount = playlists.first(where: { $0.id == playlist.id })?.trackCount
-                ?? playlist.trackCount
-            _ = try core.addTrackToPlaylist(
-                playlistId: playlist.id,
-                trackId: trackID,
-                position: currentTrackCount
-            )
-            if let index = playlists.firstIndex(where: { $0.id == playlist.id }) {
-                playlists[index].trackCount += 1
+        let currentTrackCount = playlists.first(where: { $0.id == playlist.id })?.trackCount
+            ?? playlist.trackCount
+        Task {
+            do {
+                _ = try await core.addTrackToPlaylist(
+                    playlistId: playlist.id,
+                    trackId: trackID,
+                    position: currentTrackCount
+                )
+                if let index = playlists.firstIndex(where: { $0.id == playlist.id }) {
+                    playlists[index].trackCount += 1
+                }
+            } catch {
+                errorMessage = String(describing: error)
             }
-            return true
-        } catch {
-            errorMessage = String(describing: error)
-            return false
         }
+        return true
     }
 
     func searchLibrary(query: String) async -> SearchResults {
@@ -225,12 +342,8 @@ final class DurvaldCoreStore {
             )
         }
 
-        let sendableCore = SendableCore(value: core)
-
         do {
-            return try await Task.detached(priority: .userInitiated) {
-                try sendableCore.value.search(query: query)
-            }.value
+            return try await core.search(query: query)
         } catch {
             errorMessage = String(describing: error)
             return SearchResults(
@@ -249,7 +362,7 @@ final class DurvaldCoreStore {
 
         do {
             let tracks = try await Task.detached(priority: .userInitiated) {
-                try sendableCore.value.releaseTracks(releaseId: releaseID)
+                try await sendableCore.value.releaseTracks(releaseId: releaseID)
             }.value
 
             return tracks.sorted { lhs, rhs in
@@ -275,7 +388,7 @@ final class DurvaldCoreStore {
 
         do {
             return try await Task.detached(priority: .userInitiated) {
-                try sendableCore.value.artistTracks(artistId: artistID)
+                try await sendableCore.value.artistTracks(artistId: artistID)
             }.value
         } catch {
             errorMessage = String(describing: error)
@@ -289,7 +402,7 @@ final class DurvaldCoreStore {
 
         do {
             return try await Task.detached(priority: .userInitiated) {
-                try sendableCore.value.artistReleases(artistId: artistID)
+                try await sendableCore.value.artistReleases(artistId: artistID)
             }.value
         } catch {
             errorMessage = String(describing: error)
@@ -303,7 +416,7 @@ final class DurvaldCoreStore {
 
         do {
             return try await Task.detached(priority: .userInitiated) {
-                try sendableCore.value.playlistTracks(playlistId: playlistID)
+                try await sendableCore.value.playlistTracks(playlistId: playlistID)
             }.value
         } catch {
             errorMessage = String(describing: error)
@@ -349,13 +462,13 @@ final class DurvaldCoreStore {
                     scanProgressPollingTask = nil
                     scanProgress = nil
                 }
-                try core.addLibraryPath(path: url.path)
-                libraryPaths = try core.libraryPaths()
+                try await core.addLibraryPath(path: url.path)
+                libraryPaths = try await core.libraryPaths()
                 let result = try await core.scanConfiguredLibrary()
                 print(
                     "Durvald: scan concluído — encontrados: \(result.totalFilesFound), novos: \(result.newTracksAdded), atualizados: \(result.updatedTracks), erros: \(result.errors)"
                 )
-                try reloadLibrary(using: core)
+                try await reloadLibrary(using: core)
 
                 if !result.errors.isEmpty {
                     errorMessage = result.errors.joined(separator: "\n")
@@ -376,16 +489,18 @@ final class DurvaldCoreStore {
             return
         }
 
-        do {
-            try core.removeLibraryPath(path: path)
-            removeLibraryAccess(forPath: path)
+        Task {
+            do {
+                try await core.removeLibraryPath(path: path)
+                removeLibraryAccess(forPath: path)
 
-            libraryPaths.removeAll { configuredPath in
-                standardizedLibraryPath(configuredPath)
-                    == standardizedLibraryPath(path)
+                libraryPaths.removeAll { configuredPath in
+                    standardizedLibraryPath(configuredPath)
+                        == standardizedLibraryPath(path)
+                }
+            } catch {
+                errorMessage = String(describing: error)
             }
-        } catch {
-            errorMessage = String(describing: error)
         }
     }
 
@@ -452,7 +567,7 @@ final class DurvaldCoreStore {
         }
 
         do {
-            let tracks = try core.releaseTracks(releaseId: releaseID).sorted {
+            let tracks = try await core.releaseTracks(releaseId: releaseID).sorted {
                 if $0.discNumber != $1.discNumber {
                     return $0.discNumber < $1.discNumber
                 }
@@ -519,7 +634,7 @@ final class DurvaldCoreStore {
         }
 
         do {
-            let tracks = try core.playlistTracks(playlistId: playlistID)
+            let tracks = try await core.playlistTracks(playlistId: playlistID)
             guard tracks.indices.contains(position) else {
                 errorMessage = "A posição selecionada não pertence a esta playlist."
                 return
@@ -839,16 +954,18 @@ final class DurvaldCoreStore {
             return
         }
 
-        do {
-            try core.setTrackFavorite(trackId: trackID, favorite: favorite)
-            if let index = tracks.firstIndex(where: { $0.id == trackID }) {
-                tracks[index].isFavorite = favorite
+        Task {
+            do {
+                try await core.setTrackFavorite(trackId: trackID, favorite: favorite)
+                if let index = tracks.firstIndex(where: { $0.id == trackID }) {
+                    tracks[index].isFavorite = favorite
+                }
+                if playback?.currentTrack?.id == trackID {
+                    playback?.currentTrack?.isFavorite = favorite
+                }
+            } catch {
+                errorMessage = String(describing: error)
             }
-            if playback?.currentTrack?.id == trackID {
-                playback?.currentTrack?.isFavorite = favorite
-            }
-        } catch {
-            errorMessage = String(describing: error)
         }
     }
 
@@ -858,13 +975,15 @@ final class DurvaldCoreStore {
             return
         }
 
-        do {
-            try core.setReleaseFavorite(releaseId: releaseID, favorite: favorite)
-            if let index = releases.firstIndex(where: { $0.id == releaseID }) {
-                releases[index].isFavorite = favorite
+        Task {
+            do {
+                try await core.setReleaseFavorite(releaseId: releaseID, favorite: favorite)
+                if let index = releases.firstIndex(where: { $0.id == releaseID }) {
+                    releases[index].isFavorite = favorite
+                }
+            } catch {
+                errorMessage = String(describing: error)
             }
-        } catch {
-            errorMessage = String(describing: error)
         }
     }
 
@@ -874,13 +993,15 @@ final class DurvaldCoreStore {
             return
         }
 
-        do {
-            try core.setPlaylistFavorite(playlistId: playlistID, favorite: favorite)
-            if let index = playlists.firstIndex(where: { $0.id == playlistID }) {
-                playlists[index].isFavorite = favorite
+        Task {
+            do {
+                try await core.setPlaylistFavorite(playlistId: playlistID, favorite: favorite)
+                if let index = playlists.firstIndex(where: { $0.id == playlistID }) {
+                    playlists[index].isFavorite = favorite
+                }
+            } catch {
+                errorMessage = String(describing: error)
             }
-        } catch {
-            errorMessage = String(describing: error)
         }
     }
 
@@ -1026,11 +1147,26 @@ final class DurvaldCoreStore {
         }
     }
 
-    func refreshHistory() {
-        guard let core else { return }
+    func refreshHistory() async {
+        guard let core, !isLoadingHistoryPage else { return }
+        isLoadingHistoryPage = true
+        defer { isLoadingHistoryPage = false }
 
         do {
-            history = try core.playbackHistory()
+            let page = try await core.playbackHistoryPage(
+                pageSize: Self.libraryPageSize,
+                offset: 0
+            )
+            if page.nextOffset == nil {
+                history = page.items
+                nextHistoryOffset = nil
+                return
+            }
+
+            let refreshedIDs = Set(page.items.map(\.id))
+            let previouslyLoadedTail = history.filter { !refreshedIDs.contains($0.id) }
+            history = page.items + previouslyLoadedTail
+            nextHistoryOffset = UInt64(history.count)
         } catch {
             errorMessage = String(describing: error)
         }
@@ -1044,20 +1180,22 @@ final class DurvaldCoreStore {
     ) {
         guard let core else { return }
 
-        do {
-            var settings = try core.settings()
+        Task {
+            do {
+                var settings = try await core.settings()
 
-            settings.crossFade = crossFade
-            settings.crossFadeDuration = crossFadeDuration
-            settings.normalizeVolume = normalizeVolume
-            settings.explicitContent = explicitContent
+                settings.crossFade = crossFade
+                settings.crossFadeDuration = crossFadeDuration
+                settings.normalizeVolume = normalizeVolume
+                settings.explicitContent = explicitContent
 
-            // Autoplay, fonte, qualidade e opções ainda não implementadas
-            // no cliente macOS permanecem intocados.
-            try core.updateSettings(settings: settings)
-            appSettings = settings
-        } catch {
-            errorMessage = String(describing: error)
+                // Autoplay, fonte, qualidade e opções ainda não implementadas
+                // no cliente macOS permanecem intocados.
+                try await core.updateSettings(settings: settings)
+                appSettings = settings
+            } catch {
+                errorMessage = String(describing: error)
+            }
         }
     }
 
