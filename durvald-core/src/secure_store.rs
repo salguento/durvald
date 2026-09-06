@@ -1,8 +1,9 @@
-//! Secure storage module - platform-native keychains on macOS & Windows,
-//! and AES-256-GCM encrypted filesystem storage with strict OS permissions on Linux.
+//! Secure storage module backed by the platform credential service on macOS,
+//! Windows, and Linux. The encrypted filesystem format is retained only to
+//! migrate credentials written by older releases.
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use keyring::Entry;
 use once_cell::sync::Lazy;
 use ring::{
@@ -15,7 +16,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use thiserror::Error;
 
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -34,6 +35,8 @@ pub enum SecureStoreError {
     Ring(String),
     #[error("UTF-8 error: {0}")]
     Utf8(#[from] std::string::FromUtf8Error),
+    #[error("Secure store mutex is poisoned: {0}")]
+    MutexPoisoned(&'static str),
     #[error("{0}")]
     Custom(String),
 }
@@ -106,15 +109,18 @@ fn write_secure_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
     fs::write(path, data)
 }
 
-/// Production-grade secure storage using OS keychain for secrets (macOS & Windows),
-/// and AES-256-GCM encrypted filesystem storage with strict permissions on Linux.
+/// Production-grade secure storage using the OS credential service. On Linux,
+/// keyring is backed by the freedesktop Secret Service over D-Bus.
 #[derive(Clone)]
 pub struct SecureStore {
     /// Path for non-sensitive data (API key, username)
     data_path: PathBuf,
 
-    /// Keychain service name — used on macOS and Windows
-    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+    /// Credential service name used by every supported desktop platform.
+    #[cfg_attr(
+        not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+        allow(dead_code)
+    )]
     keychain_service: String,
 
     /// In-memory cache of non-sensitive data
@@ -145,34 +151,45 @@ impl SecureStore {
         Ok(data)
     }
 
+    fn lock_data(&self) -> SecureStoreResult<MutexGuard<'_, HashMap<String, Value>>> {
+        self.data
+            .lock()
+            .map_err(|_| SecureStoreError::MutexPoisoned("non-secret data"))
+    }
+
     pub fn save_data(&self) -> SecureStoreResult<()> {
-        let data = self.data.lock().unwrap();
-        let contents = serde_json::to_string(&*data)?;
+        let contents = {
+            let data = self.lock_data()?;
+            serde_json::to_string(&*data)?
+        };
         write_secure_file(&self.data_path, contents.as_bytes())?;
         Ok(())
     }
 
     // ===== SECRETS =====
-    // macOS   → Apple Keychain via keyring crate
-    // Windows → Windows Credential Manager via keyring crate
-    // Linux   → AES-256-GCM encrypted file, key generated via CSPRNG with 0700/0600 permissions
+    // macOS   → Apple Keychain
+    // Windows → Windows Credential Manager
+    // Linux   → freedesktop Secret Service
+    // Other targets retain the encrypted-file implementation as a compatibility fallback.
 
     pub fn set_secret(&self, name: &str, value: &str) -> SecureStoreResult<()> {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         {
             let entry = Entry::new(&self.keychain_service, name)?;
             entry.set_password(value)?;
+            self.delete_encrypted_secret_file(name)?;
+            self.delete_legacy_master_key_if_unused()?;
             Ok(())
         }
 
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             self.write_encrypted_secret(name, value)
         }
     }
 
     pub fn get_secret(&self, name: &str) -> SecureStoreResult<String> {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         {
             let entry = Entry::new(&self.keychain_service, name)?;
             match entry.get_password() {
@@ -182,6 +199,7 @@ impl SecureStore {
                     if let Ok(legacy_secret) = self.read_encrypted_secret(name) {
                         entry.set_password(&legacy_secret)?;
                         self.delete_encrypted_secret_file(name)?;
+                        self.delete_legacy_master_key_if_unused()?;
                         return Ok(legacy_secret);
                     }
                     Err(SecureStoreError::Custom("Not found".to_string()))
@@ -190,14 +208,14 @@ impl SecureStore {
             }
         }
 
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             self.read_encrypted_secret(name)
         }
     }
 
     pub fn delete_secret(&self, name: &str) -> SecureStoreResult<()> {
-        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         {
             let entry = Entry::new(&self.keychain_service, name)?;
             match entry.delete_credential() {
@@ -205,10 +223,11 @@ impl SecureStore {
                 Err(error) => return Err(SecureStoreError::Keyring(error)),
             }
             self.delete_encrypted_secret_file(name)?;
+            self.delete_legacy_master_key_if_unused()?;
             Ok(())
         }
 
-        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
             self.delete_encrypted_secret_file(name)
         }
@@ -292,6 +311,31 @@ impl SecureStore {
                 SecureStoreError::Custom("Invalid master key length in store".to_string())
             })
         }
+    }
+
+    /// Removes the old file-based master key only after every ciphertext that
+    /// depends on it has been migrated or deleted.
+    fn delete_legacy_master_key_if_unused(&self) -> SecureStoreResult<()> {
+        let secrets_dir = self.secrets_dir()?;
+        let has_encrypted_secrets = fs::read_dir(&secrets_dir)?.try_fold(
+            false,
+            |found, entry| -> std::io::Result<bool> {
+                if found {
+                    return Ok(true);
+                }
+                let path = entry?.path();
+                Ok(path.extension().and_then(|extension| extension.to_str()) == Some("enc"))
+            },
+        )?;
+        if !has_encrypted_secrets {
+            let key_path = secrets_dir.join("master.key");
+            match fs::remove_file(key_path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
     }
 
     fn legacy_machine_key(&self) -> SecureStoreResult<[u8; 32]> {
@@ -448,16 +492,18 @@ impl SecureStore {
 
     // ===== NON-SECRET DATA (FILESYSTEM) =====
 
-    pub fn get(&self, key: &str) -> Option<Value> {
-        self.data.lock().unwrap().get(key).cloned()
+    pub fn get(&self, key: &str) -> SecureStoreResult<Option<Value>> {
+        Ok(self.lock_data()?.get(key).cloned())
     }
 
-    pub fn set(&self, key: String, value: Value) {
-        self.data.lock().unwrap().insert(key, value);
+    pub fn set(&self, key: String, value: Value) -> SecureStoreResult<()> {
+        self.lock_data()?.insert(key, value);
+        Ok(())
     }
 
-    pub fn delete(&self, key: &str) {
-        self.data.lock().unwrap().remove(key);
+    pub fn delete(&self, key: &str) -> SecureStoreResult<()> {
+        self.lock_data()?.remove(key);
+        Ok(())
     }
 }
 
@@ -465,13 +511,17 @@ impl SecureStore {
 pub static SECURE_STORE: Lazy<Mutex<Option<SecureStore>>> = Lazy::new(|| Mutex::new(None));
 
 pub fn init_secure_store(data_dir: PathBuf, keychain_service: String) -> SecureStoreResult<()> {
-    let mut store = SECURE_STORE.lock().unwrap();
+    let mut store = SECURE_STORE
+        .lock()
+        .map_err(|_| SecureStoreError::MutexPoisoned("global store"))?;
     *store = Some(SecureStore::new(data_dir, keychain_service)?);
     Ok(())
 }
 
 pub fn get_secure_store() -> SecureStoreResult<SecureStore> {
-    let store = SECURE_STORE.lock().unwrap();
+    let store = SECURE_STORE
+        .lock()
+        .map_err(|_| SecureStoreError::MutexPoisoned("global store"))?;
     store
         .as_ref()
         .cloned()
@@ -585,6 +635,54 @@ mod tests {
                 format!("secret_{index}")
             );
         }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn legacy_master_key_is_removed_only_after_the_last_ciphertext() {
+        let (store, dir) = test_store();
+        store.write_encrypted_secret("first", "secret-1").unwrap();
+        store.write_encrypted_secret("second", "secret-2").unwrap();
+        let key_path = store.secrets_dir().unwrap().join("master.key");
+        assert!(key_path.exists());
+
+        store.delete_encrypted_secret_file("first").unwrap();
+        store.delete_legacy_master_key_if_unused().unwrap();
+        assert!(key_path.exists());
+
+        store.delete_encrypted_secret_file("second").unwrap();
+        store.delete_legacy_master_key_if_unused().unwrap();
+        assert!(!key_path.exists());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn poisoned_data_mutex_returns_errors_instead_of_panicking() {
+        let (store, dir) = test_store();
+        let data = Arc::clone(&store.data);
+        let poisoner = std::thread::spawn(move || {
+            let _guard = data.lock().expect("lock test data");
+            panic!("poison secure-store data mutex");
+        });
+        assert!(poisoner.join().is_err());
+
+        assert!(matches!(
+            store.get("api_key"),
+            Err(SecureStoreError::MutexPoisoned("non-secret data"))
+        ));
+        assert!(matches!(
+            store.set("api_key".into(), Value::String("key".into())),
+            Err(SecureStoreError::MutexPoisoned("non-secret data"))
+        ));
+        assert!(matches!(
+            store.delete("api_key"),
+            Err(SecureStoreError::MutexPoisoned("non-secret data"))
+        ));
+        assert!(matches!(
+            store.save_data(),
+            Err(SecureStoreError::MutexPoisoned("non-secret data"))
+        ));
+
         let _ = fs::remove_dir_all(dir);
     }
 

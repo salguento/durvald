@@ -4,12 +4,15 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use chrono::Utc;
 use rusqlite::{Connection, OptionalExtension, Row, params, types::ValueRef};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
 const CURRENT_METADATA_VERSION: i64 = 3;
+static SCAN_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
+const SCAN_DISCOVERY_BATCH_SIZE: usize = 512;
 
 #[derive(Error, Debug)]
 pub enum DatabaseError {
@@ -33,6 +36,96 @@ pub enum DatabaseError {
 
 pub type DatabaseResult<T> = Result<T, DatabaseError>;
 
+// Keep positional row decoders coupled to an explicit projection instead of
+// the physical table layout, which is allowed to evolve through migrations.
+macro_rules! song_columns {
+    ($table:literal) => {
+        concat!(
+            $table,
+            ".song_id, ",
+            $table,
+            ".title, ",
+            $table,
+            ".artwork, ",
+            $table,
+            ".artist_id, ",
+            $table,
+            ".artist_name, ",
+            $table,
+            ".release_id, ",
+            $table,
+            ".release_title, ",
+            $table,
+            ".track_number, ",
+            $table,
+            ".disc_number, ",
+            $table,
+            ".duration, ",
+            $table,
+            ".bitrate, ",
+            $table,
+            ".sample_rate, ",
+            $table,
+            ".play_count, ",
+            $table,
+            ".last_played, ",
+            $table,
+            ".rating, ",
+            $table,
+            ".lyrics, ",
+            $table,
+            ".is_favorite, ",
+            $table,
+            ".is_hidden, ",
+            $table,
+            ".suggest_less, ",
+            $table,
+            ".file_path, ",
+            $table,
+            ".created_at, ",
+            $table,
+            ".updated_at"
+        )
+    };
+}
+
+macro_rules! release_columns {
+    ($table:literal) => {
+        concat!(
+            $table,
+            ".release_id, ",
+            $table,
+            ".title, ",
+            $table,
+            ".artist_id, ",
+            $table,
+            ".artist_name, ",
+            $table,
+            ".release_date, ",
+            $table,
+            ".total_tracks, ",
+            $table,
+            ".total_discs, ",
+            $table,
+            ".duration, ",
+            $table,
+            ".artwork, ",
+            $table,
+            ".created_at, ",
+            $table,
+            ".updated_at, ",
+            $table,
+            ".is_favorite, ",
+            $table,
+            ".is_hidden, ",
+            $table,
+            ".suggest_less, ",
+            $table,
+            ".rating"
+        )
+    };
+}
+
 /// Reads a duration from SQLite regardless of whether its INTEGER affinity
 /// stored a whole-second value as `INTEGER` or a fractional value as `REAL`.
 /// The public core model uses whole seconds, so fractional values are truncated.
@@ -47,6 +140,65 @@ fn duration_from_row(row: &Row<'_>, index: usize) -> rusqlite::Result<u64> {
             "duration must be a finite, non-negative SQLite number".into(),
         )),
     }
+}
+
+fn song_item_from_row(row: &Row<'_>) -> rusqlite::Result<SongItem> {
+    Ok(SongItem {
+        song_id: row.get(0)?,
+        title: row.get(1)?,
+        artwork: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+        artist_id: row.get(3)?,
+        artist_name: row.get(4)?,
+        release_id: row.get(5)?,
+        release_title: row.get(6)?,
+        track_number: row.get(7)?,
+        disc_number: row.get(8)?,
+        duration: row.get::<_, f64>(9)? as u64,
+        bitrate: row.get(10)?,
+        sample_rate: row.get(11)?,
+        play_count: row.get(12)?,
+        last_played: row.get(13)?,
+        rating: row.get(14)?,
+        lyrics: row.get(15)?,
+        is_favorite: row.get(16)?,
+        is_hidden: row.get(17)?,
+        suggest_less: row.get(18)?,
+        file_path: row.get(19)?,
+        created_at: row.get(20)?,
+        updated_at: row.get(21)?,
+    })
+}
+
+fn release_from_row(row: &Row<'_>) -> rusqlite::Result<Releases> {
+    Ok(Releases {
+        release_id: row.get(0)?,
+        title: row.get(1)?,
+        artist_id: row.get(2)?,
+        artist_name: row.get(3)?,
+        release_date: row
+            .get::<_, Option<i64>>(4)?
+            .map(|date| date.to_string())
+            .unwrap_or_default(),
+        total_tracks: row.get(5)?,
+        total_discs: row.get(6)?,
+        duration: duration_from_row(row, 7)?,
+        artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+        is_favorite: row.get(11)?,
+        is_hidden: row.get(12)?,
+        suggest_less: row.get(13)?,
+        rating: row.get(14)?,
+    })
+}
+
+fn play_history_from_row(row: &Row<'_>) -> rusqlite::Result<PlayHistory> {
+    Ok(PlayHistory {
+        history_id: row.get(0)?,
+        song_id: row.get(1)?,
+        played_at: row.get(2)?,
+        duration: row.get(3)?,
+    })
 }
 
 // ===== Schema Management =====
@@ -310,6 +462,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
     )?;
 
     ensure_indexes(conn)?;
+    ensure_search_indexes(conn)?;
 
     Ok(())
 }
@@ -321,6 +474,7 @@ fn ensure_indexes(conn: &Connection) -> DatabaseResult<()> {
         "CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist_id)",
         "CREATE INDEX IF NOT EXISTS idx_song_artists_artist ON song_artists(artist_id)",
         "CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title)",
+        "CREATE INDEX IF NOT EXISTS idx_songs_file_path ON songs(file_path)",
         "CREATE INDEX IF NOT EXISTS idx_songs_dedupe ON songs(title, artist_id, release_id)",
         "CREATE INDEX IF NOT EXISTS idx_releases_artist ON releases(artist_id)",
         "CREATE INDEX IF NOT EXISTS idx_playlist_songs_playlist ON playlist_songs(playlist_id)",
@@ -331,6 +485,72 @@ fn ensure_indexes(conn: &Connection) -> DatabaseResult<()> {
         conn.execute(sql, [])?;
     }
 
+    Ok(())
+}
+
+/// Creates substring-search indexes and keeps them synchronized with their
+/// content tables. Trigram FTS makes the common `contains` search indexable
+/// while retaining the behavior of the former `%query%` scans.
+fn ensure_search_indexes(conn: &Connection) -> DatabaseResult<()> {
+    let definitions = [
+        (
+            "songs_search",
+            "songs",
+            "song_id",
+            "title, artist_name, release_title",
+        ),
+        (
+            "releases_search",
+            "releases",
+            "release_id",
+            "title, artist_name",
+        ),
+        ("artists_search", "artists", "artist_id", "name"),
+        ("playlists_search", "playlists", "id", "name, description"),
+    ];
+
+    for (index, table, row_id, columns) in definitions {
+        let existed = conn.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1
+             )",
+            [index],
+            |row| row.get::<_, bool>(0),
+        )?;
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS {index}
+                 USING fts5({columns}, content='{table}', content_rowid='{row_id}', tokenize='trigram');
+             CREATE TRIGGER IF NOT EXISTS {index}_insert AFTER INSERT ON {table} BEGIN
+                 INSERT INTO {index}(rowid, {columns}) VALUES (new.{row_id}, {new_columns});
+             END;
+             CREATE TRIGGER IF NOT EXISTS {index}_delete AFTER DELETE ON {table} BEGIN
+                 INSERT INTO {index}({index}, rowid, {columns})
+                 VALUES ('delete', old.{row_id}, {old_columns});
+             END;
+             CREATE TRIGGER IF NOT EXISTS {index}_update
+                 AFTER UPDATE OF {columns} ON {table} BEGIN
+                 INSERT INTO {index}({index}, rowid, {columns})
+                 VALUES ('delete', old.{row_id}, {old_columns});
+                 INSERT INTO {index}(rowid, {columns}) VALUES (new.{row_id}, {new_columns});
+             END;",
+            new_columns = columns
+                .split(", ")
+                .map(|column| format!("new.{column}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            old_columns = columns
+                .split(", ")
+                .map(|column| format!("old.{column}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        ))?;
+        if !existed {
+            conn.execute(
+                &format!("INSERT INTO {index}({index}) VALUES ('rebuild')"),
+                [],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -367,7 +587,13 @@ pub fn initiate_settings(conn: &Connection) -> DatabaseResult<()> {
 }
 
 pub fn get_settings(conn: &Connection) -> DatabaseResult<Settings> {
-    let mut stmt = conn.prepare("SELECT * FROM settings")?;
+    let mut stmt = conn.prepare(
+        "SELECT settings_id, cross_fade, cross_fade_duration, normalize_volume,
+                explicit_content, autoplay, preferred_audio_quality,
+                preferred_audio_source, download_path, open_on_startup,
+                minimize_on_close, onboarding
+         FROM settings",
+    )?;
     let mut rows = stmt.query_map([], |row| {
         Ok(Settings {
             settings_id: row.get(0)?,
@@ -592,16 +818,9 @@ pub(crate) fn add_song(
     conn: &Connection,
     song: AudioMetadata,
     mtime: i64,
+    existing_id: Option<i64>,
 ) -> DatabaseResult<SongWriteResult> {
     let artwork = song.cover_path.as_deref();
-
-    let existing_id: Option<i64> = conn
-        .query_row(
-            "SELECT song_id FROM songs WHERE file_path = ?1",
-            params![&song.file_path],
-            |row| row.get(0),
-        )
-        .optional()?;
 
     if let Some(song_id) = existing_id {
         let artist_id = lookup_artist_id(conn, &song)?;
@@ -704,29 +923,12 @@ pub fn group_releases(array: &Vec<AudioMetadata>) -> Vec<ReleaseGroup> {
 // ===== Query Operations =====
 
 pub fn get_releases(conn: &Connection) -> DatabaseResult<Vec<Releases>> {
-    let mut stmt = conn.prepare("SELECT * FROM releases")?;
-    let releases_iter = stmt.query_map([], |row| {
-        Ok(Releases {
-            release_id: row.get(0)?,
-            title: row.get(1)?,
-            artist_id: row.get(2)?,
-            artist_name: row.get(3)?,
-            release_date: row
-                .get::<_, Option<i64>>(4)?
-                .map(|date| date.to_string())
-                .unwrap_or_default(),
-            total_tracks: row.get(5)?,
-            total_discs: row.get(6)?,
-            duration: duration_from_row(row, 7)?,
-            artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
-            created_at: row.get::<_, String>(9)?.to_string(),
-            updated_at: row.get::<_, String>(10)?.to_string(),
-            is_favorite: row.get(11)?,
-            is_hidden: row.get(12)?,
-            suggest_less: row.get(13)?,
-            rating: row.get(14)?,
-        })
-    })?;
+    let mut stmt = conn.prepare(concat!(
+        "SELECT ",
+        release_columns!("releases"),
+        " FROM releases"
+    ))?;
+    let releases_iter = stmt.query_map([], release_from_row)?;
 
     let releases: Result<Vec<Releases>, _> = releases_iter.collect();
     Ok(releases?)
@@ -734,30 +936,13 @@ pub fn get_releases(conn: &Connection) -> DatabaseResult<Vec<Releases>> {
 
 pub fn get_release_by_id(conn: &Connection, release_id: &str) -> DatabaseResult<Releases> {
     conn.query_row(
-        "SELECT * FROM releases WHERE release_id = ?1",
+        concat!(
+            "SELECT ",
+            release_columns!("releases"),
+            " FROM releases WHERE releases.release_id = ?1"
+        ),
         [release_id],
-        |row| {
-            Ok(Releases {
-                release_id: row.get(0)?,
-                title: row.get(1)?,
-                artist_id: row.get(2)?,
-                artist_name: row.get(3)?,
-                release_date: row
-                    .get::<_, Option<i64>>(4)?
-                    .map(|date| date.to_string())
-                    .unwrap_or_default(),
-                total_tracks: row.get(5)?,
-                total_discs: row.get(6)?,
-                duration: duration_from_row(row, 7)?,
-                artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
-                created_at: row.get::<_, String>(9)?.to_string(),
-                updated_at: row.get::<_, String>(10)?.to_string(),
-                is_favorite: row.get(11)?,
-                is_hidden: row.get(12)?,
-                suggest_less: row.get(13)?,
-                rating: row.get(14)?,
-            })
-        },
+        release_from_row,
     )
     .map_err(DatabaseError::from)
 }
@@ -766,33 +951,12 @@ pub fn get_songs_by_release_id(
     conn: &Connection,
     release_id: &str,
 ) -> DatabaseResult<Vec<SongItem>> {
-    let mut stmt = conn.prepare("SELECT * FROM songs WHERE release_id = ?1")?;
-    let song_iter = stmt.query_map([release_id], |row| {
-        Ok(SongItem {
-            song_id: row.get(0)?,
-            title: row.get(1)?,
-            artwork: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-            artist_id: row.get(3)?,
-            artist_name: row.get(4)?,
-            release_id: row.get(5)?,
-            release_title: row.get(6)?,
-            track_number: row.get(7)?,
-            disc_number: row.get(8)?,
-            duration: duration_from_row(row, 9)?,
-            bitrate: row.get(10)?,
-            sample_rate: row.get(11)?,
-            play_count: row.get(12)?,
-            last_played: row.get(13)?,
-            rating: row.get(14)?,
-            lyrics: row.get(15)?,
-            is_favorite: row.get(16)?,
-            is_hidden: row.get(17)?,
-            suggest_less: row.get(18)?,
-            file_path: row.get(19)?,
-            created_at: row.get::<_, String>(20)?.to_string(),
-            updated_at: row.get::<_, String>(21)?.to_string(),
-        })
-    })?;
+    let mut stmt = conn.prepare(concat!(
+        "SELECT ",
+        song_columns!("songs"),
+        " FROM songs WHERE songs.release_id = ?1"
+    ))?;
+    let song_iter = stmt.query_map([release_id], song_item_from_row)?;
 
     let mut songs = Vec::new();
     for song in song_iter {
@@ -802,33 +966,12 @@ pub fn get_songs_by_release_id(
 }
 
 pub fn get_song_by_id(conn: &Connection, song_id: &str) -> DatabaseResult<Vec<SongItem>> {
-    let mut stmt = conn.prepare("SELECT * FROM songs WHERE song_id = ?1")?;
-    let song_iter = stmt.query_map([song_id], |row| {
-        Ok(SongItem {
-            song_id: row.get(0)?,
-            title: row.get(1)?,
-            artwork: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-            artist_id: row.get(3)?,
-            artist_name: row.get(4)?,
-            release_id: row.get(5)?,
-            release_title: row.get(6)?,
-            track_number: row.get(7)?,
-            disc_number: row.get(8)?,
-            duration: row.get::<_, f64>(9)? as u64,
-            bitrate: row.get(10)?,
-            sample_rate: row.get(11)?,
-            play_count: row.get(12)?,
-            last_played: row.get(13)?,
-            rating: row.get(14)?,
-            lyrics: row.get(15)?,
-            is_favorite: row.get(16)?,
-            is_hidden: row.get(17)?,
-            suggest_less: row.get(18)?,
-            file_path: row.get(19)?,
-            created_at: row.get::<_, String>(20)?.to_string(),
-            updated_at: row.get::<_, String>(21)?.to_string(),
-        })
-    })?;
+    let mut stmt = conn.prepare(concat!(
+        "SELECT ",
+        song_columns!("songs"),
+        " FROM songs WHERE songs.song_id = ?1"
+    ))?;
+    let song_iter = stmt.query_map([song_id], song_item_from_row)?;
 
     let mut songs = Vec::new();
     for song in song_iter {
@@ -873,22 +1016,28 @@ pub fn record_completed_playback(
 }
 
 pub fn get_play_history(conn: &Connection) -> DatabaseResult<Vec<PlayHistory>> {
-    let mut stmt =
-        conn.prepare("SELECT * FROM play_history ORDER BY played_at DESC, history_id DESC")?;
-    let history = stmt.query_map([], |row| {
-        Ok(PlayHistory {
-            history_id: row.get(0)?,
-            song_id: row.get(1)?,
-            played_at: row.get(2)?,
-            duration: row.get(3)?,
-        })
-    })?;
+    let mut stmt = conn.prepare(
+        "SELECT history_id, song_id, played_at, play_duration
+         FROM play_history ORDER BY played_at DESC, history_id DESC",
+    )?;
+    Ok(stmt
+        .query_map([], play_history_from_row)?
+        .collect::<Result<_, _>>()?)
+}
 
-    let mut results = Vec::new();
-    for item in history {
-        results.push(item?);
-    }
-    Ok(results)
+pub fn get_play_history_page(
+    conn: &Connection,
+    limit: u64,
+    offset: u64,
+) -> DatabaseResult<Vec<PlayHistory>> {
+    let mut stmt = conn.prepare(
+        "SELECT history_id, song_id, played_at, play_duration
+         FROM play_history ORDER BY played_at DESC, history_id DESC
+         LIMIT ?1 OFFSET ?2",
+    )?;
+    Ok(stmt
+        .query_map(params![limit, offset], play_history_from_row)?
+        .collect::<Result<_, _>>()?)
 }
 
 pub fn remove_song_from_history(conn: &Connection, history_id: u64) -> DatabaseResult<bool> {
@@ -1016,75 +1165,59 @@ pub fn set_release_rating(
 }
 
 pub fn get_all_tracks(conn: &Connection) -> DatabaseResult<Vec<SongItem>> {
-    let mut tracks = conn.prepare("SELECT * FROM songs")?;
-    let tracks_map = tracks.query_map([], |row| {
-        Ok(SongItem {
-            song_id: row.get(0)?,
-            title: row.get(1)?,
-            artwork: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-            artist_id: row.get(3)?,
-            artist_name: row.get(4)?,
-            release_id: row.get(5)?,
-            release_title: row.get(6)?,
-            track_number: row.get(7)?,
-            disc_number: row.get(8)?,
-            duration: row.get::<_, f64>(9)? as u64,
-            bitrate: row.get(10)?,
-            sample_rate: row.get(11)?,
-            play_count: row.get(12)?,
-            last_played: row.get(13)?,
-            rating: row.get(14)?,
-            lyrics: row.get(15)?,
-            is_favorite: row.get(16)?,
-            is_hidden: row.get(17)?,
-            suggest_less: row.get(18)?,
-            file_path: row.get(19)?,
-            created_at: row.get::<_, String>(20)?.to_string(),
-            updated_at: row.get::<_, String>(21)?.to_string(),
-        })
-    })?;
+    let mut tracks = conn.prepare(concat!(
+        "SELECT ",
+        song_columns!("songs"),
+        " FROM songs ORDER BY songs.song_id"
+    ))?;
+    Ok(tracks
+        .query_map([], song_item_from_row)?
+        .collect::<Result<_, _>>()?)
+}
 
-    let mut results = Vec::new();
-    for item in tracks_map {
-        results.push(item?);
-    }
-    Ok(results)
+pub fn get_tracks_page(
+    conn: &Connection,
+    limit: u64,
+    offset: u64,
+) -> DatabaseResult<Vec<SongItem>> {
+    let mut tracks = conn.prepare(concat!(
+        "SELECT ",
+        song_columns!("songs"),
+        " FROM songs ORDER BY songs.song_id LIMIT ?1 OFFSET ?2"
+    ))?;
+    Ok(tracks
+        .query_map(params![limit, offset], song_item_from_row)?
+        .collect::<Result<_, _>>()?)
 }
 
 pub fn get_all_releases(conn: &Connection) -> DatabaseResult<Vec<Releases>> {
-    let mut releases = conn.prepare("SELECT * FROM releases")?;
-    let releases_map = releases.query_map([], |row| {
-        Ok(Releases {
-            release_id: row.get(0)?,
-            title: row.get(1)?,
-            artist_id: row.get(2)?,
-            artist_name: row.get(3)?,
-            release_date: row
-                .get::<_, Option<i64>>(4)?
-                .map(|date| date.to_string())
-                .unwrap_or_default(),
-            total_tracks: row.get(5)?,
-            total_discs: row.get(6)?,
-            duration: duration_from_row(row, 7)?,
-            artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
-            created_at: row.get::<_, String>(9)?.to_string(),
-            updated_at: row.get::<_, String>(10)?.to_string(),
-            is_favorite: row.get(11)?,
-            is_hidden: row.get(12)?,
-            suggest_less: row.get(13)?,
-            rating: row.get(14)?,
-        })
-    })?;
+    let mut releases = conn.prepare(concat!(
+        "SELECT ",
+        release_columns!("releases"),
+        " FROM releases ORDER BY releases.release_id"
+    ))?;
+    Ok(releases
+        .query_map([], release_from_row)?
+        .collect::<Result<_, _>>()?)
+}
 
-    let mut results = Vec::new();
-    for item in releases_map {
-        results.push(item?);
-    }
-    Ok(results)
+pub fn get_releases_page(
+    conn: &Connection,
+    limit: u64,
+    offset: u64,
+) -> DatabaseResult<Vec<Releases>> {
+    let mut releases = conn.prepare(concat!(
+        "SELECT ",
+        release_columns!("releases"),
+        " FROM releases ORDER BY releases.release_id LIMIT ?1 OFFSET ?2"
+    ))?;
+    Ok(releases
+        .query_map(params![limit, offset], release_from_row)?
+        .collect::<Result<_, _>>()?)
 }
 
 pub fn get_all_artists(conn: &Connection) -> DatabaseResult<Vec<ArtistItem>> {
-    let mut artists = conn.prepare("SELECT * FROM artists")?;
+    let mut artists = conn.prepare("SELECT artist_id, name FROM artists ORDER BY artist_id")?;
     let artists_map = artists.query_map([], |row| {
         Ok(ArtistItem {
             artist_id: row.get(0)?,
@@ -1101,7 +1234,7 @@ pub fn get_all_artists(conn: &Connection) -> DatabaseResult<Vec<ArtistItem>> {
 
 pub fn get_artist_by_id(conn: &Connection, artist_id: &str) -> DatabaseResult<ArtistItem> {
     conn.query_row(
-        "SELECT * FROM artists WHERE artist_id = ?1",
+        "SELECT artist_id, name FROM artists WHERE artist_id = ?1",
         [artist_id],
         |row| {
             Ok(ArtistItem {
@@ -1114,12 +1247,14 @@ pub fn get_artist_by_id(conn: &Connection, artist_id: &str) -> DatabaseResult<Ar
 }
 
 pub fn get_songs_by_artist_id(conn: &Connection, artist_id: &str) -> DatabaseResult<Vec<SongItem>> {
-    let mut stmt = conn.prepare(
-        "SELECT songs.* FROM songs
+    let mut stmt = conn.prepare(concat!(
+        "SELECT ",
+        song_columns!("songs"),
+        " FROM songs
          JOIN song_artists ON song_artists.song_id = songs.song_id
          WHERE song_artists.artist_id = ?1
-         ORDER BY songs.release_title, songs.disc_number, songs.track_number",
-    )?;
+         ORDER BY songs.release_title, songs.disc_number, songs.track_number"
+    ))?;
     let songs = stmt
         .query_map([artist_id], |row| {
             Ok(SongItem {
@@ -1155,13 +1290,15 @@ pub fn get_releases_by_artist_id(
     conn: &Connection,
     artist_id: &str,
 ) -> DatabaseResult<Vec<Releases>> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT releases.* FROM releases
+    let mut stmt = conn.prepare(concat!(
+        "SELECT DISTINCT ",
+        release_columns!("releases"),
+        " FROM releases
          LEFT JOIN songs ON songs.release_id = releases.release_id
          LEFT JOIN song_artists ON song_artists.song_id = songs.song_id
          WHERE releases.artist_id = ?1 OR song_artists.artist_id = ?1
-         ORDER BY releases.release_date DESC, releases.title COLLATE NOCASE",
-    )?;
+         ORDER BY releases.release_date DESC, releases.title COLLATE NOCASE"
+    ))?;
     let releases = stmt
         .query_map([artist_id], |row| {
             Ok(Releases {
@@ -1196,86 +1333,103 @@ pub struct LibrarySearchResults {
     pub playlists: Vec<Playlist>,
 }
 
-/// Searches the library with a literal, case-insensitive substring query.
+const DEFAULT_SEARCH_RESULT_LIMIT: usize = 50;
+const MAX_SEARCH_RESULT_LIMIT: usize = 100;
+
+/// Searches the first bounded page of every library category.
 pub fn search_library(conn: &Connection, query: &str) -> DatabaseResult<LibrarySearchResults> {
+    search_library_page(conn, query, DEFAULT_SEARCH_RESULT_LIMIT, 0)
+}
+
+/// Searches the library with an indexed, case-insensitive substring query.
+/// Exposed separately so future frontends can page without changing the query
+/// implementation or materializing the complete library.
+pub fn search_library_page(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+    offset: usize,
+) -> DatabaseResult<LibrarySearchResults> {
+    let limit = limit.clamp(1, MAX_SEARCH_RESULT_LIMIT) as i64;
+    let offset = offset as i64;
     let escaped = query
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
     let pattern = format!("%{}%", escaped);
+    let use_fts = query.chars().count() >= 3;
+    let fts_query = format!("\"{}\"", query.replace('"', "\"\""));
 
-    let mut tracks_stmt = conn.prepare(
-        "SELECT * FROM songs
-         WHERE LOWER(title) LIKE LOWER(?1) ESCAPE '\\'
-            OR LOWER(artist_name) LIKE LOWER(?1) ESCAPE '\\'
-            OR LOWER(release_title) LIKE LOWER(?1) ESCAPE '\\'
-         ORDER BY title COLLATE NOCASE",
-    )?;
+    let tracks_sql = if use_fts {
+        "SELECT s.song_id, s.title, s.artwork, s.artist_id, s.artist_name,
+                s.release_id, s.release_title, s.track_number, s.disc_number,
+                s.duration, s.bitrate, s.sample_rate, s.play_count, s.last_played,
+                s.rating, NULL, s.is_favorite, s.is_hidden, s.suggest_less,
+                s.file_path, s.created_at, s.updated_at
+         FROM songs_search
+         JOIN songs s ON s.song_id = songs_search.rowid
+         WHERE songs_search MATCH ?1
+         ORDER BY bm25(songs_search), s.title COLLATE NOCASE
+         LIMIT ?2 OFFSET ?3"
+    } else {
+        "SELECT s.song_id, s.title, s.artwork, s.artist_id, s.artist_name,
+                s.release_id, s.release_title, s.track_number, s.disc_number,
+                s.duration, s.bitrate, s.sample_rate, s.play_count, s.last_played,
+                s.rating, NULL, s.is_favorite, s.is_hidden, s.suggest_less,
+                s.file_path, s.created_at, s.updated_at
+         FROM songs s
+         WHERE s.title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+            OR s.artist_name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+            OR s.release_title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+         ORDER BY s.title COLLATE NOCASE
+         LIMIT ?2 OFFSET ?3"
+    };
+    let search_term = if use_fts { &fts_query } else { &pattern };
+    let mut tracks_stmt = conn.prepare(tracks_sql)?;
     let tracks = tracks_stmt
-        .query_map(params![&pattern], |row| {
-            Ok(SongItem {
-                song_id: row.get(0)?,
-                title: row.get(1)?,
-                artwork: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                artist_id: row.get(3)?,
-                artist_name: row.get(4)?,
-                release_id: row.get(5)?,
-                release_title: row.get(6)?,
-                track_number: row.get(7)?,
-                disc_number: row.get(8)?,
-                duration: row.get::<_, f64>(9)? as u64,
-                bitrate: row.get(10)?,
-                sample_rate: row.get(11)?,
-                play_count: row.get(12)?,
-                last_played: row.get(13)?,
-                rating: row.get(14)?,
-                lyrics: row.get(15)?,
-                is_favorite: row.get(16)?,
-                is_hidden: row.get(17)?,
-                suggest_less: row.get(18)?,
-                file_path: row.get(19)?,
-                created_at: row.get(20)?,
-                updated_at: row.get(21)?,
-            })
-        })?
+        .query_map(params![search_term, limit, offset], song_item_from_row)?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut releases_stmt = conn.prepare(
-        "SELECT * FROM releases
-         WHERE LOWER(title) LIKE LOWER(?1) ESCAPE '\\'
-            OR LOWER(artist_name) LIKE LOWER(?1) ESCAPE '\\'
-         ORDER BY title COLLATE NOCASE",
-    )?;
+    let releases_sql = if use_fts {
+        "SELECT r.release_id, r.title, r.artist_id, r.artist_name, r.release_date,
+                r.total_tracks, r.total_discs, r.duration, r.artwork, r.created_at,
+                r.updated_at, r.is_favorite, r.is_hidden, r.suggest_less, r.rating
+         FROM releases_search
+         JOIN releases r ON r.release_id = releases_search.rowid
+         WHERE releases_search MATCH ?1
+         ORDER BY bm25(releases_search), r.title COLLATE NOCASE
+         LIMIT ?2 OFFSET ?3"
+    } else {
+        "SELECT r.release_id, r.title, r.artist_id, r.artist_name, r.release_date,
+                r.total_tracks, r.total_discs, r.duration, r.artwork, r.created_at,
+                r.updated_at, r.is_favorite, r.is_hidden, r.suggest_less, r.rating
+         FROM releases r
+         WHERE r.title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+            OR r.artist_name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+         ORDER BY r.title COLLATE NOCASE
+         LIMIT ?2 OFFSET ?3"
+    };
+    let mut releases_stmt = conn.prepare(releases_sql)?;
     let releases = releases_stmt
-        .query_map(params![&pattern], |row| {
-            Ok(Releases {
-                release_id: row.get(0)?,
-                title: row.get(1)?,
-                artist_id: row.get(2)?,
-                artist_name: row.get(3)?,
-                release_date: row
-                    .get::<_, Option<i64>>(4)?
-                    .map(|date| date.to_string())
-                    .unwrap_or_default(),
-                total_tracks: row.get(5)?,
-                total_discs: row.get(6)?,
-                duration: duration_from_row(row, 7)?,
-                artwork: row.get::<_, Option<String>>(8)?.unwrap_or_default(),
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                is_favorite: row.get(11)?,
-                is_hidden: row.get(12)?,
-                suggest_less: row.get(13)?,
-                rating: row.get(14)?,
-            })
-        })?
+        .query_map(params![search_term, limit, offset], release_from_row)?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut artists_stmt = conn.prepare(
-        "SELECT * FROM artists WHERE LOWER(name) LIKE LOWER(?1) ESCAPE '\\' ORDER BY name COLLATE NOCASE",
-    )?;
+    let artists_sql = if use_fts {
+        "SELECT a.artist_id, a.name
+         FROM artists_search
+         JOIN artists a ON a.artist_id = artists_search.rowid
+         WHERE artists_search MATCH ?1
+         ORDER BY bm25(artists_search), a.name COLLATE NOCASE
+         LIMIT ?2 OFFSET ?3"
+    } else {
+        "SELECT a.artist_id, a.name FROM artists a
+         WHERE a.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+         ORDER BY a.name COLLATE NOCASE
+         LIMIT ?2 OFFSET ?3"
+    };
+    let mut artists_stmt = conn.prepare(artists_sql)?;
     let artists = artists_stmt
-        .query_map(params![&pattern], |row| {
+        .query_map(params![search_term, limit, offset], |row| {
             Ok(ArtistItem {
                 artist_id: row.get(0)?,
                 artist_name: row.get(1)?,
@@ -1283,14 +1437,26 @@ pub fn search_library(conn: &Connection, query: &str) -> DatabaseResult<LibraryS
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    let mut playlists_stmt = conn.prepare(
-        "SELECT * FROM playlists
-         WHERE LOWER(name) LIKE LOWER(?1) ESCAPE '\\'
-            OR LOWER(description) LIKE LOWER(?1) ESCAPE '\\'
-         ORDER BY name COLLATE NOCASE",
-    )?;
+    let playlists_sql = if use_fts {
+        "SELECT p.id, p.name, NULL, p.description, p.is_favorite,
+                p.suggest_less, p.created_at, p.updated_at
+         FROM playlists_search
+         JOIN playlists p ON p.id = playlists_search.rowid
+         WHERE playlists_search MATCH ?1
+         ORDER BY bm25(playlists_search), p.name COLLATE NOCASE
+         LIMIT ?2 OFFSET ?3"
+    } else {
+        "SELECT p.id, p.name, NULL, p.description, p.is_favorite,
+                p.suggest_less, p.created_at, p.updated_at
+         FROM playlists p
+         WHERE p.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+            OR p.description LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+         ORDER BY p.name COLLATE NOCASE
+         LIMIT ?2 OFFSET ?3"
+    };
+    let mut playlists_stmt = conn.prepare(playlists_sql)?;
     let playlists = playlists_stmt
-        .query_map(params![&pattern], |row| {
+        .query_map(params![search_term, limit, offset], |row| {
             Ok(Playlist {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -1359,8 +1525,20 @@ fn decode_playlist_cover(cover: &str) -> DatabaseResult<Option<Vec<u8>>> {
         };
 
         let base64_data = base64_data.trim();
+        let maximum_encoded_length = crate::metadata::MAX_ARTWORK_BYTES.div_ceil(3) * 4;
+        if base64_data.len() > maximum_encoded_length {
+            return Err(DatabaseError::Custom(format!(
+                "Playlist artwork exceeds the {} MiB limit",
+                crate::metadata::MAX_ARTWORK_BYTES / (1024 * 1024)
+            )));
+        }
         match STANDARD.decode(base64_data) {
-            Ok(data) => Ok(Some(data)),
+            Ok(data) => {
+                crate::metadata::validate_artwork_bytes(&data).map_err(|error| {
+                    DatabaseError::Custom(format!("Invalid playlist artwork: {error}"))
+                })?;
+                Ok(Some(data))
+            }
             Err(e) => Err(DatabaseError::Custom(format!(
                 "Failed to decode base64 image: {} (data: '{}')",
                 e,
@@ -1376,18 +1554,36 @@ fn decode_playlist_cover(cover: &str) -> DatabaseResult<Option<Vec<u8>>> {
     }
 }
 
-pub fn get_all_playlists(conn: &Connection) -> DatabaseResult<Vec<Playlist>> {
-    let mut playlists = conn.prepare("SELECT * FROM playlists")?;
+/// Fetches playlists and their track counts in one aggregate query. The LEFT
+/// JOIN intentionally keeps empty playlists in the result.
+pub fn get_all_playlists_with_track_counts(
+    conn: &Connection,
+) -> DatabaseResult<Vec<PlaylistWithTrackCount>> {
+    let mut playlists = conn.prepare(
+        "SELECT
+            p.id, p.name, p.cover, p.description, p.is_favorite,
+            p.suggest_less, p.created_at, p.updated_at,
+            COUNT(ps.song_id)
+         FROM playlists p
+         LEFT JOIN playlist_songs ps ON ps.playlist_id = p.id
+         GROUP BY
+            p.id, p.name, p.cover, p.description, p.is_favorite,
+            p.suggest_less, p.created_at, p.updated_at
+         ORDER BY p.id",
+    )?;
     let playlist_map = playlists.query_map([], |row| {
-        Ok(Playlist {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            cover: row.get(2)?,
-            description: row.get(3)?,
-            is_favorite: row.get(4)?,
-            suggest_less: row.get(5)?,
-            created_at: row.get(6)?,
-            updated_at: row.get(7)?,
+        Ok(PlaylistWithTrackCount {
+            playlist: Playlist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                cover: row.get(2)?,
+                description: row.get(3)?,
+                is_favorite: row.get(4)?,
+                suggest_less: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            },
+            track_count: row.get(8)?,
         })
     })?;
 
@@ -1400,7 +1596,9 @@ pub fn get_all_playlists(conn: &Connection) -> DatabaseResult<Vec<Playlist>> {
 
 pub fn get_playlist_by_id(conn: &Connection, playlist_id: u64) -> DatabaseResult<Playlist> {
     conn.query_row(
-        "SELECT * FROM playlists WHERE id = ?1",
+        "SELECT id, name, cover, description, is_favorite, suggest_less,
+                created_at, updated_at
+         FROM playlists WHERE id = ?1",
         [playlist_id],
         |row| {
             Ok(Playlist {
@@ -1459,12 +1657,14 @@ pub fn delete_playlist(conn: &Connection, playlist_id: u64) -> DatabaseResult<bo
 }
 
 pub fn get_playlist_tracks(conn: &Connection, playlist_id: u64) -> DatabaseResult<Vec<SongItem>> {
-    let mut stmt = conn.prepare(
-        "SELECT s.* FROM playlist_songs ps
+    let mut stmt = conn.prepare(concat!(
+        "SELECT ",
+        song_columns!("s"),
+        " FROM playlist_songs ps
          JOIN songs s ON s.song_id = ps.song_id
          WHERE ps.playlist_id = ?1
-         ORDER BY ps.position",
-    )?;
+         ORDER BY ps.position"
+    ))?;
     let tracks = stmt
         .query_map([playlist_id], |row| {
             Ok(SongItem {
@@ -1506,7 +1706,10 @@ pub fn get_playlist_track_count(conn: &Connection, playlist_id: u64) -> Database
 }
 
 pub fn get_all_playlist_songs(conn: &Connection) -> DatabaseResult<Vec<PlaylistSong>> {
-    let mut playlist_song = conn.prepare("SELECT * FROM playlist_songs")?;
+    let mut playlist_song = conn.prepare(
+        "SELECT playlist_id, song_id, position, added_at
+         FROM playlist_songs ORDER BY playlist_id, position",
+    )?;
     let playlist_song_map = playlist_song.query_map([], |row| {
         Ok(PlaylistSong {
             playlist_id: row.get(0)?,
@@ -1754,18 +1957,24 @@ fn file_mtime(path: &str) -> DatabaseResult<i64> {
 }
 
 pub fn scan_folder(folder_path: String) -> DatabaseResult<Vec<FileInfo>> {
-    scan_folder_with_cancel(folder_path, None).map(|scan| scan.files)
+    let mut files = Vec::new();
+    walk_audio_files(&folder_path, None, |file| {
+        files.push(file);
+        Ok(())
+    })?;
+    Ok(files)
 }
 
 struct FolderScan {
     root: PathBuf,
-    files: Vec<FileInfo>,
+    total_files: usize,
     complete: bool,
 }
 
-fn scan_folder_with_cancel(
-    folder_path: String,
+fn walk_audio_files(
+    folder_path: &str,
     cancel_requested: Option<&std::sync::atomic::AtomicBool>,
+    mut on_file: impl FnMut(FileInfo) -> DatabaseResult<()>,
 ) -> DatabaseResult<FolderScan> {
     let path = PathBuf::from(folder_path);
 
@@ -1778,39 +1987,34 @@ fn scan_folder_with_cancel(
     }
 
     let root = fs::canonicalize(&path)?;
-    let mut files = Vec::new();
-    let mut seen_files = HashSet::new();
+    let mut directories = vec![root.clone()];
+    let mut total_files = 0;
+    let mut complete = true;
 
-    fn scan_directory(
-        dir: &Path,
-        files: &mut Vec<FileInfo>,
-        seen_files: &mut HashSet<PathBuf>,
-        cancel_requested: Option<&std::sync::atomic::AtomicBool>,
-        complete: &mut bool,
-    ) -> bool {
+    while let Some(dir) = directories.pop() {
         if scan_cancelled(cancel_requested) {
-            *complete = false;
-            return false;
+            complete = false;
+            break;
         }
         // A directory can become inaccessible or disappear during a long scan.
         // Skip that subtree and continue discovering the rest of the library.
-        let Ok(entries) = fs::read_dir(dir) else {
-            *complete = false;
-            return true;
+        let Ok(entries) = fs::read_dir(&dir) else {
+            complete = false;
+            continue;
         };
 
         for entry in entries {
             if scan_cancelled(cancel_requested) {
-                *complete = false;
-                return false;
+                complete = false;
+                break;
             }
             let Ok(entry) = entry else {
-                *complete = false;
+                complete = false;
                 continue;
             };
             let path = entry.path();
             let Ok(metadata) = fs::symlink_metadata(&path) else {
-                *complete = false;
+                complete = false;
                 continue;
             };
 
@@ -1820,9 +2024,7 @@ fn scan_folder_with_cancel(
                 continue;
             }
             if metadata.is_dir() {
-                if !scan_directory(&path, files, seen_files, cancel_requested, complete) {
-                    return false;
-                }
+                directories.push(path);
                 continue;
             }
             if !metadata.is_file() {
@@ -1830,12 +2032,9 @@ fn scan_folder_with_cancel(
             }
 
             let Ok(canonical_path) = fs::canonicalize(&path) else {
-                *complete = false;
+                complete = false;
                 continue;
             };
-            if !seen_files.insert(canonical_path.clone()) {
-                continue;
-            }
 
             let extension = canonical_path
                 .extension()
@@ -1844,7 +2043,7 @@ fn scan_folder_with_cancel(
             if !is_audio_file(&extension) {
                 continue;
             }
-            files.push(FileInfo {
+            on_file(FileInfo {
                 name: canonical_path
                     .file_name()
                     .unwrap_or_default()
@@ -1854,22 +2053,13 @@ fn scan_folder_with_cancel(
                 size: metadata.len(),
                 is_directory: false,
                 extension,
-            });
+            })?;
+            total_files += 1;
         }
-        true
     }
-
-    let mut complete = true;
-    scan_directory(
-        &root,
-        &mut files,
-        &mut seen_files,
-        cancel_requested,
-        &mut complete,
-    );
     Ok(FolderScan {
         root,
-        files,
+        total_files,
         complete,
     })
 }
@@ -1878,17 +2068,53 @@ fn scan_folder_with_cancel(
 /// metadata extraction ensures a SQLite connection never lives across an await.
 pub(crate) struct PendingDatabaseUpdate {
     total_files: usize,
-    files: Vec<(FileInfo, i64)>,
-    scan_root: PathBuf,
-    discovered_paths: HashSet<String>,
-    scan_complete: bool,
+    files: Vec<(FileInfo, i64, Option<i64>)>,
+    reconciliation: Option<ScanReconciliation>,
+}
+
+pub(crate) struct ScanReconciliation {
+    scan_id: String,
+    root: PathBuf,
+}
+
+pub(crate) struct PendingMetadataBatch {
+    processed_before: usize,
+    files: Vec<(FileInfo, i64, Option<i64>)>,
+}
+
+pub(crate) struct PendingMetadataBatches {
+    processed_files: usize,
+    files: std::vec::IntoIter<(FileInfo, i64, Option<i64>)>,
+}
+
+const METADATA_PERSIST_BATCH_SIZE: usize = 128;
+
+impl Iterator for PendingMetadataBatches {
+    type Item = PendingMetadataBatch;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let files: Vec<_> = self
+            .files
+            .by_ref()
+            .take(METADATA_PERSIST_BATCH_SIZE)
+            .collect();
+        if files.is_empty() {
+            return None;
+        }
+        let processed_before = self.processed_files;
+        self.processed_files += files.len();
+        Some(PendingMetadataBatch {
+            processed_before,
+            files,
+        })
+    }
 }
 
 /// Metadata that was extracted successfully, alongside file-level failures.
 pub(crate) struct ExtractedMetadata {
     pub(crate) metadata: Vec<AudioMetadata>,
     pub(crate) mtimes: Vec<i64>,
-    pub(crate) total_files: usize,
+    pub(crate) existing_song_ids: Vec<Option<i64>>,
     pub(crate) attempted_files: usize,
     pub(crate) errors: Vec<String>,
 }
@@ -1902,6 +2128,7 @@ type MetadataTask = (
     String,
     tokio::task::JoinHandle<Result<AudioMetadata, String>>,
     i64,
+    Option<i64>,
 );
 pub(crate) type MetadataProgressCallback = dyn Fn(usize) + Send + Sync;
 
@@ -1911,14 +2138,69 @@ fn scan_cancelled(cancel_requested: Option<&std::sync::atomic::AtomicBool>) -> b
     cancel_requested.is_some_and(|cancel| cancel.load(std::sync::atomic::Ordering::Acquire))
 }
 
+fn reset_scan_discovery_table(conn: &Connection) -> DatabaseResult<()> {
+    // The staging table deliberately lives in the main schema while a scan is
+    // active: SQLite TEMP tables are connection-local, but scan preparation and
+    // reconciliation use different connections from the pool. It is dropped
+    // as soon as reconciliation finishes (or immediately for incomplete scans).
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS scan_discovered_paths;
+         CREATE TABLE scan_discovered_paths (
+             scan_id    TEXT NOT NULL,
+             file_path TEXT NOT NULL,
+             name      TEXT NOT NULL,
+             size      INTEGER NOT NULL,
+             extension TEXT NOT NULL,
+             file_mtime INTEGER NOT NULL,
+             PRIMARY KEY (scan_id, file_path)
+         ) WITHOUT ROWID;",
+    )?;
+    Ok(())
+}
+
+fn stage_discovered_files(
+    conn: &Connection,
+    scan_id: &str,
+    files: &[(FileInfo, i64)],
+) -> DatabaseResult<()> {
+    let transaction = conn.unchecked_transaction()?;
+    {
+        let mut statement = transaction.prepare_cached(
+            "INSERT OR IGNORE INTO scan_discovered_paths
+                (scan_id, file_path, name, size, extension, file_mtime)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        )?;
+        for (file, mtime) in files {
+            statement.execute(params![
+                scan_id,
+                file.path,
+                file.name,
+                file.size,
+                file.extension,
+                mtime
+            ])?;
+        }
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
 impl PendingDatabaseUpdate {
     pub(crate) fn total_files(&self) -> usize {
         self.total_files
     }
 
-    pub(crate) fn reconciliation_data(&self) -> Option<(PathBuf, HashSet<String>)> {
-        self.scan_complete
-            .then(|| (self.scan_root.clone(), self.discovered_paths.clone()))
+    pub(crate) fn into_metadata_batches(
+        self,
+    ) -> (PendingMetadataBatches, Option<ScanReconciliation>) {
+        let processed_files = self.total_files.saturating_sub(self.files.len());
+        (
+            PendingMetadataBatches {
+                processed_files,
+                files: self.files.into_iter(),
+            },
+            self.reconciliation,
+        )
     }
 }
 
@@ -1934,42 +2216,79 @@ pub(crate) fn prepare_database_update_with_cancel(
     folder_path: String,
     cancel_requested: Option<&std::sync::atomic::AtomicBool>,
 ) -> DatabaseResult<PendingDatabaseUpdate> {
-    let scan = scan_folder_with_cancel(folder_path.clone(), cancel_requested)?;
-    let all_files = scan.files;
-    let total_files = all_files.len();
-    let discovered_paths = all_files.iter().map(|file| file.path.clone()).collect();
+    let scan_id = format!(
+        "{}-{}",
+        std::process::id(),
+        SCAN_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    reset_scan_discovery_table(conn)?;
 
-    // Incremental scan: skip files whose path + mtime already match the DB.
-    let mut unchanged = conn.prepare(
-        "SELECT COUNT(*) FROM songs
-         WHERE file_path = ?1 AND file_mtime = ?2 AND metadata_version = ?3",
-    )?;
-    let mut to_process: Vec<(FileInfo, i64)> = Vec::new();
-
-    for file in all_files {
-        if scan_cancelled(cancel_requested) {
-            break;
-        }
+    let mut discovery_batch = Vec::with_capacity(SCAN_DISCOVERY_BATCH_SIZE);
+    let scan = walk_audio_files(&folder_path, cancel_requested, |file| {
         let mtime = file_mtime(&file.path)?;
-        let is_unchanged: bool = unchanged.query_row(
-            params![&file.path, mtime, CURRENT_METADATA_VERSION],
-            |row| Ok(row.get::<_, i64>(0)? > 0),
-        )?;
-        if !is_unchanged {
-            to_process.push((file, mtime));
+        discovery_batch.push((file, mtime));
+        if discovery_batch.len() == SCAN_DISCOVERY_BATCH_SIZE {
+            stage_discovered_files(conn, &scan_id, &discovery_batch)?;
+            discovery_batch.clear();
         }
-    }
+        Ok(())
+    })?;
+    stage_discovered_files(conn, &scan_id, &discovery_batch)?;
+
+    let to_process = {
+        let mut statement = conn.prepare(
+            "SELECT discovered.name,
+                    discovered.file_path,
+                    discovered.size,
+                    discovered.extension,
+                    discovered.file_mtime,
+                    songs.song_id
+             FROM scan_discovered_paths AS discovered
+             LEFT JOIN songs ON songs.file_path = discovered.file_path
+             WHERE discovered.scan_id = ?1
+               AND (songs.song_id IS NULL
+                    OR songs.file_mtime IS NULL
+                    OR songs.file_mtime != discovered.file_mtime
+                    OR songs.metadata_version != ?2)
+             ORDER BY discovered.file_path",
+        )?;
+        statement
+            .query_map(params![scan_id, CURRENT_METADATA_VERSION], |row| {
+                let size = row.get::<_, u64>(2)?;
+                Ok((
+                    FileInfo {
+                        name: row.get(0)?,
+                        path: row.get(1)?,
+                        size,
+                        is_directory: false,
+                        extension: row.get(3)?,
+                    },
+                    row.get(4)?,
+                    row.get(5)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+
+    let reconciliation = if scan.complete {
+        Some(ScanReconciliation {
+            scan_id,
+            root: scan.root,
+        })
+    } else {
+        conn.execute_batch("DROP TABLE scan_discovered_paths")?;
+        None
+    };
 
     Ok(PendingDatabaseUpdate {
-        total_files,
+        total_files: scan.total_files,
         files: to_process,
-        scan_root: scan.root,
-        discovered_paths,
-        scan_complete: scan.complete,
+        reconciliation,
     })
 }
 
 /// Extracts metadata without holding a SQLite connection.
+#[cfg(test)]
 pub(crate) async fn extract_pending_metadata(
     pending: PendingDatabaseUpdate,
     covers_dir: &Path,
@@ -1981,15 +2300,51 @@ pub(crate) async fn extract_pending_metadata(
 /// cancellation. A cancellation request stops awaiting immediately, aborts
 /// queued blocking tasks, and prevents completed results from being written.
 /// The decoder also checks cancellation before and after each safe boundary.
+#[cfg(test)]
 pub(crate) async fn extract_pending_metadata_with_cancel(
     pending: PendingDatabaseUpdate,
     covers_dir: &Path,
     cancel_requested: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     progress: Option<&MetadataProgressCallback>,
 ) -> ExtractedMetadata {
-    let total_files = pending.total_files;
-    let mut files = pending.files.into_iter();
-    let mut processed_files = total_files.saturating_sub(files.len());
+    let (batches, _) = pending.into_metadata_batches();
+    let mut combined = ExtractedMetadata {
+        metadata: Vec::new(),
+        mtimes: Vec::new(),
+        existing_song_ids: Vec::new(),
+        attempted_files: 0,
+        errors: Vec::new(),
+    };
+    for batch in batches {
+        let mut extracted = extract_metadata_batch_with_cancel(
+            batch,
+            covers_dir,
+            cancel_requested.clone(),
+            progress,
+        )
+        .await;
+        combined.metadata.append(&mut extracted.metadata);
+        combined.mtimes.append(&mut extracted.mtimes);
+        combined
+            .existing_song_ids
+            .append(&mut extracted.existing_song_ids);
+        combined.attempted_files = extracted.attempted_files;
+        combined.errors.append(&mut extracted.errors);
+        if scan_cancelled(cancel_requested.as_deref()) {
+            break;
+        }
+    }
+    combined
+}
+
+pub(crate) async fn extract_metadata_batch_with_cancel(
+    batch: PendingMetadataBatch,
+    covers_dir: &Path,
+    cancel_requested: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    progress: Option<&MetadataProgressCallback>,
+) -> ExtractedMetadata {
+    let mut files = batch.files.into_iter();
+    let mut processed_files = batch.processed_before;
     if let Some(progress) = progress {
         progress(processed_files);
     }
@@ -1999,7 +2354,7 @@ pub(crate) async fn extract_pending_metadata_with_cancel(
         if scan_cancelled(cancel_requested.as_deref()) {
             return false;
         }
-        let Some((file, mtime)) = files.next() else {
+        let Some((file, mtime, existing_song_id)) = files.next() else {
             return false;
         };
         let path = file.path;
@@ -2017,6 +2372,7 @@ pub(crate) async fn extract_pending_metadata_with_cancel(
                 .map_err(|e| e.to_string())
             }),
             mtime,
+            existing_song_id,
         ));
         true
     };
@@ -2025,23 +2381,24 @@ pub(crate) async fn extract_pending_metadata_with_cancel(
 
     let mut metadata: Vec<AudioMetadata> = Vec::with_capacity(tasks.len());
     let mut mtimes: Vec<i64> = Vec::with_capacity(tasks.len());
+    let mut existing_song_ids = Vec::with_capacity(tasks.len());
     let mut errors = Vec::new();
-    let mut attempted_files = tasks.len();
-    while let Some((path, mut handle, mtime)) = tasks.pop() {
+    let mut attempted_files = processed_files + tasks.len();
+    while let Some((path, mut handle, mtime, existing_song_id)) = tasks.pop() {
         let task_result = loop {
             tokio::select! {
                 result = &mut handle => break Some(result),
                 _ = tokio::time::sleep(std::time::Duration::from_millis(25)) => {
                     if scan_cancelled(cancel_requested.as_deref()) {
                         handle.abort();
-                        for (_, handle, _) in tasks {
+                        for (_, handle, _, _) in tasks {
                             handle.abort();
                         }
                         errors.push("Metadata extraction cancelled".to_string());
                         return ExtractedMetadata {
                             metadata,
                             mtimes,
-                            total_files,
+                            existing_song_ids,
                             attempted_files,
                             errors,
                         };
@@ -2052,6 +2409,7 @@ pub(crate) async fn extract_pending_metadata_with_cancel(
         match task_result.expect("metadata task result is always set") {
             Ok(Ok(metadata_item)) => {
                 mtimes.push(mtime);
+                existing_song_ids.push(existing_song_id);
                 metadata.push(metadata_item);
             }
             Ok(Err(error)) => errors.push(format!("{}: {}", path, error)),
@@ -2063,7 +2421,7 @@ pub(crate) async fn extract_pending_metadata_with_cancel(
         }
 
         if scan_cancelled(cancel_requested.as_deref()) {
-            for (_, handle, _) in tasks {
+            for (_, handle, _, _) in tasks {
                 handle.abort();
             }
             errors.push("Metadata extraction cancelled".to_string());
@@ -2077,13 +2435,14 @@ pub(crate) async fn extract_pending_metadata_with_cancel(
     ExtractedMetadata {
         metadata,
         mtimes,
-        total_files,
+        existing_song_ids,
         attempted_files,
         errors,
     }
 }
 
 /// Writes already-extracted metadata to the database.
+#[cfg(test)]
 pub(crate) fn persist_metadata(
     conn: &Connection,
     metadata: Vec<AudioMetadata>,
@@ -2095,6 +2454,30 @@ pub(crate) fn persist_metadata(
             metadata.len(),
             mtimes.len()
         )));
+    }
+    let existing_song_ids: HashMap<String, i64> = {
+        let mut statement = conn.prepare("SELECT file_path, song_id FROM songs")?;
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()?
+    };
+    let existing_song_ids = metadata
+        .iter()
+        .map(|item| existing_song_ids.get(&item.file_path).copied())
+        .collect();
+    persist_metadata_with_existing_ids(conn, metadata, mtimes, existing_song_ids)
+}
+
+pub(crate) fn persist_metadata_with_existing_ids(
+    conn: &Connection,
+    metadata: Vec<AudioMetadata>,
+    mtimes: Vec<i64>,
+    existing_song_ids: Vec<Option<i64>>,
+) -> DatabaseResult<PersistedMetadata> {
+    if metadata.len() != mtimes.len() || metadata.len() != existing_song_ids.len() {
+        return Err(DatabaseError::Custom(
+            "Metadata batch contains mismatched record counts".to_string(),
+        ));
     }
     let metadata: Vec<AudioMetadata> = metadata.into_iter().map(normalize_metadata).collect();
     let transaction = conn.unchecked_transaction()?;
@@ -2111,7 +2494,7 @@ pub(crate) fn persist_metadata(
     let mut added_tracks = 0;
     let mut updated_tracks = 0;
     for (i, md) in metadata.into_iter().enumerate() {
-        match add_song(&transaction, md, mtimes[i])? {
+        match add_song(&transaction, md, mtimes[i], existing_song_ids[i])? {
             SongWriteResult::Added => added_tracks += 1,
             SongWriteResult::Updated => updated_tracks += 1,
             SongWriteResult::SkippedDuplicate => {}
@@ -2134,26 +2517,24 @@ pub(crate) fn persist_metadata(
 /// that scan, then refreshes or removes their affected release/artist rows.
 pub(crate) fn remove_missing_songs_in_folder(
     conn: &Connection,
-    folder: &Path,
-    discovered_paths: &HashSet<String>,
+    reconciliation: ScanReconciliation,
 ) -> DatabaseResult<u64> {
-    let mut statement = conn.prepare("SELECT song_id, file_path FROM songs")?;
-    let candidates = statement
-        .query_map([], |row| {
-            Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    let missing_ids: Vec<u64> = candidates
-        .into_iter()
-        .filter(|(_, file_path)| {
-            Path::new(file_path).starts_with(folder) && !discovered_paths.contains(file_path)
-        })
-        .map(|(song_id, _)| song_id)
-        .collect();
-    let transaction = conn.unchecked_transaction()?;
-    for song_id in &missing_ids {
-        transaction.execute("DELETE FROM songs WHERE song_id = ?1", [song_id])?;
+    let mut root_prefix = reconciliation.root.to_string_lossy().into_owned();
+    if !root_prefix.ends_with(std::path::MAIN_SEPARATOR) {
+        root_prefix.push(std::path::MAIN_SEPARATOR);
     }
+    let transaction = conn.unchecked_transaction()?;
+    let removed = transaction.execute(
+        "DELETE FROM songs
+         WHERE substr(file_path, 1, length(?1)) = ?1
+           AND NOT EXISTS (
+               SELECT 1
+               FROM scan_discovered_paths AS discovered
+               WHERE discovered.scan_id = ?2
+                 AND discovered.file_path = songs.file_path
+           )",
+        params![root_prefix, reconciliation.scan_id],
+    )?;
     transaction.execute(
         "UPDATE releases
          SET total_tracks = (SELECT COUNT(*) FROM songs WHERE songs.release_id = releases.release_id),
@@ -2174,8 +2555,9 @@ pub(crate) fn remove_missing_songs_in_folder(
            AND NOT EXISTS (SELECT 1 FROM song_artists WHERE song_artists.artist_id = artists.artist_id)",
         [],
     )?;
+    transaction.execute_batch("DROP TABLE scan_discovered_paths")?;
     transaction.commit()?;
-    Ok(missing_ids.len() as u64)
+    Ok(removed as u64)
 }
 
 fn normalize_metadata(mut metadata: AudioMetadata) -> AudioMetadata {
@@ -2220,12 +2602,21 @@ pub async fn start_library_scan(
             let conn = db_pool.get()?;
             prepare_database_update(&conn, item.path)?
         };
-        let reconciliation = pending.reconciliation_data();
-        let extracted = extract_pending_metadata(pending, &covers_dir).await;
-        let conn = db_pool.get()?;
-        persist_metadata(&conn, extracted.metadata, extracted.mtimes)?;
-        if let Some((folder, discovered_paths)) = reconciliation {
-            remove_missing_songs_in_folder(&conn, &folder, &discovered_paths)?;
+        let (batches, reconciliation) = pending.into_metadata_batches();
+        for batch in batches {
+            let extracted =
+                extract_metadata_batch_with_cancel(batch, &covers_dir, None, None).await;
+            let conn = db_pool.get()?;
+            persist_metadata_with_existing_ids(
+                &conn,
+                extracted.metadata,
+                extracted.mtimes,
+                extracted.existing_song_ids,
+            )?;
+        }
+        if let Some(reconciliation) = reconciliation {
+            let conn = db_pool.get()?;
+            remove_missing_songs_in_folder(&conn, reconciliation)?;
         }
     }
 
@@ -2372,6 +2763,14 @@ mod tests {
         assert!(restored.shuffle_enabled);
         assert_eq!(restored.repeat_mode, "all");
         assert_eq!(restored.queue_snapshot, "[42,43]");
+
+        update_session_progress(&conn, 24.0).unwrap();
+        update_session_volume(&conn, 0.25).unwrap();
+        let partially_updated = get_last_session(&conn).unwrap();
+        assert_eq!(partially_updated.progress_seconds, 24.0);
+        assert_eq!(partially_updated.volume, 0.25);
+        assert_eq!(partially_updated.queue_snapshot, "[42,43]");
+        assert_eq!(partially_updated.current_song_id, Some(42));
     }
 
     #[test]
@@ -2465,10 +2864,34 @@ mod tests {
         assert!(release.is_hidden);
         assert!(release.suggest_less);
 
-        let discovered_paths = std::collections::HashSet::from(["/music/track.mp3".to_string()]);
+        reset_scan_discovery_table(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO scan_discovered_paths
+                (scan_id, file_path, name, size, extension, file_mtime)
+             VALUES ('test-scan', '/music/track.mp3', 'track.mp3', 1, 'mp3', 1)",
+            [],
+        )
+        .unwrap();
         assert_eq!(
-            remove_missing_songs_in_folder(&conn, Path::new("/music"), &discovered_paths).unwrap(),
+            remove_missing_songs_in_folder(
+                &conn,
+                ScanReconciliation {
+                    scan_id: "test-scan".to_string(),
+                    root: PathBuf::from("/music"),
+                },
+            )
+            .unwrap(),
             1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'table' AND name = 'scan_discovered_paths'",
+                [],
+                |row| row.get::<_, u64>(0),
+            )
+            .unwrap(),
+            0
         );
         assert_eq!(get_all_tracks(&conn).unwrap().len(), 1);
         let release = get_release_by_id(&conn, "1").unwrap();
@@ -2541,7 +2964,8 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO playlists (id, name, description) VALUES (1, 'Rock Mix', 'Rock favorites')",
+            "INSERT INTO playlists (id, name, cover, description)
+             VALUES (1, 'Rock Mix', X'010203', 'Rock favorites')",
             [],
         )
         .unwrap();
@@ -2551,6 +2975,13 @@ mod tests {
         assert_eq!(results.releases.len(), 1);
         assert_eq!(results.artists.len(), 1);
         assert_eq!(results.playlists.len(), 1);
+        assert!(results.playlists[0].cover.is_none());
+
+        let short_query = search_library(&conn, "Ro").unwrap();
+        assert_eq!(short_query.tracks.len(), 1);
+        assert_eq!(short_query.releases.len(), 1);
+        assert_eq!(short_query.artists.len(), 1);
+        assert_eq!(short_query.playlists.len(), 1);
         assert!(get_all_tracks(&conn).unwrap()[0].artwork.is_empty());
         assert!(get_song_by_id(&conn, "1").unwrap()[0].artwork.is_empty());
         assert!(
@@ -2563,19 +2994,142 @@ mod tests {
     }
 
     #[test]
+    fn search_is_bounded_pageable_and_tracks_content_changes() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_tables(&conn).unwrap();
+        for artist_id in 1..=105 {
+            conn.execute(
+                "INSERT INTO artists (artist_id, name) VALUES (?1, ?2)",
+                params![artist_id, format!("Needle Artist {artist_id:03}")],
+            )
+            .unwrap();
+        }
+
+        let first_page = search_library_page(&conn, "Needle", 1_000, 0).unwrap();
+        assert_eq!(first_page.artists.len(), MAX_SEARCH_RESULT_LIMIT);
+        let second_page = search_library_page(&conn, "Needle", 100, 100).unwrap();
+        assert_eq!(second_page.artists.len(), 5);
+
+        conn.execute(
+            "UPDATE artists SET name = 'Renamed Performer' WHERE artist_id = 1",
+            [],
+        )
+        .unwrap();
+        assert_eq!(search_library(&conn, "Renamed").unwrap().artists.len(), 1);
+        assert_eq!(
+            search_library_page(&conn, "Needle", 100, 100)
+                .unwrap()
+                .artists
+                .len(),
+            4
+        );
+
+        conn.execute("DELETE FROM artists WHERE artist_id = 1", [])
+            .unwrap();
+        assert!(search_library(&conn, "Renamed").unwrap().artists.is_empty());
+    }
+
+    #[test]
+    fn search_index_backfills_an_existing_library() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE artists (artist_id INTEGER PRIMARY KEY, name TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO artists (artist_id, name) VALUES (1, 'Migrated Artist')",
+            [],
+        )
+        .unwrap();
+
+        create_tables(&conn).unwrap();
+
+        let results = search_library(&conn, "grated Art").unwrap();
+        assert_eq!(results.artists.len(), 1);
+        assert_eq!(results.artists[0].artist_name, "Migrated Artist");
+    }
+
+    #[test]
+    fn library_pages_are_bounded_and_stably_ordered() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON").unwrap();
+        create_tables(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO artists (artist_id, name) VALUES (1, 'Artist')",
+            [],
+        )
+        .unwrap();
+        for id in 1..=3 {
+            conn.execute(
+                "INSERT INTO releases (release_id, title, artist_id, artist_name)
+                 VALUES (?1, ?2, 1, 'Artist')",
+                params![id, format!("Album {id}")],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO songs (
+                    song_id, title, artist_id, artist_name, release_id, release_title,
+                    track_number, disc_number, duration, file_path
+                 ) VALUES (?1, ?2, 1, 'Artist', ?1, ?3, 1, 1, 180, ?4)",
+                params![
+                    id,
+                    format!("Track {id}"),
+                    format!("Album {id}"),
+                    format!("/music/{id}.mp3")
+                ],
+            )
+            .unwrap();
+            add_song_to_history(&conn, id, 180).unwrap();
+        }
+
+        assert_eq!(
+            get_tracks_page(&conn, 2, 0)
+                .unwrap()
+                .into_iter()
+                .map(|track| track.song_id)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(get_tracks_page(&conn, 2, 2).unwrap()[0].song_id, 3);
+        assert_eq!(
+            get_releases_page(&conn, 2, 0)
+                .unwrap()
+                .into_iter()
+                .map(|release| release.release_id)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(get_releases_page(&conn, 2, 2).unwrap()[0].release_id, 3);
+        assert_eq!(
+            get_play_history_page(&conn, 2, 0)
+                .unwrap()
+                .into_iter()
+                .map(|history| history.song_id)
+                .collect::<Vec<_>>(),
+            vec![3, 2]
+        );
+        assert_eq!(get_play_history_page(&conn, 2, 2).unwrap()[0].song_id, 1);
+    }
+
+    #[test]
     fn playlists_support_crud_and_ordered_tracks() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys = ON").unwrap();
         create_tables(&conn).unwrap();
+        let cover_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        let cover_bytes = STANDARD.decode(cover_base64).unwrap();
 
         let playlist = create_playlist(
             &conn,
             "Road Trip".to_string(),
-            "data:image/png;base64,AQIDBA==".to_string(),
+            format!("data:image/png;base64,{cover_base64}"),
             "Initial description".to_string(),
         )
         .unwrap();
-        assert_eq!(playlist.cover.as_deref(), Some(&[1, 2, 3, 4][..]));
+        let empty_playlist =
+            create_playlist(&conn, "Empty".to_string(), String::new(), String::new()).unwrap();
+        assert_eq!(playlist.cover.as_deref(), Some(cover_bytes.as_slice()));
         assert!(set_playlist_favorite(&conn, playlist.id, true).unwrap());
         assert!(set_playlist_suggest_less(&conn, playlist.id, true).unwrap());
         let playlist = get_playlist_by_id(&conn, playlist.id).unwrap();
@@ -2587,7 +3141,7 @@ mod tests {
                 playlist.id,
                 "Updated Road Trip".to_string(),
                 "Updated description".to_string(),
-                "data:image/png;base64,AQIDBA==".to_string(),
+                format!("data:image/png;base64,{cover_base64}"),
             )
             .unwrap()
         );
@@ -2600,7 +3154,7 @@ mod tests {
                 .unwrap()
                 .cover
                 .as_deref(),
-            Some(&[1, 2, 3, 4][..])
+            Some(cover_bytes.as_slice())
         );
 
         conn.execute(
@@ -2630,11 +3184,27 @@ mod tests {
         add_track_to_playlist_songs(&conn, playlist.id, 1, 0).unwrap();
         assert_eq!(get_playlist_track_count(&conn, playlist.id).unwrap(), 1);
         assert_eq!(get_playlist_tracks(&conn, playlist.id).unwrap().len(), 1);
+        let playlist_summaries = get_all_playlists_with_track_counts(&conn).unwrap();
+        assert_eq!(playlist_summaries.len(), 2);
+        assert_eq!(playlist_summaries[0].playlist.id, playlist.id);
+        assert_eq!(playlist_summaries[0].track_count, 1);
+        assert_eq!(playlist_summaries[1].playlist.id, empty_playlist.id);
+        assert_eq!(playlist_summaries[1].track_count, 0);
         remove_track_from_playlist(&conn, playlist.id, 1, 0).unwrap();
         assert!(get_playlist_tracks(&conn, playlist.id).unwrap().is_empty());
 
         assert!(delete_playlist(&conn, playlist.id).unwrap());
         assert!(get_playlist_by_id(&conn, playlist.id).is_err());
+    }
+
+    #[test]
+    fn playlist_artwork_rejects_invalid_and_excessive_inputs() {
+        assert!(decode_playlist_cover("AQIDBA==").is_err());
+
+        let maximum_encoded_length = crate::metadata::MAX_ARTWORK_BYTES.div_ceil(3) * 4;
+        let excessive = "A".repeat(maximum_encoded_length + 1);
+        let error = decode_playlist_cover(&excessive).unwrap_err().to_string();
+        assert!(error.contains("exceeds"));
     }
 
     #[test]
@@ -2724,11 +3294,10 @@ mod tests {
         std::fs::write(directory.join("track.mp3"), []).unwrap();
         let cancelled = std::sync::atomic::AtomicBool::new(true);
 
-        let files =
-            scan_folder_with_cancel(directory.to_string_lossy().to_string(), Some(&cancelled))
-                .unwrap();
-        assert!(files.files.is_empty());
-        assert!(!files.complete);
+        let scan =
+            walk_audio_files(&directory.to_string_lossy(), Some(&cancelled), |_| Ok(())).unwrap();
+        assert_eq!(scan.total_files, 0);
+        assert!(!scan.complete);
 
         std::fs::remove_dir_all(directory).unwrap();
     }

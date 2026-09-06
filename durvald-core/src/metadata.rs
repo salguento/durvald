@@ -1,6 +1,6 @@
 //! Metadata extraction module using lofty
 
-use image;
+use image::{DynamicImage, ImageFormat, ImageReader, Limits};
 use lofty::file::AudioFile;
 use lofty::file::TaggedFileExt;
 use lofty::read_from_path;
@@ -28,6 +28,35 @@ pub enum MetadataError {
 }
 
 pub type MetadataResult<T> = Result<T, MetadataError>;
+
+pub(crate) const MAX_ARTWORK_BYTES: usize = 10 * 1024 * 1024;
+const MAX_ARTWORK_DIMENSION: u32 = 4096;
+const MAX_ARTWORK_DECODE_BYTES: u64 = 64 * 1024 * 1024;
+
+fn decode_artwork_limited(bytes: &[u8]) -> MetadataResult<(DynamicImage, ImageFormat)> {
+    if bytes.len() > MAX_ARTWORK_BYTES {
+        return Err(MetadataError::Custom(format!(
+            "Artwork exceeds the {} MiB limit",
+            MAX_ARTWORK_BYTES / (1024 * 1024)
+        )));
+    }
+
+    let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    let format = reader
+        .format()
+        .filter(|format| matches!(format, ImageFormat::Jpeg | ImageFormat::Png))
+        .ok_or_else(|| MetadataError::Custom("Artwork must be a JPEG or PNG image".to_string()))?;
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_ARTWORK_DIMENSION);
+    limits.max_image_height = Some(MAX_ARTWORK_DIMENSION);
+    limits.max_alloc = Some(MAX_ARTWORK_DECODE_BYTES);
+    reader.limits(limits);
+    Ok((reader.decode()?, format))
+}
+
+pub(crate) fn validate_artwork_bytes(bytes: &[u8]) -> MetadataResult<()> {
+    decode_artwork_limited(bytes).map(|_| ())
+}
 
 fn cancellation_requested(cancel_requested: Option<&AtomicBool>) -> bool {
     cancel_requested.is_some_and(|cancel| cancel.load(Ordering::Acquire))
@@ -74,37 +103,42 @@ pub struct AudioMetadata {
     pub file_path: String,
 }
 
-/// Extracts the front cover (or first embedded picture) as `(mime, raw bytes)`.
-fn extract_cover_bytes(tag: &lofty::tag::Tag) -> Option<(String, Vec<u8>)> {
+/// Borrows the front cover (or first embedded picture) as `(mime, raw bytes)`.
+/// Keeping this borrowed avoids duplicating an attacker-controlled allocation
+/// before the artwork limits have been checked.
+fn extract_cover_bytes(tag: &lofty::tag::Tag) -> Option<(&'static str, &[u8])> {
     let picture = tag
         .get_picture_type(lofty::picture::PictureType::CoverFront)
         .or_else(|| tag.pictures().first())?;
 
     let mime = match picture.mime_type() {
-        Some(lofty::picture::MimeType::Jpeg) => "image/jpeg".to_string(),
-        Some(lofty::picture::MimeType::Png) => "image/png".to_string(),
-        Some(lofty::picture::MimeType::Bmp) => "image/bmp".to_string(),
-        Some(lofty::picture::MimeType::Gif) => "image/gif".to_string(),
-        Some(lofty::picture::MimeType::Tiff) => "image/tiff".to_string(),
-        _ => "image/jpeg".to_string(),
+        Some(lofty::picture::MimeType::Jpeg) => "image/jpeg",
+        Some(lofty::picture::MimeType::Png) => "image/png",
+        Some(lofty::picture::MimeType::Bmp) => "image/bmp",
+        Some(lofty::picture::MimeType::Gif) => "image/gif",
+        Some(lofty::picture::MimeType::Tiff) => "image/tiff",
+        _ => "application/octet-stream",
     };
 
-    Some((mime, picture.data().to_vec()))
+    Some((mime, picture.data()))
 }
 
 /// Writes the cover to `{covers_dir}/{content_md5}.{ext}` (idempotent by
 /// content hash, so equal covers dedupe) and returns its absolute path.
 pub fn write_cover_file(
     covers_dir: &Path,
-    mime: &str,
+    _mime: &str,
     bytes: &[u8],
 ) -> MetadataResult<Option<String>> {
-    let ext = match mime {
-        "image/png" => "png",
-        "image/bmp" => "bmp",
-        "image/gif" => "gif",
-        "image/tiff" => "tiff",
-        _ => "jpg",
+    // Embedded artwork is untrusted input. Invalid, unsupported, or excessive
+    // images are ignored without rejecting the otherwise valid audio track.
+    let Ok((image, format)) = decode_artwork_limited(bytes) else {
+        return Ok(None);
+    };
+    let ext = match format {
+        ImageFormat::Png => "png",
+        ImageFormat::Jpeg => "jpg",
+        _ => return Ok(None),
     };
 
     fs::create_dir_all(covers_dir)?;
@@ -118,7 +152,7 @@ pub fn write_cover_file(
 
     // Best-effort thumbnail; a missing thumb (unsupported format) falls back
     // to the full image in the UI.
-    write_thumbnail(&path, bytes)?;
+    write_thumbnail_from_image(&path, image)?;
 
     Ok(Some(path.to_string_lossy().to_string()))
 }
@@ -135,10 +169,14 @@ pub fn thumb_path_for(full_path: &Path) -> PathBuf {
 /// file. Best-effort: any failure (e.g. a format we didn't compile in) is
 /// silently ignored so the UI falls back to the full image.
 pub fn write_thumbnail(full_path: &Path, bytes: &[u8]) -> MetadataResult<()> {
-    let Ok(img) = image::load_from_memory(bytes) else {
+    let Ok((image, _)) = decode_artwork_limited(bytes) else {
         return Ok(());
     };
-    let thumb = img.thumbnail(256, 256);
+    write_thumbnail_from_image(full_path, image)
+}
+
+fn write_thumbnail_from_image(full_path: &Path, image: DynamicImage) -> MetadataResult<()> {
+    let thumb = image.thumbnail(256, 256);
     let mut out = Vec::new();
     if thumb
         .write_to(&mut Cursor::new(&mut out), image::ImageFormat::Jpeg)
@@ -237,7 +275,7 @@ pub fn extract_metadata_blocking_with_cancel(
                     "Metadata extraction cancelled".to_string(),
                 ));
             }
-            metadata.cover_path = write_cover_file(covers_dir, &mime, &bytes)?;
+            metadata.cover_path = write_cover_file(covers_dir, mime, bytes)?;
         }
 
         // All fields as key-value pairs
@@ -323,6 +361,13 @@ mod tests {
         .expect_err("a cancelled extraction must not read the path");
 
         assert!(error.to_string().contains("cancelled"));
+    }
+
+    #[test]
+    fn artwork_limits_reject_excessive_bytes_before_decoding() {
+        let bytes = vec![0; MAX_ARTWORK_BYTES + 1];
+        let error = validate_artwork_bytes(&bytes).unwrap_err().to_string();
+        assert!(error.contains("exceeds"));
     }
 
     #[test]

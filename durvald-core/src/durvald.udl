@@ -16,10 +16,19 @@ typedef extern CoreConfig;
 typedef extern Track;
 
 [Rust="record"]
+typedef extern TrackPage;
+
+[Rust="record"]
 typedef extern PlaybackHistoryItem;
 
 [Rust="record"]
+typedef extern PlaybackHistoryPage;
+
+[Rust="record"]
 typedef extern Release;
+
+[Rust="record"]
+typedef extern ReleasePage;
 
 [Rust="record"]
 typedef extern Artist;

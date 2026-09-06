@@ -5,10 +5,14 @@ use md5::{Digest, Md5};
 use reqwest::Client;
 use serde::Serialize;
 use serde_json::Value;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tokio::sync::Mutex;
+use zeroize::Zeroizing;
 
 #[derive(Error, Debug)]
 pub enum LastFmError {
@@ -20,6 +24,8 @@ pub enum LastFmError {
     SecureStore(#[from] SecureStoreError),
     #[error("Rate limit error: {0}")]
     RateLimit(String),
+    #[error("Last.fm response exceeds the {limit_bytes}-byte limit")]
+    ResponseTooLarge { limit_bytes: usize },
     #[error("Last.fm API error {code}: {message}")]
     Api { code: i64, message: String },
     #[error("Time error: {0}")]
@@ -33,6 +39,60 @@ pub enum LastFmError {
 pub type LastFmResult<T> = Result<T, LastFmError>;
 
 const LASTFM_API_ENDPOINT: &str = "https://ws.audioscrobbler.com/2.0/";
+const LASTFM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const LASTFM_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const LASTFM_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_LASTFM_RESPONSE_BYTES: usize = 1024 * 1024;
+
+type ProtectedSecret = Arc<Zeroizing<String>>;
+
+fn protected_secret(secret: String) -> ProtectedSecret {
+    Arc::new(Zeroizing::new(secret))
+}
+
+fn configured_http_client() -> LastFmResult<Client> {
+    Client::builder()
+        .connect_timeout(LASTFM_CONNECT_TIMEOUT)
+        .read_timeout(LASTFM_READ_TIMEOUT)
+        .timeout(LASTFM_REQUEST_TIMEOUT)
+        .build()
+        .map_err(LastFmError::Network)
+}
+
+fn append_response_chunk(body: &mut Vec<u8>, chunk: &[u8]) -> LastFmResult<()> {
+    if body.len().saturating_add(chunk.len()) > MAX_LASTFM_RESPONSE_BYTES {
+        return Err(LastFmError::ResponseTooLarge {
+            limit_bytes: MAX_LASTFM_RESPONSE_BYTES,
+        });
+    }
+    body.extend_from_slice(chunk);
+    Ok(())
+}
+
+async fn bounded_json_response(mut response: reqwest::Response) -> LastFmResult<Value> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_LASTFM_RESPONSE_BYTES as u64)
+    {
+        return Err(LastFmError::ResponseTooLarge {
+            limit_bytes: MAX_LASTFM_RESPONSE_BYTES,
+        });
+    }
+
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or(0)
+        .min(MAX_LASTFM_RESPONSE_BYTES);
+    // Authorization responses can contain a session key. Clear the raw JSON
+    // buffer as soon as parsing completes instead of leaving it in freed heap
+    // memory.
+    let mut body = Zeroizing::new(Vec::with_capacity(capacity));
+    while let Some(chunk) = response.chunk().await? {
+        append_response_chunk(&mut body, &chunk)?;
+    }
+    Ok(serde_json::from_slice(&body)?)
+}
 
 #[cfg(any(test, debug_assertions))]
 fn api_key_diagnostic(api_key: &str) -> String {
@@ -121,15 +181,15 @@ pub struct LastFmClient {
 
 #[derive(Default)]
 struct LastFmSecretCache {
-    api_secret: Option<String>,
-    session_key: Option<String>,
+    api_secret: Option<ProtectedSecret>,
+    session_key: Option<ProtectedSecret>,
 }
 
 #[cfg(test)]
 struct TestCredentials {
     api_key: String,
-    api_secret: String,
-    session_key: String,
+    api_secret: ProtectedSecret,
+    session_key: ProtectedSecret,
 }
 
 #[cfg(test)]
@@ -139,23 +199,23 @@ struct TestTransport {
 }
 
 impl LastFmClient {
-    pub fn new(secure_store: Arc<Mutex<SecureStore>>) -> Self {
-        Self {
+    pub fn new(secure_store: Arc<Mutex<SecureStore>>) -> LastFmResult<Self> {
+        Ok(Self {
             secure_store,
             secret_cache: Mutex::new(LastFmSecretCache::default()),
-            client: Client::new(),
+            client: configured_http_client()?,
             #[cfg(test)]
             test_credentials: None,
             #[cfg(test)]
             test_transport: None,
-        }
+        })
     }
 
     #[cfg(test)]
     fn with_test_transport(
         secure_store: Arc<Mutex<SecureStore>>,
         response: Value,
-    ) -> (Self, Arc<TestTransport>) {
+    ) -> LastFmResult<(Self, Arc<TestTransport>)> {
         let transport = Arc::new(TestTransport {
             response,
             forms: std::sync::Mutex::new(Vec::new()),
@@ -163,15 +223,15 @@ impl LastFmClient {
         let client = Self {
             secure_store,
             secret_cache: Mutex::new(LastFmSecretCache::default()),
-            client: Client::new(),
+            client: configured_http_client()?,
             test_credentials: Some(TestCredentials {
                 api_key: "test-api-key".to_string(),
-                api_secret: "test-api-secret".to_string(),
-                session_key: "test-session-key".to_string(),
+                api_secret: protected_secret("test-api-secret".to_string()),
+                session_key: protected_secret("test-session-key".to_string()),
             }),
             test_transport: Some(transport.clone()),
         };
-        (client, transport)
+        Ok((client, transport))
     }
 
     async fn post_form(&self, form: &[(&str, &str)]) -> LastFmResult<Value> {
@@ -191,11 +251,10 @@ impl LastFmClient {
             .form(form)
             .send()
             .await?;
-        let text = response.text().await?;
-        Ok(serde_json::from_str(&text)?)
+        bounded_json_response(response).await
     }
 
-    async fn get_api_secret(&self) -> LastFmResult<String> {
+    async fn get_api_secret(&self) -> LastFmResult<ProtectedSecret> {
         #[cfg(test)]
         if let Some(credentials) = &self.test_credentials {
             return Ok(credentials.api_secret.clone());
@@ -204,12 +263,13 @@ impl LastFmClient {
             return Ok(secret);
         }
 
-        let secret = self
-            .secure_store
-            .lock()
-            .await
-            .get_secret("api_secret")
-            .map_err(LastFmError::SecureStore)?;
+        let secret = protected_secret(
+            self.secure_store
+                .lock()
+                .await
+                .get_secret("api_secret")
+                .map_err(LastFmError::SecureStore)?,
+        );
         self.secret_cache.lock().await.api_secret = Some(secret.clone());
         Ok(secret)
     }
@@ -222,6 +282,7 @@ impl LastFmClient {
         let store = self.secure_store.lock().await;
         store
             .get("api_key")
+            .map_err(LastFmError::SecureStore)?
             .and_then(|v| v.as_str().map(String::from))
             .ok_or_else(|| {
                 LastFmError::SecureStore(SecureStoreError::Custom(
@@ -230,7 +291,7 @@ impl LastFmClient {
             })
     }
 
-    async fn get_session_key(&self) -> LastFmResult<String> {
+    async fn get_session_key(&self) -> LastFmResult<ProtectedSecret> {
         #[cfg(test)]
         if let Some(credentials) = &self.test_credentials {
             return Ok(credentials.session_key.clone());
@@ -239,21 +300,26 @@ impl LastFmClient {
             return Ok(session_key);
         }
 
-        let session_key = self
-            .secure_store
-            .lock()
-            .await
-            .get_secret("session_key")
-            .map_err(LastFmError::SecureStore)?;
+        let session_key = protected_secret(
+            self.secure_store
+                .lock()
+                .await
+                .get_secret("session_key")
+                .map_err(LastFmError::SecureStore)?,
+        );
         self.secret_cache.lock().await.session_key = Some(session_key.clone());
         Ok(session_key)
+    }
+
+    async fn clear_cached_session_key(&self) {
+        self.secret_cache.lock().await.session_key.take();
     }
 
     fn generate_signature(params: &[(&str, &str)], secret: &str) -> String {
         let mut sorted_params: Vec<(&str, &str)> = params.to_vec();
         sorted_params.sort_by(|a, b| a.0.cmp(b.0));
 
-        let mut sig_string = String::new();
+        let mut sig_string = Zeroizing::new(String::new());
         for (key, value) in sorted_params {
             sig_string.push_str(key);
             sig_string.push_str(value);
@@ -265,15 +331,18 @@ impl LastFmClient {
     }
 
     pub async fn initialize_lastfm(&self, api_key: String, api_secret: String) -> LastFmResult<()> {
+        let api_secret = Zeroizing::new(api_secret);
         let store = self.secure_store.lock().await;
         let credentials_changed = store
             .get("api_key")
+            .map_err(LastFmError::SecureStore)?
             .and_then(|value| value.as_str().map(str::to_owned))
             .as_deref()
             != Some(api_key.as_str())
             || store
                 .get_secret("api_secret")
-                .map(|stored_secret| stored_secret != api_secret.as_str())
+                .map(Zeroizing::new)
+                .map(|stored_secret| stored_secret.as_str() != api_secret.as_str())
                 .unwrap_or(true);
 
         if credentials_changed {
@@ -282,19 +351,21 @@ impl LastFmClient {
                     .delete_secret("session_key")
                     .map_err(LastFmError::SecureStore)?;
             }
-            store.delete("username");
+            store.delete("username").map_err(LastFmError::SecureStore)?;
         }
-        store.set("api_key".into(), api_key.into());
         store
-            .set_secret("api_secret", &api_secret)
+            .set("api_key".into(), api_key.into())
+            .map_err(LastFmError::SecureStore)?;
+        store
+            .set_secret("api_secret", api_secret.as_str())
             .map_err(LastFmError::SecureStore)?;
         store.save_data().map_err(LastFmError::SecureStore)?;
         drop(store);
 
         let mut cache = self.secret_cache.lock().await;
-        cache.api_secret = Some(api_secret);
+        cache.api_secret = Some(Arc::new(api_secret));
         if credentials_changed {
-            cache.session_key = None;
+            cache.session_key.take();
         }
         Ok(())
     }
@@ -303,14 +374,17 @@ impl LastFmClient {
         let store = self.secure_store.lock().await;
         let api_key = store
             .get("api_key")
+            .map_err(LastFmError::SecureStore)?
             .and_then(|v| v.as_str().map(String::from))
             .ok_or_else(|| {
                 LastFmError::SecureStore(SecureStoreError::Custom("API key not found".to_string()))
             })?;
 
-        let secret = store
-            .get_secret("api_secret")
-            .map_err(LastFmError::SecureStore)?;
+        let secret = Zeroizing::new(
+            store
+                .get_secret("api_secret")
+                .map_err(LastFmError::SecureStore)?,
+        );
 
         if api_key.trim().is_empty() || secret.trim().is_empty() {
             return Err(LastFmError::Custom(
@@ -327,7 +401,7 @@ impl LastFmClient {
         let secret = self.get_api_secret().await?;
 
         let params = vec![("method", "auth.getToken"), ("api_key", &api_key)];
-        let sig = Self::generate_signature(&params, &secret);
+        let sig = Self::generate_signature(&params, secret.as_str());
 
         let json = self
             .post_form(&[
@@ -363,9 +437,9 @@ impl LastFmClient {
             ("token", token.as_str()),
         ];
         params.sort_by(|a, b| a.0.cmp(b.0));
-        let sig = Self::generate_signature(&params, &secret);
+        let sig = Self::generate_signature(&params, secret.as_str());
 
-        let json = self
+        let mut json = self
             .post_form(&[
                 ("method", "auth.getSession"),
                 ("api_key", &api_key),
@@ -378,16 +452,16 @@ impl LastFmClient {
         require_api_success(&json)?;
 
         let session = json["session"]
-            .as_object()
+            .as_object_mut()
             .ok_or_else(|| LastFmError::Custom("No session object".to_string()))?;
-        let username = session["name"]
-            .as_str()
-            .ok_or_else(|| LastFmError::Custom("No username".to_string()))?
-            .to_string();
-        let session_key = session["key"]
-            .as_str()
-            .ok_or_else(|| LastFmError::Custom("No session key".to_string()))?
-            .to_string();
+        let username = session
+            .remove("name")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .ok_or_else(|| LastFmError::Custom("No username".to_string()))?;
+        let session_key = match session.remove("key") {
+            Some(Value::String(secret)) => Zeroizing::new(secret),
+            _ => return Err(LastFmError::Custom("No session key".to_string())),
+        };
 
         #[cfg(test)]
         if self.test_credentials.is_some() {
@@ -396,12 +470,14 @@ impl LastFmClient {
 
         let store = self.secure_store.lock().await;
         store
-            .set_secret("session_key", &session_key)
+            .set_secret("session_key", session_key.as_str())
             .map_err(LastFmError::SecureStore)?;
-        store.set("username".into(), username.clone().into());
+        store
+            .set("username".into(), username.clone().into())
+            .map_err(LastFmError::SecureStore)?;
         store.save_data().map_err(LastFmError::SecureStore)?;
         drop(store);
-        self.secret_cache.lock().await.session_key = Some(session_key);
+        self.secret_cache.lock().await.session_key = Some(Arc::new(session_key));
 
         Ok(SessionResponse { username })
     }
@@ -450,14 +526,14 @@ impl LastFmClient {
 
         // Sort alphabetically (Last.fm requirement)
         params.sort_by(|a, b| a.0.cmp(b.0));
-        let sig = Self::generate_signature(&params, &secret);
+        let sig = Self::generate_signature(&params, secret.as_str());
 
         // ✅ 'format' ONLY in POST body (NOT in signature params)
         let mut form = vec![
             ("method", "track.updateNowPlaying"),
             ("api_key", &api_key),
             ("api_sig", &sig),
-            ("sk", &session_key),
+            ("sk", session_key.as_str()),
             ("artist", &artist),
             ("track", &track),
             ("format", "json"), // ← ONLY in POST body to get JSON response
@@ -519,14 +595,14 @@ impl LastFmClient {
         }
 
         params.sort_by(|a, b| a.0.cmp(b.0));
-        let sig = Self::generate_signature(&params, &secret);
+        let sig = Self::generate_signature(&params, secret.as_str());
 
         // ✅ 'format' ONLY in POST body
         let mut form = vec![
             ("method", "track.scrobble"),
             ("api_key", &api_key),
             ("api_sig", &sig),
-            ("sk", &session_key),
+            ("sk", session_key.as_str()),
             ("artist", &artist),
             ("track", &track),
             ("timestamp", &timestamp_str),
@@ -550,20 +626,21 @@ impl LastFmClient {
 
     /// Returns the locally persisted Last.fm username, if the account has
     /// completed the authorization flow.
-    pub async fn username(&self) -> Option<String> {
+    pub async fn username(&self) -> LastFmResult<Option<String>> {
         let store = self.secure_store.lock().await;
-        store
+        Ok(store
             .get("username")
-            .and_then(|value| value.as_str().map(str::to_owned))
+            .map_err(LastFmError::SecureStore)?
+            .and_then(|value| value.as_str().map(str::to_owned)))
     }
 
     pub async fn disconnect_lastfm(&self) -> LastFmResult<()> {
         let store = self.secure_store.lock().await;
         let _ = store.delete_secret("session_key");
-        store.delete("username");
+        store.delete("username").map_err(LastFmError::SecureStore)?;
         store.save_data().map_err(LastFmError::SecureStore)?;
         drop(store);
-        self.secret_cache.lock().await.session_key = None;
+        self.clear_cached_session_key().await;
         Ok(())
     }
 
@@ -572,6 +649,7 @@ impl LastFmClient {
         let store = self.secure_store.lock().await;
         store
             .get("api_key")
+            .map_err(LastFmError::SecureStore)?
             .and_then(|v| v.as_str().map(String::from))
             .map(|key| api_key_diagnostic(&key))
             .ok_or_else(|| {
@@ -583,7 +661,10 @@ impl LastFmClient {
     pub async fn debug_session(&self) -> LastFmResult<String> {
         let store = self.secure_store.lock().await;
         match store.get_secret("session_key") {
-            Ok(key) => Ok(format!("Session key found ({} chars)", key.len())),
+            Ok(key) => {
+                let key = Zeroizing::new(key);
+                Ok(format!("Session key found ({} chars)", key.len()))
+            }
             Err(e) => Ok(format!("Session key not found: {}", e)),
         }
     }
@@ -592,11 +673,9 @@ impl LastFmClient {
     pub async fn debug_credentials(&self) -> LastFmResult<String> {
         let api_key = self.get_api_key().await?;
         let secret = self.get_api_secret().await?;
-        Ok(credentials_diagnostic(&api_key, &secret))
+        Ok(credentials_diagnostic(&api_key, secret.as_str()))
     }
 }
-
-use std::sync::Arc;
 
 #[cfg(test)]
 mod tests {
@@ -631,6 +710,50 @@ mod tests {
         assert!(api_error_from_response(&serde_json::json!({"error": 6})).is_some());
     }
 
+    #[test]
+    fn response_body_is_rejected_before_exceeding_its_memory_limit() {
+        let mut body = vec![0; MAX_LASTFM_RESPONSE_BYTES - 2];
+        append_response_chunk(&mut body, &[1, 2]).expect("accept response at exact limit");
+        assert_eq!(body.len(), MAX_LASTFM_RESPONSE_BYTES);
+
+        let error = append_response_chunk(&mut body, &[3]).unwrap_err();
+        assert!(matches!(
+            error,
+            LastFmError::ResponseTooLarge { limit_bytes }
+                if limit_bytes == MAX_LASTFM_RESPONSE_BYTES
+        ));
+        assert_eq!(body.len(), MAX_LASTFM_RESPONSE_BYTES);
+    }
+
+    #[tokio::test]
+    async fn cached_secrets_share_protected_storage_and_session_cache_is_released() {
+        let directory = std::env::temp_dir().join(format!(
+            "durvald-lastfm-secret-cache-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = SecureStore::new(directory.clone(), "durvald-test".to_string()).unwrap();
+        let client = LastFmClient::new(Arc::new(Mutex::new(store))).expect("build test client");
+
+        let api_secret = protected_secret("protected-api-secret".to_string());
+        client.secret_cache.lock().await.api_secret = Some(api_secret.clone());
+        let first = client.get_api_secret().await.unwrap();
+        let second = client.get_api_secret().await.unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+
+        let session_key = protected_secret("protected-session-key".to_string());
+        let session_ownership = Arc::downgrade(&session_key);
+        client.secret_cache.lock().await.session_key = Some(session_key.clone());
+        drop(session_key);
+        client.clear_cached_session_key().await;
+        assert!(session_ownership.upgrade().is_none());
+
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[tokio::test]
     async fn auth_token_request_uses_an_in_process_transport_mock() {
         LAST_REQUEST_MS.store(0, Ordering::SeqCst);
@@ -646,7 +769,8 @@ mod tests {
         let (client, transport) = LastFmClient::with_test_transport(
             Arc::new(Mutex::new(store)),
             serde_json::json!({"token": "mock-token"}),
-        );
+        )
+        .expect("build test client");
         let response = client.get_auth_token().await.expect("get mock token");
 
         assert_eq!(response.token, "mock-token");
@@ -672,7 +796,8 @@ mod tests {
         ));
         let store = SecureStore::new(directory.clone(), "durvald-test".to_string()).unwrap();
         let (client, transport) =
-            LastFmClient::with_test_transport(Arc::new(Mutex::new(store)), serde_json::json!({}));
+            LastFmClient::with_test_transport(Arc::new(Mutex::new(store)), serde_json::json!({}))
+                .expect("build test client");
 
         client
             .update_now_playing(
@@ -708,7 +833,8 @@ mod tests {
         ));
         let store = SecureStore::new(directory.clone(), "durvald-test".to_string()).unwrap();
         let (client, transport) =
-            LastFmClient::with_test_transport(Arc::new(Mutex::new(store)), serde_json::json!({}));
+            LastFmClient::with_test_transport(Arc::new(Mutex::new(store)), serde_json::json!({}))
+                .expect("build test client");
 
         client
             .scrobble_track(
@@ -747,7 +873,8 @@ mod tests {
         let (client, transport) = LastFmClient::with_test_transport(
             Arc::new(Mutex::new(store)),
             serde_json::json!({"session": {"name": "mock-user", "key": "new-session-key"}}),
-        );
+        )
+        .expect("build test client");
 
         let session = client
             .poll_session("auth-token".to_string())
@@ -775,7 +902,7 @@ mod tests {
                 .as_nanos()
         ));
         let store = SecureStore::new(directory.clone(), "durvald-test".to_string()).unwrap();
-        let client = LastFmClient::new(Arc::new(Mutex::new(store)));
+        let client = LastFmClient::new(Arc::new(Mutex::new(store))).expect("build test client");
 
         assert!(matches!(
             client

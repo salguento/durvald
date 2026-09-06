@@ -89,6 +89,22 @@ pub struct PlaybackHistoryItem {
     pub duration_seconds: u64,
 }
 
+/// One bounded page of tracks. `next_offset` is absent on the final page.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct TrackPage {
+    pub items: Vec<Track>,
+    pub next_offset: Option<u64>,
+}
+
+/// One bounded page of completed playback events.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PlaybackHistoryPage {
+    pub items: Vec<PlaybackHistoryItem>,
+    pub next_offset: Option<u64>,
+}
+
 /// Release/album DTO
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -106,6 +122,14 @@ pub struct Release {
     pub is_hidden: bool,
     pub suggest_less: bool,
     pub rating: Option<u8>,
+}
+
+/// One bounded page of releases. `next_offset` is absent on the final page.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ReleasePage {
+    pub items: Vec<Release>,
+    pub next_offset: Option<u64>,
 }
 
 /// Artist DTO

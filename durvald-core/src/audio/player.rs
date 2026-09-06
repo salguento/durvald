@@ -18,7 +18,45 @@ pub struct QueueItem {
 #[derive(Debug, Clone)]
 pub struct QueueData {
     pub items: Vec<QueueItem>,
-    pub history: Vec<QueueItem>,
+}
+
+const MAX_PLAYBACK_HISTORY_ITEMS: usize = 100;
+
+pub(crate) struct PreparedSound {
+    path: String,
+    sound_data: StreamingSoundData<FromFileError>,
+    gain_db: f32,
+}
+
+#[derive(Clone)]
+pub(crate) enum PlaybackPlan {
+    RepeatCurrent(QueueItem),
+    Next { item: QueueItem, index: usize },
+    RepeatAll(QueueItem),
+    Previous(QueueItem),
+    Skip { item: QueueItem, position: usize },
+}
+
+impl PlaybackPlan {
+    pub(crate) fn path(&self) -> &str {
+        match self {
+            Self::RepeatCurrent(item)
+            | Self::Next { item, .. }
+            | Self::RepeatAll(item)
+            | Self::Previous(item)
+            | Self::Skip { item, .. } => &item.path,
+        }
+    }
+
+    pub(crate) fn song_id(&self) -> i64 {
+        match self {
+            Self::RepeatCurrent(item)
+            | Self::Next { item, .. }
+            | Self::RepeatAll(item)
+            | Self::Previous(item)
+            | Self::Skip { item, .. } => item.song_id,
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -58,7 +96,7 @@ pub struct AudioPlayer {
     current_gain_db: f32,
     normalize_volume: bool,
     queue: VecDeque<QueueItem>,
-    history: Vec<QueueItem>,
+    history: VecDeque<QueueItem>,
     current_song_id: Option<i64>,
     crossfade_duration: Option<Duration>,
     shuffle_enabled: bool,
@@ -118,7 +156,7 @@ impl AudioPlayer {
             current_gain_db: 0.0,
             normalize_volume: false,
             queue: VecDeque::new(),
-            history: Vec::new(),
+            history: VecDeque::new(),
             current_song_id: None,
             crossfade_duration: None,
             shuffle_enabled: false,
@@ -127,14 +165,11 @@ impl AudioPlayer {
         }
     }
 
-    pub async fn play(&mut self, path: String) -> Result<(), AudioError> {
-        // Replacing a track keeps the logical current-song identity set by the
-        // queue transition that initiated playback.
+    pub(crate) async fn prepare_sound(
+        path: String,
+        normalize_volume: bool,
+    ) -> Result<PreparedSound, AudioError> {
         let path_clone = path.clone();
-
-        // Load before stopping the active track so a missing or invalid
-        // replacement does not destroy an otherwise recoverable session.
-        let normalize_volume = self.normalize_volume;
         let (sound_data, gain_db) = tokio::task::spawn_blocking(move || {
             let gain_db = normalize_volume
                 .then(|| crate::metadata::replay_gain_db(&path_clone))
@@ -145,6 +180,24 @@ impl AudioPlayer {
         .await
         .map_err(AudioError::Join)?
         .map_err(|e| AudioError::Kira(Box::new(e)))?;
+
+        Ok(PreparedSound {
+            path,
+            sound_data,
+            gain_db,
+        })
+    }
+
+    pub(crate) fn normalize_volume_enabled(&self) -> bool {
+        self.normalize_volume
+    }
+
+    fn play_prepared(&mut self, prepared: PreparedSound) -> Result<(), AudioError> {
+        let PreparedSound {
+            path,
+            sound_data,
+            gain_db,
+        } = prepared;
 
         let crossfade_duration = self
             .crossfade_duration
@@ -183,10 +236,27 @@ impl AudioPlayer {
         Ok(())
     }
 
+    pub async fn play(&mut self, path: String) -> Result<(), AudioError> {
+        // Load before stopping the active track so a missing or invalid
+        // replacement does not destroy an otherwise recoverable session.
+        let prepared = Self::prepare_sound(path, self.normalize_volume).await?;
+        self.play_prepared(prepared)
+    }
+
     /// Starts a specific library track and records its identity for playback
     /// snapshots, history, and queue transitions.
     pub async fn play_song(&mut self, song_id: i64, path: String) -> Result<(), AudioError> {
         self.play(path).await?;
+        self.current_song_id = Some(song_id);
+        Ok(())
+    }
+
+    pub(crate) fn play_song_prepared(
+        &mut self,
+        song_id: i64,
+        prepared: PreparedSound,
+    ) -> Result<(), AudioError> {
+        self.play_prepared(prepared)?;
         self.current_song_id = Some(song_id);
         Ok(())
     }
@@ -350,6 +420,131 @@ impl AudioPlayer {
         Ok(())
     }
 
+    pub(crate) fn enqueue(&mut self, song_id: i64, path: String) {
+        self.queue.push_back(QueueItem { song_id, path });
+    }
+
+    pub(crate) fn should_start_queued_track(&self) -> bool {
+        self.is_empty() && self.queue.is_empty()
+    }
+
+    fn push_history(&mut self, item: QueueItem) {
+        // Repeat-all temporarily uses history to reconstruct the complete
+        // cycle. It is drained back into the queue at the cycle boundary, so
+        // its size remains bounded by the user-managed queue in that mode.
+        if self.repeat_mode != RepeatMode::All && self.history.len() >= MAX_PLAYBACK_HISTORY_ITEMS {
+            self.history.pop_front();
+        }
+        self.history.push_back(item);
+    }
+
+    pub(crate) fn plan_next(&self) -> Option<PlaybackPlan> {
+        if self.repeat_mode == RepeatMode::One {
+            return self
+                .current_song_id
+                .zip(self.current_path.clone())
+                .map(|(song_id, path)| PlaybackPlan::RepeatCurrent(QueueItem { song_id, path }));
+        }
+
+        if !self.queue.is_empty() {
+            let index = if self.shuffle_enabled {
+                (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+                    % self.queue.len() as u128) as usize
+            } else {
+                0
+            };
+            return self
+                .queue
+                .get(index)
+                .cloned()
+                .map(|item| PlaybackPlan::Next { item, index });
+        }
+
+        if self.repeat_mode == RepeatMode::All && self.current_song_id.is_some() {
+            return self.history.front().cloned().map(PlaybackPlan::RepeatAll);
+        }
+        None
+    }
+
+    pub(crate) fn plan_previous(&self) -> Option<PlaybackPlan> {
+        self.history.back().cloned().map(PlaybackPlan::Previous)
+    }
+
+    pub(crate) fn plan_skip(&self, position: usize) -> Result<PlaybackPlan, AudioError> {
+        self.queue
+            .get(position)
+            .cloned()
+            .map(|item| PlaybackPlan::Skip { item, position })
+            .ok_or(AudioError::PositionOutOfBounds)
+    }
+
+    pub(crate) fn commit_plan(
+        &mut self,
+        plan: PlaybackPlan,
+        prepared: PreparedSound,
+    ) -> Result<(), AudioError> {
+        let previous = self
+            .current_song_id
+            .zip(self.current_path.clone())
+            .map(|(song_id, path)| QueueItem { song_id, path });
+        let next_song_id = plan.song_id();
+        self.play_prepared(prepared)?;
+
+        match plan {
+            PlaybackPlan::RepeatCurrent(_) => {}
+            PlaybackPlan::Next { index, .. } => {
+                self.queue.remove(index).ok_or(AudioError::FailedToRemove)?;
+                if let Some(previous) = previous {
+                    self.push_history(previous);
+                }
+            }
+            PlaybackPlan::RepeatAll(_) => {
+                if let Some(previous) = previous {
+                    self.push_history(previous);
+                }
+                self.history.pop_front();
+                self.queue.extend(self.history.drain(..));
+            }
+            PlaybackPlan::Previous(_) => {
+                self.history.pop_back().ok_or(AudioError::FailedToRemove)?;
+                if let Some(previous) = previous {
+                    self.queue.push_front(previous);
+                }
+            }
+            PlaybackPlan::Skip { position, .. } => {
+                for _ in 0..position {
+                    if let Some(item) = self.queue.pop_front() {
+                        self.push_history(item);
+                    }
+                }
+                self.queue.pop_front().ok_or(AudioError::FailedToRemove)?;
+                if let Some(previous) = previous {
+                    self.push_history(previous);
+                }
+            }
+        }
+        self.current_song_id = Some(next_song_id);
+        Ok(())
+    }
+
+    pub(crate) fn completed_playback_plan(&self) -> Option<PlaybackPlan> {
+        (self.playback_requested && self.is_empty())
+            .then(|| self.plan_next())
+            .flatten()
+    }
+
+    pub(crate) fn restored_track(&self) -> Option<(i64, String, f64)> {
+        if self.current_sound.is_some() {
+            return None;
+        }
+        self.current_song_id
+            .zip(self.current_path.clone())
+            .map(|(song_id, path)| (song_id, path, self.paused_position.unwrap_or_default()))
+    }
+
     pub fn insert_at_position(&mut self, song_id: i64, path: String, position: usize) {
         let item = QueueItem { song_id, path };
         if position >= self.queue.len() {
@@ -383,7 +578,7 @@ impl AudioPlayer {
             // into history. Pressing Next with an empty queue must leave the
             // current track playing and must not manufacture a history entry.
             if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
-                self.history.push(QueueItem {
+                self.push_history(QueueItem {
                     song_id,
                     path: path.clone(),
                 });
@@ -396,12 +591,12 @@ impl AudioPlayer {
             && !self.history.is_empty()
         {
             if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
-                self.history.push(QueueItem {
+                self.push_history(QueueItem {
                     song_id,
                     path: path.clone(),
                 });
             }
-            let next_item = self.history.remove(0);
+            let next_item = self.history.pop_front().ok_or(AudioError::FailedToRemove)?;
             self.queue.extend(self.history.drain(..));
             self.current_song_id = Some(next_item.song_id);
             self.play(next_item.path).await?;
@@ -412,7 +607,7 @@ impl AudioPlayer {
     }
 
     pub async fn play_previous(&mut self) -> Result<bool, AudioError> {
-        if let Some(prev_item) = self.history.pop() {
+        if let Some(prev_item) = self.history.pop_back() {
             // Add current song back to front of queue if playing
             if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
                 self.queue.push_front(QueueItem {
@@ -437,7 +632,7 @@ impl AudioPlayer {
         // Remove all items before the target position and add them to history
         for _ in 0..position {
             if let Some(item) = self.queue.pop_front() {
-                self.history.push(item);
+                self.push_history(item);
             }
         }
 
@@ -557,16 +752,9 @@ impl AudioPlayer {
     }
 
     // Database persistence methods
-    pub fn get_queue_data_for_db(&self) -> QueueData {
-        QueueData {
-            items: self.queue.iter().cloned().collect(),
-            history: self.history.clone(),
-        }
-    }
-
     pub fn load_queue(&mut self, data: QueueData) -> Result<(), AudioError> {
         self.queue = data.items.into_iter().collect();
-        self.history = data.history;
+        self.history.clear();
         Ok(())
     }
 
@@ -589,31 +777,7 @@ impl AudioPlayer {
             })?
             .collect();
 
-        Ok(QueueData {
-            items: items?,
-            history: Vec::new(), // History not persisted in DB
-        })
-    }
-
-    pub fn save_queue_to_db_blocking(
-        conn: &mut rusqlite::Connection,
-        data: &QueueData,
-    ) -> Result<(), AudioError> {
-        let tx = conn.transaction()?;
-
-        // Clear existing queue
-        tx.execute("DELETE FROM queue", ())?;
-
-        // Insert current queue
-        for (position, item) in data.items.iter().enumerate() {
-            tx.execute(
-                "INSERT INTO queue (song_id, position) VALUES (?1, ?2)",
-                (item.song_id, position as i64),
-            )?;
-        }
-
-        tx.commit()?;
-        Ok(())
+        Ok(QueueData { items: items? })
     }
 
     pub fn queue_is_empty(&self) -> bool {
@@ -627,7 +791,7 @@ impl AudioPlayer {
 
 #[cfg(test)]
 mod tests {
-    use super::AudioPlayer;
+    use super::{AudioPlayer, MAX_PLAYBACK_HISTORY_ITEMS, QueueItem};
     use crate::api::RepeatMode;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -649,6 +813,24 @@ mod tests {
         wav.extend_from_slice(&data_len.to_le_bytes());
         wav.resize(44 + data_len as usize, 0);
         wav
+    }
+
+    #[test]
+    fn playback_history_discards_the_oldest_items_at_its_limit() {
+        let mut player = AudioPlayer::new_mock().expect("create mock player");
+        for song_id in 0..=MAX_PLAYBACK_HISTORY_ITEMS as i64 {
+            player.push_history(QueueItem {
+                song_id,
+                path: format!("/{song_id}.mp3"),
+            });
+        }
+
+        assert_eq!(player.history.len(), MAX_PLAYBACK_HISTORY_ITEMS);
+        assert_eq!(player.history.front().map(|item| item.song_id), Some(1));
+        assert_eq!(
+            player.history.back().map(|item| item.song_id),
+            Some(MAX_PLAYBACK_HISTORY_ITEMS as i64)
+        );
     }
 
     #[tokio::test]

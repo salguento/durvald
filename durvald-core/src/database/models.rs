@@ -68,6 +68,12 @@ pub struct Playlist {
 }
 
 #[derive(Serialize, Clone, Debug)]
+pub struct PlaylistWithTrackCount {
+    pub playlist: Playlist,
+    pub track_count: u64,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct PlaylistSong {
     pub playlist_id: u64,
     pub song_id: u64,
