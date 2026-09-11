@@ -1,2 +1,0 @@
-Target dependency graph (1 target)
-Target 'Durvald' in project 'Durvald' (no dependencies)

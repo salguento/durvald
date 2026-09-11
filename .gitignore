@@ -23,6 +23,8 @@
 /durvald-swift/.swiftpm/
 **/*.xcodeproj/xcuserdata/
 **/*.xcworkspace/xcuserdata/
+# Xcode DerivedData folders (local build cache, never committed)
+**/.derivedData/
 
 # Android / Gradle
 /durvald-android/.gradle/
