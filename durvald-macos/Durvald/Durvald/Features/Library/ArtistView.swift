@@ -27,6 +27,7 @@ struct ArtistView: View {
 
     let artist: Artist
     let onSelectAlbum: (Release) -> Void
+    var onSelectArtist: ((Artist) -> Void)? = nil
 
     @State private var tracks: [Track] = []
     @State private var albums: [Release] = []
@@ -101,6 +102,82 @@ struct ArtistView: View {
                             }
                         }
 
+                        if !albums.isEmpty {
+                            Text("Álbuns ao vivo")
+                                .font(.title2.bold())
+
+                            LazyVGrid(
+                                columns: AlbumGridLayout.columns(for: geometry.size.width),
+                                alignment: .leading,
+                                spacing: AlbumGridLayout.spacing
+                            ) {
+                                ForEach(albums, id: \.id) { album in
+                                    AlbumCard(
+                                        release: album,
+                                        onSelectAlbum: onSelectAlbum,
+                                        subtitle: releaseYear(for: album)
+                                    )
+                                }
+                            }
+                        }
+
+                        if !albums.isEmpty {
+                            Text("Compilações")
+                                .font(.title2.bold())
+
+                            LazyVGrid(
+                                columns: AlbumGridLayout.columns(for: geometry.size.width),
+                                alignment: .leading,
+                                spacing: AlbumGridLayout.spacing
+                            ) {
+                                ForEach(albums, id: \.id) { album in
+                                    AlbumCard(
+                                        release: album,
+                                        onSelectAlbum: onSelectAlbum,
+                                        subtitle: releaseYear(for: album)
+                                    )
+                                }
+                            }
+                        }
+
+                        if !albums.isEmpty {
+                            Text("Playlists")
+                                .font(.title2.bold())
+
+                            LazyVGrid(
+                                columns: AlbumGridLayout.columns(for: geometry.size.width),
+                                alignment: .leading,
+                                spacing: AlbumGridLayout.spacing
+                            ) {
+                                ForEach(albums, id: \.id) { album in
+                                    AlbumCard(
+                                        release: album,
+                                        onSelectAlbum: onSelectAlbum,
+                                        subtitle: releaseYear(for: album)
+                                    )
+                                }
+                            }
+                        }
+
+                        if !albums.isEmpty {
+                            Text("Participações")
+                                .font(.title2.bold())
+
+                            LazyVGrid(
+                                columns: AlbumGridLayout.columns(for: geometry.size.width),
+                                alignment: .leading,
+                                spacing: AlbumGridLayout.spacing
+                            ) {
+                                ForEach(albums, id: \.id) { album in
+                                    AlbumCard(
+                                        release: album,
+                                        onSelectAlbum: onSelectAlbum,
+                                        subtitle: releaseYear(for: album)
+                                    )
+                                }
+                            }
+                        }
+
                         if isLoading {
                             ProgressView("Carregando artista…")
                                 .frame(maxWidth: .infinity, alignment: .center)
@@ -114,10 +191,13 @@ struct ArtistView: View {
                     }
                     .padding(24)
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                    artistFooter(width: geometry.size.width)
                 }
+                .frame(minHeight: geometry.size.height, alignment: .top)
             }
-            .ignoresSafeArea(.container, edges: .top)
         }
+        .ignoresSafeArea(.container, edges: [.top, .bottom])
         .task(id: artist.id) {
             isLoading = true
             async let loadedTracks = store.tracks(forArtistID: artist.id)
@@ -498,5 +578,115 @@ struct ArtistView: View {
             Task { await store.play(trackID: track.id) }
         }
         .accessibilityIdentifier("artist.track.\(track.id)")
+    }
+
+    private func artistFooter(width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 36) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Sobre \(artist.name)")
+                    .font(.title2.bold())
+                    .accessibilityAddTraits(.isHeader)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vivamus lacinia odio vitae vestibulum vestibulum. Cras venenatis euismod malesuada. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.")
+                    Text("Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Donec aliquet, nisl sed semper tempor, justo diam cursus libero, vel feugiat nunc purus at odio.")
+                    Text("Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris.")
+                }
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .lineSpacing(4)
+                .frame(maxWidth: 800, alignment: .leading)
+            }
+            .padding(.horizontal, 24)
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Artistas similares")
+                    .font(.title2.bold())
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, 24)
+
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 20) {
+                        ForEach(similarArtists, id: \.id) { similar in
+                            Button {
+                                onSelectArtist?(similar)
+                            } label: {
+                                VStack(spacing: 10) {
+                                    similarArtistAvatar(for: similar)
+
+                                    Text(similar.name)
+                                        .font(.subheadline.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.center)
+                                        .frame(width: 104)
+                                }
+                                .contentShape(.rect)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Abrir artista \(similar.name)")
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+        .padding(.top, 36)
+        .padding(.bottom, 120)
+        .frame(width: width, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            Rectangle()
+                .fill(.quaternary)
+                .ignoresSafeArea(.container, edges: .bottom)
+                .padding(.bottom, -1000)
+        }
+        .backgroundExtensionEffect()
+        .accessibilityIdentifier("artist.footer")
+    }
+
+    private var similarArtists: [Artist] {
+        let candidates = store.artists.filter { $0.id != artist.id }
+        if !candidates.isEmpty {
+            return Array(candidates.prefix(10))
+        }
+        return [
+            Artist(id: -1, name: "Artista Similar 1"),
+            Artist(id: -2, name: "Artista Similar 2"),
+            Artist(id: -3, name: "Artista Similar 3"),
+            Artist(id: -4, name: "Artista Similar 4"),
+            Artist(id: -5, name: "Artista Similar 5")
+        ]
+    }
+
+    private func similarArtistAvatar(for similar: Artist) -> some View {
+        let artID = artworkID(for: similar)
+        return Group {
+            if let artID {
+                ArtworkView(artworkID: artID, size: 104, showsBorder: false)
+                    .scaledToFill()
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(.tertiary)
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 38))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .frame(width: 104, height: 104)
+        .clipShape(Circle())
+        .overlay {
+            Circle()
+                .strokeBorder(.separator, lineWidth: 0.5)
+        }
+    }
+
+    private func artworkID(for similar: Artist) -> String? {
+        store.releases.first(where: {
+            $0.artist.localizedCaseInsensitiveCompare(similar.name) == .orderedSame
+        })?.artworkId
     }
 }

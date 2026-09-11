@@ -363,7 +363,7 @@ struct ContentView: View {
             AlbumView(album: album, onSelectArtist: showArtist)
                 .id(album.id)
         case .artist(let artist):
-            ArtistView(artist: artist, onSelectAlbum: showAlbum)
+            ArtistView(artist: artist, onSelectAlbum: showAlbum, onSelectArtist: showArtist)
                 .id(artist.id)
         case .playlist(let playlist):
             PlaylistView(playlist: playlist)
