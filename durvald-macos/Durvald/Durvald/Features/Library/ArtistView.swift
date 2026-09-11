@@ -633,7 +633,7 @@ struct ArtistView: View {
             }
         }
         .padding(.top, 36)
-        .padding(.bottom, 120)
+        .padding(.bottom, 180)
         .frame(width: width, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background {
