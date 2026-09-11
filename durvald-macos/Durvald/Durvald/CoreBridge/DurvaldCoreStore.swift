@@ -307,6 +307,23 @@ final class DurvaldCoreStore {
     }
 
     @discardableResult
+    func deletePlaylist(id: Int64) async -> Bool {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo."
+            return false
+        }
+
+        do {
+            try await core.deletePlaylist(playlistId: id)
+            playlists.removeAll { $0.id == id }
+            return true
+        } catch {
+            errorMessage = String(describing: error)
+            return false
+        }
+    }
+
+    @discardableResult
     func addTrack(_ trackID: Int64, to playlist: Playlist) -> Bool {
         guard let core else {
             errorMessage = "O core ainda está abrindo."
@@ -613,6 +630,32 @@ final class DurvaldCoreStore {
                 playback = try await core.setShuffleEnabled(enabled: shuffleEnabled)
             }
 
+            await refreshPlayback()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func playTracks(_ tracks: [Track], shuffleEnabled: Bool) async {
+        guard let core, !isChangingTrack, !tracks.isEmpty else { return }
+
+        isChangingTrack = true
+        await finishSeekBeforeChangingTrack()
+        defer {
+            isChangingTrack = false
+            seekRequestID &+= 1
+        }
+
+        do {
+            let selectedTracks = shuffleEnabled ? tracks.shuffled() : tracks
+            guard let firstTrack = selectedTracks.first else { return }
+
+            try await core.clearQueue()
+            playback = try await core.play(trackId: firstTrack.id)
+            for track in selectedTracks.dropFirst() {
+                try await core.addToQueue(trackId: track.id)
+            }
+            playback = try await core.setShuffleEnabled(enabled: shuffleEnabled)
             await refreshPlayback()
         } catch {
             errorMessage = String(describing: error)

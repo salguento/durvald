@@ -1,67 +1,122 @@
 import SwiftUI
 
 struct ArtistView: View {
+    private enum TrackOrder: String, CaseIterable, Identifiable {
+        case album
+        case title
+        case artist
+        case duration
+
+        var id: Self { self }
+
+        var title: String {
+            switch self {
+            case .album: "Álbum"
+            case .title: "Título"
+            case .artist: "Artista"
+            case .duration: "Duração"
+            }
+        }
+    }
+
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("followedArtistIDs") private var followedArtistIDs = ""
+    @AppStorage("favoriteArtistIDs") private var favoriteArtistIDs = ""
 
     let artist: Artist
     let onSelectAlbum: (Release) -> Void
 
     @State private var tracks: [Track] = []
     @State private var albums: [Release] = []
+    @State private var trackSearchText = ""
+    @State private var trackOrder: TrackOrder = .album
+    @FocusState private var isTrackSearchFocused: Bool
     @State private var isLoading = true
+    @ScaledMetric(relativeTo: .largeTitle) private var artistNameFontSize =
+        NSFont.preferredFont(forTextStyle: .largeTitle).pointSize * 1.275
 
     var body: some View {
         GeometryReader { geometry in
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    Text(artist.name)
-                        .font(.largeTitle.bold())
+                VStack(alignment: .leading, spacing: 0) {
+                    ArtworkView(
+                        artworkID: albums.compactMap(\.artworkId).first,
+                        size: geometry.size.width,
+                        aspectRatio: 16.0 / 9.0,
+                        showsBorder: false
+                    )
+                    .backgroundExtensionEffect()
+                    .overlay(alignment: .bottomLeading) {
+                        Text(artist.name)
+                            .font(.system(size: artistNameFontSize, weight: .bold))
+                            .accessibilityAddTraits(.isHeader)
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
+                            .padding(24)
+                    }
+                    .accessibilityIdentifier("artist.header.\(artist.id)")
 
-                    if !albums.isEmpty {
-                        Text("Álbuns")
-                            .font(.title2.bold())
+                    VStack(alignment: .leading, spacing: 24) {
+                        collectionControls
 
-                        LazyVGrid(
-                            columns: AlbumGridLayout.columns(for: geometry.size.width),
-                            alignment: .leading,
-                            spacing: AlbumGridLayout.spacing
-                        ) {
-                            ForEach(albums, id: \.id) { album in
-                                AlbumCard(
-                                    release: album,
-                                    onSelectAlbum: onSelectAlbum,
-                                    subtitle: releaseYear(for: album)
-                                )
+                        artistHighlights(width: geometry.size.width)
+
+                        if !albums.isEmpty {
+                            Text("Álbuns")
+                                .font(.title2.bold())
+
+                            LazyVGrid(
+                                columns: AlbumGridLayout.columns(for: geometry.size.width),
+                                alignment: .leading,
+                                spacing: AlbumGridLayout.spacing
+                            ) {
+                                ForEach(albums, id: \.id) { album in
+                                    AlbumCard(
+                                        release: album,
+                                        onSelectAlbum: onSelectAlbum,
+                                        subtitle: releaseYear(for: album)
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    if !tracks.isEmpty {
-                        Text("Músicas")
-                            .font(.title2.bold())
+                        if !albums.isEmpty {
+                            Text("Singles & EPs")
+                                .font(.title2.bold())
 
-                        LazyVStack(spacing: 0) {
-                            ForEach(tracks, id: \.id) { track in
-                                trackRow(track)
-                                if track.id != tracks.last?.id { Divider() }
+                            LazyVGrid(
+                                columns: AlbumGridLayout.columns(for: geometry.size.width),
+                                alignment: .leading,
+                                spacing: AlbumGridLayout.spacing
+                            ) {
+                                ForEach(albums, id: \.id) { album in
+                                    AlbumCard(
+                                        release: album,
+                                        onSelectAlbum: onSelectAlbum,
+                                        subtitle: releaseYear(for: album)
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    if isLoading {
-                        ProgressView("Carregando artista…")
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    } else if albums.isEmpty && tracks.isEmpty {
-                        ContentUnavailableView(
-                            "Nenhuma música disponível",
-                            systemImage: "music.mic",
-                            description: Text("Este artista ainda não possui músicas na biblioteca.")
-                        )
+                        if isLoading {
+                            ProgressView("Carregando artista…")
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        } else if albums.isEmpty && tracks.isEmpty {
+                            ContentUnavailableView(
+                                "Nenhuma música disponível",
+                                systemImage: "music.mic",
+                                description: Text("Este artista ainda não possui músicas na biblioteca.")
+                            )
+                        }
                     }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(24)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .ignoresSafeArea(.container, edges: .top)
         }
         .task(id: artist.id) {
             isLoading = true
@@ -82,6 +137,324 @@ struct ArtistView: View {
             isLoading = false
         }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
+    }
+
+    private func artistHighlights(width: CGFloat) -> some View {
+        // Two columns require twice the content column's 360 pt minimum width.
+        let isStacked = width < 720
+        let columnWidth = max(0, isStacked ? width - 48 : (width - 72) / 2)
+        let layout = isStacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 28))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 24))
+        let topTracks = Array(visibleTracks.prefix(10))
+
+        return layout {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Mais ouvidas")
+                    .font(.title2.bold())
+                    .accessibilityAddTraits(.isHeader)
+
+                if !isLoading && topTracks.isEmpty {
+                    if trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("Nenhuma música disponível")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ContentUnavailableView.search(text: trackSearchText)
+                    }
+                }
+
+                LazyVStack(spacing: 0) {
+                    ForEach(topTracks, id: \.id) { track in
+                        trackRow(track)
+                        if track.id != topTracks.last?.id { Divider() }
+                    }
+                }
+            }
+            .frame(width: columnWidth, alignment: .topLeading)
+
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Último lançamento")
+                        .font(.title2.bold())
+                        .accessibilityAddTraits(.isHeader)
+
+                    if let latestRelease {
+                        Button {
+                            onSelectAlbum(latestRelease)
+                        } label: {
+                            HStack(alignment: .center, spacing: 16) {
+                                ArtworkView(
+                                    artworkID: latestRelease.artworkId,
+                                    size: min(140, columnWidth * 0.4)
+                                )
+
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(latestRelease.title)
+                                        .font(.headline)
+                                        .lineLimit(2)
+                                    Text(latestRelease.artist)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                    Text(releaseYear(for: latestRelease))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    Text("\(latestRelease.totalTracks) músicas")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Abrir álbum \(latestRelease.title)")
+                    } else if !isLoading {
+                        Text("Nenhum lançamento disponível")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(width: columnWidth, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Álbuns essenciais")
+                        .font(.title2.bold())
+                        .accessibilityAddTraits(.isHeader)
+
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .top, spacing: 16) {
+                            ForEach(essentialAlbums, id: \.id) { album in
+                                Button {
+                                    onSelectAlbum(album)
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        ArtworkView(artworkID: album.artworkId, size: 144)
+                                        Text(album.title)
+                                            .font(.headline)
+                                            .lineLimit(2)
+                                        Text(releaseYear(for: album))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: 144, alignment: .leading)
+                                    .contentShape(.rect)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Abrir álbum \(album.title)")
+                            }
+                        }
+                        .padding(.leading, isStacked ? 0 : 24)
+                    }
+                    .scrollIndicators(.hidden)
+                    // Extend into the column gap so the fade doesn't cover
+                    // the first cover at its initial scroll position.
+                    .mask {
+                        HStack(spacing: 0) {
+                            if !isStacked {
+                                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                                    .frame(width: 24)
+                            }
+                            Rectangle()
+                        }
+                    }
+                    .padding(.leading, isStacked ? 0 : -24)
+                    .accessibilityIdentifier("artist.essentialAlbums")
+                }
+            }
+            .frame(width: columnWidth + 24, alignment: .topLeading)
+        }
+        .padding(.trailing, -24)
+    }
+
+    private var latestRelease: Release? {
+        albums.sorted {
+            let leftDate = $0.releaseDate ?? ""
+            let rightDate = $1.releaseDate ?? ""
+            if leftDate != rightDate { return leftDate > rightDate }
+            return $0.id < $1.id
+        }.first
+    }
+
+    // Local ratings provide an interim order until editorial recommendations are available.
+    private var essentialAlbums: [Release] {
+        albums.sorted {
+            if ($0.rating ?? 0) != ($1.rating ?? 0) {
+                return ($0.rating ?? 0) > ($1.rating ?? 0)
+            }
+            return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        }
+    }
+
+    private var collectionControls: some View {
+        HStack(spacing: 10) {
+            CollectionPlaybackControls(
+                isEnabled: !isLoading && !tracks.isEmpty,
+                presentation: .groupedCompactShuffle,
+                onPlay: {
+                    Task { await store.playTracks(tracks, shuffleEnabled: false) }
+                },
+                onShuffle: {
+                    Task { await store.playTracks(tracks, shuffleEnabled: true) }
+                }
+            )
+
+            artistRelationshipControls
+
+            Spacer(minLength: 24)
+
+            Menu {
+                Button("Adicionar músicas à fila", systemImage: "text.line.last.and.arrowtriangle.forward") {
+                    Task {
+                        for track in tracks {
+                            await store.addToQueue(trackID: track.id)
+                        }
+                    }
+                }
+                .disabled(isLoading || tracks.isEmpty)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 34, height: 34)
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .background(Color.primary.opacity(0.08), in: .circle)
+            .help("Opções")
+            .accessibilityLabel("Opções")
+            .accessibilityIdentifier("artist.options")
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+
+                TextField("Pesquisar", text: $trackSearchText)
+                    .textFieldStyle(.plain)
+                    .focused($isTrackSearchFocused)
+                    .onExitCommand {
+                        trackSearchText = ""
+                        isTrackSearchFocused = false
+                    }
+            }
+            .padding(.horizontal, 12)
+            .frame(width: 147, height: 34)
+            .background(Color.primary.opacity(0.08), in: .capsule)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("artist.tracks.search")
+
+            Menu {
+                Picker("Organizar", selection: $trackOrder) {
+                    ForEach(TrackOrder.allCases) { order in
+                        Text(order.title).tag(order)
+                    }
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .frame(width: 34, height: 34)
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .background(Color.primary.opacity(0.08), in: .capsule)
+            .help("Organizar ou filtrar faixas")
+            .accessibilityLabel("Organizar ou filtrar faixas")
+            .accessibilityIdentifier("artist.tracks.organize")
+        }
+    }
+
+    private var isFollowing: Bool {
+        followedArtistIDs.split(separator: ",").contains(Substring(String(artist.id)))
+    }
+
+    private var isFavorite: Bool {
+        favoriteArtistIDs.split(separator: ",").contains(Substring(String(artist.id)))
+    }
+
+    private func togglingArtist(in storedIDs: String) -> String {
+        var ids = Set(storedIDs.split(separator: ",").map(String.init))
+        let id = String(artist.id)
+        if ids.contains(id) {
+            ids.remove(id)
+        } else {
+            ids.insert(id)
+        }
+        return ids.sorted().joined(separator: ",")
+    }
+
+    private var artistRelationshipControls: some View {
+        HStack(spacing: 10) {
+            Button {
+                followedArtistIDs = togglingArtist(in: followedArtistIDs)
+            } label: {
+                Group {
+                    if isFollowing {
+                        Image(systemName: "person.fill")
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(.background, Color.accentColor)
+                                    .offset(x: 5, y: 2)
+                            }
+                    } else {
+                        Image(systemName: "person.badge.plus")
+                    }
+                }
+                .frame(width: 34, height: 34)
+                .background(relationshipBackground, in: .circle)
+                .contentShape(.circle)
+            }
+            .help(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
+            .accessibilityLabel(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
+            .accessibilityValue(isFollowing ? "Seguindo" : "Não seguindo")
+            .accessibilityIdentifier("artist.follow")
+
+            Button {
+                favoriteArtistIDs = togglingArtist(in: favoriteArtistIDs)
+            } label: {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .frame(width: 34, height: 34)
+                    .background(relationshipBackground, in: .circle)
+                    .contentShape(.circle)
+            }
+            .help(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
+            .accessibilityLabel(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
+            .accessibilityValue(isFavorite ? "Favorito" : "Não favorito")
+            .accessibilityIdentifier("artist.favorite")
+        }
+        .buttonStyle(.plain)
+        .font(.body.weight(.medium))
+        .foregroundStyle(Color.accentColor.opacity(appearsActive ? 1 : 0.63))
+    }
+
+    private var relationshipBackground: Color {
+        Color.primary.opacity(
+            colorScheme == .dark
+                ? (appearsActive ? 0.08 : 0.10)
+                : (appearsActive ? 0.10 : 0.06)
+        )
+    }
+
+    private var visibleTracks: [Track] {
+        let query = trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var visibleTracks = tracks
+
+        if !query.isEmpty {
+            visibleTracks = visibleTracks.filter {
+                $0.title.localizedStandardContains(query)
+                    || $0.artist.localizedStandardContains(query)
+                    || $0.release.localizedStandardContains(query)
+            }
+        }
+
+        switch trackOrder {
+        case .album:
+            break
+        case .title:
+            visibleTracks.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .artist:
+            visibleTracks.sort { $0.artist.localizedStandardCompare($1.artist) == .orderedAscending }
+        case .duration:
+            visibleTracks.sort { $0.durationSeconds < $1.durationSeconds }
+        }
+
+        return visibleTracks
     }
 
     private func releaseYear(for album: Release) -> String {

@@ -4,6 +4,8 @@ import AppKit
 struct ArtworkView: View {
     let artworkID: String?
     let size: CGFloat
+    var aspectRatio: CGFloat = 1
+    var showsBorder = true
 
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.displayScale) private var displayScale
@@ -41,8 +43,9 @@ struct ArtworkView: View {
                 }
             }
         }
-        .frame(width: size, height: size)
-        .artworkGlassBorder(size: size)
+        .frame(width: size, height: size / aspectRatio)
+        .clipped()
+        .modifier(ArtworkBorderModifier(size: size, isEnabled: showsBorder))
         .task(id: request) {
             guard let artworkID, let core else {
                 image = nil
@@ -77,5 +80,19 @@ extension View {
                         lineWidth: borderWidth
                     )
             }
+    }
+}
+
+private struct ArtworkBorderModifier: ViewModifier {
+    let size: CGFloat
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content.artworkGlassBorder(size: size)
+        } else {
+            content
+        }
     }
 }

@@ -12,6 +12,7 @@ struct LibrarySidebarView: View {
     let onSelectPlaylist: (Playlist) -> Void
 
     @State private var isLocalSearchExpanded = false
+    @State private var arePlaylistsExpanded = true
     @State private var localSearchText = ""
     @State private var committedLocalQuery = ""
 
@@ -103,7 +104,7 @@ struct LibrarySidebarView: View {
                         )
                     }
 
-                    navigationSectionHeader("Playlists")
+                    playlistsSectionHeader
 
                     SidebarNavigationButton(
                         item: .playlists,
@@ -112,12 +113,17 @@ struct LibrarySidebarView: View {
                         allowsSelectionHighlight: selectedPlaylistID == nil
                     )
 
-                    ForEach(store.playlists, id: \.id) { playlist in
-                        SidebarPlaylistButton(
-                            playlist: playlist,
-                            isSelected: selectedPlaylistID == playlist.id,
-                            action: { onSelectPlaylist(playlist) }
-                        )
+                    if arePlaylistsExpanded {
+                        ForEach(store.playlists, id: \.id) { playlist in
+                            SidebarPlaylistButton(
+                                playlist: playlist,
+                                isSelected: selectedPlaylistID == playlist.id,
+                                action: { onSelectPlaylist(playlist) }
+                            )
+                            .contextMenu {
+                                playlistContextMenu(for: playlist)
+                            }
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -136,6 +142,9 @@ struct LibrarySidebarView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    playlistContextMenu(for: playlist)
+                }
             }
             .listStyle(.sidebar)
 
@@ -211,6 +220,44 @@ struct LibrarySidebarView: View {
                 .buttonStyle(.plain)
             }
             .listStyle(.sidebar)
+        }
+    }
+
+    private var playlistsSectionHeader: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                arePlaylistsExpanded.toggle()
+            }
+        } label: {
+            HStack {
+                Text("Playlists")
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .rotationEffect(.degrees(arePlaylistsExpanded ? 90 : 0))
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 8)
+        .padding(.top, 16)
+        .padding(.bottom, 4)
+        .accessibilityLabel("Playlists")
+        .accessibilityValue(arePlaylistsExpanded ? "Expandido" : "Recolhido")
+        .accessibilityHint(arePlaylistsExpanded ? "Ocultar playlists" : "Mostrar playlists")
+        .accessibilityIdentifier("sidebar.playlists.toggle")
+    }
+
+    private func playlistContextMenu(for playlist: Playlist) -> some View {
+        Button("Excluir", systemImage: "trash", role: .destructive) {
+            Task {
+                guard await store.deletePlaylist(id: playlist.id) else { return }
+                if selectedPlaylistID == playlist.id {
+                    destination = .playlists
+                }
+            }
         }
     }
 
