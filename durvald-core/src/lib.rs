@@ -13,6 +13,7 @@ pub mod api;
 pub mod audio;
 pub mod core;
 pub mod database;
+pub mod enrichment;
 pub mod lastfm;
 pub mod metadata;
 pub mod secure_store;

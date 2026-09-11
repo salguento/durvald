@@ -1,0 +1,112 @@
+{
+  "source": "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/LibrarySideBarView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Playlists",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 247
+        }
+      },
+      {
+        "comment": "",
+        "key": "Expandido",
+        "location": {
+          "startingColumn": 52,
+          "startingLine": 248
+        }
+      },
+      {
+        "comment": "",
+        "key": "Recolhido",
+        "location": {
+          "startingColumn": 66,
+          "startingLine": 248
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ocultar playlists",
+        "location": {
+          "startingColumn": 51,
+          "startingLine": 249
+        }
+      },
+      {
+        "comment": "",
+        "key": "Mostrar playlists",
+        "location": {
+          "startingColumn": 73,
+          "startingLine": 249
+        }
+      },
+      {
+        "comment": "",
+        "key": "Excluir",
+        "location": {
+          "startingColumn": 16,
+          "startingLine": 254
+        }
+      },
+      {
+        "comment": "",
+        "key": "%@ — %@",
+        "location": {
+          "startingColumn": 35,
+          "startingLine": 191
+        }
+      },
+      {
+        "comment": "",
+        "key": "Playlists",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 233
+        }
+      },
+      {
+        "comment": "",
+        "key": "Conteúdo da barra lateral",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 459
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pesquisar em %@",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 609
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pesquisar em %@",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 610
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pesquisar em %@",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 550
+        }
+      },
+      {
+        "comment": "",
+        "key": "Limpar pesquisa",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 583
+        }
+      }
+    ]
+  },
+  "version": 1
+}

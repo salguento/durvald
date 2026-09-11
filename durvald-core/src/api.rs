@@ -5,6 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 
+mod enrichment;
+pub use enrichment::*;
+
 /// Configuration for initializing the core engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

@@ -1,0 +1,37 @@
+{
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Commands/AppCommands.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppCommands.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppCommands.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppCommands.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppCommands.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppCommands.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Commands/AppKeyboardShortcuts.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppKeyboardShortcuts.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppKeyboardShortcuts.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppKeyboardShortcuts.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppKeyboardShortcuts.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/AppKeyboardShortcuts.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/CoreBridge/DurvaldCoreStore.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldCoreStore.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldCoreStore.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldCoreStore.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldCoreStore.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldCoreStore.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/CoreBridge/PlayerNavigationFixture.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/PlayerNavigationFixture.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/PlayerNavigationFixture.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/PlayerNavigationFixture.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/PlayerNavigationFixture.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/PlayerNavigationFixture.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/LastFM/LastFMSettingsView.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/LastFMSettingsView.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/LastFMSettingsView.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/LastFMSettingsView.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/LastFMSettingsView.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/LastFMSettingsView.swiftdeps"
+  }
+}

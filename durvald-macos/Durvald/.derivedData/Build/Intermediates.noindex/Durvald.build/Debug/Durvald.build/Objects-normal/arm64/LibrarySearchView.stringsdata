@@ -1,0 +1,104 @@
+{
+  "source": "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/LibrarySearchView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Encontre músicas, álbuns, artistas e playlists.",
+        "location": {
+          "startingColumn": 43,
+          "startingLine": 18
+        }
+      },
+      {
+        "comment": "",
+        "key": "Não encontramos resultados para “%@”.",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 28
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pesquisar na biblioteca",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 16
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pesquisando…",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 21
+        }
+      },
+      {
+        "comment": "",
+        "key": "Nenhum resultado",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 25
+        }
+      },
+      {
+        "comment": "",
+        "key": "Músicas",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 72
+        }
+      },
+      {
+        "comment": "",
+        "key": "Álbuns",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 80
+        }
+      },
+      {
+        "comment": "",
+        "key": "Artistas",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 103
+        }
+      },
+      {
+        "comment": "",
+        "key": "Playlists",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 112
+        }
+      },
+      {
+        "comment": "",
+        "key": "%llu músicas",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 117
+        }
+      },
+      {
+        "comment": "",
+        "key": "Reproduz esta faixa agora",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 146
+        }
+      },
+      {
+        "comment": "",
+        "key": "Adicionar %@ à fila",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 155
+        }
+      }
+    ]
+  },
+  "version": 1
+}

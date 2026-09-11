@@ -1,0 +1,30 @@
+{
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/SideBarSection.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/SideBarSection.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/SideBarSection.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/SideBarSection.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/SideBarSection.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/SideBarSection.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/WindowSplitLayout.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/WindowSplitLayout.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/WindowSplitLayout.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/WindowSplitLayout.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/WindowSplitLayout.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/WindowSplitLayout.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/ArtworkRepository.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkRepository.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkRepository.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkRepository.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkRepository.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkRepository.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/ArtworkView.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkView.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkView.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkView.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkView.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ArtworkView.swiftdeps"
+  }
+}

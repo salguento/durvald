@@ -1,0 +1,152 @@
+{
+  "source": "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/ContentView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Erro",
+        "location": {
+          "startingColumn": 13,
+          "startingLine": 91
+        }
+      },
+      {
+        "comment": "",
+        "key": "OK",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 97
+        }
+      },
+      {
+        "comment": "",
+        "key": "Voltar",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 174
+        }
+      },
+      {
+        "comment": "",
+        "key": "Avançar",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 183
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pesquisar na biblioteca",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 206
+        }
+      },
+      {
+        "comment": "",
+        "key": "Limpar pesquisa",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 220
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ocultar fila",
+        "location": {
+          "startingColumn": 44,
+          "startingLine": 262
+        }
+      },
+      {
+        "comment": "",
+        "key": "Mostrar fila",
+        "location": {
+          "startingColumn": 61,
+          "startingLine": 262
+        }
+      },
+      {
+        "comment": "",
+        "key": "Mostra ou oculta a fila lateral de reprodução",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 263
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ocultar fila",
+        "location": {
+          "startingColumn": 58,
+          "startingLine": 264
+        }
+      },
+      {
+        "comment": "",
+        "key": "Mostrar fila",
+        "location": {
+          "startingColumn": 75,
+          "startingLine": 264
+        }
+      },
+      {
+        "comment": "",
+        "key": "Mostrar barra lateral",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 284
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ocultar barra lateral",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 285
+        }
+      },
+      {
+        "comment": "",
+        "key": "Mostrar barra lateral",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 276
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ocultar barra lateral",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 277
+        }
+      },
+      {
+        "comment": "",
+        "key": "Adicionar",
+        "location": {
+          "startingColumn": 15,
+          "startingLine": 304
+        }
+      },
+      {
+        "comment": "",
+        "key": "Adicionar playlist",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 305
+        }
+      },
+      {
+        "comment": "",
+        "key": "Adicionar",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 301
+        }
+      }
+    ]
+  },
+  "version": 1
+}

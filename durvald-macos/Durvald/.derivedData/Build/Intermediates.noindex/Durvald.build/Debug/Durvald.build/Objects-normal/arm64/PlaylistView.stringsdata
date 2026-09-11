@@ -1,0 +1,136 @@
+{
+  "source": "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Playlists/PlaylistView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Esta playlist ainda não possui músicas.",
+        "location": {
+          "startingColumn": 35,
+          "startingLine": 212
+        }
+      },
+      {
+        "comment": "",
+        "key": "Carregando faixas…",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 206
+        }
+      },
+      {
+        "comment": "",
+        "key": "Nenhuma faixa",
+        "location": {
+          "startingColumn": 17,
+          "startingLine": 210
+        }
+      },
+      {
+        "comment": "",
+        "key": "%llu músicas",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 101
+        }
+      },
+      {
+        "comment": "",
+        "key": "Editar playlist",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 90
+        }
+      },
+      {
+        "comment": "",
+        "key": "Editar playlist %@",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 91
+        }
+      },
+      {
+        "comment": "",
+        "key": "Opções",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 161
+        }
+      },
+      {
+        "comment": "",
+        "key": "Opções",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 162
+        }
+      },
+      {
+        "comment": "",
+        "key": "Organizar ou filtrar faixas",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 196
+        }
+      },
+      {
+        "comment": "",
+        "key": "Organizar ou filtrar faixas",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 197
+        }
+      },
+      {
+        "comment": "",
+        "key": "Editar playlist",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 144
+        }
+      },
+      {
+        "comment": "",
+        "key": "Desfavoritar playlist",
+        "location": {
+          "startingColumn": 57,
+          "startingLine": 147
+        }
+      },
+      {
+        "comment": "",
+        "key": "Favoritar playlist",
+        "location": {
+          "startingColumn": 83,
+          "startingLine": 147
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pesquisar",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 169
+        }
+      },
+      {
+        "comment": "",
+        "key": "Organizar",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 184
+        }
+      },
+      {
+        "comment": "",
+        "key": "Adicionar %@ à fila",
+        "location": {
+          "startingColumn": 33,
+          "startingLine": 293
+        }
+      }
+    ]
+  },
+  "version": 1
+}

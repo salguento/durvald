@@ -1,0 +1,16 @@
+{
+  "source": "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/AlbumTrackPosition.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Em reprodução",
+        "location": {
+          "startingColumn": 49,
+          "startingLine": 28
+        }
+      }
+    ]
+  },
+  "version": 1
+}

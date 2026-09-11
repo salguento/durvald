@@ -32,6 +32,8 @@ final class DurvaldCoreStore {
     var errorMessage: String?
     private(set) var appSettings: Settings?
     private(set) var libraryPaths: [String] = []
+    /// Configurações de enriquecimento de metadados. Nil até o core ser inicializado.
+    private(set) var enrichmentSettings: EnrichmentSettings?
 
 
     private(set) var core: DurvaldCore?
@@ -94,6 +96,7 @@ final class DurvaldCoreStore {
             try await reloadLibrary(using: openedCore)
             libraryPaths = try await openedCore.libraryPaths()
             appSettings = try await openedCore.settings()
+            enrichmentSettings = try? await openedCore.enrichmentSettings()
             playback = initialPlayback
 
             startPlaybackPolling()
@@ -1236,6 +1239,34 @@ final class DurvaldCoreStore {
                 // no cliente macOS permanecem intocados.
                 try await core.updateSettings(settings: settings)
                 appSettings = settings
+            } catch {
+                errorMessage = String(describing: error)
+            }
+        }
+    }
+
+    // MARK: - Enriquecimento de metadados (Fase 1 — somente leitura local)
+
+    /// Retorna os detalhes locais do artista (cache SQLite) para o idioma preferido.
+    /// Nunca faz chamadas de rede; seguro chamar mesmo offline ou com enriquecimento desabilitado.
+    func artistDetails(artistId: Int64, language: String) async -> ArtistDetails? {
+        guard let core else { return nil }
+        do {
+            return try await core.artistDetails(artistId: artistId, language: language)
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    /// Persiste novas preferências de enriquecimento e atualiza a propriedade observável.
+    /// Não inicia nenhuma operação de rede.
+    func configureEnrichment(_ settings: EnrichmentSettings) {
+        guard let core else { return }
+        Task {
+            do {
+                try await core.configureEnrichment(settings: settings)
+                enrichmentSettings = settings
             } catch {
                 errorMessage = String(describing: error)
             }

@@ -1,0 +1,30 @@
+{
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/ContentView.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ContentView.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/ContentView.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/DurvaldApp.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldApp.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldApp.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldApp.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldApp.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/DurvaldApp.swiftdeps"
+  },
+  "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/durvald_core.swift" : {
+    "const-values" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/durvald_core.swiftconstvalues",
+    "dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/durvald_core.d",
+    "diagnostics" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/durvald_core.dia",
+    "object" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/durvald_core.o",
+    "swift-dependencies" : "/Users/salguento/Developer/durvald/durvald-macos/Durvald/.derivedData/Build/Intermediates.noindex/Durvald.build/Debug/Durvald.build/Objects-normal/arm64/durvald_core.swiftdeps"
+  }
+}

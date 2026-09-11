@@ -17,6 +17,7 @@ cargo build --manifest-path "$crate_dir/Cargo.toml" --features uniffi --release 
 frameworks_dir="$root_dir/durvald-macos/Durvald/Frameworks"
 mkdir -p "$frameworks_dir"
 cp "$crate_dir/target/$target/release/libdurvald_core.dylib" "$frameworks_dir/libdurvald_core.dylib"
+install_name_tool -id "@rpath/libdurvald_core.dylib" "$frameworks_dir/libdurvald_core.dylib"
 
 cd "$crate_dir"
 cargo run --features uniffi --bin uniffi-bindgen -- generate --library "target/$target/release/libdurvald_core.dylib" --language swift --out-dir "$output_dir"

@@ -407,6 +407,19 @@ fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     }
 }
 
+fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
+    typealias FfiType = Int32
+    typealias SwiftType = Int32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: Int32, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
 fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
     typealias FfiType = UInt64
     typealias SwiftType = UInt64
@@ -543,358 +556,371 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
  * and Last.fm client. All state is encapsulated here.
  */
 public protocol DurvaldCoreProtocol : AnyObject {
-
+    
     /**
      * Adds an existing folder to the configured library locations.
      */
-    func addLibraryPath(path: String) async throws
-
+    func addLibraryPath(path: String) async throws 
+    
     /**
      * Adds a track to the playback queue.
      */
-    func addToQueue(trackId: Int64) async throws
-
+    func addToQueue(trackId: Int64) async throws 
+    
     /**
      * Adds a track at a playlist position.
      */
     func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws  -> PlaylistTrack
-
+    
     /**
      * Gets an artist by ID.
      */
     func artist(artistId: Int64) async throws  -> Artist
-
+    
+    /**
+     * Reads the local enrichment cache, even when enrichment is disabled/offline.
+     * Never resolves identities or makes an HTTP request.
+     */
+    func artistDetails(artistId: Int64, language: String) async throws  -> ArtistDetails
+    
     /**
      * Returns releases by an artist.
      */
     func artistReleases(artistId: Int64) async throws  -> [Release]
-
+    
     /**
      * Returns tracks by an artist.
      */
     func artistTracks(artistId: Int64) async throws  -> [Track]
-
+    
     /**
      * Returns all artists in the library.
      */
     func artists() async throws  -> [Artist]
-
+    
     /**
      * Loads persisted track or release artwork as bytes for Swift `Data`.
      * The supplied artwork identifier must resolve inside the covers directory.
      */
     func artworkBytes(artworkId: String) async throws  -> Data?
-
+    
     /**
      * Requests cancellation of the active library scan.
      */
-    func cancelLibraryScan() throws
-
+    func cancelLibraryScan() throws 
+    
     /**
      * Deletes every completed-playback event and returns the number removed.
      */
     func clearPlaybackHistory() async throws  -> UInt64
-
+    
     /**
      * Clears every upcoming queue item while leaving the active track alone.
      */
-    func clearQueue() async throws
-
+    func clearQueue() async throws 
+    
     /**
      * Completes Last.fm authorization after the user approved the token.
      */
     func completeLastfmAuth(token: String) async throws  -> SessionResponse
-
+    
+    /**
+     * Persists optional enrichment preferences; does not start network work.
+     */
+    func configureEnrichment(settings: EnrichmentSettings) async throws 
+    
     /**
      * Stores Last.fm API credentials in the secure store.
      */
-    func configureLastfm(apiKey: String, apiSecret: String) async throws
-
+    func configureLastfm(apiKey: String, apiSecret: String) async throws 
+    
     /**
      * Creates a playlist. Artwork is optional base64 or a data URL.
      */
     func createPlaylist(name: String, description: String, artworkBase64: String?) async throws  -> Playlist
-
+    
     /**
      * Deletes a playlist and its track entries.
      */
-    func deletePlaylist(playlistId: Int64) async throws
-
+    func deletePlaylist(playlistId: Int64) async throws 
+    
     /**
      * Removes the locally stored Last.fm session and username.
      */
-    func disconnectLastfm() async throws
-
+    func disconnectLastfm() async throws 
+    
+    func enrichmentSettings() async throws  -> EnrichmentSettings
+    
     /**
      * Extracts metadata from an audio file (for preview/import).
      */
     func extractMetadata(filePath: String) async throws  -> AudioMetadata
-
+    
     /**
      * Returns the last session state.
      */
     func lastSession() async throws  -> LastSession
-
+    
     /**
      * Starts browser-based Last.fm authorization and returns its approval URL.
      */
     func lastfmAuthToken() async throws  -> AuthTokenResponse
-
+    
     /**
      * Returns Last.fm connection status.
      */
     func lastfmStatus() async throws  -> LastFmStatus
-
+    
     /**
      * Lists configured library folders.
      */
     func libraryPaths() async throws  -> [String]
-
+    
     /**
      * Moves an upcoming queue item to a new queue position.
      */
-    func moveQueueItem(from: UInt64, to: UInt64) async throws
-
+    func moveQueueItem(from: UInt64, to: UInt64) async throws 
+    
     /**
      * Advances to the next queued track.
      */
     func nextTrack() async throws  -> PlaybackSnapshot
-
+    
     /**
      * Pauses playback.
      */
-    func pause() async throws
-
+    func pause() async throws 
+    
     /**
      * Starts playback of a track.
      */
     func play(trackId: Int64) async throws  -> PlaybackSnapshot
-
+    
     /**
      * Starts the upcoming track at the given queue position.
      */
     func playQueueItem(position: UInt64) async throws  -> PlaybackSnapshot
-
+    
     /**
      * Returns the current playback state.
      */
     func playback() async  -> PlaybackSnapshot
-
+    
     /**
      * Returns completed playback events, newest-first as stored by the core.
      */
     func playbackHistory() async throws  -> [PlaybackHistoryItem]
-
+    
     /**
      * Returns a bounded page of completed playback events, newest first.
      */
     func playbackHistoryPage(pageSize: UInt64, offset: UInt64) async throws  -> PlaybackHistoryPage
-
+    
     /**
      * Gets one playlist by ID.
      */
     func playlist(playlistId: Int64) async throws  -> Playlist
-
+    
     /**
      * Loads a playlist's artwork blob as bytes for Swift `Data`.
      */
     func playlistArtworkBytes(playlistId: Int64) async throws  -> Data?
-
+    
     /**
      * Returns tracks in playlist order.
      */
     func playlistTracks(playlistId: Int64) async throws  -> [Track]
-
+    
     /**
      * Returns all playlists.
      */
     func playlists() async throws  -> [Playlist]
-
+    
     /**
      * Returns to the previously played track, when one exists.
      */
     func previousTrack() async throws  -> PlaybackSnapshot
-
+    
     /**
      * Returns the current queue.
      */
     func queue() async throws  -> [QueueItem]
-
+    
     /**
      * Gets a release by ID.
      */
     func release(releaseId: Int64) async throws  -> Release
-
+    
     /**
      * Gets tracks for a release.
      */
     func releaseTracks(releaseId: Int64) async throws  -> [Track]
-
+    
     /**
      * Returns all releases in the library.
      */
     func releases() async throws  -> [Release]
-
+    
     /**
      * Returns a bounded page of releases ordered by their stable database ID.
      */
     func releasesPage(pageSize: UInt64, offset: UInt64) async throws  -> ReleasePage
-
+    
     /**
      * Removes an upcoming queue item.
      */
-    func removeFromQueue(position: UInt64) async throws
-
+    func removeFromQueue(position: UInt64) async throws 
+    
     /**
      * Removes a configured library folder.
      */
-    func removeLibraryPath(path: String) async throws
-
+    func removeLibraryPath(path: String) async throws 
+    
     /**
      * Removes a single completed-playback event.
      */
-    func removePlaybackHistoryItem(historyId: Int64) async throws
-
+    func removePlaybackHistoryItem(historyId: Int64) async throws 
+    
     /**
      * Removes a track entry at a playlist position.
      */
-    func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws
-
+    func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws 
+    
     /**
      * Resumes playback.
      */
-    func resume() async throws
-
+    func resume() async throws 
+    
     /**
      * Saves the current session state.
      */
-    func saveSession(session: LastSession) async throws
-
+    func saveSession(session: LastSession) async throws 
+    
     /**
      * Scans every configured library folder.
      */
     func scanConfiguredLibrary() async throws  -> ScanResult
-
+    
     /**
      * Scans the library at the given paths.
      */
     func scanLibrary(paths: [String]) async throws  -> ScanResult
-
+    
     /**
      * Returns phase-level progress for the current or most recent library scan.
      */
     func scanProgress() throws  -> ScanProgress?
-
+    
     /**
      * Searches tracks, releases, artists, and playlists by text.
      */
     func search(query: String) async throws  -> SearchResults
-
+    
     /**
      * Seeks to a position in seconds.
      */
-    func seek(seconds: UInt64) async throws
-
+    func seek(seconds: UInt64) async throws 
+    
     /**
      * Sets whether a playlist is favorited.
      */
-    func setPlaylistFavorite(playlistId: Int64, favorite: Bool) async throws
-
+    func setPlaylistFavorite(playlistId: Int64, favorite: Bool) async throws 
+    
     /**
      * Sets whether recommendations should de-emphasize a playlist.
      */
-    func setPlaylistSuggestLess(playlistId: Int64, suggestLess: Bool) async throws
-
+    func setPlaylistSuggestLess(playlistId: Int64, suggestLess: Bool) async throws 
+    
     /**
      * Sets whether a release is favorited.
      */
-    func setReleaseFavorite(releaseId: Int64, favorite: Bool) async throws
-
+    func setReleaseFavorite(releaseId: Int64, favorite: Bool) async throws 
+    
     /**
      * Sets whether a release is hidden from normal library views.
      */
-    func setReleaseHidden(releaseId: Int64, hidden: Bool) async throws
-
+    func setReleaseHidden(releaseId: Int64, hidden: Bool) async throws 
+    
     /**
      * Sets or clears a release rating on the 0–5 scale.
      */
-    func setReleaseRating(releaseId: Int64, rating: UInt8?) async throws
-
+    func setReleaseRating(releaseId: Int64, rating: UInt8?) async throws 
+    
     /**
      * Sets whether recommendations should de-emphasize a release.
      */
-    func setReleaseSuggestLess(releaseId: Int64, suggestLess: Bool) async throws
-
+    func setReleaseSuggestLess(releaseId: Int64, suggestLess: Bool) async throws 
+    
     /**
      * Sets whether playback stops, repeats one track, or repeats the queue.
      */
     func setRepeatMode(mode: RepeatMode) async throws  -> PlaybackSnapshot
-
+    
     /**
      * Enables or disables randomized selection when advancing the queue.
      */
     func setShuffleEnabled(enabled: Bool) async throws  -> PlaybackSnapshot
-
+    
     /**
      * Sets whether a track is favorited.
      */
-    func setTrackFavorite(trackId: Int64, favorite: Bool) async throws
-
+    func setTrackFavorite(trackId: Int64, favorite: Bool) async throws 
+    
     /**
      * Sets whether a track is hidden from normal library views.
      */
-    func setTrackHidden(trackId: Int64, hidden: Bool) async throws
-
+    func setTrackHidden(trackId: Int64, hidden: Bool) async throws 
+    
     /**
      * Sets or clears a track rating on the 0–5 scale.
      */
-    func setTrackRating(trackId: Int64, rating: UInt8?) async throws
-
+    func setTrackRating(trackId: Int64, rating: UInt8?) async throws 
+    
     /**
      * Sets whether recommendations should de-emphasize a track.
      */
-    func setTrackSuggestLess(trackId: Int64, suggestLess: Bool) async throws
-
+    func setTrackSuggestLess(trackId: Int64, suggestLess: Bool) async throws 
+    
     /**
      * Sets volume (0.0 - 1.0).
      */
-    func setVolume(volume: Float) async throws
-
+    func setVolume(volume: Float) async throws 
+    
     /**
      * Returns application settings.
      */
     func settings() async throws  -> Settings
-
+    
     /**
      * Stops playback.
      */
-    func stop() async throws
-
+    func stop() async throws 
+    
     /**
      * Gets a track by ID.
      */
     func track(trackId: Int64) async throws  -> Track
-
+    
     /**
      * Returns all tracks in the library.
      */
     func tracks() async throws  -> [Track]
-
+    
     /**
      * Returns a bounded page of tracks ordered by their stable database ID.
      */
     func tracksPage(pageSize: UInt64, offset: UInt64) async throws  -> TrackPage
-
+    
     /**
      * Updates a playlist's name, description, and optional artwork.
      */
-    func updatePlaylist(playlistId: Int64, name: String, description: String, artworkBase64: String?) async throws
-
+    func updatePlaylist(playlistId: Int64, name: String, description: String, artworkBase64: String?) async throws 
+    
     /**
      * Updates application settings.
      */
-    func updateSettings(settings: Settings) async throws
-
+    func updateSettings(settings: Settings) async throws 
+    
 }
 
 /**
@@ -941,9 +967,9 @@ open class DurvaldCore:
         try! rustCall { uniffi_durvald_core_fn_free_durvaldcore(pointer, $0) }
     }
 
+    
 
-
-
+    
     /**
      * Adds an existing folder to the configured library locations.
      */
@@ -963,7 +989,7 @@ open func addLibraryPath(path: String)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Adds a track to the playback queue.
      */
@@ -983,7 +1009,7 @@ open func addToQueue(trackId: Int64)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Adds a track at a playlist position.
      */
@@ -1003,7 +1029,7 @@ open func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Gets an artist by ID.
      */
@@ -1023,7 +1049,28 @@ open func artist(artistId: Int64)async throws  -> Artist {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
+    /**
+     * Reads the local enrichment cache, even when enrichment is disabled/offline.
+     * Never resolves identities or makes an HTTP request.
+     */
+open func artistDetails(artistId: Int64, language: String)async throws  -> ArtistDetails {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_artist_details(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(artistId),FfiConverterString.lower(language)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeArtistDetails.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+    
     /**
      * Returns releases by an artist.
      */
@@ -1043,7 +1090,7 @@ open func artistReleases(artistId: Int64)async throws  -> [Release] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns tracks by an artist.
      */
@@ -1063,7 +1110,7 @@ open func artistTracks(artistId: Int64)async throws  -> [Track] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns all artists in the library.
      */
@@ -1073,7 +1120,7 @@ open func artists()async throws  -> [Artist] {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_artists(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1083,7 +1130,7 @@ open func artists()async throws  -> [Artist] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Loads persisted track or release artwork as bytes for Swift `Data`.
      * The supplied artwork identifier must resolve inside the covers directory.
@@ -1104,7 +1151,7 @@ open func artworkBytes(artworkId: String)async throws  -> Data? {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Requests cancellation of the active library scan.
      */
@@ -1113,7 +1160,7 @@ open func cancelLibraryScan()throws  {try rustCallWithError(FfiConverterTypeCore
     )
 }
 }
-
+    
     /**
      * Deletes every completed-playback event and returns the number removed.
      */
@@ -1123,7 +1170,7 @@ open func clearPlaybackHistory()async throws  -> UInt64 {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_clear_playback_history(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_u64,
@@ -1133,7 +1180,7 @@ open func clearPlaybackHistory()async throws  -> UInt64 {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Clears every upcoming queue item while leaving the active track alone.
      */
@@ -1143,7 +1190,7 @@ open func clearQueue()async throws  {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_clear_queue(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -1153,7 +1200,7 @@ open func clearQueue()async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Completes Last.fm authorization after the user approved the token.
      */
@@ -1173,7 +1220,27 @@ open func completeLastfmAuth(token: String)async throws  -> SessionResponse {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
+    /**
+     * Persists optional enrichment preferences; does not start network work.
+     */
+open func configureEnrichment(settings: EnrichmentSettings)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_configure_enrichment(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeEnrichmentSettings.lower(settings)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+    
     /**
      * Stores Last.fm API credentials in the secure store.
      */
@@ -1193,7 +1260,7 @@ open func configureLastfm(apiKey: String, apiSecret: String)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Creates a playlist. Artwork is optional base64 or a data URL.
      */
@@ -1213,7 +1280,7 @@ open func createPlaylist(name: String, description: String, artworkBase64: Strin
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Deletes a playlist and its track entries.
      */
@@ -1233,7 +1300,7 @@ open func deletePlaylist(playlistId: Int64)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Removes the locally stored Last.fm session and username.
      */
@@ -1243,7 +1310,7 @@ open func disconnectLastfm()async throws  {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_disconnect_lastfm(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -1253,7 +1320,24 @@ open func disconnectLastfm()async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
+open func enrichmentSettings()async throws  -> EnrichmentSettings {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_enrichment_settings(
+                    self.uniffiClonePointer()
+                    
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeEnrichmentSettings.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+    
     /**
      * Extracts metadata from an audio file (for preview/import).
      */
@@ -1273,7 +1357,7 @@ open func extractMetadata(filePath: String)async throws  -> AudioMetadata {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns the last session state.
      */
@@ -1283,7 +1367,7 @@ open func lastSession()async throws  -> LastSession {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_last_session(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1293,7 +1377,7 @@ open func lastSession()async throws  -> LastSession {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Starts browser-based Last.fm authorization and returns its approval URL.
      */
@@ -1303,7 +1387,7 @@ open func lastfmAuthToken()async throws  -> AuthTokenResponse {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_lastfm_auth_token(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1313,7 +1397,7 @@ open func lastfmAuthToken()async throws  -> AuthTokenResponse {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns Last.fm connection status.
      */
@@ -1323,7 +1407,7 @@ open func lastfmStatus()async throws  -> LastFmStatus {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_lastfm_status(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1333,7 +1417,7 @@ open func lastfmStatus()async throws  -> LastFmStatus {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Lists configured library folders.
      */
@@ -1343,7 +1427,7 @@ open func libraryPaths()async throws  -> [String] {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_library_paths(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1353,7 +1437,7 @@ open func libraryPaths()async throws  -> [String] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Moves an upcoming queue item to a new queue position.
      */
@@ -1373,7 +1457,7 @@ open func moveQueueItem(from: UInt64, to: UInt64)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Advances to the next queued track.
      */
@@ -1383,7 +1467,7 @@ open func nextTrack()async throws  -> PlaybackSnapshot {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_next_track(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1393,7 +1477,7 @@ open func nextTrack()async throws  -> PlaybackSnapshot {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Pauses playback.
      */
@@ -1403,7 +1487,7 @@ open func pause()async throws  {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_pause(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -1413,7 +1497,7 @@ open func pause()async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Starts playback of a track.
      */
@@ -1433,7 +1517,7 @@ open func play(trackId: Int64)async throws  -> PlaybackSnapshot {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Starts the upcoming track at the given queue position.
      */
@@ -1453,7 +1537,7 @@ open func playQueueItem(position: UInt64)async throws  -> PlaybackSnapshot {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns the current playback state.
      */
@@ -1463,7 +1547,7 @@ open func playback()async  -> PlaybackSnapshot {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_playback(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1471,10 +1555,10 @@ open func playback()async  -> PlaybackSnapshot {
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypePlaybackSnapshot.lift,
             errorHandler: nil
-
+            
         )
 }
-
+    
     /**
      * Returns completed playback events, newest-first as stored by the core.
      */
@@ -1484,7 +1568,7 @@ open func playbackHistory()async throws  -> [PlaybackHistoryItem] {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_playback_history(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1494,7 +1578,7 @@ open func playbackHistory()async throws  -> [PlaybackHistoryItem] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns a bounded page of completed playback events, newest first.
      */
@@ -1514,7 +1598,7 @@ open func playbackHistoryPage(pageSize: UInt64, offset: UInt64)async throws  -> 
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Gets one playlist by ID.
      */
@@ -1534,7 +1618,7 @@ open func playlist(playlistId: Int64)async throws  -> Playlist {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Loads a playlist's artwork blob as bytes for Swift `Data`.
      */
@@ -1554,7 +1638,7 @@ open func playlistArtworkBytes(playlistId: Int64)async throws  -> Data? {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns tracks in playlist order.
      */
@@ -1574,7 +1658,7 @@ open func playlistTracks(playlistId: Int64)async throws  -> [Track] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns all playlists.
      */
@@ -1584,7 +1668,7 @@ open func playlists()async throws  -> [Playlist] {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_playlists(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1594,7 +1678,7 @@ open func playlists()async throws  -> [Playlist] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns to the previously played track, when one exists.
      */
@@ -1604,7 +1688,7 @@ open func previousTrack()async throws  -> PlaybackSnapshot {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_previous_track(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1614,7 +1698,7 @@ open func previousTrack()async throws  -> PlaybackSnapshot {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns the current queue.
      */
@@ -1624,7 +1708,7 @@ open func queue()async throws  -> [QueueItem] {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_queue(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1634,7 +1718,7 @@ open func queue()async throws  -> [QueueItem] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Gets a release by ID.
      */
@@ -1654,7 +1738,7 @@ open func release(releaseId: Int64)async throws  -> Release {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Gets tracks for a release.
      */
@@ -1674,7 +1758,7 @@ open func releaseTracks(releaseId: Int64)async throws  -> [Track] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns all releases in the library.
      */
@@ -1684,7 +1768,7 @@ open func releases()async throws  -> [Release] {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_releases(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1694,7 +1778,7 @@ open func releases()async throws  -> [Release] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns a bounded page of releases ordered by their stable database ID.
      */
@@ -1714,7 +1798,7 @@ open func releasesPage(pageSize: UInt64, offset: UInt64)async throws  -> Release
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Removes an upcoming queue item.
      */
@@ -1734,7 +1818,7 @@ open func removeFromQueue(position: UInt64)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Removes a configured library folder.
      */
@@ -1754,7 +1838,7 @@ open func removeLibraryPath(path: String)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Removes a single completed-playback event.
      */
@@ -1774,7 +1858,7 @@ open func removePlaybackHistoryItem(historyId: Int64)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Removes a track entry at a playlist position.
      */
@@ -1794,7 +1878,7 @@ open func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: U
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Resumes playback.
      */
@@ -1804,7 +1888,7 @@ open func resume()async throws  {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_resume(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -1814,7 +1898,7 @@ open func resume()async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Saves the current session state.
      */
@@ -1834,7 +1918,7 @@ open func saveSession(session: LastSession)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Scans every configured library folder.
      */
@@ -1844,7 +1928,7 @@ open func scanConfiguredLibrary()async throws  -> ScanResult {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_scan_configured_library(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -1854,7 +1938,7 @@ open func scanConfiguredLibrary()async throws  -> ScanResult {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Scans the library at the given paths.
      */
@@ -1874,7 +1958,7 @@ open func scanLibrary(paths: [String])async throws  -> ScanResult {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns phase-level progress for the current or most recent library scan.
      */
@@ -1884,7 +1968,7 @@ open func scanProgress()throws  -> ScanProgress? {
     )
 })
 }
-
+    
     /**
      * Searches tracks, releases, artists, and playlists by text.
      */
@@ -1904,7 +1988,7 @@ open func search(query: String)async throws  -> SearchResults {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Seeks to a position in seconds.
      */
@@ -1924,7 +2008,7 @@ open func seek(seconds: UInt64)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets whether a playlist is favorited.
      */
@@ -1944,7 +2028,7 @@ open func setPlaylistFavorite(playlistId: Int64, favorite: Bool)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets whether recommendations should de-emphasize a playlist.
      */
@@ -1964,7 +2048,7 @@ open func setPlaylistSuggestLess(playlistId: Int64, suggestLess: Bool)async thro
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets whether a release is favorited.
      */
@@ -1984,7 +2068,7 @@ open func setReleaseFavorite(releaseId: Int64, favorite: Bool)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets whether a release is hidden from normal library views.
      */
@@ -2004,7 +2088,7 @@ open func setReleaseHidden(releaseId: Int64, hidden: Bool)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets or clears a release rating on the 0–5 scale.
      */
@@ -2024,7 +2108,7 @@ open func setReleaseRating(releaseId: Int64, rating: UInt8?)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets whether recommendations should de-emphasize a release.
      */
@@ -2044,7 +2128,7 @@ open func setReleaseSuggestLess(releaseId: Int64, suggestLess: Bool)async throws
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets whether playback stops, repeats one track, or repeats the queue.
      */
@@ -2064,7 +2148,7 @@ open func setRepeatMode(mode: RepeatMode)async throws  -> PlaybackSnapshot {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Enables or disables randomized selection when advancing the queue.
      */
@@ -2084,7 +2168,7 @@ open func setShuffleEnabled(enabled: Bool)async throws  -> PlaybackSnapshot {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets whether a track is favorited.
      */
@@ -2104,7 +2188,7 @@ open func setTrackFavorite(trackId: Int64, favorite: Bool)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets whether a track is hidden from normal library views.
      */
@@ -2124,7 +2208,7 @@ open func setTrackHidden(trackId: Int64, hidden: Bool)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets or clears a track rating on the 0–5 scale.
      */
@@ -2144,7 +2228,7 @@ open func setTrackRating(trackId: Int64, rating: UInt8?)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets whether recommendations should de-emphasize a track.
      */
@@ -2164,7 +2248,7 @@ open func setTrackSuggestLess(trackId: Int64, suggestLess: Bool)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Sets volume (0.0 - 1.0).
      */
@@ -2184,7 +2268,7 @@ open func setVolume(volume: Float)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns application settings.
      */
@@ -2194,7 +2278,7 @@ open func settings()async throws  -> Settings {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_settings(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -2204,7 +2288,7 @@ open func settings()async throws  -> Settings {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Stops playback.
      */
@@ -2214,7 +2298,7 @@ open func stop()async throws  {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_stop(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -2224,7 +2308,7 @@ open func stop()async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Gets a track by ID.
      */
@@ -2244,7 +2328,7 @@ open func track(trackId: Int64)async throws  -> Track {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns all tracks in the library.
      */
@@ -2254,7 +2338,7 @@ open func tracks()async throws  -> [Track] {
             rustFutureFunc: {
                 uniffi_durvald_core_fn_method_durvaldcore_tracks(
                     self.uniffiClonePointer()
-
+                    
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -2264,7 +2348,7 @@ open func tracks()async throws  -> [Track] {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Returns a bounded page of tracks ordered by their stable database ID.
      */
@@ -2284,7 +2368,7 @@ open func tracksPage(pageSize: UInt64, offset: UInt64)async throws  -> TrackPage
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Updates a playlist's name, description, and optional artwork.
      */
@@ -2304,7 +2388,7 @@ open func updatePlaylist(playlistId: Int64, name: String, description: String, a
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
     /**
      * Updates application settings.
      */
@@ -2324,7 +2408,7 @@ open func updateSettings(settings: Settings)async throws  {
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
-
+    
 
 }
 
@@ -2410,7 +2494,7 @@ public struct FfiConverterTypeArtist: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Artist {
         return
             try Artist(
-                id: FfiConverterInt64.read(from: &buf),
+                id: FfiConverterInt64.read(from: &buf), 
                 name: FfiConverterString.read(from: &buf)
         )
     }
@@ -2428,6 +2512,373 @@ public func FfiConverterTypeArtist_lift(_ buf: RustBuffer) throws -> Artist {
 
 public func FfiConverterTypeArtist_lower(_ value: Artist) -> RustBuffer {
     return FfiConverterTypeArtist.lower(value)
+}
+
+
+public struct ArtistDetails {
+    public var artist: Artist
+    public var identityStatus: ArtistIdentityStatus
+    public var musicbrainzId: String?
+    public var identityGeneration: UInt64
+    public var requestedLanguage: String
+    /**
+     * Exact requested language plus "und"; language fallback arrives with providers.
+     */
+    public var sources: [ArtistProfileSource]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(artist: Artist, identityStatus: ArtistIdentityStatus, musicbrainzId: String?, identityGeneration: UInt64, requestedLanguage: String, 
+        /**
+         * Exact requested language plus "und"; language fallback arrives with providers.
+         */sources: [ArtistProfileSource]) {
+        self.artist = artist
+        self.identityStatus = identityStatus
+        self.musicbrainzId = musicbrainzId
+        self.identityGeneration = identityGeneration
+        self.requestedLanguage = requestedLanguage
+        self.sources = sources
+    }
+}
+
+
+
+extension ArtistDetails: Equatable, Hashable {
+    public static func ==(lhs: ArtistDetails, rhs: ArtistDetails) -> Bool {
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.identityStatus != rhs.identityStatus {
+            return false
+        }
+        if lhs.musicbrainzId != rhs.musicbrainzId {
+            return false
+        }
+        if lhs.identityGeneration != rhs.identityGeneration {
+            return false
+        }
+        if lhs.requestedLanguage != rhs.requestedLanguage {
+            return false
+        }
+        if lhs.sources != rhs.sources {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(artist)
+        hasher.combine(identityStatus)
+        hasher.combine(musicbrainzId)
+        hasher.combine(identityGeneration)
+        hasher.combine(requestedLanguage)
+        hasher.combine(sources)
+    }
+}
+
+
+public struct FfiConverterTypeArtistDetails: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistDetails {
+        return
+            try ArtistDetails(
+                artist: FfiConverterTypeArtist.read(from: &buf), 
+                identityStatus: FfiConverterTypeArtistIdentityStatus.read(from: &buf), 
+                musicbrainzId: FfiConverterOptionString.read(from: &buf), 
+                identityGeneration: FfiConverterUInt64.read(from: &buf), 
+                requestedLanguage: FfiConverterString.read(from: &buf), 
+                sources: FfiConverterSequenceTypeArtistProfileSource.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistDetails, into buf: inout [UInt8]) {
+        FfiConverterTypeArtist.write(value.artist, into: &buf)
+        FfiConverterTypeArtistIdentityStatus.write(value.identityStatus, into: &buf)
+        FfiConverterOptionString.write(value.musicbrainzId, into: &buf)
+        FfiConverterUInt64.write(value.identityGeneration, into: &buf)
+        FfiConverterString.write(value.requestedLanguage, into: &buf)
+        FfiConverterSequenceTypeArtistProfileSource.write(value.sources, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistDetails_lift(_ buf: RustBuffer) throws -> ArtistDetails {
+    return try FfiConverterTypeArtistDetails.lift(buf)
+}
+
+public func FfiConverterTypeArtistDetails_lower(_ value: ArtistDetails) -> RustBuffer {
+    return FfiConverterTypeArtistDetails.lower(value)
+}
+
+
+/**
+ * Absent month/day preserve the precision supplied by the source.
+ */
+public struct ArtistPartialDate {
+    public var year: Int32
+    public var month: UInt8?
+    public var day: UInt8?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(year: Int32, month: UInt8?, day: UInt8?) {
+        self.year = year
+        self.month = month
+        self.day = day
+    }
+}
+
+
+
+extension ArtistPartialDate: Equatable, Hashable {
+    public static func ==(lhs: ArtistPartialDate, rhs: ArtistPartialDate) -> Bool {
+        if lhs.year != rhs.year {
+            return false
+        }
+        if lhs.month != rhs.month {
+            return false
+        }
+        if lhs.day != rhs.day {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(year)
+        hasher.combine(month)
+        hasher.combine(day)
+    }
+}
+
+
+public struct FfiConverterTypeArtistPartialDate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistPartialDate {
+        return
+            try ArtistPartialDate(
+                year: FfiConverterInt32.read(from: &buf), 
+                month: FfiConverterOptionUInt8.read(from: &buf), 
+                day: FfiConverterOptionUInt8.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistPartialDate, into buf: inout [UInt8]) {
+        FfiConverterInt32.write(value.year, into: &buf)
+        FfiConverterOptionUInt8.write(value.month, into: &buf)
+        FfiConverterOptionUInt8.write(value.day, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistPartialDate_lift(_ buf: RustBuffer) throws -> ArtistPartialDate {
+    return try FfiConverterTypeArtistPartialDate.lift(buf)
+}
+
+public func FfiConverterTypeArtistPartialDate_lower(_ value: ArtistPartialDate) -> RustBuffer {
+    return FfiConverterTypeArtistPartialDate.lower(value)
+}
+
+
+/**
+ * A normalized source snapshot, not yet a cross-provider editorial selection.
+ * Factual snapshots use language "und"; text uses its actual language.
+ */
+public struct ArtistProfile {
+    public var entityKind: ArtistEntityKind
+    public var birthDate: ArtistPartialDate?
+    public var birthPlace: String?
+    public var formationDate: ArtistPartialDate?
+    public var formationPlace: String?
+    public var originPlace: String?
+    public var biography: String?
+    public var attribution: EnrichmentAttribution
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(entityKind: ArtistEntityKind, birthDate: ArtistPartialDate?, birthPlace: String?, formationDate: ArtistPartialDate?, formationPlace: String?, originPlace: String?, biography: String?, attribution: EnrichmentAttribution) {
+        self.entityKind = entityKind
+        self.birthDate = birthDate
+        self.birthPlace = birthPlace
+        self.formationDate = formationDate
+        self.formationPlace = formationPlace
+        self.originPlace = originPlace
+        self.biography = biography
+        self.attribution = attribution
+    }
+}
+
+
+
+extension ArtistProfile: Equatable, Hashable {
+    public static func ==(lhs: ArtistProfile, rhs: ArtistProfile) -> Bool {
+        if lhs.entityKind != rhs.entityKind {
+            return false
+        }
+        if lhs.birthDate != rhs.birthDate {
+            return false
+        }
+        if lhs.birthPlace != rhs.birthPlace {
+            return false
+        }
+        if lhs.formationDate != rhs.formationDate {
+            return false
+        }
+        if lhs.formationPlace != rhs.formationPlace {
+            return false
+        }
+        if lhs.originPlace != rhs.originPlace {
+            return false
+        }
+        if lhs.biography != rhs.biography {
+            return false
+        }
+        if lhs.attribution != rhs.attribution {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(entityKind)
+        hasher.combine(birthDate)
+        hasher.combine(birthPlace)
+        hasher.combine(formationDate)
+        hasher.combine(formationPlace)
+        hasher.combine(originPlace)
+        hasher.combine(biography)
+        hasher.combine(attribution)
+    }
+}
+
+
+public struct FfiConverterTypeArtistProfile: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistProfile {
+        return
+            try ArtistProfile(
+                entityKind: FfiConverterTypeArtistEntityKind.read(from: &buf), 
+                birthDate: FfiConverterOptionTypeArtistPartialDate.read(from: &buf), 
+                birthPlace: FfiConverterOptionString.read(from: &buf), 
+                formationDate: FfiConverterOptionTypeArtistPartialDate.read(from: &buf), 
+                formationPlace: FfiConverterOptionString.read(from: &buf), 
+                originPlace: FfiConverterOptionString.read(from: &buf), 
+                biography: FfiConverterOptionString.read(from: &buf), 
+                attribution: FfiConverterTypeEnrichmentAttribution.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistProfile, into buf: inout [UInt8]) {
+        FfiConverterTypeArtistEntityKind.write(value.entityKind, into: &buf)
+        FfiConverterOptionTypeArtistPartialDate.write(value.birthDate, into: &buf)
+        FfiConverterOptionString.write(value.birthPlace, into: &buf)
+        FfiConverterOptionTypeArtistPartialDate.write(value.formationDate, into: &buf)
+        FfiConverterOptionString.write(value.formationPlace, into: &buf)
+        FfiConverterOptionString.write(value.originPlace, into: &buf)
+        FfiConverterOptionString.write(value.biography, into: &buf)
+        FfiConverterTypeEnrichmentAttribution.write(value.attribution, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistProfile_lift(_ buf: RustBuffer) throws -> ArtistProfile {
+    return try FfiConverterTypeArtistProfile.lift(buf)
+}
+
+public func FfiConverterTypeArtistProfile_lower(_ value: ArtistProfile) -> RustBuffer {
+    return FfiConverterTypeArtistProfile.lower(value)
+}
+
+
+public struct ArtistProfileSource {
+    public var provider: EnrichmentProvider
+    public var language: String
+    public var profile: ArtistProfile
+    /**
+     * UTC Unix seconds. Expiry means eligible for refresh, not deleted.
+     */
+    public var fetchedAt: Int64
+    public var expiresAt: Int64
+    public var stale: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(provider: EnrichmentProvider, language: String, profile: ArtistProfile, 
+        /**
+         * UTC Unix seconds. Expiry means eligible for refresh, not deleted.
+         */fetchedAt: Int64, expiresAt: Int64, stale: Bool) {
+        self.provider = provider
+        self.language = language
+        self.profile = profile
+        self.fetchedAt = fetchedAt
+        self.expiresAt = expiresAt
+        self.stale = stale
+    }
+}
+
+
+
+extension ArtistProfileSource: Equatable, Hashable {
+    public static func ==(lhs: ArtistProfileSource, rhs: ArtistProfileSource) -> Bool {
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.language != rhs.language {
+            return false
+        }
+        if lhs.profile != rhs.profile {
+            return false
+        }
+        if lhs.fetchedAt != rhs.fetchedAt {
+            return false
+        }
+        if lhs.expiresAt != rhs.expiresAt {
+            return false
+        }
+        if lhs.stale != rhs.stale {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(provider)
+        hasher.combine(language)
+        hasher.combine(profile)
+        hasher.combine(fetchedAt)
+        hasher.combine(expiresAt)
+        hasher.combine(stale)
+    }
+}
+
+
+public struct FfiConverterTypeArtistProfileSource: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistProfileSource {
+        return
+            try ArtistProfileSource(
+                provider: FfiConverterTypeEnrichmentProvider.read(from: &buf), 
+                language: FfiConverterString.read(from: &buf), 
+                profile: FfiConverterTypeArtistProfile.read(from: &buf), 
+                fetchedAt: FfiConverterInt64.read(from: &buf), 
+                expiresAt: FfiConverterInt64.read(from: &buf), 
+                stale: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistProfileSource, into buf: inout [UInt8]) {
+        FfiConverterTypeEnrichmentProvider.write(value.provider, into: &buf)
+        FfiConverterString.write(value.language, into: &buf)
+        FfiConverterTypeArtistProfile.write(value.profile, into: &buf)
+        FfiConverterInt64.write(value.fetchedAt, into: &buf)
+        FfiConverterInt64.write(value.expiresAt, into: &buf)
+        FfiConverterBool.write(value.stale, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistProfileSource_lift(_ buf: RustBuffer) throws -> ArtistProfileSource {
+    return try FfiConverterTypeArtistProfileSource.lift(buf)
+}
+
+public func FfiConverterTypeArtistProfileSource_lower(_ value: ArtistProfileSource) -> RustBuffer {
+    return FfiConverterTypeArtistProfileSource.lower(value)
 }
 
 
@@ -2542,19 +2993,19 @@ public struct FfiConverterTypeAudioMetadata: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AudioMetadata {
         return
             try AudioMetadata(
-                title: FfiConverterOptionString.read(from: &buf),
-                artist: FfiConverterOptionString.read(from: &buf),
-                release: FfiConverterOptionString.read(from: &buf),
-                genre: FfiConverterOptionString.read(from: &buf),
-                year: FfiConverterOptionUInt32.read(from: &buf),
-                track: FfiConverterOptionUInt32.read(from: &buf),
-                disc: FfiConverterOptionUInt32.read(from: &buf),
-                durationSeconds: FfiConverterDouble.read(from: &buf),
-                bitrate: FfiConverterOptionUInt32.read(from: &buf),
-                sampleRate: FfiConverterOptionUInt32.read(from: &buf),
-                channels: FfiConverterOptionUInt8.read(from: &buf),
-                coverArtworkId: FfiConverterOptionString.read(from: &buf),
-                allFields: FfiConverterSequenceTypeKeyValuePair.read(from: &buf),
+                title: FfiConverterOptionString.read(from: &buf), 
+                artist: FfiConverterOptionString.read(from: &buf), 
+                release: FfiConverterOptionString.read(from: &buf), 
+                genre: FfiConverterOptionString.read(from: &buf), 
+                year: FfiConverterOptionUInt32.read(from: &buf), 
+                track: FfiConverterOptionUInt32.read(from: &buf), 
+                disc: FfiConverterOptionUInt32.read(from: &buf), 
+                durationSeconds: FfiConverterDouble.read(from: &buf), 
+                bitrate: FfiConverterOptionUInt32.read(from: &buf), 
+                sampleRate: FfiConverterOptionUInt32.read(from: &buf), 
+                channels: FfiConverterOptionUInt8.read(from: &buf), 
+                coverArtworkId: FfiConverterOptionString.read(from: &buf), 
+                allFields: FfiConverterSequenceTypeKeyValuePair.read(from: &buf), 
                 filePath: FfiConverterString.read(from: &buf)
         )
     }
@@ -2626,7 +3077,7 @@ public struct FfiConverterTypeAuthTokenResponse: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AuthTokenResponse {
         return
             try AuthTokenResponse(
-                token: FfiConverterString.read(from: &buf),
+                token: FfiConverterString.read(from: &buf), 
                 authUrl: FfiConverterString.read(from: &buf)
         )
     }
@@ -2673,13 +3124,13 @@ public struct CoreConfig {
     public init(
         /**
          * Path to the SQLite database file
-         */databasePath: String,
+         */databasePath: String, 
         /**
          * Application support directory (platform-specific)
-         */appSupportDir: String,
+         */appSupportDir: String, 
         /**
          * Directory for cover art files
-         */coversDir: String,
+         */coversDir: String, 
         /**
          * Keychain service name for secret storage (macOS)
          */keychainService: String) {
@@ -2722,9 +3173,9 @@ public struct FfiConverterTypeCoreConfig: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreConfig {
         return
             try CoreConfig(
-                databasePath: FfiConverterString.read(from: &buf),
-                appSupportDir: FfiConverterString.read(from: &buf),
-                coversDir: FfiConverterString.read(from: &buf),
+                databasePath: FfiConverterString.read(from: &buf), 
+                appSupportDir: FfiConverterString.read(from: &buf), 
+                coversDir: FfiConverterString.read(from: &buf), 
                 keychainService: FfiConverterString.read(from: &buf)
         )
     }
@@ -2744,6 +3195,155 @@ public func FfiConverterTypeCoreConfig_lift(_ buf: RustBuffer) throws -> CoreCon
 
 public func FfiConverterTypeCoreConfig_lower(_ value: CoreConfig) -> RustBuffer {
     return FfiConverterTypeCoreConfig.lower(value)
+}
+
+
+public struct EnrichmentAttribution {
+    public var sourceUrl: String
+    public var author: String?
+    public var licenseName: String?
+    public var licenseUrl: String?
+    public var revision: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(sourceUrl: String, author: String?, licenseName: String?, licenseUrl: String?, revision: String?) {
+        self.sourceUrl = sourceUrl
+        self.author = author
+        self.licenseName = licenseName
+        self.licenseUrl = licenseUrl
+        self.revision = revision
+    }
+}
+
+
+
+extension EnrichmentAttribution: Equatable, Hashable {
+    public static func ==(lhs: EnrichmentAttribution, rhs: EnrichmentAttribution) -> Bool {
+        if lhs.sourceUrl != rhs.sourceUrl {
+            return false
+        }
+        if lhs.author != rhs.author {
+            return false
+        }
+        if lhs.licenseName != rhs.licenseName {
+            return false
+        }
+        if lhs.licenseUrl != rhs.licenseUrl {
+            return false
+        }
+        if lhs.revision != rhs.revision {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(sourceUrl)
+        hasher.combine(author)
+        hasher.combine(licenseName)
+        hasher.combine(licenseUrl)
+        hasher.combine(revision)
+    }
+}
+
+
+public struct FfiConverterTypeEnrichmentAttribution: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EnrichmentAttribution {
+        return
+            try EnrichmentAttribution(
+                sourceUrl: FfiConverterString.read(from: &buf), 
+                author: FfiConverterOptionString.read(from: &buf), 
+                licenseName: FfiConverterOptionString.read(from: &buf), 
+                licenseUrl: FfiConverterOptionString.read(from: &buf), 
+                revision: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EnrichmentAttribution, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.sourceUrl, into: &buf)
+        FfiConverterOptionString.write(value.author, into: &buf)
+        FfiConverterOptionString.write(value.licenseName, into: &buf)
+        FfiConverterOptionString.write(value.licenseUrl, into: &buf)
+        FfiConverterOptionString.write(value.revision, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeEnrichmentAttribution_lift(_ buf: RustBuffer) throws -> EnrichmentAttribution {
+    return try FfiConverterTypeEnrichmentAttribution.lift(buf)
+}
+
+public func FfiConverterTypeEnrichmentAttribution_lower(_ value: EnrichmentAttribution) -> RustBuffer {
+    return FfiConverterTypeEnrichmentAttribution.lower(value)
+}
+
+
+/**
+ * Disabled on first launch. Offline also prevents future refresh requests.
+ */
+public struct EnrichmentSettings {
+    public var enabled: Bool
+    public var offline: Bool
+    public var preferredLanguage: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(enabled: Bool, offline: Bool, preferredLanguage: String) {
+        self.enabled = enabled
+        self.offline = offline
+        self.preferredLanguage = preferredLanguage
+    }
+}
+
+
+
+extension EnrichmentSettings: Equatable, Hashable {
+    public static func ==(lhs: EnrichmentSettings, rhs: EnrichmentSettings) -> Bool {
+        if lhs.enabled != rhs.enabled {
+            return false
+        }
+        if lhs.offline != rhs.offline {
+            return false
+        }
+        if lhs.preferredLanguage != rhs.preferredLanguage {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(enabled)
+        hasher.combine(offline)
+        hasher.combine(preferredLanguage)
+    }
+}
+
+
+public struct FfiConverterTypeEnrichmentSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EnrichmentSettings {
+        return
+            try EnrichmentSettings(
+                enabled: FfiConverterBool.read(from: &buf), 
+                offline: FfiConverterBool.read(from: &buf), 
+                preferredLanguage: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EnrichmentSettings, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.enabled, into: &buf)
+        FfiConverterBool.write(value.offline, into: &buf)
+        FfiConverterString.write(value.preferredLanguage, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeEnrichmentSettings_lift(_ buf: RustBuffer) throws -> EnrichmentSettings {
+    return try FfiConverterTypeEnrichmentSettings.lift(buf)
+}
+
+public func FfiConverterTypeEnrichmentSettings_lower(_ value: EnrichmentSettings) -> RustBuffer {
+    return FfiConverterTypeEnrichmentSettings.lower(value)
 }
 
 
@@ -2786,7 +3386,7 @@ public struct FfiConverterTypeKeyValuePair: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> KeyValuePair {
         return
             try KeyValuePair(
-                key: FfiConverterString.read(from: &buf),
+                key: FfiConverterString.read(from: &buf), 
                 value: FfiConverterString.read(from: &buf)
         )
     }
@@ -2846,7 +3446,7 @@ public struct FfiConverterTypeLastFmStatus: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LastFmStatus {
         return
             try LastFmStatus(
-                connected: FfiConverterBool.read(from: &buf),
+                connected: FfiConverterBool.read(from: &buf), 
                 username: FfiConverterOptionString.read(from: &buf)
         )
     }
@@ -2948,14 +3548,14 @@ public struct FfiConverterTypeLastSession: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LastSession {
         return
             try LastSession(
-                currentTrackId: FfiConverterOptionInt64.read(from: &buf),
-                progressSeconds: FfiConverterDouble.read(from: &buf),
-                volume: FfiConverterFloat.read(from: &buf),
-                shuffleEnabled: FfiConverterBool.read(from: &buf),
-                repeatMode: FfiConverterTypeRepeatMode.read(from: &buf),
-                queue: FfiConverterSequenceInt64.read(from: &buf),
-                queuePosition: FfiConverterUInt64.read(from: &buf),
-                sourceContext: FfiConverterString.read(from: &buf),
+                currentTrackId: FfiConverterOptionInt64.read(from: &buf), 
+                progressSeconds: FfiConverterDouble.read(from: &buf), 
+                volume: FfiConverterFloat.read(from: &buf), 
+                shuffleEnabled: FfiConverterBool.read(from: &buf), 
+                repeatMode: FfiConverterTypeRepeatMode.read(from: &buf), 
+                queue: FfiConverterSequenceInt64.read(from: &buf), 
+                queuePosition: FfiConverterUInt64.read(from: &buf), 
+                sourceContext: FfiConverterString.read(from: &buf), 
                 updatedAt: FfiConverterString.read(from: &buf)
         )
     }
@@ -3034,9 +3634,9 @@ public struct FfiConverterTypePlaybackHistoryItem: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaybackHistoryItem {
         return
             try PlaybackHistoryItem(
-                id: FfiConverterInt64.read(from: &buf),
-                trackId: FfiConverterInt64.read(from: &buf),
-                playedAt: FfiConverterString.read(from: &buf),
+                id: FfiConverterInt64.read(from: &buf), 
+                trackId: FfiConverterInt64.read(from: &buf), 
+                playedAt: FfiConverterString.read(from: &buf), 
                 durationSeconds: FfiConverterUInt64.read(from: &buf)
         )
     }
@@ -3098,7 +3698,7 @@ public struct FfiConverterTypePlaybackHistoryPage: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaybackHistoryPage {
         return
             try PlaybackHistoryPage(
-                items: FfiConverterSequenceTypePlaybackHistoryItem.read(from: &buf),
+                items: FfiConverterSequenceTypePlaybackHistoryItem.read(from: &buf), 
                 nextOffset: FfiConverterOptionUInt64.read(from: &buf)
         )
     }
@@ -3206,15 +3806,15 @@ public struct FfiConverterTypePlaybackSnapshot: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaybackSnapshot {
         return
             try PlaybackSnapshot(
-                currentTrack: FfiConverterOptionTypeTrack.read(from: &buf),
-                positionSeconds: FfiConverterDouble.read(from: &buf),
-                durationSeconds: FfiConverterOptionDouble.read(from: &buf),
-                volume: FfiConverterFloat.read(from: &buf),
-                isPlaying: FfiConverterBool.read(from: &buf),
-                isPaused: FfiConverterBool.read(from: &buf),
-                queue: FfiConverterSequenceTypeQueueItem.read(from: &buf),
-                queuePosition: FfiConverterUInt64.read(from: &buf),
-                shuffleEnabled: FfiConverterBool.read(from: &buf),
+                currentTrack: FfiConverterOptionTypeTrack.read(from: &buf), 
+                positionSeconds: FfiConverterDouble.read(from: &buf), 
+                durationSeconds: FfiConverterOptionDouble.read(from: &buf), 
+                volume: FfiConverterFloat.read(from: &buf), 
+                isPlaying: FfiConverterBool.read(from: &buf), 
+                isPaused: FfiConverterBool.read(from: &buf), 
+                queue: FfiConverterSequenceTypeQueueItem.read(from: &buf), 
+                queuePosition: FfiConverterUInt64.read(from: &buf), 
+                shuffleEnabled: FfiConverterBool.read(from: &buf), 
                 repeatMode: FfiConverterTypeRepeatMode.read(from: &buf)
         )
     }
@@ -3324,14 +3924,14 @@ public struct FfiConverterTypePlaylist: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Playlist {
         return
             try Playlist(
-                id: FfiConverterInt64.read(from: &buf),
-                name: FfiConverterString.read(from: &buf),
-                description: FfiConverterString.read(from: &buf),
-                artworkId: FfiConverterOptionString.read(from: &buf),
-                isFavorite: FfiConverterBool.read(from: &buf),
-                suggestLess: FfiConverterBool.read(from: &buf),
-                trackCount: FfiConverterUInt64.read(from: &buf),
-                createdAt: FfiConverterString.read(from: &buf),
+                id: FfiConverterInt64.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                description: FfiConverterString.read(from: &buf), 
+                artworkId: FfiConverterOptionString.read(from: &buf), 
+                isFavorite: FfiConverterBool.read(from: &buf), 
+                suggestLess: FfiConverterBool.read(from: &buf), 
+                trackCount: FfiConverterUInt64.read(from: &buf), 
+                createdAt: FfiConverterString.read(from: &buf), 
                 updatedAt: FfiConverterString.read(from: &buf)
         )
     }
@@ -3410,9 +4010,9 @@ public struct FfiConverterTypePlaylistTrack: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaylistTrack {
         return
             try PlaylistTrack(
-                playlistId: FfiConverterInt64.read(from: &buf),
-                trackId: FfiConverterInt64.read(from: &buf),
-                position: FfiConverterUInt64.read(from: &buf),
+                playlistId: FfiConverterInt64.read(from: &buf), 
+                trackId: FfiConverterInt64.read(from: &buf), 
+                position: FfiConverterUInt64.read(from: &buf), 
                 addedAt: FfiConverterString.read(from: &buf)
         )
     }
@@ -3474,7 +4074,7 @@ public struct FfiConverterTypeQueueItem: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QueueItem {
         return
             try QueueItem(
-                trackId: FfiConverterInt64.read(from: &buf),
+                trackId: FfiConverterInt64.read(from: &buf), 
                 position: FfiConverterUInt64.read(from: &buf)
         )
     }
@@ -3600,18 +4200,18 @@ public struct FfiConverterTypeRelease: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Release {
         return
             try Release(
-                id: FfiConverterInt64.read(from: &buf),
-                title: FfiConverterString.read(from: &buf),
-                artist: FfiConverterString.read(from: &buf),
-                artistId: FfiConverterInt64.read(from: &buf),
-                releaseDate: FfiConverterOptionString.read(from: &buf),
-                totalTracks: FfiConverterUInt8.read(from: &buf),
-                totalDiscs: FfiConverterUInt8.read(from: &buf),
-                durationSeconds: FfiConverterUInt64.read(from: &buf),
-                artworkId: FfiConverterOptionString.read(from: &buf),
-                isFavorite: FfiConverterBool.read(from: &buf),
-                isHidden: FfiConverterBool.read(from: &buf),
-                suggestLess: FfiConverterBool.read(from: &buf),
+                id: FfiConverterInt64.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                artist: FfiConverterString.read(from: &buf), 
+                artistId: FfiConverterInt64.read(from: &buf), 
+                releaseDate: FfiConverterOptionString.read(from: &buf), 
+                totalTracks: FfiConverterUInt8.read(from: &buf), 
+                totalDiscs: FfiConverterUInt8.read(from: &buf), 
+                durationSeconds: FfiConverterUInt64.read(from: &buf), 
+                artworkId: FfiConverterOptionString.read(from: &buf), 
+                isFavorite: FfiConverterBool.read(from: &buf), 
+                isHidden: FfiConverterBool.read(from: &buf), 
+                suggestLess: FfiConverterBool.read(from: &buf), 
                 rating: FfiConverterOptionUInt8.read(from: &buf)
         )
     }
@@ -3682,7 +4282,7 @@ public struct FfiConverterTypeReleasePage: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReleasePage {
         return
             try ReleasePage(
-                items: FfiConverterSequenceTypeRelease.read(from: &buf),
+                items: FfiConverterSequenceTypeRelease.read(from: &buf), 
                 nextOffset: FfiConverterOptionUInt64.read(from: &buf)
         )
     }
@@ -3760,10 +4360,10 @@ public struct FfiConverterTypeScanProgress: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanProgress {
         return
             try ScanProgress(
-                path: FfiConverterString.read(from: &buf),
-                phase: FfiConverterTypeScanPhase.read(from: &buf),
-                totalFiles: FfiConverterUInt64.read(from: &buf),
-                processedFiles: FfiConverterUInt64.read(from: &buf),
+                path: FfiConverterString.read(from: &buf), 
+                phase: FfiConverterTypeScanPhase.read(from: &buf), 
+                totalFiles: FfiConverterUInt64.read(from: &buf), 
+                processedFiles: FfiConverterUInt64.read(from: &buf), 
                 newTracks: FfiConverterUInt64.read(from: &buf)
         )
     }
@@ -3844,10 +4444,10 @@ public struct FfiConverterTypeScanResult: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanResult {
         return
             try ScanResult(
-                pathsScanned: FfiConverterUInt64.read(from: &buf),
-                totalFilesFound: FfiConverterUInt64.read(from: &buf),
-                newTracksAdded: FfiConverterUInt64.read(from: &buf),
-                updatedTracks: FfiConverterUInt64.read(from: &buf),
+                pathsScanned: FfiConverterUInt64.read(from: &buf), 
+                totalFilesFound: FfiConverterUInt64.read(from: &buf), 
+                newTracksAdded: FfiConverterUInt64.read(from: &buf), 
+                updatedTracks: FfiConverterUInt64.read(from: &buf), 
                 errors: FfiConverterSequenceString.read(from: &buf)
         )
     }
@@ -3922,9 +4522,9 @@ public struct FfiConverterTypeSearchResults: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchResults {
         return
             try SearchResults(
-                tracks: FfiConverterSequenceTypeTrack.read(from: &buf),
-                releases: FfiConverterSequenceTypeRelease.read(from: &buf),
-                artists: FfiConverterSequenceTypeArtist.read(from: &buf),
+                tracks: FfiConverterSequenceTypeTrack.read(from: &buf), 
+                releases: FfiConverterSequenceTypeRelease.read(from: &buf), 
+                artists: FfiConverterSequenceTypeArtist.read(from: &buf), 
                 playlists: FfiConverterSequenceTypePlaylist.read(from: &buf)
         )
     }
@@ -4092,16 +4692,16 @@ public struct FfiConverterTypeSettings: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Settings {
         return
             try Settings(
-                crossFade: FfiConverterBool.read(from: &buf),
-                crossFadeDuration: FfiConverterUInt32.read(from: &buf),
-                normalizeVolume: FfiConverterBool.read(from: &buf),
-                explicitContent: FfiConverterBool.read(from: &buf),
-                autoplay: FfiConverterBool.read(from: &buf),
-                preferredAudioQuality: FfiConverterUInt32.read(from: &buf),
-                preferredAudioSource: FfiConverterString.read(from: &buf),
-                downloadPath: FfiConverterString.read(from: &buf),
-                openOnStartup: FfiConverterBool.read(from: &buf),
-                minimizeOnClose: FfiConverterBool.read(from: &buf),
+                crossFade: FfiConverterBool.read(from: &buf), 
+                crossFadeDuration: FfiConverterUInt32.read(from: &buf), 
+                normalizeVolume: FfiConverterBool.read(from: &buf), 
+                explicitContent: FfiConverterBool.read(from: &buf), 
+                autoplay: FfiConverterBool.read(from: &buf), 
+                preferredAudioQuality: FfiConverterUInt32.read(from: &buf), 
+                preferredAudioSource: FfiConverterString.read(from: &buf), 
+                downloadPath: FfiConverterString.read(from: &buf), 
+                openOnStartup: FfiConverterBool.read(from: &buf), 
+                minimizeOnClose: FfiConverterBool.read(from: &buf), 
                 onboardingComplete: FfiConverterBool.read(from: &buf)
         )
     }
@@ -4272,24 +4872,24 @@ public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Track {
         return
             try Track(
-                id: FfiConverterInt64.read(from: &buf),
-                title: FfiConverterString.read(from: &buf),
-                artist: FfiConverterString.read(from: &buf),
-                artistId: FfiConverterInt64.read(from: &buf),
-                release: FfiConverterString.read(from: &buf),
-                releaseId: FfiConverterInt64.read(from: &buf),
-                trackNumber: FfiConverterUInt8.read(from: &buf),
-                discNumber: FfiConverterUInt8.read(from: &buf),
-                durationSeconds: FfiConverterDouble.read(from: &buf),
-                filePath: FfiConverterString.read(from: &buf),
-                artworkId: FfiConverterOptionString.read(from: &buf),
-                bitrate: FfiConverterOptionUInt32.read(from: &buf),
-                sampleRate: FfiConverterOptionUInt32.read(from: &buf),
-                playCount: FfiConverterUInt64.read(from: &buf),
-                lastPlayed: FfiConverterOptionString.read(from: &buf),
-                rating: FfiConverterOptionUInt8.read(from: &buf),
-                isFavorite: FfiConverterBool.read(from: &buf),
-                isHidden: FfiConverterBool.read(from: &buf),
+                id: FfiConverterInt64.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                artist: FfiConverterString.read(from: &buf), 
+                artistId: FfiConverterInt64.read(from: &buf), 
+                release: FfiConverterString.read(from: &buf), 
+                releaseId: FfiConverterInt64.read(from: &buf), 
+                trackNumber: FfiConverterUInt8.read(from: &buf), 
+                discNumber: FfiConverterUInt8.read(from: &buf), 
+                durationSeconds: FfiConverterDouble.read(from: &buf), 
+                filePath: FfiConverterString.read(from: &buf), 
+                artworkId: FfiConverterOptionString.read(from: &buf), 
+                bitrate: FfiConverterOptionUInt32.read(from: &buf), 
+                sampleRate: FfiConverterOptionUInt32.read(from: &buf), 
+                playCount: FfiConverterUInt64.read(from: &buf), 
+                lastPlayed: FfiConverterOptionString.read(from: &buf), 
+                rating: FfiConverterOptionUInt8.read(from: &buf), 
+                isFavorite: FfiConverterBool.read(from: &buf), 
+                isHidden: FfiConverterBool.read(from: &buf), 
                 suggestLess: FfiConverterBool.read(from: &buf)
         )
     }
@@ -4366,7 +4966,7 @@ public struct FfiConverterTypeTrackPage: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TrackPage {
         return
             try TrackPage(
-                items: FfiConverterSequenceTypeTrack.read(from: &buf),
+                items: FfiConverterSequenceTypeTrack.read(from: &buf), 
                 nextOffset: FfiConverterOptionUInt64.read(from: &buf)
         )
     }
@@ -4386,14 +4986,152 @@ public func FfiConverterTypeTrackPage_lower(_ value: TrackPage) -> RustBuffer {
     return FfiConverterTypeTrackPage.lower(value)
 }
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum ArtistEntityKind {
+    
+    case person
+    case group
+    case other
+    case unknown
+}
+
+
+public struct FfiConverterTypeArtistEntityKind: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistEntityKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistEntityKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .person
+        
+        case 2: return .group
+        
+        case 3: return .other
+        
+        case 4: return .unknown
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ArtistEntityKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .person:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .group:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .other:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+public func FfiConverterTypeArtistEntityKind_lift(_ buf: RustBuffer) throws -> ArtistEntityKind {
+    return try FfiConverterTypeArtistEntityKind.lift(buf)
+}
+
+public func FfiConverterTypeArtistEntityKind_lower(_ value: ArtistEntityKind) -> RustBuffer {
+    return FfiConverterTypeArtistEntityKind.lower(value)
+}
+
+
+
+extension ArtistEntityKind: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum ArtistIdentityStatus {
+    
+    case unresolved
+    case ambiguous
+    case resolved
+    case notFound
+}
+
+
+public struct FfiConverterTypeArtistIdentityStatus: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistIdentityStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .unresolved
+        
+        case 2: return .ambiguous
+        
+        case 3: return .resolved
+        
+        case 4: return .notFound
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ArtistIdentityStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .unresolved:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .ambiguous:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .resolved:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .notFound:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+public func FfiConverterTypeArtistIdentityStatus_lift(_ buf: RustBuffer) throws -> ArtistIdentityStatus {
+    return try FfiConverterTypeArtistIdentityStatus.lift(buf)
+}
+
+public func FfiConverterTypeArtistIdentityStatus_lower(_ value: ArtistIdentityStatus) -> RustBuffer {
+    return FfiConverterTypeArtistIdentityStatus.lower(value)
+}
+
+
+
+extension ArtistIdentityStatus: Equatable, Hashable {}
+
+
+
 
 /**
  * Stable error type for the public API.
  */
 public enum CoreError {
 
-
-
+    
+    
     case InvalidInput(message: String
     )
     case NotFound(message: String
@@ -4416,9 +5154,9 @@ public struct FfiConverterTypeCoreError: FfiConverterRustBuffer {
         let variant: Int32 = try readInt(&buf)
         switch variant {
 
+        
 
-
-
+        
         case 1: return .InvalidInput(
             message: try FfiConverterString.read(from: &buf)
             )
@@ -4445,39 +5183,39 @@ public struct FfiConverterTypeCoreError: FfiConverterRustBuffer {
     public static func write(_ value: CoreError, into buf: inout [UInt8]) {
         switch value {
 
+        
 
-
-
-
+        
+        
         case let .InvalidInput(message):
             writeInt(&buf, Int32(1))
             FfiConverterString.write(message, into: &buf)
-
-
+            
+        
         case let .NotFound(message):
             writeInt(&buf, Int32(2))
             FfiConverterString.write(message, into: &buf)
-
-
+            
+        
         case let .Storage(message):
             writeInt(&buf, Int32(3))
             FfiConverterString.write(message, into: &buf)
-
-
+            
+        
         case let .Playback(message):
             writeInt(&buf, Int32(4))
             FfiConverterString.write(message, into: &buf)
-
-
+            
+        
         case let .Authentication(message):
             writeInt(&buf, Int32(5))
             FfiConverterString.write(message, into: &buf)
-
-
+            
+        
         case let .Network(message):
             writeInt(&buf, Int32(6))
             FfiConverterString.write(message, into: &buf)
-
+            
         }
     }
 }
@@ -4489,12 +5227,102 @@ extension CoreError: Error { }
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum EnrichmentProvider {
+    
+    case musicBrainz
+    case wikidata
+    case wikipedia
+    case commons
+    case coverArtArchive
+    case theAudioDb
+    case youTube
+}
+
+
+public struct FfiConverterTypeEnrichmentProvider: FfiConverterRustBuffer {
+    typealias SwiftType = EnrichmentProvider
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EnrichmentProvider {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .musicBrainz
+        
+        case 2: return .wikidata
+        
+        case 3: return .wikipedia
+        
+        case 4: return .commons
+        
+        case 5: return .coverArtArchive
+        
+        case 6: return .theAudioDb
+        
+        case 7: return .youTube
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: EnrichmentProvider, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .musicBrainz:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .wikidata:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .wikipedia:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .commons:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .coverArtArchive:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .theAudioDb:
+            writeInt(&buf, Int32(6))
+        
+        
+        case .youTube:
+            writeInt(&buf, Int32(7))
+        
+        }
+    }
+}
+
+
+public func FfiConverterTypeEnrichmentProvider_lift(_ buf: RustBuffer) throws -> EnrichmentProvider {
+    return try FfiConverterTypeEnrichmentProvider.lift(buf)
+}
+
+public func FfiConverterTypeEnrichmentProvider_lower(_ value: EnrichmentProvider) -> RustBuffer {
+    return FfiConverterTypeEnrichmentProvider.lower(value)
+}
+
+
+
+extension EnrichmentProvider: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
  * Repeat mode for playback
  */
 
 public enum RepeatMode {
-
+    
     case none
     case one
     case all
@@ -4507,32 +5335,32 @@ public struct FfiConverterTypeRepeatMode: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RepeatMode {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .none
-
+        
         case 2: return .one
-
+        
         case 3: return .all
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: RepeatMode, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case .none:
             writeInt(&buf, Int32(1))
-
-
+        
+        
         case .one:
             writeInt(&buf, Int32(2))
-
-
+        
+        
         case .all:
             writeInt(&buf, Int32(3))
-
+        
         }
     }
 }
@@ -4559,7 +5387,7 @@ extension RepeatMode: Equatable, Hashable {}
  */
 
 public enum ScanPhase {
-
+    
     case scanning
     case extractingMetadata
     case writingDatabase
@@ -4573,38 +5401,38 @@ public struct FfiConverterTypeScanPhase: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanPhase {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .scanning
-
+        
         case 2: return .extractingMetadata
-
+        
         case 3: return .writingDatabase
-
+        
         case 4: return .complete
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: ScanPhase, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case .scanning:
             writeInt(&buf, Int32(1))
-
-
+        
+        
         case .extractingMetadata:
             writeInt(&buf, Int32(2))
-
-
+        
+        
         case .writingDatabase:
             writeInt(&buf, Int32(3))
-
-
+        
+        
         case .complete:
             writeInt(&buf, Int32(4))
-
+        
         }
     }
 }
@@ -4771,6 +5599,27 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
     }
 }
 
+fileprivate struct FfiConverterOptionTypeArtistPartialDate: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistPartialDate?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeArtistPartialDate.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeArtistPartialDate.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionTypeScanProgress: FfiConverterRustBuffer {
     typealias SwiftType = ScanProgress?
 
@@ -4874,6 +5723,28 @@ fileprivate struct FfiConverterSequenceTypeArtist: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeArtist.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeArtistProfileSource: FfiConverterRustBuffer {
+    typealias SwiftType = [ArtistProfileSource]
+
+    public static func write(_ value: [ArtistProfileSource], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeArtistProfileSource.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistProfileSource] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ArtistProfileSource]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeArtistProfileSource.read(from: &buf))
         }
         return seq
     }
@@ -5106,6 +5977,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_artist() != 38977) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_artist_details() != 62278) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_artist_releases() != 50984) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5130,6 +6004,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_complete_lastfm_auth() != 29854) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_configure_enrichment() != 59093) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_configure_lastfm() != 5984) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5140,6 +6017,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_disconnect_lastfm() != 41366) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_enrichment_settings() != 18001) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_extract_metadata() != 44986) {

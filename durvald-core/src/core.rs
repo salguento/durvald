@@ -23,6 +23,7 @@ pub struct DurvaldCore {
     audio_player: Arc<tokio::sync::Mutex<crate::audio::AudioPlayer>>,
     playback_transition: tokio::sync::Mutex<()>,
     lastfm: Arc<LastFmClient>,
+    enrichment: crate::enrichment::service::EnrichmentService,
     covers_dir: String,
     scan_in_progress: Arc<AtomicBool>,
     scan_cancel_requested: Arc<AtomicBool>,
@@ -629,11 +630,16 @@ impl DurvaldCore {
         let (saved_session, crossfade, current_track, upcoming_tracks) = {
             // Create tables and resolve the saved queue while the connection
             // is scoped to this synchronous initialization block.
-            let conn = pool.get().map_err(|e| CoreError::Storage {
+            let mut conn = pool.get().map_err(|e| CoreError::Storage {
                 message: e.to_string(),
             })?;
             crate::database::operations::create_tables(&conn).map_err(|e| CoreError::Storage {
                 message: e.to_string(),
+            })?;
+            crate::database::migrations::migrate_enrichment(&mut conn).map_err(|e| {
+                CoreError::Storage {
+                    message: e.to_string(),
+                }
             })?;
             crate::database::operations::initiate_settings(&conn).map_err(|e| {
                 CoreError::Storage {
@@ -716,8 +722,10 @@ impl DurvaldCore {
         let lastfm = LastFmClient::new(Arc::new(tokio::sync::Mutex::new(secure_store.clone())))
             .map_err(lastfm_error)?;
 
+        let db_pool = Arc::new(pool);
         let core = Self {
-            db_pool: Arc::new(pool),
+            enrichment: crate::enrichment::service::EnrichmentService::new(db_pool.clone()),
+            db_pool,
             audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
             playback_transition: tokio::sync::Mutex::new(()),
             lastfm: Arc::new(lastfm),
@@ -1183,6 +1191,25 @@ impl DurvaldCore {
                 .map_err(|error| lookup_error(error, "Artist", artist_id))
         })
         .await
+    }
+
+    /// Reads the local enrichment cache, even when enrichment is disabled/offline.
+    /// Never resolves identities or makes an HTTP request.
+    pub async fn artist_details(
+        &self,
+        artist_id: i64,
+        language: String,
+    ) -> CoreResult<ArtistDetails> {
+        self.enrichment.artist_details(artist_id, language).await
+    }
+
+    pub async fn enrichment_settings(&self) -> CoreResult<EnrichmentSettings> {
+        self.enrichment.settings().await
+    }
+
+    /// Persists optional enrichment preferences; does not start network work.
+    pub async fn configure_enrichment(&self, settings: EnrichmentSettings) -> CoreResult<()> {
+        self.enrichment.configure(settings).await
     }
 
     /// Returns releases by an artist.
@@ -2299,6 +2326,78 @@ mod tests {
             minimize_on_close: false,
             onboarding_complete: false,
         }
+    }
+
+    #[tokio::test]
+    async fn enrichment_foundation_is_offline_and_survives_reopening() {
+        let directory = temporary_directory("enrichment-lifecycle");
+        let config = CoreConfig::new(
+            directory.to_string_lossy().into_owned(),
+            format!("durvald-enrichment-test-{}", std::process::id()),
+        );
+        // Simulate a library produced before enrichment existed.
+        std::fs::create_dir_all(&directory).unwrap();
+        {
+            let conn = rusqlite::Connection::open(&config.database_path).unwrap();
+            crate::database::operations::create_tables(&conn).unwrap();
+            conn.execute(
+                "INSERT INTO artists (artist_id, name) VALUES (73, 'Existing artist')",
+                [],
+            )
+            .unwrap();
+        }
+        let core = DurvaldCore::open_with_mock_audio(config.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            core.enrichment_settings().await.unwrap(),
+            EnrichmentSettings::default()
+        );
+        let settings = EnrichmentSettings {
+            enabled: true,
+            offline: true,
+            preferred_language: "EN-us".into(),
+        };
+        core.configure_enrichment(settings).await.unwrap();
+
+        // Cache reads must not touch the audio mutex, even while it is held.
+        let player = core.audio_player.lock().await;
+        let details = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            core.artist_details(73, "en-US".into()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(details.artist.name, "Existing artist");
+        assert_eq!(details.identity_status, ArtistIdentityStatus::Unresolved);
+        assert!(details.sources.is_empty());
+        assert_eq!(details.requested_language, "en-us");
+        drop(player);
+        assert_eq!(core.artist(73).await.unwrap(), details.artist);
+        assert!(matches!(
+            core.artist_details(-1, "en".into()).await,
+            Err(CoreError::InvalidInput { .. })
+        ));
+        assert!(matches!(
+            core.artist_details(999, "en".into()).await,
+            Err(CoreError::NotFound { .. })
+        ));
+        drop(core);
+
+        let reopened = DurvaldCore::open_with_mock_audio(config).await.unwrap();
+        assert_eq!(
+            reopened.enrichment_settings().await.unwrap(),
+            EnrichmentSettings {
+                enabled: true,
+                offline: true,
+                preferred_language: "en-us".into()
+            }
+        );
+        assert_eq!(reopened.artist(73).await.unwrap().name, "Existing artist");
+        assert!(reopened.tracks().await.unwrap().is_empty());
+        drop(reopened);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[tokio::test]

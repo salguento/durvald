@@ -1,0 +1,24 @@
+{
+  "source": "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/QueueView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Fila",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 12
+        }
+      },
+      {
+        "comment": "",
+        "key": "Limpar",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 17
+        }
+      }
+    ]
+  },
+  "version": 1
+}

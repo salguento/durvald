@@ -1,0 +1,40 @@
+{
+  "source": "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/MusicLibraryView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Cancelar scan",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 20
+        }
+      },
+      {
+        "comment": "",
+        "key": "Reproduz esta faixa agora",
+        "location": {
+          "startingColumn": 40,
+          "startingLine": 39
+        }
+      },
+      {
+        "comment": "",
+        "key": "Adicionar %@ à fila",
+        "location": {
+          "startingColumn": 41,
+          "startingLine": 47
+        }
+      },
+      {
+        "comment": "",
+        "key": "Adiciona esta faixa ao fim da fila",
+        "location": {
+          "startingColumn": 40,
+          "startingLine": 49
+        }
+      }
+    ]
+  },
+  "version": 1
+}

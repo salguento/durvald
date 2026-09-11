@@ -34,6 +34,33 @@ typedef extern ReleasePage;
 typedef extern Artist;
 
 [Rust="record"]
+typedef extern EnrichmentSettings;
+
+[Rust="enum"]
+typedef extern EnrichmentProvider;
+
+[Rust="enum"]
+typedef extern ArtistIdentityStatus;
+
+[Rust="enum"]
+typedef extern ArtistEntityKind;
+
+[Rust="record"]
+typedef extern ArtistPartialDate;
+
+[Rust="record"]
+typedef extern EnrichmentAttribution;
+
+[Rust="record"]
+typedef extern ArtistProfile;
+
+[Rust="record"]
+typedef extern ArtistProfileSource;
+
+[Rust="record"]
+typedef extern ArtistDetails;
+
+[Rust="record"]
 typedef extern Playlist;
 
 [Rust="record"]

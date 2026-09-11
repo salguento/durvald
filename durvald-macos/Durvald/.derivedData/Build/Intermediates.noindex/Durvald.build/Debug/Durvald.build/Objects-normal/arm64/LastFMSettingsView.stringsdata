@@ -1,0 +1,56 @@
+{
+  "source": "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/LastFM/LastFMSettingsView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Conectado como %@",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 10
+        }
+      },
+      {
+        "comment": "",
+        "key": "Desconectar",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 11
+        }
+      },
+      {
+        "comment": "",
+        "key": "API key",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 17
+        }
+      },
+      {
+        "comment": "",
+        "key": "API secret",
+        "location": {
+          "startingColumn": 29,
+          "startingLine": 18
+        }
+      },
+      {
+        "comment": "",
+        "key": "Autorizar no Last.fm",
+        "location": {
+          "startingColumn": 24,
+          "startingLine": 20
+        }
+      },
+      {
+        "comment": "",
+        "key": "Concluir autorização",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 32
+        }
+      }
+    ]
+  },
+  "version": 1
+}

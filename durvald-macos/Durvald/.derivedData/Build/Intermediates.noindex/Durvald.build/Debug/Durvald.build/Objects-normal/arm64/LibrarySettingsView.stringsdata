@@ -1,0 +1,96 @@
+{
+  "source": "/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Settings/LibrarySettingsView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Remover pasta da biblioteca?",
+        "location": {
+          "startingColumn": 13,
+          "startingLine": 86
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pastas da biblioteca",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 10
+        }
+      },
+      {
+        "comment": "",
+        "key": "Atualização da biblioteca",
+        "location": {
+          "startingColumn": 25,
+          "startingLine": 57
+        }
+      },
+      {
+        "comment": "",
+        "key": "Nenhuma pasta configurada",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 12
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pasta da biblioteca: %@",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 26
+        }
+      },
+      {
+        "comment": "",
+        "key": "Remover",
+        "location": {
+          "startingColumn": 36,
+          "startingLine": 31
+        }
+      },
+      {
+        "comment": "",
+        "key": "Adicionar pasta…",
+        "location": {
+          "startingColumn": 28,
+          "startingLine": 46
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancelar scan",
+        "location": {
+          "startingColumn": 32,
+          "startingLine": 75
+        }
+      },
+      {
+        "comment": "",
+        "key": "Remover pasta",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 100
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancelar",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 105
+        }
+      },
+      {
+        "comment": "",
+        "key": "O Durvald deixará de escanear %@. As músicas já indexadas não serão apagadas.",
+        "location": {
+          "startingColumn": 17,
+          "startingLine": 110
+        }
+      }
+    ]
+  },
+  "version": 1
+}

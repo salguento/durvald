@@ -1,0 +1,753 @@
+//! Bounded, cancellation-safe GET transport for JSON provider adapters.
+//!
+//! No background workers: dropping the future releases permits and cancels I/O.
+//! JSON redirects are deliberately disabled. Artwork CDN redirects belong to the
+//! later artwork adapter and must not inherit API credentials.
+
+use super::models::CacheValidators;
+use super::policy::{self, normalize_language};
+use crate::api::EnrichmentProvider;
+use reqwest::{Client, StatusCode, Url, header};
+use ring::rand::SecureRandom;
+use serde::de::DeserializeOwned;
+use std::sync::{Arc, LazyLock};
+use std::time::Duration;
+use tokio::sync::{Mutex, Semaphore};
+use tokio::time::{Instant, sleep, sleep_until, timeout};
+
+/// No error stores a request URL, response body or reqwest error containing keys.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum TransportError {
+    #[error("Invalid enrichment HTTP configuration")]
+    Configuration,
+    #[error("Invalid enrichment request")]
+    InvalidRequest,
+    #[error("Enrichment request timed out")]
+    Timeout,
+    #[error("Enrichment network request failed")]
+    Network,
+    #[error("Enrichment response exceeded its byte limit")]
+    BodyTooLarge,
+    #[error("Invalid enrichment JSON response")]
+    InvalidJson,
+    #[error("Enrichment provider returned HTTP {status}")]
+    HttpStatus {
+        status: u16,
+        retry_after_seconds: Option<u64>,
+    },
+    #[error("Enrichment provider is rate limited")]
+    RateLimited { retry_after_seconds: u64 },
+}
+
+#[derive(Debug)]
+pub enum JsonResponse<T> {
+    Modified {
+        body: T,
+        validators: CacheValidators,
+    },
+    NotModified {
+        validators: CacheValidators,
+    },
+}
+
+struct ProviderGate {
+    next_allowed: Mutex<Instant>,
+    interval: Duration,
+    slots: Semaphore,
+}
+
+impl ProviderGate {
+    fn new(interval: Duration) -> Self {
+        Self {
+            next_allowed: Mutex::new(Instant::now()),
+            interval,
+            slots: Semaphore::new(2),
+        }
+    }
+
+    async fn wait(&self) {
+        loop {
+            let mut next = self.next_allowed.lock().await;
+            let now = Instant::now();
+            if *next <= now {
+                *next = now + self.interval;
+                return;
+            }
+            let due = *next;
+            drop(next);
+            // Recheck after waking: a concurrent 429 may extend the cooldown.
+            sleep_until(due).await;
+        }
+    }
+
+    async fn defer(&self, delay: Duration) {
+        let mut next = self.next_allowed.lock().await;
+        let until = Instant::now() + delay;
+        *next = (*next).max(until);
+    }
+}
+
+// Wikimedia projects share one budget. Different clients/core instances in this
+// process must not multiply the MusicBrainz allowance. Other intervals are
+// conservative local defaults, not claims about provider quotas.
+static GATES: LazyLock<[Arc<ProviderGate>; 5]> = LazyLock::new(|| {
+    [
+        Arc::new(ProviderGate::new(Duration::from_secs(1))),
+        Arc::new(ProviderGate::new(Duration::from_millis(250))),
+        Arc::new(ProviderGate::new(Duration::from_millis(250))),
+        Arc::new(ProviderGate::new(Duration::from_secs(2))),
+        Arc::new(ProviderGate::new(Duration::from_millis(250))),
+    ]
+});
+
+fn gate_index(provider: EnrichmentProvider) -> usize {
+    match provider {
+        EnrichmentProvider::MusicBrainz => 0,
+        EnrichmentProvider::Wikidata
+        | EnrichmentProvider::Wikipedia
+        | EnrichmentProvider::Commons => 1,
+        EnrichmentProvider::CoverArtArchive => 2,
+        EnrichmentProvider::TheAudioDb => 3,
+        EnrichmentProvider::YouTube => 4,
+    }
+}
+
+#[derive(Clone)]
+struct TransportPolicy {
+    connect_timeout: Duration,
+    operation_timeout: Duration,
+    max_bytes: usize,
+    retry_base: Duration,
+}
+
+impl Default for TransportPolicy {
+    fn default() -> Self {
+        Self {
+            connect_timeout: policy::CONNECT_TIMEOUT,
+            operation_timeout: policy::OPERATION_TIMEOUT,
+            max_bytes: policy::MAX_JSON_BYTES,
+            retry_base: Duration::from_millis(250),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct EnrichmentHttpClient {
+    client: Client,
+    base: Url,
+    gate: Arc<ProviderGate>,
+    policy: TransportPolicy,
+    #[cfg(test)]
+    scripted: Option<Arc<tests::MockTransport>>,
+}
+
+struct HttpResponse {
+    status: StatusCode,
+    headers: header::HeaderMap,
+    content_length: Option<u64>,
+    body: ResponseBody,
+}
+
+enum ResponseBody {
+    Http(reqwest::Response),
+    #[cfg(test)]
+    Scripted {
+        chunks: std::collections::VecDeque<Vec<u8>>,
+        delay: Duration,
+    },
+}
+
+impl ResponseBody {
+    async fn chunk(&mut self) -> Result<Option<Vec<u8>>, TransportError> {
+        match self {
+            Self::Http(response) => response
+                .chunk()
+                .await
+                .map(|chunk| chunk.map(|bytes| bytes.to_vec()))
+                .map_err(network_error),
+            #[cfg(test)]
+            Self::Scripted { chunks, delay } => {
+                sleep(*delay).await;
+                Ok(chunks.pop_front())
+            }
+        }
+    }
+}
+
+fn network_error(error: reqwest::Error) -> TransportError {
+    if error.is_builder() {
+        TransportError::InvalidRequest
+    } else if error.is_timeout() {
+        TransportError::Timeout
+    } else {
+        TransportError::Network
+    }
+}
+
+impl EnrichmentHttpClient {
+    /// `wikipedia_edition` must be a resolved edition, not an arbitrary user locale.
+    /// A meaningful User-Agent (application/version and contact) comes from the adapter.
+    pub fn new(
+        provider: EnrichmentProvider,
+        wikipedia_edition: Option<&str>,
+        user_agent: &str,
+    ) -> Result<Self, TransportError> {
+        let base = match provider {
+            EnrichmentProvider::MusicBrainz => "https://musicbrainz.org/".to_string(),
+            EnrichmentProvider::Wikidata => "https://www.wikidata.org/".to_string(),
+            EnrichmentProvider::Wikipedia => {
+                let edition =
+                    normalize_language(wikipedia_edition.ok_or(TransportError::Configuration)?)
+                        .map_err(|_| TransportError::Configuration)?;
+                format!("https://{edition}.wikipedia.org/")
+            }
+            EnrichmentProvider::Commons => "https://commons.wikimedia.org/".to_string(),
+            EnrichmentProvider::CoverArtArchive => "https://coverartarchive.org/".to_string(),
+            EnrichmentProvider::TheAudioDb => "https://www.theaudiodb.com/".to_string(),
+            EnrichmentProvider::YouTube => "https://www.googleapis.com/".to_string(),
+        };
+        Self::build(
+            Url::parse(&base).map_err(|_| TransportError::Configuration)?,
+            GATES[gate_index(provider)].clone(),
+            TransportPolicy::default(),
+            user_agent,
+        )
+    }
+
+    fn build(
+        base: Url,
+        gate: Arc<ProviderGate>,
+        policy: TransportPolicy,
+        user_agent: &str,
+    ) -> Result<Self, TransportError> {
+        if user_agent.trim().is_empty() {
+            return Err(TransportError::Configuration);
+        }
+        let client = Client::builder()
+            .user_agent(user_agent)
+            .connect_timeout(policy.connect_timeout)
+            .timeout(policy.operation_timeout)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| TransportError::Configuration)?;
+        Ok(Self {
+            client,
+            base,
+            gate,
+            policy,
+            #[cfg(test)]
+            scripted: None,
+        })
+    }
+
+    pub async fn get_json<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        validators: &CacheValidators,
+    ) -> Result<JsonResponse<T>, TransportError> {
+        // Queries are encoded by reqwest, including keys; never splice them into a URL.
+        if path.contains(['?', '#', '\\']) {
+            return Err(TransportError::InvalidRequest);
+        }
+        let url = self
+            .base
+            .join(path)
+            .map_err(|_| TransportError::InvalidRequest)?;
+        if url.origin() != self.base.origin()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return Err(TransportError::InvalidRequest);
+        }
+        timeout(
+            self.policy.operation_timeout,
+            self.request(url, query, validators),
+        )
+        .await
+        .map_err(|_| TransportError::Timeout)?
+    }
+
+    async fn request<T: DeserializeOwned>(
+        &self,
+        url: Url,
+        query: &[(&str, &str)],
+        validators: &CacheValidators,
+    ) -> Result<JsonResponse<T>, TransportError> {
+        let _permit = self
+            .gate
+            .slots
+            .acquire()
+            .await
+            .map_err(|_| TransportError::Network)?;
+        for attempt in 0..3 {
+            self.gate.wait().await;
+            let mut request = self
+                .client
+                .get(url.clone())
+                .query(query)
+                .header(header::ACCEPT, "application/json");
+            if let Some(etag) = &validators.etag {
+                request = request.header(header::IF_NONE_MATCH, etag);
+            }
+            if let Some(modified) = &validators.last_modified {
+                request = request.header(header::IF_MODIFIED_SINCE, modified);
+            }
+            let request = request
+                .build()
+                .map_err(|_| TransportError::InvalidRequest)?;
+            let mut response = match self.send(request).await {
+                Ok(response) => response,
+                Err(error) => {
+                    if attempt < 2
+                        && matches!(error, TransportError::Network | TransportError::Timeout)
+                    {
+                        self.backoff(attempt).await;
+                        continue;
+                    }
+                    return Err(error);
+                }
+            };
+            let status = response.status;
+            let retry_after = response
+                .headers
+                .get(header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| retry_after_seconds(v, chrono::Utc::now().timestamp()));
+            if status == StatusCode::TOO_MANY_REQUESTS {
+                let seconds = retry_after.unwrap_or(60);
+                self.gate.defer(Duration::from_secs(seconds)).await;
+                return Err(TransportError::RateLimited {
+                    retry_after_seconds: seconds,
+                });
+            }
+            if status == StatusCode::SERVICE_UNAVAILABLE {
+                if let Some(seconds) = retry_after {
+                    self.gate.defer(Duration::from_secs(seconds)).await;
+                    return Err(TransportError::HttpStatus {
+                        status: status.as_u16(),
+                        retry_after_seconds: Some(seconds),
+                    });
+                }
+            }
+            if matches!(status.as_u16(), 500 | 502 | 503 | 504) && attempt < 2 {
+                drop(response);
+                self.backoff(attempt).await;
+                continue;
+            }
+            let received = CacheValidators {
+                etag: response
+                    .headers
+                    .get(header::ETAG)
+                    .and_then(|h| h.to_str().ok())
+                    .map(str::to_string),
+                last_modified: response
+                    .headers
+                    .get(header::LAST_MODIFIED)
+                    .and_then(|h| h.to_str().ok())
+                    .map(str::to_string),
+            };
+            if status == StatusCode::NOT_MODIFIED
+                && (validators.etag.is_some() || validators.last_modified.is_some())
+            {
+                return Ok(JsonResponse::NotModified {
+                    validators: CacheValidators {
+                        etag: received.etag.or_else(|| validators.etag.clone()),
+                        last_modified: received
+                            .last_modified
+                            .or_else(|| validators.last_modified.clone()),
+                    },
+                });
+            }
+            if !status.is_success() {
+                return Err(TransportError::HttpStatus {
+                    status: status.as_u16(),
+                    retry_after_seconds: retry_after,
+                });
+            }
+            let body = self.read_body(&mut response).await?;
+            return Ok(JsonResponse::Modified {
+                body: serde_json::from_slice(&body).map_err(|_| TransportError::InvalidJson)?,
+                validators: received,
+            });
+        }
+        unreachable!("The last attempt always returns")
+    }
+
+    async fn backoff(&self, attempt: u32) {
+        let mut random = [0u8; 1];
+        let jitter = if self.policy.retry_base.is_zero() {
+            0
+        } else {
+            let _ = ring::rand::SystemRandom::new().fill(&mut random);
+            u64::from(random[0]) % 101
+        };
+        sleep(self.policy.retry_base * (1 << attempt) + Duration::from_millis(jitter)).await;
+    }
+
+    async fn send(&self, request: reqwest::Request) -> Result<HttpResponse, TransportError> {
+        #[cfg(test)]
+        if let Some(scripted) = &self.scripted {
+            return scripted.send(request).await;
+        }
+        let response = self.client.execute(request).await.map_err(network_error)?;
+        Ok(HttpResponse {
+            status: response.status(),
+            headers: response.headers().clone(),
+            content_length: response.content_length(),
+            body: ResponseBody::Http(response),
+        })
+    }
+
+    async fn read_body(&self, response: &mut HttpResponse) -> Result<Vec<u8>, TransportError> {
+        if response
+            .content_length
+            .is_some_and(|len| len > self.policy.max_bytes as u64)
+        {
+            return Err(TransportError::BodyTooLarge);
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response.body.chunk().await? {
+            if body.len().saturating_add(chunk.len()) > self.policy.max_bytes {
+                return Err(TransportError::BodyTooLarge);
+            }
+            body.extend_from_slice(&chunk);
+        }
+        Ok(body)
+    }
+}
+
+fn retry_after_seconds(value: &str, now: i64) -> Option<u64> {
+    let value = value.trim();
+    let seconds = value.parse::<u64>().ok().or_else(|| {
+        chrono::DateTime::parse_from_rfc2822(value)
+            .ok()
+            .map(|date| date.timestamp().saturating_sub(now).max(0) as u64)
+    })?;
+    // Bound untrusted durations to a representable monotonic-clock offset.
+    Some(seconds.min(u64::from(u32::MAX)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Mutex as StdMutex;
+
+    struct Step {
+        delay: Duration,
+        response: Result<HttpResponse, TransportError>,
+    }
+
+    pub(super) struct MockTransport {
+        steps: StdMutex<VecDeque<Step>>,
+        requests: StdMutex<Vec<reqwest::Request>>,
+    }
+
+    impl MockTransport {
+        pub(super) async fn send(
+            &self,
+            request: reqwest::Request,
+        ) -> Result<HttpResponse, TransportError> {
+            self.requests.lock().unwrap().push(request);
+            let step = self
+                .steps
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("Unexpected HTTP attempt");
+            sleep(step.delay).await;
+            step.response
+        }
+
+        fn calls(&self) -> usize {
+            self.requests.lock().unwrap().len()
+        }
+    }
+
+    fn response(
+        status: u16,
+        headers: &[(&'static str, &'static str)],
+        chunks: &[&str],
+        length: Option<u64>,
+    ) -> Step {
+        let mut map = header::HeaderMap::new();
+        for (name, value) in headers {
+            map.insert(
+                header::HeaderName::from_static(name),
+                header::HeaderValue::from_static(value),
+            );
+        }
+        Step {
+            delay: Duration::ZERO,
+            response: Ok(HttpResponse {
+                status: StatusCode::from_u16(status).unwrap(),
+                headers: map,
+                content_length: length,
+                body: ResponseBody::Scripted {
+                    chunks: chunks
+                        .iter()
+                        .map(|chunk| chunk.as_bytes().to_vec())
+                        .collect(),
+                    delay: Duration::ZERO,
+                },
+            }),
+        }
+    }
+
+    fn client(steps: Vec<Step>) -> (EnrichmentHttpClient, Arc<MockTransport>) {
+        let scripted = Arc::new(MockTransport {
+            steps: StdMutex::new(steps.into()),
+            requests: StdMutex::new(Vec::new()),
+        });
+        let mut client = EnrichmentHttpClient::build(
+            Url::parse("https://musicbrainz.org/").unwrap(),
+            Arc::new(ProviderGate::new(Duration::ZERO)),
+            TransportPolicy {
+                operation_timeout: Duration::from_secs(2),
+                retry_base: Duration::ZERO,
+                ..Default::default()
+            },
+            "DurvaldTest/1.0 (in-memory fixture)",
+        )
+        .unwrap();
+        client.scripted = Some(scripted.clone());
+        (client, scripted)
+    }
+
+    async fn get(
+        client: &EnrichmentHttpClient,
+    ) -> Result<JsonResponse<serde_json::Value>, TransportError> {
+        client
+            .get_json("data", &[], &CacheValidators::default())
+            .await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn transient_status_retries_and_keeps_conditional_metadata() {
+        let (client, mock) = client(vec![
+            response(503, &[], &[], None),
+            response(200, &[("etag", "\"v2\"")], &["{\"ok\":true}"], None),
+        ]);
+        let result = get(&client).await.unwrap();
+        assert!(
+            matches!(result, JsonResponse::Modified { validators, .. } if validators.etag.as_deref() == Some("\"v2\""))
+        );
+        assert_eq!(mock.calls(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retries_stop_after_three_attempts() {
+        let (client, mock) = client((0..3).map(|_| response(502, &[], &[], None)).collect());
+        assert!(matches!(
+            get(&client).await,
+            Err(TransportError::HttpStatus { status: 502, .. })
+        ));
+        assert_eq!(mock.calls(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn failed_connection_is_retried_without_exposing_url() {
+        let (client, mock) = client(vec![
+            Step {
+                delay: Duration::ZERO,
+                response: Err(TransportError::Network),
+            },
+            response(200, &[], &["{}"], None),
+        ]);
+        assert!(get(&client).await.is_ok());
+        assert_eq!(mock.calls(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn permanent_errors_and_bad_json_are_not_retried() {
+        for status in [401, 403, 404, 200] {
+            let (client, mock) = client(vec![response(status, &[], &["not json"], None)]);
+            let result = get(&client).await;
+            if status == 200 {
+                assert!(matches!(result, Err(TransportError::InvalidJson)));
+            } else {
+                assert!(
+                    matches!(result, Err(TransportError::HttpStatus { status: actual, .. }) if actual == status)
+                );
+            }
+            assert_eq!(mock.calls(), 1);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn response_limit_applies_with_and_without_content_length() {
+        for length in [Some(10), None] {
+            let (mut client, mock) = client(vec![response(200, &[], &["12345", "67890"], length)]);
+            client.policy.max_bytes = 8;
+            assert!(matches!(
+                get(&client).await,
+                Err(TransportError::BodyTooLarge)
+            ));
+            assert_eq!(mock.calls(), 1);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rate_limit_blocks_shared_clients_until_cooldown_expires() {
+        let (client, mock) = client(vec![
+            response(429, &[("retry-after", "60")], &[], None),
+            response(200, &[], &["{}"], None),
+        ]);
+        assert!(matches!(
+            get(&client).await,
+            Err(TransportError::RateLimited {
+                retry_after_seconds: 60
+            })
+        ));
+        let mut other = client.clone();
+        other.policy.operation_timeout = Duration::from_secs(1);
+        assert!(matches!(get(&other).await, Err(TransportError::Timeout)));
+        assert_eq!(mock.calls(), 1);
+        let independent = ProviderGate::new(Duration::ZERO);
+        timeout(Duration::from_millis(1), independent.wait())
+            .await
+            .unwrap();
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert!(get(&other).await.is_ok());
+        assert_eq!(mock.calls(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unavailable_retry_after_is_returned_without_spending_retry_budget() {
+        let (client, mock) = client(vec![response(503, &[("retry-after", "120")], &[], None)]);
+        assert!(matches!(
+            get(&client).await,
+            Err(TransportError::HttpStatus {
+                status: 503,
+                retry_after_seconds: Some(120)
+            })
+        ));
+        assert_eq!(mock.calls(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn timeout_covers_headers_and_streaming_body_and_releases_permits() {
+        for delay_headers in [true, false] {
+            let mut step = response(200, &[], &["{}"], None);
+            if delay_headers {
+                step.delay = Duration::from_secs(30);
+            } else {
+                step.response.as_mut().unwrap().body = ResponseBody::Scripted {
+                    chunks: [b"{}".to_vec()].into(),
+                    delay: Duration::from_secs(30),
+                };
+            }
+            let (client, _) = client(vec![step]);
+            assert!(matches!(get(&client).await, Err(TransportError::Timeout)));
+            assert_eq!(client.gate.slots.available_permits(), 2);
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn dropping_request_cancels_work_and_releases_permits() {
+        let mut step = response(200, &[], &["{}"], None);
+        step.delay = Duration::from_secs(30);
+        let (client, mock) = client(vec![step]);
+        let task_client = client.clone();
+        let task = tokio::spawn(async move { get(&task_client).await });
+        tokio::task::yield_now().await;
+        assert_eq!(mock.calls(), 1);
+        assert_eq!(client.gate.slots.available_permits(), 1);
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert_eq!(client.gate.slots.available_permits(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn monotonic_gate_spaces_calls_and_observes_extended_cooldowns() {
+        let gate = Arc::new(ProviderGate::new(Duration::from_secs(1)));
+        gate.wait().await;
+        let started = Instant::now();
+        let waiting_gate = gate.clone();
+        let waiter = tokio::spawn(async move { waiting_gate.wait().await });
+        tokio::task::yield_now().await;
+        gate.defer(Duration::from_secs(5)).await;
+        waiter.await.unwrap();
+        assert!(started.elapsed() >= Duration::from_secs(5));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn validators_query_encoding_and_not_modified_are_preserved() {
+        let (client, mock) = client(vec![response(304, &[], &[], None)]);
+        let validators = CacheValidators {
+            etag: Some("\"v1\"".into()),
+            last_modified: None,
+        };
+        let result = client
+            .get_json::<serde_json::Value>("data", &[("artist", "AC/DC & friends")], &validators)
+            .await
+            .unwrap();
+        assert!(
+            matches!(result, JsonResponse::NotModified { validators: received } if received == validators)
+        );
+        let requests = mock.requests.lock().unwrap();
+        assert!(
+            requests[0]
+                .url()
+                .as_str()
+                .contains("artist=AC%2FDC+%26+friends")
+        );
+        assert_eq!(
+            requests[0].headers().get(header::IF_NONE_MATCH).unwrap(),
+            "\"v1\""
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn redirects_and_cross_origin_requests_do_not_leak_credentials() {
+        let (client, mock) = client(vec![response(
+            302,
+            &[("location", "https://example.com/secret")],
+            &[],
+            None,
+        )]);
+        let error = client
+            .get_json::<serde_json::Value>(
+                "data",
+                &[("key", "private-value")],
+                &CacheValidators::default(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            TransportError::HttpStatus { status: 302, .. }
+        ));
+        assert!(!format!("{error:?}").contains("private-value"));
+        assert!(matches!(
+            client
+                .get_json::<serde_json::Value>(
+                    "https://example.com/data",
+                    &[],
+                    &CacheValidators::default()
+                )
+                .await,
+            Err(TransportError::InvalidRequest)
+        ));
+        assert_eq!(mock.calls(), 1);
+    }
+
+    #[test]
+    fn retry_after_supports_seconds_and_http_dates() {
+        assert_eq!(retry_after_seconds("120", 0), Some(120));
+        assert_eq!(
+            retry_after_seconds("Thu, 01 Jan 1970 00:02:00 GMT", 60),
+            Some(60)
+        );
+        assert_eq!(
+            retry_after_seconds("Thu, 01 Jan 1970 00:02:00 GMT", 180),
+            Some(0)
+        );
+        assert_eq!(retry_after_seconds("invalid", 0), None);
+        assert_eq!(
+            gate_index(EnrichmentProvider::Wikidata),
+            gate_index(EnrichmentProvider::Commons)
+        );
+    }
+}
