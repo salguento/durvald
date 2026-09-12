@@ -83,6 +83,8 @@ fn parse_replay_gain_db(value: &str) -> Option<f64> {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AudioMetadata {
+    #[serde(default)]
+    pub musicbrainz: MusicBrainzTags,
     pub title: Option<String>,
     pub artist: Option<String>,
     pub track_artists: Vec<String>,
@@ -226,6 +228,7 @@ pub fn extract_metadata_blocking_with_cancel(
 
     let properties = tagged_file.properties();
     let mut metadata = AudioMetadata {
+        musicbrainz: MusicBrainzTags::default(),
         title: None,
         artist: None,
         track_artists: Vec::new(),
@@ -245,6 +248,7 @@ pub fn extract_metadata_blocking_with_cancel(
     };
 
     if let Some(tag) = tagged_file.primary_tag() {
+        metadata.musicbrainz = MusicBrainzTags::from_tag(tag);
         // Standard fields
         metadata.title = tag.title().map(|s| s.to_string());
         metadata.artist = tag.artist().map(|s| s.to_string());
@@ -376,5 +380,55 @@ mod tests {
         assert_eq!(parse_replay_gain_db("+3.0"), Some(3.0));
         assert_eq!(parse_replay_gain_db("not a number"), None);
         assert_eq!(parse_replay_gain_db("25 dB"), None);
+    }
+}
+
+/// IDs retain their entity role; recording IDs must never resolve an artist.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MusicBrainzTags {
+    pub track_artists: Vec<String>,
+    pub album_artists: Vec<String>,
+    pub releases: Vec<String>,
+    pub release_groups: Vec<String>,
+    pub recordings: Vec<String>,
+}
+
+impl MusicBrainzTags {
+    fn from_tag(tag: &lofty::tag::Tag) -> Self {
+        fn ids(tag: &lofty::tag::Tag, key: ItemKey) -> Vec<String> {
+            tag.get_strings(&key)
+                .flat_map(|s| s.split(|c: char| c == ';' || c == '/' || c.is_whitespace()))
+                .filter_map(crate::enrichment::identity::normalize_mbid)
+                .collect()
+        }
+        Self {
+            track_artists: ids(tag, ItemKey::MusicBrainzArtistId),
+            album_artists: ids(tag, ItemKey::MusicBrainzReleaseArtistId),
+            releases: ids(tag, ItemKey::MusicBrainzReleaseId),
+            release_groups: ids(tag, ItemKey::MusicBrainzReleaseGroupId),
+            recordings: ids(tag, ItemKey::MusicBrainzRecordingId),
+        }
+    }
+}
+
+#[cfg(test)]
+mod musicbrainz_tests {
+    use super::*;
+    #[test]
+    fn repeated_tags_preserve_entity_roles_and_ignore_invalid_identifiers() {
+        let mut tag = lofty::tag::Tag::new(lofty::tag::TagType::VorbisComments);
+        let a = "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA";
+        let b = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        tag.insert_text(ItemKey::MusicBrainzArtistId, format!("{a};{b}"));
+        tag.insert_text(ItemKey::MusicBrainzReleaseArtistId, b.into());
+        tag.insert_text(ItemKey::MusicBrainzRecordingId, a.into());
+        tag.insert_text(ItemKey::MusicBrainzReleaseId, b.into());
+        tag.insert_text(ItemKey::MusicBrainzReleaseGroupId, "invalid".into());
+        let ids = MusicBrainzTags::from_tag(&tag);
+        assert_eq!(ids.track_artists, vec![a.to_lowercase(), b.into()]);
+        assert_eq!(ids.album_artists, vec![b]);
+        assert_eq!(ids.recordings, vec![a.to_lowercase()]);
+        assert_eq!(ids.releases, vec![b]);
+        assert!(ids.release_groups.is_empty());
     }
 }

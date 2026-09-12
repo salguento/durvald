@@ -107,3 +107,18 @@ typedef extern AuthTokenResponse;
 
 [Rust="record"]
 typedef extern SessionResponse;
+
+[Rust="record"]
+typedef extern ArtistIdentity;
+
+[Rust="record"]
+typedef extern ArtistIdentityCandidate;
+
+[Rust="record"]
+typedef extern ArtistIdentityCandidates;
+
+[Rust="enum"]
+typedef extern ArtistIdentityOrigin;
+
+[Rust="enum"]
+typedef extern ArtistIdentityLookupStatus;

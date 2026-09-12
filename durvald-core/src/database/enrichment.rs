@@ -60,6 +60,7 @@ pub fn read_artist_details(
         return Err(invalid("Artist ID must be non-negative"));
     }
     let language = normalize_language(language)?;
+    crate::database::identity::read(conn, artist_id)?;
     let tx = conn.unchecked_transaction().map_err(storage)?;
     let row = tx
         .query_row(

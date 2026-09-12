@@ -583,6 +583,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func artistDetails(artistId: Int64, language: String) async throws  -> ArtistDetails
     
+    func artistIdentity(artistId: Int64) async throws  -> ArtistIdentity
+    
     /**
      * Returns releases by an artist.
      */
@@ -609,6 +611,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func cancelLibraryScan() throws 
     
+    func clearArtistIdentity(artistId: Int64) async throws 
+    
     /**
      * Deletes every completed-playback event and returns the number removed.
      */
@@ -633,6 +637,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Stores Last.fm API credentials in the secure store.
      */
     func configureLastfm(apiKey: String, apiSecret: String) async throws 
+    
+    func confirmArtistIdentity(artistId: Int64, musicbrainzId: String) async throws  -> ArtistIdentity
     
     /**
      * Creates a playlist. Artwork is optional base64 or a data URL.
@@ -785,6 +791,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Removes a track entry at a playlist position.
      */
     func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws 
+    
+    func resolveArtistCandidates(artistId: Int64) async throws  -> ArtistIdentityCandidates
     
     /**
      * Resumes playback.
@@ -1071,6 +1079,23 @@ open func artistDetails(artistId: Int64, language: String)async throws  -> Artis
         )
 }
     
+open func artistIdentity(artistId: Int64)async throws  -> ArtistIdentity {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_artist_identity(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(artistId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeArtistIdentity.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+    
     /**
      * Returns releases by an artist.
      */
@@ -1159,6 +1184,23 @@ open func cancelLibraryScan()throws  {try rustCallWithError(FfiConverterTypeCore
     uniffi_durvald_core_fn_method_durvaldcore_cancel_library_scan(self.uniffiClonePointer(),$0
     )
 }
+}
+    
+open func clearArtistIdentity(artistId: Int64)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_clear_artist_identity(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(artistId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
 }
     
     /**
@@ -1257,6 +1299,23 @@ open func configureLastfm(apiKey: String, apiSecret: String)async throws  {
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+    
+open func confirmArtistIdentity(artistId: Int64, musicbrainzId: String)async throws  -> ArtistIdentity {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_confirm_artist_identity(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(artistId),FfiConverterString.lower(musicbrainzId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeArtistIdentity.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -1875,6 +1934,23 @@ open func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: U
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+    
+open func resolveArtistCandidates(artistId: Int64)async throws  -> ArtistIdentityCandidates {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_resolve_artist_candidates(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(artistId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeArtistIdentityCandidates.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -2607,6 +2683,279 @@ public func FfiConverterTypeArtistDetails_lift(_ buf: RustBuffer) throws -> Arti
 
 public func FfiConverterTypeArtistDetails_lower(_ value: ArtistDetails) -> RustBuffer {
     return FfiConverterTypeArtistDetails.lower(value)
+}
+
+
+public struct ArtistIdentity {
+    public var artistId: Int64
+    public var status: ArtistIdentityStatus
+    public var musicbrainzId: String?
+    public var generation: UInt64
+    public var origin: ArtistIdentityOrigin?
+    /**
+     * Retained even when conflicting tags block enrichment.
+     */
+    public var confirmedMusicbrainzId: String?
+    public var conflictingTags: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(artistId: Int64, status: ArtistIdentityStatus, musicbrainzId: String?, generation: UInt64, origin: ArtistIdentityOrigin?, 
+        /**
+         * Retained even when conflicting tags block enrichment.
+         */confirmedMusicbrainzId: String?, conflictingTags: Bool) {
+        self.artistId = artistId
+        self.status = status
+        self.musicbrainzId = musicbrainzId
+        self.generation = generation
+        self.origin = origin
+        self.confirmedMusicbrainzId = confirmedMusicbrainzId
+        self.conflictingTags = conflictingTags
+    }
+}
+
+
+
+extension ArtistIdentity: Equatable, Hashable {
+    public static func ==(lhs: ArtistIdentity, rhs: ArtistIdentity) -> Bool {
+        if lhs.artistId != rhs.artistId {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.musicbrainzId != rhs.musicbrainzId {
+            return false
+        }
+        if lhs.generation != rhs.generation {
+            return false
+        }
+        if lhs.origin != rhs.origin {
+            return false
+        }
+        if lhs.confirmedMusicbrainzId != rhs.confirmedMusicbrainzId {
+            return false
+        }
+        if lhs.conflictingTags != rhs.conflictingTags {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(artistId)
+        hasher.combine(status)
+        hasher.combine(musicbrainzId)
+        hasher.combine(generation)
+        hasher.combine(origin)
+        hasher.combine(confirmedMusicbrainzId)
+        hasher.combine(conflictingTags)
+    }
+}
+
+
+public struct FfiConverterTypeArtistIdentity: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentity {
+        return
+            try ArtistIdentity(
+                artistId: FfiConverterInt64.read(from: &buf), 
+                status: FfiConverterTypeArtistIdentityStatus.read(from: &buf), 
+                musicbrainzId: FfiConverterOptionString.read(from: &buf), 
+                generation: FfiConverterUInt64.read(from: &buf), 
+                origin: FfiConverterOptionTypeArtistIdentityOrigin.read(from: &buf), 
+                confirmedMusicbrainzId: FfiConverterOptionString.read(from: &buf), 
+                conflictingTags: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistIdentity, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.artistId, into: &buf)
+        FfiConverterTypeArtistIdentityStatus.write(value.status, into: &buf)
+        FfiConverterOptionString.write(value.musicbrainzId, into: &buf)
+        FfiConverterUInt64.write(value.generation, into: &buf)
+        FfiConverterOptionTypeArtistIdentityOrigin.write(value.origin, into: &buf)
+        FfiConverterOptionString.write(value.confirmedMusicbrainzId, into: &buf)
+        FfiConverterBool.write(value.conflictingTags, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistIdentity_lift(_ buf: RustBuffer) throws -> ArtistIdentity {
+    return try FfiConverterTypeArtistIdentity.lift(buf)
+}
+
+public func FfiConverterTypeArtistIdentity_lower(_ value: ArtistIdentity) -> RustBuffer {
+    return FfiConverterTypeArtistIdentity.lower(value)
+}
+
+
+public struct ArtistIdentityCandidate {
+    public var musicbrainzId: String
+    public var name: String
+    public var aliases: [String]
+    public var entityKind: ArtistEntityKind
+    public var disambiguation: String
+    public var evidence: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(musicbrainzId: String, name: String, aliases: [String], entityKind: ArtistEntityKind, disambiguation: String, evidence: [String]) {
+        self.musicbrainzId = musicbrainzId
+        self.name = name
+        self.aliases = aliases
+        self.entityKind = entityKind
+        self.disambiguation = disambiguation
+        self.evidence = evidence
+    }
+}
+
+
+
+extension ArtistIdentityCandidate: Equatable, Hashable {
+    public static func ==(lhs: ArtistIdentityCandidate, rhs: ArtistIdentityCandidate) -> Bool {
+        if lhs.musicbrainzId != rhs.musicbrainzId {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.aliases != rhs.aliases {
+            return false
+        }
+        if lhs.entityKind != rhs.entityKind {
+            return false
+        }
+        if lhs.disambiguation != rhs.disambiguation {
+            return false
+        }
+        if lhs.evidence != rhs.evidence {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(musicbrainzId)
+        hasher.combine(name)
+        hasher.combine(aliases)
+        hasher.combine(entityKind)
+        hasher.combine(disambiguation)
+        hasher.combine(evidence)
+    }
+}
+
+
+public struct FfiConverterTypeArtistIdentityCandidate: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityCandidate {
+        return
+            try ArtistIdentityCandidate(
+                musicbrainzId: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                aliases: FfiConverterSequenceString.read(from: &buf), 
+                entityKind: FfiConverterTypeArtistEntityKind.read(from: &buf), 
+                disambiguation: FfiConverterString.read(from: &buf), 
+                evidence: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistIdentityCandidate, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.musicbrainzId, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterSequenceString.write(value.aliases, into: &buf)
+        FfiConverterTypeArtistEntityKind.write(value.entityKind, into: &buf)
+        FfiConverterString.write(value.disambiguation, into: &buf)
+        FfiConverterSequenceString.write(value.evidence, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistIdentityCandidate_lift(_ buf: RustBuffer) throws -> ArtistIdentityCandidate {
+    return try FfiConverterTypeArtistIdentityCandidate.lift(buf)
+}
+
+public func FfiConverterTypeArtistIdentityCandidate_lower(_ value: ArtistIdentityCandidate) -> RustBuffer {
+    return FfiConverterTypeArtistIdentityCandidate.lower(value)
+}
+
+
+public struct ArtistIdentityCandidates {
+    public var identity: ArtistIdentity
+    public var candidates: [ArtistIdentityCandidate]
+    public var lookupStatus: ArtistIdentityLookupStatus
+    public var retryAfterSeconds: UInt64?
+    public var truncated: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(identity: ArtistIdentity, candidates: [ArtistIdentityCandidate], lookupStatus: ArtistIdentityLookupStatus, retryAfterSeconds: UInt64?, truncated: Bool) {
+        self.identity = identity
+        self.candidates = candidates
+        self.lookupStatus = lookupStatus
+        self.retryAfterSeconds = retryAfterSeconds
+        self.truncated = truncated
+    }
+}
+
+
+
+extension ArtistIdentityCandidates: Equatable, Hashable {
+    public static func ==(lhs: ArtistIdentityCandidates, rhs: ArtistIdentityCandidates) -> Bool {
+        if lhs.identity != rhs.identity {
+            return false
+        }
+        if lhs.candidates != rhs.candidates {
+            return false
+        }
+        if lhs.lookupStatus != rhs.lookupStatus {
+            return false
+        }
+        if lhs.retryAfterSeconds != rhs.retryAfterSeconds {
+            return false
+        }
+        if lhs.truncated != rhs.truncated {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(identity)
+        hasher.combine(candidates)
+        hasher.combine(lookupStatus)
+        hasher.combine(retryAfterSeconds)
+        hasher.combine(truncated)
+    }
+}
+
+
+public struct FfiConverterTypeArtistIdentityCandidates: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityCandidates {
+        return
+            try ArtistIdentityCandidates(
+                identity: FfiConverterTypeArtistIdentity.read(from: &buf), 
+                candidates: FfiConverterSequenceTypeArtistIdentityCandidate.read(from: &buf), 
+                lookupStatus: FfiConverterTypeArtistIdentityLookupStatus.read(from: &buf), 
+                retryAfterSeconds: FfiConverterOptionUInt64.read(from: &buf), 
+                truncated: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistIdentityCandidates, into buf: inout [UInt8]) {
+        FfiConverterTypeArtistIdentity.write(value.identity, into: &buf)
+        FfiConverterSequenceTypeArtistIdentityCandidate.write(value.candidates, into: &buf)
+        FfiConverterTypeArtistIdentityLookupStatus.write(value.lookupStatus, into: &buf)
+        FfiConverterOptionUInt64.write(value.retryAfterSeconds, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistIdentityCandidates_lift(_ buf: RustBuffer) throws -> ArtistIdentityCandidates {
+    return try FfiConverterTypeArtistIdentityCandidates.lift(buf)
+}
+
+public func FfiConverterTypeArtistIdentityCandidates_lower(_ value: ArtistIdentityCandidates) -> RustBuffer {
+    return FfiConverterTypeArtistIdentityCandidates.lower(value)
 }
 
 
@@ -5058,6 +5407,144 @@ extension ArtistEntityKind: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum ArtistIdentityLookupStatus {
+    
+    case updated
+    case disabled
+    case offline
+    case unavailable
+    case rateLimited
+    case superseded
+}
+
+
+public struct FfiConverterTypeArtistIdentityLookupStatus: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistIdentityLookupStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityLookupStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .updated
+        
+        case 2: return .disabled
+        
+        case 3: return .offline
+        
+        case 4: return .unavailable
+        
+        case 5: return .rateLimited
+        
+        case 6: return .superseded
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ArtistIdentityLookupStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .updated:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .disabled:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .offline:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .unavailable:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .rateLimited:
+            writeInt(&buf, Int32(5))
+        
+        
+        case .superseded:
+            writeInt(&buf, Int32(6))
+        
+        }
+    }
+}
+
+
+public func FfiConverterTypeArtistIdentityLookupStatus_lift(_ buf: RustBuffer) throws -> ArtistIdentityLookupStatus {
+    return try FfiConverterTypeArtistIdentityLookupStatus.lift(buf)
+}
+
+public func FfiConverterTypeArtistIdentityLookupStatus_lower(_ value: ArtistIdentityLookupStatus) -> RustBuffer {
+    return FfiConverterTypeArtistIdentityLookupStatus.lower(value)
+}
+
+
+
+extension ArtistIdentityLookupStatus: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum ArtistIdentityOrigin {
+    
+    case tag
+    case manual
+}
+
+
+public struct FfiConverterTypeArtistIdentityOrigin: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistIdentityOrigin
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityOrigin {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .tag
+        
+        case 2: return .manual
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ArtistIdentityOrigin, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .tag:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .manual:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+public func FfiConverterTypeArtistIdentityOrigin_lift(_ buf: RustBuffer) throws -> ArtistIdentityOrigin {
+    return try FfiConverterTypeArtistIdentityOrigin.lift(buf)
+}
+
+public func FfiConverterTypeArtistIdentityOrigin_lower(_ value: ArtistIdentityOrigin) -> RustBuffer {
+    return FfiConverterTypeArtistIdentityOrigin.lower(value)
+}
+
+
+
+extension ArtistIdentityOrigin: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum ArtistIdentityStatus {
     
     case unresolved
@@ -5662,6 +6149,27 @@ fileprivate struct FfiConverterOptionTypeTrack: FfiConverterRustBuffer {
     }
 }
 
+fileprivate struct FfiConverterOptionTypeArtistIdentityOrigin: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistIdentityOrigin?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeArtistIdentityOrigin.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeArtistIdentityOrigin.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterSequenceInt64: FfiConverterRustBuffer {
     typealias SwiftType = [Int64]
 
@@ -5723,6 +6231,28 @@ fileprivate struct FfiConverterSequenceTypeArtist: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeArtist.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeArtistIdentityCandidate: FfiConverterRustBuffer {
+    typealias SwiftType = [ArtistIdentityCandidate]
+
+    public static func write(_ value: [ArtistIdentityCandidate], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeArtistIdentityCandidate.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistIdentityCandidate] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ArtistIdentityCandidate]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeArtistIdentityCandidate.read(from: &buf))
         }
         return seq
     }
@@ -5980,6 +6510,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_artist_details() != 62278) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_artist_identity() != 48481) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_artist_releases() != 50984) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5995,6 +6528,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_library_scan() != 54997) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_clear_artist_identity() != 48083) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_clear_playback_history() != 33583) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6008,6 +6544,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_configure_lastfm() != 5984) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_confirm_artist_identity() != 8791) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_create_playlist() != 63354) {
@@ -6101,6 +6640,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_remove_track_from_playlist() != 13917) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_resolve_artist_candidates() != 28873) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_resume() != 18016) {

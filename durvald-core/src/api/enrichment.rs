@@ -112,3 +112,56 @@ pub struct ArtistDetails {
     /// Exact requested language plus "und"; language fallback arrives with providers.
     pub sources: Vec<ArtistProfileSource>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ArtistIdentityOrigin {
+    Tag,
+    Manual,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistIdentity {
+    pub artist_id: i64,
+    pub status: ArtistIdentityStatus,
+    pub musicbrainz_id: Option<String>,
+    pub generation: u64,
+    pub origin: Option<ArtistIdentityOrigin>,
+    /// Retained even when conflicting tags block enrichment.
+    pub confirmed_musicbrainz_id: Option<String>,
+    pub conflicting_tags: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistIdentityCandidate {
+    pub musicbrainz_id: String,
+    pub name: String,
+    pub aliases: Vec<String>,
+    pub entity_kind: ArtistEntityKind,
+    pub disambiguation: String,
+    pub evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ArtistIdentityLookupStatus {
+    Updated,
+    Disabled,
+    Offline,
+    Unavailable,
+    RateLimited,
+    Superseded,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistIdentityCandidates {
+    pub identity: ArtistIdentity,
+    pub candidates: Vec<ArtistIdentityCandidate>,
+    pub lookup_status: ArtistIdentityLookupStatus,
+    pub retry_after_seconds: Option<u64>,
+    pub truncated: bool,
+}

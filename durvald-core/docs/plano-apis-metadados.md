@@ -1,6 +1,6 @@
 # Plano de integração de APIs de metadados no core Rust
 
-Data: 11/09/2026. Status: proposta de arquitetura; não implementada.
+Data: 11/09/2026. Status: fases 1 (fundação) e 2 (identidade) implementadas; fases 3–5 pendentes.
 
 ## Objetivo e escopo
 
@@ -201,3 +201,23 @@ Comandos previstos a partir de `durvald-core`: `cargo fmt --check`, `cargo test`
 - [YouTube — cotas](https://developers.google.com/youtube/v3/getting-started): documentação consultada informa 100 buscas/dia e 10 mil unidades para os demais endpoints; configuração real deve ser verificada no projeto.
 
 Este plano não depende de cobertura completa dos catálogos e não atribui qualidade curatorial a texto enciclopédico. Conteúdo editorial próprio poderá ser acrescentado posteriormente como fonte distinta, com procedência explícita.
+
+
+## Entrega da fase 2 — identidade
+
+Implementada em 12/09/2026:
+
+- Extração tipada dos MBIDs pelo Lofty, preservando artista da faixa, artista do álbum, release, release-group e recording. A versão de metadados do scan passou a 4: o próximo scan relê arquivos existentes mesmo sem mudança de mtime. Nenhuma tag é escrita.
+- Migração 2 armazena os IDs por faixa, evidências por papel, confirmação manual e candidatos normalizados. Evidências com créditos múltiplos não recebem correspondência por posição; ficam incertas. Release/recording MBIDs nunca são usados como IDs de artista.
+- `artist_identity`, `resolve_artist_candidates`, `confirm_artist_identity` e `clear_artist_identity` exportados via UniFFI. `artist_details` continua local e respeita a geração atual.
+- Apenas uma tag de artista inequívoca permite resolução automática nesta fase. A busca MusicBrainz retorna até 10 candidatos com nome, aliases, tipo, desambiguação e evidências. Compara títulos locais com uma amostra de até 100 release-groups dos três primeiros candidatos, sem interpretar ausência na amostra como ausência no catálogo. Nome, score ou títulos coincidentes não confirmam automaticamente.
+- Confirmação manual valida o formato do MBID e persiste inclusive offline; a escolha do ID é responsabilidade do consumidor. Tags incompatíveis bloqueiam o enriquecimento, mas preservam o ID confirmado no DTO para correção. Limpar a identidade também impede reassociação automática pelas mesmas tags; nova confirmação explícita volta a estabelecer o vínculo.
+- Alterações de evidência e confirmação invalidam a geração; snapshots anteriores deixam de aparecer e respostas em voo não substituem a correção. Um rescan com evidências idênticas mantém a geração. A exclusão de faixas remove evidências por foreign key.
+- Consulta explícita, sem worker permanente, com prazo total de 30 segundos, cliente reutilizável e limitador MusicBrainz compartilhado no processo. Chamadas simultâneas para o mesmo artista compartilham trabalho; cancelar uma espera preserva os demais consumidores, e o último cancelamento aborta a tarefa. SQLite fica livre durante HTTP.
+- Busca retorna estado de indisponibilidade, rate limit, modo offline/desabilitado ou resposta superada. Falhas preservam candidatos já armazenados e não viram `not_found`. Nesta fase, uma nova chamada explícita reconsulta candidatos; TTL de busca e seleção automática por evidências compostas ficam para evolução da política.
+
+Os detalhes de perfil, relações Wikidata, retrato, discografia pública e UI de confirmação pertencem às fases seguintes. A fase 2 entrega o contrato e os bindings para o cliente, sem iniciar consultas automaticamente ao abrir o app.
+
+Verificação: fixtures de homônimos, tags com papéis distintos, créditos incertos, conflitos, confirmação/limpeza, rescan idêntico, reabertura, resposta superada e teste de HTTP local com consumidores concorrentes. As rotas de busca e browse seguem a [documentação oficial do MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_API); os testes automatizados não acessam serviços públicos.
+
+Validação concluída: `cargo fmt --check`, `cargo test` (87 testes), `cargo test --features uniffi` (87 testes) e `cargo check --features uniffi`. Bindings Swift e biblioteca arm64 regenerados pelo script do projeto; build Debug do app macOS concluído com `CODE_SIGNING_ALLOWED=NO`. O teste de HTTP local exige permissão de abertura de porta quando executado dentro de sandbox.

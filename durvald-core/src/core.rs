@@ -1203,6 +1203,34 @@ impl DurvaldCore {
         self.enrichment.artist_details(artist_id, language).await
     }
 
+    pub async fn artist_identity(&self, artist_id: i64) -> CoreResult<ArtistIdentity> {
+        self.enrichment.artist_identity(artist_id).await
+    }
+
+    pub async fn resolve_artist_candidates(
+        &self,
+        artist_id: i64,
+    ) -> CoreResult<ArtistIdentityCandidates> {
+        self.enrichment.resolve_artist_candidates(artist_id).await
+    }
+
+    pub async fn confirm_artist_identity(
+        &self,
+        artist_id: i64,
+        musicbrainz_id: String,
+    ) -> CoreResult<ArtistIdentity> {
+        self.enrichment
+            .confirm_artist_identity(artist_id, Some(musicbrainz_id))
+            .await
+    }
+
+    pub async fn clear_artist_identity(&self, artist_id: i64) -> CoreResult<()> {
+        self.enrichment
+            .confirm_artist_identity(artist_id, None)
+            .await
+            .map(|_| ())
+    }
+
     pub async fn enrichment_settings(&self) -> CoreResult<EnrichmentSettings> {
         self.enrichment.settings().await
     }
@@ -2383,9 +2411,14 @@ mod tests {
             core.artist_details(999, "en".into()).await,
             Err(CoreError::NotFound { .. })
         ));
+        let confirmed = core
+            .confirm_artist_identity(73, "11111111-1111-4111-8111-111111111111".into())
+            .await
+            .unwrap();
         drop(core);
 
         let reopened = DurvaldCore::open_with_mock_audio(config).await.unwrap();
+        assert_eq!(reopened.artist_identity(73).await.unwrap(), confirmed);
         assert_eq!(
             reopened.enrichment_settings().await.unwrap(),
             EnrichmentSettings {

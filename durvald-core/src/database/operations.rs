@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
-const CURRENT_METADATA_VERSION: i64 = 3;
+const CURRENT_METADATA_VERSION: i64 = 4;
 static SCAN_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 const SCAN_DISCOVERY_BATCH_SIZE: usize = 512;
 
@@ -843,6 +843,7 @@ pub(crate) fn add_song(
             ],
         )?;
         replace_song_artists(conn, song_id, &song.track_artists)?;
+        crate::database::identity::replace_tags(conn, song_id, &song)?;
         return Ok(SongWriteResult::Updated);
     }
 
@@ -873,7 +874,9 @@ pub(crate) fn add_song(
                 CURRENT_METADATA_VERSION,
             ],
         )?;
-        replace_song_artists(conn, conn.last_insert_rowid(), &song.track_artists)?;
+        let song_id = conn.last_insert_rowid();
+        replace_song_artists(conn, song_id, &song.track_artists)?;
+        crate::database::identity::replace_tags(conn, song_id, &song)?;
         return Ok(SongWriteResult::Added);
     }
 
@@ -2631,6 +2634,7 @@ mod tests {
 
     fn metadata(artist: &str, release: &str, year: u32) -> AudioMetadata {
         AudioMetadata {
+            musicbrainz: Default::default(),
             title: Some("Track".to_string()),
             artist: Some(artist.to_string()),
             track_artists: vec![artist.to_string()],

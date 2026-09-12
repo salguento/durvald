@@ -185,6 +185,17 @@ fn network_error(error: reqwest::Error) -> TransportError {
 }
 
 impl EnrichmentHttpClient {
+    #[cfg(test)]
+    pub(crate) fn local_test_client(base: &str) -> Self {
+        Self::build(
+            Url::parse(base).unwrap(),
+            Arc::new(ProviderGate::new(Duration::ZERO)),
+            TransportPolicy::default(),
+            "DurvaldTest/1.0 (local fixture)",
+        )
+        .unwrap()
+    }
+
     /// `wikipedia_edition` must be a resolved edition, not an arbitrary user locale.
     /// A meaningful User-Agent (application/version and contact) comes from the adapter.
     pub fn new(
@@ -429,17 +440,17 @@ fn retry_after_seconds(value: &str, now: i64) -> Option<u64> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
 
-    struct Step {
+    pub(crate) struct Step {
         delay: Duration,
         response: Result<HttpResponse, TransportError>,
     }
 
-    pub(super) struct MockTransport {
+    pub(crate) struct MockTransport {
         steps: StdMutex<VecDeque<Step>>,
         requests: StdMutex<Vec<reqwest::Request>>,
     }
@@ -460,12 +471,21 @@ mod tests {
             step.response
         }
 
-        fn calls(&self) -> usize {
+        pub(crate) fn urls(&self) -> Vec<String> {
+            self.requests
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|r| r.url().to_string())
+                .collect()
+        }
+
+        pub(crate) fn calls(&self) -> usize {
             self.requests.lock().unwrap().len()
         }
     }
 
-    fn response(
+    pub(crate) fn response(
         status: u16,
         headers: &[(&'static str, &'static str)],
         chunks: &[&str],
@@ -495,7 +515,7 @@ mod tests {
         }
     }
 
-    fn client(steps: Vec<Step>) -> (EnrichmentHttpClient, Arc<MockTransport>) {
+    pub(crate) fn client(steps: Vec<Step>) -> (EnrichmentHttpClient, Arc<MockTransport>) {
         let scripted = Arc::new(MockTransport {
             steps: StdMutex::new(steps.into()),
             requests: StdMutex::new(Vec::new()),
