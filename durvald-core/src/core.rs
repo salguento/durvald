@@ -1206,6 +1206,20 @@ impl DurvaldCore {
         self.enrichment.artist_details(artist_id, language).await
     }
 
+    /// Reads one network-free page of the locally persisted external catalog.
+    pub async fn artist_discography(
+        &self,
+        artist_id: i64,
+        page_size: u64,
+        offset: u64,
+    ) -> CoreResult<ArtistDiscographyPage> {
+        non_negative_id(artist_id, "Artist ID")?;
+        let (_, page_size) = pagination_window(page_size, offset)?;
+        self.enrichment
+            .artist_discography(artist_id, page_size as u64, offset)
+            .await
+    }
+
     pub async fn artist_identity(&self, artist_id: i64) -> CoreResult<ArtistIdentity> {
         self.enrichment.artist_identity(artist_id).await
     }
@@ -2433,6 +2447,32 @@ mod tests {
         assert_eq!(details.identity_status, ArtistIdentityStatus::Unresolved);
         assert!(details.sources.is_empty());
         assert_eq!(details.requested_language, "en-us");
+        let discography = core.artist_discography(73, 50, 0).await.unwrap();
+        assert_eq!(discography.artist_id, 73);
+        assert!(discography.items.is_empty());
+        assert!(!discography.remote_exhausted);
+        assert_eq!(discography.remote_next_offset, Some(0));
+        assert_eq!(discography.remote_total, None);
+        let refresh = core
+            .refresh_artist(
+                73,
+                ArtistRefreshRequest {
+                    sections: vec![
+                        ArtistRefreshSection::Discography,
+                        ArtistRefreshSection::Covers,
+                    ],
+                    language: "en-US".into(),
+                    force: false,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            refresh
+                .sections
+                .iter()
+                .all(|result| result.status == ArtistRefreshStatus::Offline)
+        );
         drop(player);
         assert_eq!(core.artist(73).await.unwrap(), details.artist);
         assert!(matches!(
@@ -2442,6 +2482,10 @@ mod tests {
         assert!(matches!(
             core.artist_details(999, "en".into()).await,
             Err(CoreError::NotFound { .. })
+        ));
+        assert!(matches!(
+            core.artist_discography(73, 0, 0).await,
+            Err(CoreError::InvalidInput { .. })
         ));
         let confirmed = core
             .confirm_artist_identity(73, "11111111-1111-4111-8111-111111111111".into())

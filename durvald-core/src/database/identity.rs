@@ -72,6 +72,108 @@ pub fn replace_tags(conn: &Connection, song_id: i64, song: &AudioMetadata) -> ru
     Ok(())
 }
 
+/// Rebuilds a local release's external identifiers exclusively from the
+/// MusicBrainz tags of its persisted tracks. A field is published only when
+/// all available evidence for it resolves to one distinct valid MBID.
+pub fn refresh_release_external_ids(conn: &Connection, release_id: i64) -> rusqlite::Result<()> {
+    if !conn.table_exists(None, "local_release_external_ids")?
+        || !conn.table_exists(None, "song_musicbrainz_tags")?
+    {
+        return Ok(());
+    }
+
+    let payloads = conn
+        .prepare(
+            "SELECT t.payload FROM song_musicbrainz_tags t
+             JOIN songs s ON s.song_id = t.song_id
+             WHERE s.release_id = ?1",
+        )?
+        .query_map([release_id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut releases = BTreeSet::new();
+    let mut release_groups = BTreeSet::new();
+    let mut malformed_evidence = false;
+    for payload in payloads {
+        let Ok(tags) = serde_json::from_str::<crate::metadata::MusicBrainzTags>(&payload) else {
+            malformed_evidence = true;
+            continue;
+        };
+        releases.extend(
+            tags.releases
+                .iter()
+                .filter_map(|id| crate::enrichment::identity::normalize_mbid(id)),
+        );
+        release_groups.extend(
+            tags.release_groups
+                .iter()
+                .filter_map(|id| crate::enrichment::identity::normalize_mbid(id)),
+        );
+    }
+
+    let release_mbid = if !malformed_evidence && releases.len() == 1 {
+        releases.first().cloned()
+    } else {
+        None
+    };
+    let release_group_mbid = if !malformed_evidence && release_groups.len() == 1 {
+        release_groups.first().cloned()
+    } else {
+        None
+    };
+    conn.execute(
+        "DELETE FROM local_release_external_ids
+         WHERE release_id = ?1 AND origin = 'tag'",
+        [release_id],
+    )?;
+    if release_mbid.is_some() || release_group_mbid.is_some() {
+        conn.execute(
+            "INSERT INTO local_release_external_ids
+             (release_id, release_mbid, release_group_mbid, origin, updated_at)
+             VALUES (?1, ?2, ?3, 'tag', CAST(strftime('%s', 'now') AS INTEGER))
+             ON CONFLICT (release_id) DO UPDATE SET
+               release_mbid = excluded.release_mbid,
+               release_group_mbid = excluded.release_group_mbid,
+               updated_at = excluded.updated_at
+             WHERE local_release_external_ids.origin = 'tag'",
+            params![release_id, release_mbid, release_group_mbid],
+        )?;
+    }
+    Ok(())
+}
+
+/// One-time upgrade for libraries whose normalized tag payloads predate the
+/// local release mapping table. The marker and all derived rows commit together.
+pub fn backfill_release_external_ids(conn: &Connection) -> rusqlite::Result<()> {
+    if !conn.table_exists(None, "enrichment_backfills")? {
+        return Ok(());
+    }
+    let tx = conn.unchecked_transaction()?;
+    let completed: bool = tx.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM enrichment_backfills
+            WHERE key = 'local_release_external_ids_v1'
+        )",
+        [],
+        |row| row.get(0),
+    )?;
+    if completed {
+        return Ok(());
+    }
+    let release_ids = tx
+        .prepare("SELECT release_id FROM releases ORDER BY release_id")?
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for release_id in release_ids {
+        refresh_release_external_ids(&tx, release_id)?;
+    }
+    tx.execute(
+        "INSERT INTO enrichment_backfills (key, completed_at)
+         VALUES ('local_release_external_ids_v1', CAST(strftime('%s', 'now') AS INTEGER))",
+        [],
+    )?;
+    tx.commit()
+}
+
 fn ensure(conn: &Connection, artist_id: i64) -> CoreResult<()> {
     if artist_id < 0 {
         return Err(CoreError::InvalidInput {
@@ -98,7 +200,7 @@ fn ensure(conn: &Connection, artist_id: i64) -> CoreResult<()> {
     Ok(())
 }
 
-fn read_inner(conn: &Connection, artist_id: i64) -> CoreResult<ArtistIdentity> {
+pub(crate) fn read_inner(conn: &Connection, artist_id: i64) -> CoreResult<ArtistIdentity> {
     ensure(conn, artist_id)?;
     let (old_status, old_id, generation, confirmed, suppress): (String, Option<String>, u64, Option<String>, bool) = conn.query_row(
         "SELECT identity_status, musicbrainz_id, generation, confirmed_musicbrainz_id, suppress_tags FROM artist_enrichment_state WHERE artist_id = ?1", [artist_id],

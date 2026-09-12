@@ -75,6 +75,9 @@ struct AlbumCard: View {
     let onSelectAlbum: (Release) -> Void
 
     var subtitle: String? = nil
+    /// Optional external fallback selected by the core. Callers must still
+    /// prefer `release.artworkId`, which represents local/manual artwork.
+    var fallbackArtworkID: String? = nil
 
     @State private var isHovered = false
     @FocusState private var isPlayFocused: Bool
@@ -90,7 +93,7 @@ struct AlbumCard: View {
             } label: {
                 VStack(alignment: .leading, spacing: 8) {
                     ArtworkView(
-                        artworkID: release.artworkId,
+                        artworkID: release.artworkId ?? fallbackArtworkID,
                         size: AlbumGridLayout.cardWidth
                     )
 

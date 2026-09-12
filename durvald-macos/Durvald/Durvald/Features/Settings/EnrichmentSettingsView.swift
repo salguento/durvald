@@ -9,10 +9,10 @@ struct EnrichmentSettingsView: View {
     var body: some View {
         Form {
             Section("Metadados de artistas") {
-                Toggle("Buscar biografias, fatos e retratos", isOn: $enabled)
+                Toggle("Buscar biografias, discografias e imagens", isOn: $enabled)
 
                 Text(
-                    "Quando ativado, o nome e os identificadores do artista podem ser enviados ao MusicBrainz e aos serviços Wikimedia. A biblioteca e a reprodução continuam funcionando sem esse recurso."
+                    "Quando ativado, o nome e os identificadores do artista podem ser enviados ao MusicBrainz, aos serviços Wikimedia e ao Cover Art Archive. A biblioteca e a reprodução continuam funcionando sem esse recurso."
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)

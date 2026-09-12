@@ -1247,12 +1247,104 @@ final class DurvaldCoreStore {
 
     // MARK: - Enriquecimento de metadados
 
+    /// Lê a identidade persistida do artista sem iniciar uma consulta remota.
+    func artistIdentity(artistId: Int64) async -> ArtistIdentity? {
+        guard let core else { return nil }
+        do {
+            return try await core.artistIdentity(artistId: artistId)
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    /// Procura candidatos no MusicBrainz. Estados esperados de conectividade são
+    /// devolvidos no próprio resultado e não se tornam um erro global da interface.
+    func resolveArtistCandidates(artistId: Int64) async -> ArtistIdentityCandidates? {
+        guard let core else { return nil }
+        do {
+            return try await core.resolveArtistCandidates(artistId: artistId)
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    /// Confirma explicitamente um candidato e devolve a nova geração da identidade.
+    func confirmArtistIdentity(artistId: Int64, musicbrainzId: String) async -> ArtistIdentity? {
+        guard let core else { return nil }
+        do {
+            return try await core.confirmArtistIdentity(
+                artistId: artistId,
+                musicbrainzId: musicbrainzId
+            )
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    /// Remove a confirmação manual e relê o estado resultante do banco local.
+    func clearArtistIdentity(artistId: Int64) async -> ArtistIdentity? {
+        guard let core else { return nil }
+        do {
+            try await core.clearArtistIdentity(artistId: artistId)
+            return try await core.artistIdentity(artistId: artistId)
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
     /// Retorna os detalhes locais do artista (cache SQLite) para o idioma preferido.
     /// Nunca faz chamadas de rede; seguro chamar mesmo offline ou com enriquecimento desabilitado.
     func artistDetails(artistId: Int64, language: String) async -> ArtistDetails? {
         guard let core else { return nil }
         do {
             return try await core.artistDetails(artistId: artistId, language: language)
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    /// Lê exclusivamente o snapshot SQLite da discografia remota. Esta chamada
+    /// nunca inicia rede e continua disponível com enriquecimento offline.
+    func artistDiscography(
+        artistId: Int64,
+        pageSize: UInt64 = 200,
+        offset: UInt64 = 0
+    ) async -> ArtistDiscographyPage? {
+        guard let core else { return nil }
+        do {
+            return try await core.artistDiscography(
+                artistId: artistId,
+                pageSize: pageSize,
+                offset: offset
+            )
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    /// Solicita um lote limitado de discografia e capas. O chamador relê o
+    /// snapshot local depois; falhas de rede não removem dados já publicados.
+    func refreshArtistCatalog(
+        artistId: Int64,
+        language: String,
+        force: Bool = false
+    ) async -> ArtistRefreshResult? {
+        guard let core else { return nil }
+        do {
+            return try await core.refreshArtist(
+                artistId: artistId,
+                request: ArtistRefreshRequest(
+                    sections: [.discography, .covers],
+                    language: language,
+                    force: force
+                )
+            )
         } catch {
             errorMessage = String(describing: error)
             return nil

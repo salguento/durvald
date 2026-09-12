@@ -105,7 +105,7 @@ pub struct ArtistProfileSource {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ArtistImageReference {
     pub provider: EnrichmentProvider,
-    /// Stable provider identifier, currently the Commons file title.
+    /// Stable identifier supplied by the image provider.
     pub provider_id: String,
     pub source_url: String,
     /// Absolute path inside the core-managed covers directory.
@@ -115,6 +115,58 @@ pub struct ArtistImageReference {
     pub attribution: EnrichmentAttribution,
     pub fetched_at: i64,
     pub expires_at: i64,
+    pub stale: bool,
+}
+
+/// Whether Cover Art Archive artwork represents an exact release or only its
+/// broader release group. Group artwork must not be presented as edition-exact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ExternalArtworkScope {
+    ExactRelease,
+    ReleaseGroup,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ExternalReleaseArtwork {
+    pub image: ArtistImageReference,
+    pub scope: ExternalArtworkScope,
+}
+
+/// MusicBrainz release-group metadata remains separate from playable local
+/// releases. `local_release_id` is present only after an identifier-based link.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ExternalReleaseGroup {
+    pub musicbrainz_id: String,
+    pub title: String,
+    pub primary_type: Option<String>,
+    pub secondary_types: Vec<String>,
+    pub first_release_date: Option<ArtistPartialDate>,
+    pub local_release_id: Option<i64>,
+    /// External fallback only. `None` also means a linked local release has
+    /// manual or embedded artwork with higher precedence.
+    pub artwork: Option<ExternalReleaseArtwork>,
+    pub attribution: EnrichmentAttribution,
+}
+
+/// A bounded page of the locally stored remote catalog. `next_offset` covers
+/// stored rows; `remote_exhausted`, `remote_next_offset` and `remote_total`
+/// describe provider pagination, so reaching the local end never implies the
+/// remote end.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistDiscographyPage {
+    pub artist_id: i64,
+    pub identity_generation: u64,
+    pub catalog_generation: u64,
+    pub items: Vec<ExternalReleaseGroup>,
+    pub next_offset: Option<u64>,
+    pub remote_exhausted: bool,
+    pub remote_next_offset: Option<u64>,
+    pub remote_total: Option<u64>,
     pub stale: bool,
 }
 
@@ -216,6 +268,8 @@ pub struct ArtistIdentityCandidates {
 pub enum ArtistRefreshSection {
     Profile,
     Portrait,
+    Discography,
+    Covers,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,6 +287,9 @@ pub struct ArtistRefreshRequest {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum ArtistRefreshStatus {
     Updated,
+    /// Work was committed or retained, but a provider cursor or bounded batch
+    /// still has pending items and should be continued explicitly.
+    Partial,
     Unchanged,
     NotFound,
     NeedsIdentity,

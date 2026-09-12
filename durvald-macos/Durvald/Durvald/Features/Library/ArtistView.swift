@@ -32,6 +32,18 @@ struct ArtistView: View {
     @State private var tracks: [Track] = []
     @State private var albums: [Release] = []
     @State private var details: ArtistDetails?
+    @State private var identity: ArtistIdentity?
+    @State private var identityCandidates: ArtistIdentityCandidates?
+    @State private var discographyItems: [ExternalReleaseGroup] = []
+    @State private var discographyPage: ArtistDiscographyPage?
+    @State private var catalogRefreshResults: [ArtistRefreshSectionResult] = []
+    @State private var isRefreshingCatalog = false
+    @State private var isLoadingMoreDiscography = false
+    @State private var isIdentityPickerPresented = false
+    @State private var isLoadingIdentityCandidates = false
+    @State private var isSavingIdentity = false
+    @State private var isClearIdentityConfirmationPresented = false
+    @State private var selectedCandidateID: String?
     @State private var trackSearchText = ""
     @State private var trackOrder: TrackOrder = .album
     @FocusState private var isTrackSearchFocused: Bool
@@ -45,7 +57,8 @@ struct ArtistView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ArtworkView(
                         artworkID: details?.portrait?.managedPath
-                            ?? albums.compactMap(\.artworkId).first,
+                            ?? albums.compactMap(\.artworkId).first
+                            ?? discographyItems.compactMap { $0.artwork?.image.managedPath }.first,
                         size: geometry.size.width,
                         aspectRatio: 16.0 / 9.0,
                         showsBorder: false
@@ -64,126 +77,16 @@ struct ArtistView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         collectionControls
 
+                        identityCallout
+
                         artistHighlights(width: geometry.size.width)
 
-                        if !albums.isEmpty {
-                            Text("Álbuns")
-                                .font(.title2.bold())
-
-                            LazyVGrid(
-                                columns: AlbumGridLayout.columns(for: geometry.size.width),
-                                alignment: .leading,
-                                spacing: AlbumGridLayout.spacing
-                            ) {
-                                ForEach(albums, id: \.id) { album in
-                                    AlbumCard(
-                                        release: album,
-                                        onSelectAlbum: onSelectAlbum,
-                                        subtitle: releaseYear(for: album)
-                                    )
-                                }
-                            }
-                        }
-
-                        if !albums.isEmpty {
-                            Text("Singles & EPs")
-                                .font(.title2.bold())
-
-                            LazyVGrid(
-                                columns: AlbumGridLayout.columns(for: geometry.size.width),
-                                alignment: .leading,
-                                spacing: AlbumGridLayout.spacing
-                            ) {
-                                ForEach(albums, id: \.id) { album in
-                                    AlbumCard(
-                                        release: album,
-                                        onSelectAlbum: onSelectAlbum,
-                                        subtitle: releaseYear(for: album)
-                                    )
-                                }
-                            }
-                        }
-
-                        if !albums.isEmpty {
-                            Text("Álbuns ao vivo")
-                                .font(.title2.bold())
-
-                            LazyVGrid(
-                                columns: AlbumGridLayout.columns(for: geometry.size.width),
-                                alignment: .leading,
-                                spacing: AlbumGridLayout.spacing
-                            ) {
-                                ForEach(albums, id: \.id) { album in
-                                    AlbumCard(
-                                        release: album,
-                                        onSelectAlbum: onSelectAlbum,
-                                        subtitle: releaseYear(for: album)
-                                    )
-                                }
-                            }
-                        }
-
-                        if !albums.isEmpty {
-                            Text("Compilações")
-                                .font(.title2.bold())
-
-                            LazyVGrid(
-                                columns: AlbumGridLayout.columns(for: geometry.size.width),
-                                alignment: .leading,
-                                spacing: AlbumGridLayout.spacing
-                            ) {
-                                ForEach(albums, id: \.id) { album in
-                                    AlbumCard(
-                                        release: album,
-                                        onSelectAlbum: onSelectAlbum,
-                                        subtitle: releaseYear(for: album)
-                                    )
-                                }
-                            }
-                        }
-
-                        if !albums.isEmpty {
-                            Text("Playlists")
-                                .font(.title2.bold())
-
-                            LazyVGrid(
-                                columns: AlbumGridLayout.columns(for: geometry.size.width),
-                                alignment: .leading,
-                                spacing: AlbumGridLayout.spacing
-                            ) {
-                                ForEach(albums, id: \.id) { album in
-                                    AlbumCard(
-                                        release: album,
-                                        onSelectAlbum: onSelectAlbum,
-                                        subtitle: releaseYear(for: album)
-                                    )
-                                }
-                            }
-                        }
-
-                        if !albums.isEmpty {
-                            Text("Participações")
-                                .font(.title2.bold())
-
-                            LazyVGrid(
-                                columns: AlbumGridLayout.columns(for: geometry.size.width),
-                                alignment: .leading,
-                                spacing: AlbumGridLayout.spacing
-                            ) {
-                                ForEach(albums, id: \.id) { album in
-                                    AlbumCard(
-                                        release: album,
-                                        onSelectAlbum: onSelectAlbum,
-                                        subtitle: releaseYear(for: album)
-                                    )
-                                }
-                            }
-                        }
+                        discographySections(width: geometry.size.width)
 
                         if isLoading {
                             ProgressView("Carregando artista…")
                                 .frame(maxWidth: .infinity, alignment: .center)
-                        } else if albums.isEmpty && tracks.isEmpty {
+                        } else if albums.isEmpty && tracks.isEmpty && onlineOnlyReleases.isEmpty {
                             ContentUnavailableView(
                                 "Nenhuma música disponível",
                                 systemImage: "music.mic",
@@ -202,16 +105,27 @@ struct ArtistView: View {
         .ignoresSafeArea(.container, edges: [.top, .bottom])
         .task(id: artist.id) {
             isLoading = true
+            details = nil
+            identity = nil
+            identityCandidates = nil
+            selectedCandidateID = nil
+            discographyItems = []
+            discographyPage = nil
+            catalogRefreshResults = []
             async let loadedTracks = store.tracks(forArtistID: artist.id)
             async let loadedAlbums = store.releases(forArtistID: artist.id)
+            async let loadedIdentity = store.artistIdentity(artistId: artist.id)
             async let loadedDetails = store.artistDetails(
                 artistId: artist.id,
                 language: enrichmentLanguage
             )
-            let (resolvedTracks, resolvedAlbums, resolvedDetails) = await (
+            async let loadedDiscography = store.artistDiscography(artistId: artist.id)
+            let (resolvedTracks, resolvedAlbums, resolvedIdentity, resolvedDetails, resolvedDiscography) = await (
                 loadedTracks,
                 loadedAlbums,
-                loadedDetails
+                loadedIdentity,
+                loadedDetails,
+                loadedDiscography
             )
             tracks = resolvedTracks.sorted {
                 if $0.release != $1.release {
@@ -224,16 +138,615 @@ struct ArtistView: View {
             albums = resolvedAlbums.sorted {
                 $0.title.localizedStandardCompare($1.title) == .orderedAscending
             }
+            identity = resolvedIdentity
             details = resolvedDetails
-            isLoading = false
-            if let refreshed = await store.refreshArtistDetails(
-                artistId: artist.id,
-                language: enrichmentLanguage
-            ) {
-                details = refreshed
+            if let resolvedDiscography {
+                applyDiscographyPage(resolvedDiscography, reset: true)
             }
+            isLoading = false
+            await refreshEnrichment()
+        }
+        .sheet(isPresented: $isIdentityPickerPresented) {
+            identityPicker
         }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
+    }
+
+    @ViewBuilder
+    private var identityCallout: some View {
+        if let identity {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: identity.status == .resolved ? "checkmark.seal.fill" : "person.crop.circle.badge.questionmark")
+                    .font(.title2)
+                    .foregroundStyle(identity.status == .resolved ? Color.green : Color.accentColor)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(identityCalloutTitle(for: identity))
+                        .font(.headline)
+                    Text(identityCalloutDescription(for: identity))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 16)
+
+                Button(identity.status == .resolved ? "Ver identidade" : "Escolher identidade") {
+                    presentIdentityPicker()
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("artist.identity.open")
+            }
+            .padding(14)
+            .background(Color.accentColor.opacity(0.08), in: .rect(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor.opacity(0.18))
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("artist.identity.status")
+        }
+    }
+
+    private var identityPicker: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Escolha o resultado do MusicBrainz que representa \(artist.name). A confirmação define qual perfil, discografia e capas serão usados.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if identity?.status == .resolved, let musicbrainzID = identity?.musicbrainzId {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Identidade confirmada", systemImage: "checkmark.seal.fill")
+                            .font(.headline)
+                            .foregroundStyle(.green)
+                        Text(musicbrainzID)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                        Button("Remover vínculo…", role: .destructive) {
+                            isClearIdentityConfirmationPresented = true
+                        }
+                        .disabled(isSavingIdentity)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(.quaternary, in: .rect(cornerRadius: 10))
+                } else if isLoadingIdentityCandidates {
+                    Spacer()
+                    ProgressView("Buscando candidatos no MusicBrainz…")
+                        .frame(maxWidth: .infinity)
+                    Spacer()
+                } else if let identityCandidates {
+                    if let message = identityLookupMessage(identityCandidates) {
+                        Label(message, systemImage: identityLookupIcon(identityCandidates.lookupStatus))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if identityCandidates.candidates.isEmpty {
+                        ContentUnavailableView(
+                            "Nenhum candidato disponível",
+                            systemImage: "person.crop.circle.badge.xmark",
+                            description: Text(emptyCandidatesDescription(identityCandidates))
+                        )
+                        .frame(maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            LazyVStack(spacing: 10) {
+                                ForEach(identityCandidates.candidates, id: \.musicbrainzId) { candidate in
+                                    candidateRow(candidate)
+                                }
+                            }
+                        }
+
+                        if identityCandidates.truncated {
+                            Text("A lista foi limitada aos resultados mais relevantes.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    Spacer()
+                    ContentUnavailableView(
+                        "Não foi possível carregar os candidatos",
+                        systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90"
+                    )
+                    .frame(maxWidth: .infinity)
+                    Spacer()
+                }
+            }
+            .padding(20)
+            .navigationTitle("Selecionar identidade")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancelar") {
+                        isIdentityPickerPresented = false
+                    }
+                    .disabled(isSavingIdentity)
+                }
+
+                if identity?.status != .resolved {
+                    ToolbarItem {
+                        Button("Buscar novamente") {
+                            Task { await loadIdentityCandidates() }
+                        }
+                        .disabled(isLoadingIdentityCandidates || isSavingIdentity)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Confirmar") {
+                            Task { await confirmSelectedIdentity() }
+                        }
+                        .disabled(selectedCandidateID == nil || isSavingIdentity)
+                    }
+                }
+            }
+            .overlay {
+                if isSavingIdentity {
+                    ZStack {
+                        Color.black.opacity(0.08)
+                        ProgressView("Salvando identidade…")
+                            .padding(18)
+                            .background(.regularMaterial, in: .rect(cornerRadius: 12))
+                    }
+                    .ignoresSafeArea()
+                }
+            }
+            .confirmationDialog(
+                "Remover a identidade de \(artist.name)?",
+                isPresented: $isClearIdentityConfirmationPresented
+            ) {
+                Button("Remover vínculo", role: .destructive) {
+                    Task { await clearIdentity() }
+                }
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Os dados enriquecidos associados serão ocultados até que outra identidade seja confirmada.")
+            }
+        }
+        .frame(minWidth: 620, minHeight: 520)
+        .task {
+            if identity?.status != .resolved, identityCandidates == nil {
+                await loadIdentityCandidates()
+            }
+        }
+        .accessibilityIdentifier("artist.identity.picker")
+    }
+
+    private func candidateRow(_ candidate: ArtistIdentityCandidate) -> some View {
+        Button {
+            selectedCandidateID = candidate.musicbrainzId
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: selectedCandidateID == candidate.musicbrainzId ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selectedCandidateID == candidate.musicbrainzId ? Color.accentColor : Color.secondary)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(candidate.name)
+                            .font(.headline)
+                        Text(entityKindLabel(candidate.entityKind))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if !candidate.disambiguation.isEmpty {
+                        Text(candidate.disambiguation)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !candidate.aliases.isEmpty {
+                        Text("Também conhecido como: \(candidate.aliases.prefix(3).joined(separator: ", "))")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if !candidate.evidence.isEmpty {
+                        Text(candidate.evidence.map(evidenceLabel).joined(separator: " · "))
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    Text(candidate.musicbrainzId)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(12)
+            .contentShape(.rect)
+            .background(
+                selectedCandidateID == candidate.musicbrainzId
+                    ? Color.accentColor.opacity(0.12)
+                    : Color.primary.opacity(0.04),
+                in: .rect(cornerRadius: 10)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(
+                        selectedCandidateID == candidate.musicbrainzId
+                            ? Color.accentColor.opacity(0.55)
+                            : Color.clear
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(candidate.name), \(entityKindLabel(candidate.entityKind))")
+        .accessibilityValue(selectedCandidateID == candidate.musicbrainzId ? "Selecionado" : "Não selecionado")
+        .accessibilityIdentifier("artist.identity.candidate.\(candidate.musicbrainzId)")
+    }
+
+    private func presentIdentityPicker() {
+        selectedCandidateID = nil
+        if identity?.status != .resolved {
+            identityCandidates = nil
+        }
+        isIdentityPickerPresented = true
+    }
+
+    private func loadIdentityCandidates() async {
+        guard !isLoadingIdentityCandidates, !isSavingIdentity else { return }
+        isLoadingIdentityCandidates = true
+        defer { isLoadingIdentityCandidates = false }
+
+        guard let result = await store.resolveArtistCandidates(artistId: artist.id) else {
+            identityCandidates = nil
+            return
+        }
+        identity = result.identity
+        identityCandidates = result
+        if let selectedCandidateID,
+           !result.candidates.contains(where: { $0.musicbrainzId == selectedCandidateID }) {
+            self.selectedCandidateID = nil
+        }
+    }
+
+    private func confirmSelectedIdentity() async {
+        guard let selectedCandidateID, !isSavingIdentity else { return }
+        isSavingIdentity = true
+        defer { isSavingIdentity = false }
+
+        guard let confirmed = await store.confirmArtistIdentity(
+            artistId: artist.id,
+            musicbrainzId: selectedCandidateID
+        ) else { return }
+
+        identity = confirmed
+        identityCandidates = nil
+        self.selectedCandidateID = nil
+        isIdentityPickerPresented = false
+        await reloadCachedEnrichment()
+        await refreshEnrichment()
+    }
+
+    private func clearIdentity() async {
+        guard !isSavingIdentity else { return }
+        isSavingIdentity = true
+
+        guard let cleared = await store.clearArtistIdentity(artistId: artist.id) else {
+            isSavingIdentity = false
+            return
+        }
+        identity = cleared
+        identityCandidates = nil
+        selectedCandidateID = nil
+        await reloadCachedEnrichment()
+        isSavingIdentity = false
+
+        if cleared.status != .resolved {
+            await loadIdentityCandidates()
+        }
+    }
+
+    private func reloadCachedEnrichment() async {
+        async let cachedDetails = store.artistDetails(
+            artistId: artist.id,
+            language: enrichmentLanguage
+        )
+        async let cachedDiscography = store.artistDiscography(artistId: artist.id)
+        let (newDetails, newDiscography) = await (cachedDetails, cachedDiscography)
+        details = newDetails
+        catalogRefreshResults = []
+        if let newDiscography {
+            applyDiscographyPage(newDiscography, reset: true)
+        } else {
+            discographyItems = []
+            discographyPage = nil
+        }
+    }
+
+    private func refreshEnrichment() async {
+        guard !isRefreshingCatalog else { return }
+        isRefreshingCatalog = true
+        defer { isRefreshingCatalog = false }
+
+        async let refreshedDetails = store.refreshArtistDetails(
+            artistId: artist.id,
+            language: enrichmentLanguage
+        )
+        async let refreshedCatalog = store.refreshArtistCatalog(
+            artistId: artist.id,
+            language: enrichmentLanguage
+        )
+        let (newDetails, catalogResult) = await (refreshedDetails, refreshedCatalog)
+        if let newDetails {
+            details = newDetails
+        }
+        catalogRefreshResults = catalogResult?.sections ?? []
+        if catalogResult != nil,
+           let refreshedPage = await store.artistDiscography(artistId: artist.id) {
+            applyDiscographyPage(refreshedPage, reset: true)
+        }
+    }
+
+    private func identityCalloutTitle(for identity: ArtistIdentity) -> String {
+        if identity.conflictingTags { return "Identificadores conflitantes nos arquivos" }
+        switch identity.status {
+        case .resolved: return "Identidade MusicBrainz confirmada"
+        case .ambiguous: return "Mais de um artista encontrado"
+        case .notFound: return "Artista não identificado"
+        case .unresolved: return "Identidade do artista pendente"
+        }
+    }
+
+    private func identityCalloutDescription(for identity: ArtistIdentity) -> String {
+        if identity.conflictingTags {
+            return "As músicas possuem MusicBrainz IDs diferentes. Revise as tags para liberar o enriquecimento."
+        }
+        switch identity.status {
+        case .resolved:
+            return "Perfil, discografia e capas usam o vínculo confirmado."
+        case .ambiguous:
+            return "Selecione o candidato correto para carregar perfil, discografia e capas."
+        case .notFound:
+            return "Tente uma nova busca ou mantenha apenas os metadados locais."
+        case .unresolved:
+            return "Confirme um candidato antes de buscar perfil, discografia e capas."
+        }
+    }
+
+    private func identityLookupMessage(_ result: ArtistIdentityCandidates) -> String? {
+        switch result.lookupStatus {
+        case .updated:
+            return result.candidates.isEmpty ? nil : "\(result.candidates.count) candidato(s) encontrado(s)."
+        case .disabled:
+            return "O enriquecimento remoto está desativado nos Ajustes."
+        case .offline:
+            return "Modo offline: mostrando apenas candidatos já armazenados."
+        case .unavailable:
+            return "O MusicBrainz não está disponível agora. Os candidatos armazenados foram preservados."
+        case .rateLimited:
+            if let seconds = result.retryAfterSeconds {
+                return "Limite do MusicBrainz atingido. Tente novamente em \(seconds) segundos."
+            }
+            return "Limite do MusicBrainz atingido. Tente novamente mais tarde."
+        case .superseded:
+            return "A identidade mudou durante a busca. Atualize a lista antes de confirmar."
+        }
+    }
+
+    private func identityLookupIcon(_ status: ArtistIdentityLookupStatus) -> String {
+        switch status {
+        case .updated: "checkmark.circle"
+        case .disabled: "slash.circle"
+        case .offline: "network.slash"
+        case .unavailable: "exclamationmark.triangle"
+        case .rateLimited: "clock.badge.exclamationmark"
+        case .superseded: "arrow.trianglehead.2.clockwise.rotate.90"
+        }
+    }
+
+    private func emptyCandidatesDescription(_ result: ArtistIdentityCandidates) -> String {
+        if result.identity.conflictingTags {
+            return "Corrija os MusicBrainz IDs conflitantes nas tags das músicas e faça uma nova varredura."
+        }
+        return identityLookupMessage(result)
+            ?? "Nenhum resultado corresponde ao nome deste artista."
+    }
+
+    private func entityKindLabel(_ kind: ArtistEntityKind) -> String {
+        switch kind {
+        case .person: "Pessoa"
+        case .group: "Grupo"
+        case .other: "Outro"
+        case .unknown: "Tipo desconhecido"
+        }
+    }
+
+    private func evidenceLabel(_ evidence: String) -> String {
+        switch evidence {
+        case "musicbrainz_search_candidate": return "resultado do MusicBrainz"
+        case "exact_name": return "nome exato"
+        case "exact_alias": return "alias exato"
+        default:
+            if evidence.hasPrefix("local_release_title:") {
+                return "álbum local: \(evidence.dropFirst("local_release_title:".count))"
+            }
+            return evidence.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    @ViewBuilder
+    private func discographySections(width: CGFloat) -> some View {
+        if !albums.isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Na biblioteca")
+                        .font(.title2.bold())
+                        .accessibilityAddTraits(.isHeader)
+                    Text("\(albums.count) reproduzíveis")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                LazyVGrid(
+                    columns: AlbumGridLayout.columns(for: width),
+                    alignment: .leading,
+                    spacing: AlbumGridLayout.spacing
+                ) {
+                    ForEach(albums, id: \.id) { album in
+                        AlbumCard(
+                            release: album,
+                            onSelectAlbum: onSelectAlbum,
+                            subtitle: releaseYear(for: album),
+                            fallbackArtworkID: externalFallbackArtworkID(for: album)
+                        )
+                    }
+                }
+            }
+            .accessibilityIdentifier("artist.discography.local")
+        }
+
+        if discographyPage != nil || isRefreshingCatalog || !catalogRefreshResults.isEmpty {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("Discografia online")
+                        .font(.title2.bold())
+                        .accessibilityAddTraits(.isHeader)
+                    if !onlineOnlyReleases.isEmpty {
+                        Text("\(onlineOnlyReleases.count) somente online")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if discographyPage?.stale == true {
+                        Text("Cache antigo")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(.quaternary, in: .capsule)
+                    }
+                    Spacer()
+                    if isRefreshingCatalog || isLoadingMoreDiscography {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Atualizando discografia")
+                    }
+                }
+
+                if onlineOnlyReleases.isEmpty {
+                    Text(catalogStatusMessage ?? "Nenhum lançamento exclusivamente online no cache local.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    LazyVGrid(
+                        columns: AlbumGridLayout.columns(for: width),
+                        alignment: .leading,
+                        spacing: AlbumGridLayout.spacing
+                    ) {
+                        ForEach(onlineOnlyReleases, id: \.musicbrainzId) { release in
+                            ExternalReleaseCard(
+                                release: release,
+                                subtitle: externalReleaseSubtitle(release)
+                            )
+                        }
+                    }
+                }
+
+                if let catalogStatusMessage, !onlineOnlyReleases.isEmpty {
+                    Text(catalogStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 10) {
+                    if let nextOffset = discographyPage?.nextOffset {
+                        Button("Mostrar mais", systemImage: "chevron.down") {
+                            Task { await loadMoreDiscography(from: nextOffset) }
+                        }
+                        .disabled(isRefreshingCatalog || isLoadingMoreDiscography)
+                    } else if catalogNeedsContinuation {
+                        Button("Continuar catálogo", systemImage: "arrow.clockwise") {
+                            Task { await refreshCatalog() }
+                        }
+                        .disabled(isRefreshingCatalog || isLoadingMoreDiscography)
+                        .accessibilityIdentifier("artist.discography.continue")
+                    }
+
+                    if let total = discographyPage?.remoteTotal {
+                        Text("\(discographyItems.count) de \(total) itens armazenados")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .accessibilityIdentifier("artist.discography.online")
+        }
+    }
+
+    private var onlineOnlyReleases: [ExternalReleaseGroup] {
+        discographyItems
+            .filter { $0.localReleaseId == nil }
+            .sorted {
+                let left = $0.firstReleaseDate?.year ?? Int32.max
+                let right = $1.firstReleaseDate?.year ?? Int32.max
+                if left != right { return left < right }
+                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+    }
+
+    private func externalFallbackArtworkID(for album: Release) -> String? {
+        guard album.artworkId == nil else { return nil }
+        return discographyItems.first { $0.localReleaseId == album.id }?.artwork?.image.managedPath
+    }
+
+    private func externalReleaseSubtitle(_ release: ExternalReleaseGroup) -> String {
+        let kind = release.primaryType ?? "Lançamento"
+        guard let year = release.firstReleaseDate?.year else { return kind }
+        return "\(kind) · \(year)"
+    }
+
+    private var catalogNeedsContinuation: Bool {
+        if catalogRefreshResults.contains(where: { $0.status == .partial }) {
+            return true
+        }
+        return catalogRefreshResults.isEmpty && discographyPage?.remoteExhausted == false
+    }
+
+    private var catalogStatusMessage: String? {
+        let statuses = catalogRefreshResults.map(\.status)
+        if statuses.contains(.rateLimited) {
+            let retry = catalogRefreshResults.compactMap(\.retryAfterSeconds).max()
+            return retry.map { "Limite do provedor atingido. Tente novamente em \($0) segundos." }
+                ?? "Limite do provedor atingido. Tente novamente mais tarde."
+        }
+        if statuses.contains(.offline) { return "Modo offline: exibindo o cache local." }
+        if statuses.contains(.disabled) { return "Enriquecimento remoto desativado nos Ajustes." }
+        if statuses.contains(.needsIdentity) { return "Confirme a identidade MusicBrainz do artista para carregar a discografia." }
+        if statuses.contains(.unavailable) { return "Não foi possível atualizar agora; o cache local foi preservado." }
+        if statuses.contains(.superseded) { return "A identidade do artista mudou; os dados anteriores foram descartados." }
+        if statuses.contains(.partial) { return "Há mais páginas ou capas disponíveis para continuar." }
+        return nil
+    }
+
+    private func applyDiscographyPage(_ page: ArtistDiscographyPage, reset: Bool) {
+        if reset || discographyPage?.catalogGeneration != page.catalogGeneration {
+            discographyItems = page.items
+        } else {
+            let known = Set(discographyItems.map(\.musicbrainzId))
+            discographyItems.append(contentsOf: page.items.filter { !known.contains($0.musicbrainzId) })
+        }
+        discographyPage = page
+    }
+
+    private func loadMoreDiscography(from offset: UInt64) async {
+        guard !isLoadingMoreDiscography else { return }
+        isLoadingMoreDiscography = true
+        defer { isLoadingMoreDiscography = false }
+        if let page = await store.artistDiscography(artistId: artist.id, offset: offset) {
+            applyDiscographyPage(page, reset: false)
+        }
+    }
+
+    private func refreshCatalog() async {
+        guard !isRefreshingCatalog else { return }
+        isRefreshingCatalog = true
+        defer { isRefreshingCatalog = false }
+        let result = await store.refreshArtistCatalog(
+            artistId: artist.id,
+            language: enrichmentLanguage
+        )
+        catalogRefreshResults = result?.sections ?? []
+        if result != nil, let page = await store.artistDiscography(artistId: artist.id) {
+            applyDiscographyPage(page, reset: true)
+        }
     }
 
     private func artistHighlights(width: CGFloat) -> some View {
@@ -281,7 +794,8 @@ struct ArtistView: View {
                         } label: {
                             HStack(alignment: .center, spacing: 16) {
                                 ArtworkView(
-                                    artworkID: latestRelease.artworkId,
+                                    artworkID: latestRelease.artworkId
+                                        ?? externalFallbackArtworkID(for: latestRelease),
                                     size: min(140, columnWidth * 0.4)
                                 )
 
@@ -324,7 +838,11 @@ struct ArtistView: View {
                                     onSelectAlbum(album)
                                 } label: {
                                     VStack(alignment: .leading, spacing: 8) {
-                                        ArtworkView(artworkID: album.artworkId, size: 144)
+                                        ArtworkView(
+                                            artworkID: album.artworkId
+                                                ?? externalFallbackArtworkID(for: album),
+                                            size: 144
+                                        )
                                         Text(album.title)
                                             .font(.headline)
                                             .lineLimit(2)
@@ -794,5 +1312,49 @@ struct ArtistView: View {
         store.releases.first(where: {
             $0.artist.localizedCaseInsensitiveCompare(similar.name) == .orderedSame
         })?.artworkId
+    }
+}
+
+private struct ExternalReleaseCard: View {
+    let release: ExternalReleaseGroup
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .topTrailing) {
+                ArtworkView(
+                    artworkID: release.artwork?.image.managedPath,
+                    size: AlbumGridLayout.cardWidth
+                )
+
+                Text("Somente online")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(.black.opacity(0.68), in: .capsule)
+                    .padding(7)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(release.title)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(width: AlbumGridLayout.cardWidth, alignment: .leading)
+
+            if let source = URL(string: release.attribution.sourceUrl) {
+                Link("MusicBrainz", destination: source)
+                    .font(.caption2)
+            }
+        }
+        .frame(width: AlbumGridLayout.cardWidth, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(release.title), \(subtitle), somente online")
+        .accessibilityIdentifier("artist.discography.remote.\(release.musicbrainzId)")
     }
 }

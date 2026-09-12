@@ -4,7 +4,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use chrono::Utc;
 use rusqlite::{Connection, OptionalExtension, Row, params, types::ValueRef};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -2496,16 +2496,35 @@ pub(crate) fn persist_metadata_with_existing_ids(
 
     let mut added_tracks = 0;
     let mut updated_tracks = 0;
+    let mut touched_release_ids = BTreeSet::new();
     for (i, md) in metadata.into_iter().enumerate() {
-        match add_song(&transaction, md, mtimes[i], existing_song_ids[i])? {
+        let existing_song_id = existing_song_ids[i];
+        if let Some(song_id) = existing_song_id {
+            if let Some(release_id) = transaction
+                .query_row(
+                    "SELECT release_id FROM songs WHERE song_id = ?1",
+                    [song_id],
+                    |row| row.get(0),
+                )
+                .optional()?
+            {
+                touched_release_ids.insert(release_id);
+            }
+        }
+        let new_release_id = lookup_release_id(&transaction, &md)?;
+        match add_song(&transaction, md, mtimes[i], existing_song_id)? {
             SongWriteResult::Added => added_tracks += 1,
             SongWriteResult::Updated => updated_tracks += 1,
             SongWriteResult::SkippedDuplicate => {}
         }
+        touched_release_ids.insert(new_release_id);
     }
 
     for release in &all_releases {
         refresh_release_statistics(&transaction, release)?;
+    }
+    for release_id in touched_release_ids {
+        crate::database::identity::refresh_release_external_ids(&transaction, release_id)?;
     }
 
     transaction.commit()?;
@@ -2527,6 +2546,20 @@ pub(crate) fn remove_missing_songs_in_folder(
         root_prefix.push(std::path::MAIN_SEPARATOR);
     }
     let transaction = conn.unchecked_transaction()?;
+    let affected_release_ids = transaction
+        .prepare(
+            "SELECT DISTINCT release_id FROM songs
+             WHERE substr(file_path, 1, length(?1)) = ?1
+               AND NOT EXISTS (
+                   SELECT 1 FROM scan_discovered_paths AS discovered
+                   WHERE discovered.scan_id = ?2
+                     AND discovered.file_path = songs.file_path
+               )",
+        )?
+        .query_map(params![root_prefix, reconciliation.scan_id], |row| {
+            row.get::<_, i64>(0)
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     let removed = transaction.execute(
         "DELETE FROM songs
          WHERE substr(file_path, 1, length(?1)) = ?1
@@ -2538,6 +2571,9 @@ pub(crate) fn remove_missing_songs_in_folder(
            )",
         params![root_prefix, reconciliation.scan_id],
     )?;
+    for release_id in affected_release_ids {
+        crate::database::identity::refresh_release_external_ids(&transaction, release_id)?;
+    }
     transaction.execute(
         "UPDATE releases
          SET total_tracks = (SELECT COUNT(*) FROM songs WHERE songs.release_id = releases.release_id),
@@ -2920,6 +2956,136 @@ mod tests {
         assert!(record_completed_playback(&conn, 1, 180).unwrap());
         assert_eq!(clear_play_history(&conn).unwrap(), 2);
         assert!(get_play_history(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn release_external_ids_follow_tag_evidence_conflicts_and_removals() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        create_tables(&conn).unwrap();
+        crate::database::migrations::migrate_enrichment(&mut conn).unwrap();
+        let release_a = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        let release_b = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        let group_a = "11111111-1111-4111-8111-111111111111";
+        let group_b = "22222222-2222-4222-8222-222222222222";
+
+        let mut first = metadata("Artist", "Album", 2024);
+        first.musicbrainz.releases = vec![release_a.into()];
+        first.musicbrainz.release_groups = vec![group_a.into()];
+        persist_metadata(&conn, vec![first.clone()], vec![1]).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT release_mbid, release_group_mbid, origin
+                 FROM local_release_external_ids WHERE release_id = 1",
+                [],
+                |row| Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?
+                ))
+            )
+            .unwrap(),
+            (release_a.into(), group_a.into(), "tag".into())
+        );
+
+        let mut second = metadata("Artist", "Album", 2024);
+        second.title = Some("Second Track".into());
+        second.file_path = "/music/second-track.mp3".into();
+        second.musicbrainz.releases = vec![release_b.into()];
+        second.musicbrainz.release_groups = vec![group_a.into()];
+        persist_metadata(&conn, vec![second.clone()], vec![2]).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT release_mbid, release_group_mbid
+                 FROM local_release_external_ids WHERE release_id = 1",
+                [],
+                |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
+            )
+            .unwrap(),
+            (None, group_a.into())
+        );
+
+        second.musicbrainz.release_groups = vec![group_b.into()];
+        persist_metadata(&conn, vec![second], vec![3]).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM local_release_external_ids WHERE release_id = 1",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+
+        reset_scan_discovery_table(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO scan_discovered_paths
+             (scan_id, file_path, name, size, extension, file_mtime)
+             VALUES ('tag-scan', '/music/track.mp3', 'track.mp3', 1, 'mp3', 1)",
+            [],
+        )
+        .unwrap();
+        remove_missing_songs_in_folder(
+            &conn,
+            ScanReconciliation {
+                scan_id: "tag-scan".into(),
+                root: PathBuf::from("/music"),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT release_mbid, release_group_mbid
+                 FROM local_release_external_ids WHERE release_id = 1",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            )
+            .unwrap(),
+            (release_a.into(), group_a.into())
+        );
+
+        first.musicbrainz = Default::default();
+        persist_metadata(&conn, vec![first], vec![4]).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM local_release_external_ids WHERE release_id = 1",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(get_all_tracks(&conn).unwrap().len(), 1);
+        assert_eq!(
+            get_release_by_id(&conn, "1").unwrap().artwork,
+            "/covers/cover.jpg"
+        );
+
+        conn.execute(
+            "INSERT INTO local_release_external_ids
+             (release_id, release_mbid, release_group_mbid, origin, updated_at)
+             VALUES (1, ?1, ?2, 'manual', 10)",
+            params![release_b, group_b],
+        )
+        .unwrap();
+        let mut retagged = metadata("Artist", "Album", 2024);
+        retagged.musicbrainz.releases = vec![release_a.into()];
+        retagged.musicbrainz.release_groups = vec![group_a.into()];
+        persist_metadata(&conn, vec![retagged], vec![5]).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT release_mbid, release_group_mbid, origin
+                 FROM local_release_external_ids WHERE release_id = 1",
+                [],
+                |row| Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?
+                ))
+            )
+            .unwrap(),
+            (release_b.into(), group_b.into(), "manual".into())
+        );
     }
 
     #[test]

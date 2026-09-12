@@ -583,6 +583,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func artistDetails(artistId: Int64, language: String) async throws  -> ArtistDetails
 
+    /**
+     * Reads one network-free page of the locally persisted external catalog.
+     */
+    func artistDiscography(artistId: Int64, pageSize: UInt64, offset: UInt64) async throws  -> ArtistDiscographyPage
+
     func artistIdentity(artistId: Int64) async throws  -> ArtistIdentity
 
     /**
@@ -1085,6 +1090,26 @@ open func artistDetails(artistId: Int64, language: String)async throws  -> Artis
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeArtistDetails.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Reads one network-free page of the locally persisted external catalog.
+     */
+open func artistDiscography(artistId: Int64, pageSize: UInt64, offset: UInt64)async throws  -> ArtistDiscographyPage {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_artist_discography(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(artistId),FfiConverterUInt64.lower(pageSize),FfiConverterUInt64.lower(offset)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeArtistDiscographyPage.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -2768,6 +2793,125 @@ public func FfiConverterTypeArtistDetails_lower(_ value: ArtistDetails) -> RustB
 
 
 /**
+ * A bounded page of the locally stored remote catalog. `next_offset` covers
+ * stored rows; `remote_exhausted`, `remote_next_offset` and `remote_total`
+ * describe provider pagination, so reaching the local end never implies the
+ * remote end.
+ */
+public struct ArtistDiscographyPage {
+    public var artistId: Int64
+    public var identityGeneration: UInt64
+    public var catalogGeneration: UInt64
+    public var items: [ExternalReleaseGroup]
+    public var nextOffset: UInt64?
+    public var remoteExhausted: Bool
+    public var remoteNextOffset: UInt64?
+    public var remoteTotal: UInt64?
+    public var stale: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(artistId: Int64, identityGeneration: UInt64, catalogGeneration: UInt64, items: [ExternalReleaseGroup], nextOffset: UInt64?, remoteExhausted: Bool, remoteNextOffset: UInt64?, remoteTotal: UInt64?, stale: Bool) {
+        self.artistId = artistId
+        self.identityGeneration = identityGeneration
+        self.catalogGeneration = catalogGeneration
+        self.items = items
+        self.nextOffset = nextOffset
+        self.remoteExhausted = remoteExhausted
+        self.remoteNextOffset = remoteNextOffset
+        self.remoteTotal = remoteTotal
+        self.stale = stale
+    }
+}
+
+
+
+extension ArtistDiscographyPage: Equatable, Hashable {
+    public static func ==(lhs: ArtistDiscographyPage, rhs: ArtistDiscographyPage) -> Bool {
+        if lhs.artistId != rhs.artistId {
+            return false
+        }
+        if lhs.identityGeneration != rhs.identityGeneration {
+            return false
+        }
+        if lhs.catalogGeneration != rhs.catalogGeneration {
+            return false
+        }
+        if lhs.items != rhs.items {
+            return false
+        }
+        if lhs.nextOffset != rhs.nextOffset {
+            return false
+        }
+        if lhs.remoteExhausted != rhs.remoteExhausted {
+            return false
+        }
+        if lhs.remoteNextOffset != rhs.remoteNextOffset {
+            return false
+        }
+        if lhs.remoteTotal != rhs.remoteTotal {
+            return false
+        }
+        if lhs.stale != rhs.stale {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(artistId)
+        hasher.combine(identityGeneration)
+        hasher.combine(catalogGeneration)
+        hasher.combine(items)
+        hasher.combine(nextOffset)
+        hasher.combine(remoteExhausted)
+        hasher.combine(remoteNextOffset)
+        hasher.combine(remoteTotal)
+        hasher.combine(stale)
+    }
+}
+
+
+public struct FfiConverterTypeArtistDiscographyPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistDiscographyPage {
+        return
+            try ArtistDiscographyPage(
+                artistId: FfiConverterInt64.read(from: &buf),
+                identityGeneration: FfiConverterUInt64.read(from: &buf),
+                catalogGeneration: FfiConverterUInt64.read(from: &buf),
+                items: FfiConverterSequenceTypeExternalReleaseGroup.read(from: &buf),
+                nextOffset: FfiConverterOptionUInt64.read(from: &buf),
+                remoteExhausted: FfiConverterBool.read(from: &buf),
+                remoteNextOffset: FfiConverterOptionUInt64.read(from: &buf),
+                remoteTotal: FfiConverterOptionUInt64.read(from: &buf),
+                stale: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistDiscographyPage, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.artistId, into: &buf)
+        FfiConverterUInt64.write(value.identityGeneration, into: &buf)
+        FfiConverterUInt64.write(value.catalogGeneration, into: &buf)
+        FfiConverterSequenceTypeExternalReleaseGroup.write(value.items, into: &buf)
+        FfiConverterOptionUInt64.write(value.nextOffset, into: &buf)
+        FfiConverterBool.write(value.remoteExhausted, into: &buf)
+        FfiConverterOptionUInt64.write(value.remoteNextOffset, into: &buf)
+        FfiConverterOptionUInt64.write(value.remoteTotal, into: &buf)
+        FfiConverterBool.write(value.stale, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistDiscographyPage_lift(_ buf: RustBuffer) throws -> ArtistDiscographyPage {
+    return try FfiConverterTypeArtistDiscographyPage.lift(buf)
+}
+
+public func FfiConverterTypeArtistDiscographyPage_lower(_ value: ArtistDiscographyPage) -> RustBuffer {
+    return FfiConverterTypeArtistDiscographyPage.lower(value)
+}
+
+
+/**
  * `value = None` explicitly clears the selected field. Dates use YYYY,
  * YYYY-MM or YYYY-MM-DD; entity kind uses person/group/other/unknown.
  */
@@ -3112,7 +3256,7 @@ public func FfiConverterTypeArtistIdentityCandidates_lower(_ value: ArtistIdenti
 public struct ArtistImageReference {
     public var provider: EnrichmentProvider
     /**
-     * Stable provider identifier, currently the Commons file title.
+     * Stable identifier supplied by the image provider.
      */
     public var providerId: String
     public var sourceUrl: String
@@ -3131,7 +3275,7 @@ public struct ArtistImageReference {
     // declare one manually.
     public init(provider: EnrichmentProvider,
         /**
-         * Stable provider identifier, currently the Commons file title.
+         * Stable identifier supplied by the image provider.
          */providerId: String, sourceUrl: String,
         /**
          * Absolute path inside the core-managed covers directory.
@@ -4179,6 +4323,180 @@ public func FfiConverterTypeEnrichmentSettings_lift(_ buf: RustBuffer) throws ->
 
 public func FfiConverterTypeEnrichmentSettings_lower(_ value: EnrichmentSettings) -> RustBuffer {
     return FfiConverterTypeEnrichmentSettings.lower(value)
+}
+
+
+public struct ExternalReleaseArtwork {
+    public var image: ArtistImageReference
+    public var scope: ExternalArtworkScope
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(image: ArtistImageReference, scope: ExternalArtworkScope) {
+        self.image = image
+        self.scope = scope
+    }
+}
+
+
+
+extension ExternalReleaseArtwork: Equatable, Hashable {
+    public static func ==(lhs: ExternalReleaseArtwork, rhs: ExternalReleaseArtwork) -> Bool {
+        if lhs.image != rhs.image {
+            return false
+        }
+        if lhs.scope != rhs.scope {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(image)
+        hasher.combine(scope)
+    }
+}
+
+
+public struct FfiConverterTypeExternalReleaseArtwork: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExternalReleaseArtwork {
+        return
+            try ExternalReleaseArtwork(
+                image: FfiConverterTypeArtistImageReference.read(from: &buf),
+                scope: FfiConverterTypeExternalArtworkScope.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ExternalReleaseArtwork, into buf: inout [UInt8]) {
+        FfiConverterTypeArtistImageReference.write(value.image, into: &buf)
+        FfiConverterTypeExternalArtworkScope.write(value.scope, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeExternalReleaseArtwork_lift(_ buf: RustBuffer) throws -> ExternalReleaseArtwork {
+    return try FfiConverterTypeExternalReleaseArtwork.lift(buf)
+}
+
+public func FfiConverterTypeExternalReleaseArtwork_lower(_ value: ExternalReleaseArtwork) -> RustBuffer {
+    return FfiConverterTypeExternalReleaseArtwork.lower(value)
+}
+
+
+/**
+ * MusicBrainz release-group metadata remains separate from playable local
+ * releases. `local_release_id` is present only after an identifier-based link.
+ */
+public struct ExternalReleaseGroup {
+    public var musicbrainzId: String
+    public var title: String
+    public var primaryType: String?
+    public var secondaryTypes: [String]
+    public var firstReleaseDate: ArtistPartialDate?
+    public var localReleaseId: Int64?
+    /**
+     * External fallback only. `None` also means a linked local release has
+     * manual or embedded artwork with higher precedence.
+     */
+    public var artwork: ExternalReleaseArtwork?
+    public var attribution: EnrichmentAttribution
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(musicbrainzId: String, title: String, primaryType: String?, secondaryTypes: [String], firstReleaseDate: ArtistPartialDate?, localReleaseId: Int64?,
+        /**
+         * External fallback only. `None` also means a linked local release has
+         * manual or embedded artwork with higher precedence.
+         */artwork: ExternalReleaseArtwork?, attribution: EnrichmentAttribution) {
+        self.musicbrainzId = musicbrainzId
+        self.title = title
+        self.primaryType = primaryType
+        self.secondaryTypes = secondaryTypes
+        self.firstReleaseDate = firstReleaseDate
+        self.localReleaseId = localReleaseId
+        self.artwork = artwork
+        self.attribution = attribution
+    }
+}
+
+
+
+extension ExternalReleaseGroup: Equatable, Hashable {
+    public static func ==(lhs: ExternalReleaseGroup, rhs: ExternalReleaseGroup) -> Bool {
+        if lhs.musicbrainzId != rhs.musicbrainzId {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.primaryType != rhs.primaryType {
+            return false
+        }
+        if lhs.secondaryTypes != rhs.secondaryTypes {
+            return false
+        }
+        if lhs.firstReleaseDate != rhs.firstReleaseDate {
+            return false
+        }
+        if lhs.localReleaseId != rhs.localReleaseId {
+            return false
+        }
+        if lhs.artwork != rhs.artwork {
+            return false
+        }
+        if lhs.attribution != rhs.attribution {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(musicbrainzId)
+        hasher.combine(title)
+        hasher.combine(primaryType)
+        hasher.combine(secondaryTypes)
+        hasher.combine(firstReleaseDate)
+        hasher.combine(localReleaseId)
+        hasher.combine(artwork)
+        hasher.combine(attribution)
+    }
+}
+
+
+public struct FfiConverterTypeExternalReleaseGroup: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExternalReleaseGroup {
+        return
+            try ExternalReleaseGroup(
+                musicbrainzId: FfiConverterString.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                primaryType: FfiConverterOptionString.read(from: &buf),
+                secondaryTypes: FfiConverterSequenceString.read(from: &buf),
+                firstReleaseDate: FfiConverterOptionTypeArtistPartialDate.read(from: &buf),
+                localReleaseId: FfiConverterOptionInt64.read(from: &buf),
+                artwork: FfiConverterOptionTypeExternalReleaseArtwork.read(from: &buf),
+                attribution: FfiConverterTypeEnrichmentAttribution.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ExternalReleaseGroup, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.musicbrainzId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.primaryType, into: &buf)
+        FfiConverterSequenceString.write(value.secondaryTypes, into: &buf)
+        FfiConverterOptionTypeArtistPartialDate.write(value.firstReleaseDate, into: &buf)
+        FfiConverterOptionInt64.write(value.localReleaseId, into: &buf)
+        FfiConverterOptionTypeExternalReleaseArtwork.write(value.artwork, into: &buf)
+        FfiConverterTypeEnrichmentAttribution.write(value.attribution, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeExternalReleaseGroup_lift(_ buf: RustBuffer) throws -> ExternalReleaseGroup {
+    return try FfiConverterTypeExternalReleaseGroup.lift(buf)
+}
+
+public func FfiConverterTypeExternalReleaseGroup_lower(_ value: ExternalReleaseGroup) -> RustBuffer {
+    return FfiConverterTypeExternalReleaseGroup.lower(value)
 }
 
 
@@ -6198,6 +6516,8 @@ public enum ArtistRefreshSection {
 
     case profile
     case portrait
+    case discography
+    case covers
 }
 
 
@@ -6211,6 +6531,10 @@ public struct FfiConverterTypeArtistRefreshSection: FfiConverterRustBuffer {
         case 1: return .profile
 
         case 2: return .portrait
+
+        case 3: return .discography
+
+        case 4: return .covers
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -6226,6 +6550,14 @@ public struct FfiConverterTypeArtistRefreshSection: FfiConverterRustBuffer {
 
         case .portrait:
             writeInt(&buf, Int32(2))
+
+
+        case .discography:
+            writeInt(&buf, Int32(3))
+
+
+        case .covers:
+            writeInt(&buf, Int32(4))
 
         }
     }
@@ -6252,6 +6584,11 @@ extension ArtistRefreshSection: Equatable, Hashable {}
 public enum ArtistRefreshStatus {
 
     case updated
+    /**
+     * Work was committed or retained, but a provider cursor or bounded batch
+     * still has pending items and should be continued explicitly.
+     */
+    case partial
     case unchanged
     case notFound
     case needsIdentity
@@ -6272,21 +6609,23 @@ public struct FfiConverterTypeArtistRefreshStatus: FfiConverterRustBuffer {
 
         case 1: return .updated
 
-        case 2: return .unchanged
+        case 2: return .partial
 
-        case 3: return .notFound
+        case 3: return .unchanged
 
-        case 4: return .needsIdentity
+        case 4: return .notFound
 
-        case 5: return .unavailable
+        case 5: return .needsIdentity
 
-        case 6: return .rateLimited
+        case 6: return .unavailable
 
-        case 7: return .disabled
+        case 7: return .rateLimited
 
-        case 8: return .offline
+        case 8: return .disabled
 
-        case 9: return .superseded
+        case 9: return .offline
+
+        case 10: return .superseded
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -6300,36 +6639,40 @@ public struct FfiConverterTypeArtistRefreshStatus: FfiConverterRustBuffer {
             writeInt(&buf, Int32(1))
 
 
-        case .unchanged:
+        case .partial:
             writeInt(&buf, Int32(2))
 
 
-        case .notFound:
+        case .unchanged:
             writeInt(&buf, Int32(3))
 
 
-        case .needsIdentity:
+        case .notFound:
             writeInt(&buf, Int32(4))
 
 
-        case .unavailable:
+        case .needsIdentity:
             writeInt(&buf, Int32(5))
 
 
-        case .rateLimited:
+        case .unavailable:
             writeInt(&buf, Int32(6))
 
 
-        case .disabled:
+        case .rateLimited:
             writeInt(&buf, Int32(7))
 
 
-        case .offline:
+        case .disabled:
             writeInt(&buf, Int32(8))
 
 
-        case .superseded:
+        case .offline:
             writeInt(&buf, Int32(9))
+
+
+        case .superseded:
+            writeInt(&buf, Int32(10))
 
         }
     }
@@ -6538,6 +6881,65 @@ public func FfiConverterTypeEnrichmentProvider_lower(_ value: EnrichmentProvider
 
 
 extension EnrichmentProvider: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Whether Cover Art Archive artwork represents an exact release or only its
+ * broader release group. Group artwork must not be presented as edition-exact.
+ */
+
+public enum ExternalArtworkScope {
+
+    case exactRelease
+    case releaseGroup
+}
+
+
+public struct FfiConverterTypeExternalArtworkScope: FfiConverterRustBuffer {
+    typealias SwiftType = ExternalArtworkScope
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExternalArtworkScope {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .exactRelease
+
+        case 2: return .releaseGroup
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ExternalArtworkScope, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .exactRelease:
+            writeInt(&buf, Int32(1))
+
+
+        case .releaseGroup:
+            writeInt(&buf, Int32(2))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeExternalArtworkScope_lift(_ buf: RustBuffer) throws -> ExternalArtworkScope {
+    return try FfiConverterTypeExternalArtworkScope.lift(buf)
+}
+
+public func FfiConverterTypeExternalArtworkScope_lower(_ value: ExternalArtworkScope) -> RustBuffer {
+    return FfiConverterTypeExternalArtworkScope.lower(value)
+}
+
+
+
+extension ExternalArtworkScope: Equatable, Hashable {}
 
 
 
@@ -6867,6 +7269,27 @@ fileprivate struct FfiConverterOptionTypeArtistPartialDate: FfiConverterRustBuff
     }
 }
 
+fileprivate struct FfiConverterOptionTypeExternalReleaseArtwork: FfiConverterRustBuffer {
+    typealias SwiftType = ExternalReleaseArtwork?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeExternalReleaseArtwork.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeExternalReleaseArtwork.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionTypeScanProgress: FfiConverterRustBuffer {
     typealias SwiftType = ScanProgress?
 
@@ -7079,6 +7502,28 @@ fileprivate struct FfiConverterSequenceTypeArtistRefreshSectionResult: FfiConver
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeArtistRefreshSectionResult.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeExternalReleaseGroup: FfiConverterRustBuffer {
+    typealias SwiftType = [ExternalReleaseGroup]
+
+    public static func write(_ value: [ExternalReleaseGroup], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeExternalReleaseGroup.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ExternalReleaseGroup] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ExternalReleaseGroup]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeExternalReleaseGroup.read(from: &buf))
         }
         return seq
     }
@@ -7334,6 +7779,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_artist_details() != 62278) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_artist_discography() != 58744) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_artist_identity() != 48481) {

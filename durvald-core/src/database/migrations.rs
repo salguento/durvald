@@ -119,6 +119,149 @@ CREATE TABLE artist_profile_overrides (
 );
 "#;
 
+const DISCOGRAPHY: &str = r#"
+CREATE TABLE external_release_groups (
+    musicbrainz_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    primary_type TEXT,
+    secondary_types TEXT NOT NULL CHECK (json_valid(secondary_types)),
+    first_release_year INTEGER,
+    first_release_month INTEGER CHECK (first_release_month IS NULL OR first_release_month BETWEEN 1 AND 12),
+    first_release_day INTEGER CHECK (first_release_day IS NULL OR first_release_day BETWEEN 1 AND 31),
+    attribution TEXT NOT NULL CHECK (json_valid(attribution)),
+    fetched_at INTEGER NOT NULL,
+    CHECK (first_release_month IS NULL OR first_release_year IS NOT NULL),
+    CHECK (first_release_day IS NULL OR first_release_month IS NOT NULL)
+);
+
+CREATE TABLE artist_discography_state (
+    artist_id INTEGER PRIMARY KEY REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    active_generation INTEGER NOT NULL DEFAULT 0 CHECK (active_generation >= 0),
+    active_remote_next_offset INTEGER CHECK (active_remote_next_offset IS NULL OR active_remote_next_offset >= 0),
+    active_remote_exhausted INTEGER NOT NULL DEFAULT 0 CHECK (active_remote_exhausted IN (0, 1)),
+    active_fetched_at INTEGER,
+    active_expires_at INTEGER,
+    active_etag TEXT,
+    active_last_modified TEXT,
+    building_generation INTEGER CHECK (building_generation IS NULL OR building_generation > 0),
+    building_next_offset INTEGER CHECK (building_next_offset IS NULL OR building_next_offset >= 0),
+    building_fetched_at INTEGER,
+    building_expires_at INTEGER,
+    building_etag TEXT,
+    building_last_modified TEXT,
+    CHECK (active_expires_at IS NULL OR (active_fetched_at IS NOT NULL AND active_expires_at >= active_fetched_at)),
+    CHECK (building_expires_at IS NULL OR (building_fetched_at IS NOT NULL AND building_expires_at >= building_fetched_at))
+);
+
+CREATE TABLE external_artist_release_groups (
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    release_group_mbid TEXT NOT NULL REFERENCES external_release_groups(musicbrainz_id) ON DELETE CASCADE,
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    catalog_generation INTEGER NOT NULL CHECK (catalog_generation > 0),
+    provider_position INTEGER NOT NULL CHECK (provider_position >= 0),
+    PRIMARY KEY (artist_id, catalog_generation, release_group_mbid)
+);
+CREATE INDEX idx_external_artist_release_active
+    ON external_artist_release_groups(artist_id, identity_generation, catalog_generation, provider_position);
+
+CREATE TABLE local_release_external_ids (
+    release_id INTEGER PRIMARY KEY REFERENCES releases(release_id) ON DELETE CASCADE,
+    release_mbid TEXT,
+    release_group_mbid TEXT,
+    origin TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    CHECK (release_mbid IS NOT NULL OR release_group_mbid IS NOT NULL)
+);
+CREATE INDEX idx_local_release_mbid ON local_release_external_ids(release_mbid);
+CREATE INDEX idx_local_release_group_mbid ON local_release_external_ids(release_group_mbid);
+
+ALTER TABLE enrichment_assets RENAME TO enrichment_assets_phase3;
+CREATE TABLE enrichment_assets (
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    catalog_key TEXT NOT NULL DEFAULT '',
+    provider_id TEXT NOT NULL,
+    generation INTEGER NOT NULL CHECK (generation >= 0),
+    release_group_mbid TEXT REFERENCES external_release_groups(musicbrainz_id) ON DELETE CASCADE,
+    exact_release_mbid TEXT,
+    artwork_scope TEXT CHECK (artwork_scope IS NULL OR artwork_scope IN ('exact_release', 'release_group')),
+    source_url TEXT NOT NULL,
+    managed_path TEXT NOT NULL,
+    width INTEGER CHECK (width IS NULL OR width > 0),
+    height INTEGER CHECK (height IS NULL OR height > 0),
+    attribution TEXT NOT NULL CHECK (json_valid(attribution)),
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL CHECK (expires_at >= fetched_at),
+    PRIMARY KEY (artist_id, provider, catalog_key),
+    CHECK (
+        (catalog_key = '' AND release_group_mbid IS NULL AND exact_release_mbid IS NULL AND artwork_scope IS NULL)
+        OR
+        (catalog_key != '' AND provider = 'cover_art_archive' AND release_group_mbid IS NOT NULL
+            AND ((artwork_scope = 'exact_release' AND exact_release_mbid IS NOT NULL)
+                OR (artwork_scope = 'release_group' AND exact_release_mbid IS NULL)))
+    )
+);
+INSERT INTO enrichment_assets (
+    artist_id, provider, catalog_key, provider_id, generation, source_url,
+    managed_path, width, height, attribution, fetched_at, expires_at
+)
+SELECT artist_id, provider, '', provider_id, generation, source_url,
+       managed_path, width, height, attribution, fetched_at, expires_at
+FROM enrichment_assets_phase3;
+DROP TABLE enrichment_assets_phase3;
+CREATE INDEX idx_enrichment_asset_provider_id
+    ON enrichment_assets(provider, provider_id);
+CREATE INDEX idx_enrichment_asset_release_group
+    ON enrichment_assets(artist_id, release_group_mbid);
+"#;
+
+const RELEASE_IDENTIFIER_BACKFILL: &str = r#"
+CREATE TABLE enrichment_backfills (
+    key TEXT PRIMARY KEY,
+    completed_at INTEGER NOT NULL
+);
+"#;
+
+const DISCOGRAPHY_TOTALS: &str = r#"
+ALTER TABLE artist_discography_state
+    ADD COLUMN active_remote_total INTEGER
+    CHECK (active_remote_total IS NULL OR active_remote_total >= 0);
+ALTER TABLE artist_discography_state
+    ADD COLUMN building_remote_total INTEGER
+    CHECK (building_remote_total IS NULL OR building_remote_total >= 0);
+"#;
+
+// Keep the catalog entry itself generation-scoped. `external_release_groups`
+// remains the shared identity used by artwork foreign keys, but readers use
+// this immutable payload so an unpublished refresh cannot mutate an active
+// snapshot that happens to contain the same release-group.
+const TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS: &str = r#"
+ALTER TABLE external_artist_release_groups
+    ADD COLUMN snapshot_payload TEXT
+    CHECK (snapshot_payload IS NULL OR json_valid(snapshot_payload));
+UPDATE external_artist_release_groups AS ar
+SET snapshot_payload = (
+    SELECT json_object(
+        'musicbrainz_id', g.musicbrainz_id,
+        'title', g.title,
+        'primary_type', g.primary_type,
+        'secondary_types', json(g.secondary_types),
+        'first_release_date', CASE
+            WHEN g.first_release_year IS NULL THEN NULL
+            ELSE json_object(
+                'year', g.first_release_year,
+                'month', g.first_release_month,
+                'day', g.first_release_day
+            )
+        END,
+        'attribution', json(g.attribution)
+    )
+    FROM external_release_groups g
+    WHERE g.musicbrainz_id = ar.release_group_mbid
+);
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -128,8 +271,13 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (3, PROFILE),
             (4, PROFILE_ASSETS),
             (5, PROFILE_OVERRIDES),
+            (6, DISCOGRAPHY),
+            (7, RELEASE_IDENTIFIER_BACKFILL),
+            (8, DISCOGRAPHY_TOTALS),
+            (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
         ],
-    )
+    )?;
+    crate::database::identity::backfill_release_external_ids(conn)
 }
 
 fn apply(conn: &mut Connection, migrations: &[(i64, &str)]) -> rusqlite::Result<()> {
@@ -197,7 +345,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            5
+            9
         );
     }
 
@@ -215,8 +363,12 @@ mod tests {
                     (3, PROFILE),
                     (4, PROFILE_ASSETS),
                     (5, PROFILE_OVERRIDES),
+                    (6, DISCOGRAPHY,),
+                    (7, RELEASE_IDENTIFIER_BACKFILL),
+                    (8, DISCOGRAPHY_TOTALS),
+                    (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
                     (
-                        6,
+                        10,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -229,7 +381,209 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            5
+            9
+        );
+    }
+
+    #[test]
+    fn phase_three_assets_survive_discography_schema_upgrade() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::database::operations::create_tables(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO artists (artist_id, name) VALUES (1, 'Artist')",
+            [],
+        )
+        .unwrap();
+        apply(
+            &mut conn,
+            &[
+                (1, FOUNDATION),
+                (2, IDENTITY),
+                (3, PROFILE),
+                (4, PROFILE_ASSETS),
+                (5, PROFILE_OVERRIDES),
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO artist_enrichment_state (artist_id) VALUES (1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO enrichment_assets
+             (artist_id, provider, provider_id, generation, source_url, managed_path,
+              attribution, fetched_at, expires_at)
+             VALUES (1, 'commons', 'Portrait.jpg', 0, 'https://example.test/source',
+                     '/covers/hash.jpg', '{}', 10, 20)",
+            [],
+        )
+        .unwrap();
+
+        migrate_enrichment(&mut conn).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT provider_id FROM enrichment_assets
+                 WHERE artist_id = 1 AND provider = 'commons' AND catalog_key = ''",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "Portrait.jpg"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn phase_four_catalog_rows_gain_immutable_snapshot_payloads() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        crate::database::operations::create_tables(&conn).unwrap();
+        apply(
+            &mut conn,
+            &[
+                (1, FOUNDATION),
+                (2, IDENTITY),
+                (3, PROFILE),
+                (4, PROFILE_ASSETS),
+                (5, PROFILE_OVERRIDES),
+                (6, DISCOGRAPHY),
+                (7, RELEASE_IDENTIFIER_BACKFILL),
+                (8, DISCOGRAPHY_TOTALS),
+            ],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO artists VALUES (1, 'Artist')", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO artist_enrichment_state
+             (artist_id, generation, identity_status, musicbrainz_id)
+             VALUES (1, 2, 'resolved', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')",
+            [],
+        )
+        .unwrap();
+        let group_id = "11111111-1111-4111-8111-111111111111";
+        conn.execute(
+            "INSERT INTO external_release_groups
+             VALUES (?1, 'Original title', 'Album', '[\"Live\"]', 2001, 2, NULL,
+                     '{\"source_url\":\"https://example.test\",\"author\":null,\"license_name\":null,\"license_url\":null,\"revision\":null}', 10)",
+            [group_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO external_artist_release_groups
+             VALUES (1, ?1, 2, 1, 0)",
+            [group_id],
+        )
+        .unwrap();
+
+        migrate_enrichment(&mut conn).unwrap();
+        let payload: String = conn
+            .query_row(
+                "SELECT snapshot_payload FROM external_artist_release_groups",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(payload["musicbrainz_id"], group_id);
+        assert_eq!(payload["title"], "Original title");
+        assert_eq!(payload["secondary_types"], serde_json::json!(["Live"]));
+        assert_eq!(payload["first_release_date"]["year"], 2001);
+        assert_eq!(payload["first_release_date"]["month"], 2);
+    }
+
+    #[test]
+    fn existing_normalized_song_tags_are_backfilled_once() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        crate::database::operations::create_tables(&conn).unwrap();
+        apply(
+            &mut conn,
+            &[
+                (1, FOUNDATION),
+                (2, IDENTITY),
+                (3, PROFILE),
+                (4, PROFILE_ASSETS),
+                (5, PROFILE_OVERRIDES),
+                (6, DISCOGRAPHY),
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO artists (artist_id, name) VALUES (1, 'Artist')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO releases (release_id, title, artist_id, artist_name)
+             VALUES (10, 'Album', 1, 'Artist')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO songs
+             (song_id, title, artist_id, artist_name, release_id, release_title,
+              track_number, disc_number, duration, file_path)
+             VALUES (100, 'Track', 1, 'Artist', 10, 'Album', 1, 1, 180, '/music/a.mp3')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO song_musicbrainz_tags (song_id, payload) VALUES (100, ?1)",
+            [serde_json::json!({
+                "releases": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+                "release_groups": ["11111111-1111-4111-8111-111111111111"]
+            })
+            .to_string()],
+        )
+        .unwrap();
+
+        migrate_enrichment(&mut conn).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT release_mbid, release_group_mbid
+                 FROM local_release_external_ids WHERE release_id = 10",
+                [],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            )
+            .unwrap(),
+            (
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".into(),
+                "11111111-1111-4111-8111-111111111111".into()
+            )
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM enrichment_backfills
+                 WHERE key = 'local_release_external_ids_v1'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            1
+        );
+
+        conn.execute(
+            "UPDATE song_musicbrainz_tags SET payload = '{}' WHERE song_id = 100",
+            [],
+        )
+        .unwrap();
+        migrate_enrichment(&mut conn).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT release_mbid FROM local_release_external_ids WHERE release_id = 10",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         );
     }
 }

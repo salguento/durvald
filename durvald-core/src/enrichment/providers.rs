@@ -1,4 +1,5 @@
 pub mod commons;
+pub mod cover_art_archive;
 pub mod musicbrainz;
 pub mod wikidata;
 pub mod wikipedia;
@@ -63,5 +64,25 @@ mod smoke_tests {
                     .is_empty()
             );
         }
+    }
+
+    /// `DURVALD_SMOKE_RELEASE_GROUP_MBID=<release-group-mbid>
+    ///  DURVALD_SMOKE_RELEASE_MBID=<optional-release-mbid>
+    ///  cargo test public_cover_art_archive_route -- --ignored`
+    #[tokio::test]
+    #[ignore = "accesses the public Cover Art Archive API"]
+    async fn public_cover_art_archive_route() {
+        let group = std::env::var("DURVALD_SMOKE_RELEASE_GROUP_MBID")
+            .expect("set DURVALD_SMOKE_RELEASE_GROUP_MBID");
+        let release = std::env::var("DURVALD_SMOKE_RELEASE_MBID").ok();
+        let archive = cover_art_archive::CoverArtArchive::new().unwrap();
+        let candidate = archive
+            .artwork(release.as_deref(), &group)
+            .await
+            .unwrap()
+            .expect("no Cover Art Archive image found");
+        let downloaded = archive.download(candidate).await.unwrap();
+        assert!(!downloaded.bytes.is_empty());
+        assert!(downloaded.width > 0 && downloaded.height > 0);
     }
 }

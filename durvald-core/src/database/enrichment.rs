@@ -1,9 +1,13 @@
 //! Synchronous enrichment persistence. Call through a blocking task, never over HTTP.
 
 use crate::api::*;
-use crate::enrichment::models::{AssetSnapshot, CacheValidators, ProfileSnapshot};
+use crate::enrichment::models::{
+    AssetSnapshot, CacheValidators, DiscographyBuildState, DiscographyPageSnapshot,
+    DiscographyRefreshState, ExternalArtworkRefreshPlan, ExternalArtworkRefreshTarget,
+    ExternalArtworkSnapshot, ExternalArtworkStoreOutcome, ProfileSnapshot, ReleaseGroupSnapshot,
+};
 use crate::enrichment::policy::{MAX_JSON_BYTES, normalize_language, normalized_settings};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::de::DeserializeOwned;
 
 fn storage(error: impl std::fmt::Display) -> CoreError {
@@ -133,7 +137,8 @@ pub fn read_artist_details(
             "SELECT provider, provider_id, source_url, managed_path, width, height,
                     attribution, fetched_at, expires_at
              FROM enrichment_assets
-             WHERE artist_id = ?1 AND generation = ?2 AND provider = 'commons'",
+             WHERE artist_id = ?1 AND generation = ?2 AND provider = 'commons'
+               AND catalog_key = ''",
             params![artist_id, row.3],
             |asset| {
                 let attribution: String = asset.get(6)?;
@@ -464,10 +469,10 @@ pub fn store_asset(conn: &Connection, snapshot: &AssetSnapshot) -> CoreResult<bo
     }
     tx.execute(
         "INSERT INTO enrichment_assets
-         (artist_id, provider, provider_id, generation, source_url, managed_path,
+         (artist_id, provider, catalog_key, provider_id, generation, source_url, managed_path,
           width, height, attribution, fetched_at, expires_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-         ON CONFLICT (artist_id, provider) DO UPDATE SET
+         VALUES (?1, ?2, '', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+         ON CONFLICT (artist_id, provider, catalog_key) DO UPDATE SET
            provider_id = excluded.provider_id, generation = excluded.generation,
            source_url = excluded.source_url, managed_path = excluded.managed_path,
            width = excluded.width, height = excluded.height,
@@ -494,6 +499,174 @@ pub fn store_asset(conn: &Connection, snapshot: &AssetSnapshot) -> CoreResult<bo
     Ok(true)
 }
 
+/// Stores an external catalog cover without ever writing `releases.artwork`.
+/// Exact-release artwork is accepted only when the local identifier mapping
+/// proves that the edition belongs to this artist and release-group.
+pub fn store_external_artwork(
+    conn: &Connection,
+    snapshot: &ExternalArtworkSnapshot,
+) -> CoreResult<ExternalArtworkStoreOutcome> {
+    let release_group_mbid =
+        crate::enrichment::identity::normalize_mbid(&snapshot.release_group_mbid)
+            .ok_or_else(|| invalid("Invalid release-group MBID"))?;
+    let exact_release_mbid = snapshot
+        .exact_release_mbid
+        .as_deref()
+        .map(|value| {
+            crate::enrichment::identity::normalize_mbid(value)
+                .ok_or_else(|| invalid("Invalid release MBID"))
+        })
+        .transpose()?;
+    let scope = match snapshot.scope {
+        ExternalArtworkScope::ExactRelease if exact_release_mbid.is_some() => "exact_release",
+        ExternalArtworkScope::ReleaseGroup if exact_release_mbid.is_none() => "release_group",
+        _ => return Err(invalid("Artwork scope does not match its identifiers")),
+    };
+    if snapshot.artist_id < 0
+        || snapshot.provider_id.trim().is_empty()
+        || snapshot.provider_id.len() > 100
+        || snapshot.source_url.trim().is_empty()
+        || snapshot.managed_path.trim().is_empty()
+        || !std::path::Path::new(&snapshot.managed_path).is_absolute()
+        || snapshot.width == 0
+        || snapshot.height == 0
+        || snapshot.width > crate::metadata::MAX_ARTWORK_DIMENSION
+        || snapshot.height > crate::metadata::MAX_ARTWORK_DIMENSION
+        || snapshot.expires_at < snapshot.fetched_at
+    {
+        return Err(invalid("Invalid external artwork snapshot"));
+    }
+    let generation = i64::try_from(snapshot.identity_generation).map_err(storage)?;
+    let catalog_key = exact_release_mbid.as_ref().map_or_else(
+        || format!("release-group:{release_group_mbid}"),
+        |release| format!("release:{release}"),
+    );
+    let attribution = serde_json::to_string(&snapshot.attribution).map_err(storage)?;
+    if attribution.len() > MAX_JSON_BYTES {
+        return Err(invalid("Artwork attribution exceeds size limit"));
+    }
+
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let current_catalog: bool = tx
+        .query_row(
+            "SELECT EXISTS(
+               SELECT 1 FROM external_artist_release_groups ar
+               JOIN artist_discography_state d USING (artist_id)
+               JOIN artist_enrichment_state s USING (artist_id)
+               WHERE ar.artist_id = ?1 AND ar.release_group_mbid = ?2
+                 AND ar.identity_generation = ?3
+                 AND ar.catalog_generation = d.active_generation
+                 AND d.identity_generation = ?3 AND s.generation = ?3
+             )",
+            params![snapshot.artist_id, release_group_mbid, generation],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !current_catalog {
+        return Ok(ExternalArtworkStoreOutcome {
+            stored: false,
+            orphaned_path: None,
+        });
+    }
+    if let Some(release_mbid) = &exact_release_mbid {
+        let confirmed_local_edition: bool = tx
+            .query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM local_release_external_ids l
+                   JOIN releases r ON r.release_id = l.release_id
+                   WHERE r.artist_id = ?1 AND l.release_group_mbid = ?2
+                     AND l.release_mbid = ?3
+                 )",
+                params![snapshot.artist_id, release_group_mbid, release_mbid],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if !confirmed_local_edition {
+            return Err(invalid("Exact artwork has no confirmed local release"));
+        }
+    }
+    let previous_path = tx
+        .query_row(
+            "SELECT managed_path FROM enrichment_assets
+             WHERE artist_id = ?1 AND provider = 'cover_art_archive'
+               AND catalog_key = ?2",
+            params![snapshot.artist_id, catalog_key],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    let changed = tx
+        .execute(
+            "INSERT INTO enrichment_assets
+             (artist_id, provider, catalog_key, provider_id, generation,
+              release_group_mbid, exact_release_mbid, artwork_scope,
+              source_url, managed_path, width, height, attribution,
+              fetched_at, expires_at)
+             VALUES (?1, 'cover_art_archive', ?2, ?3, ?4, ?5, ?6, ?7,
+                     ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+             ON CONFLICT (artist_id, provider, catalog_key) DO UPDATE SET
+               provider_id = excluded.provider_id,
+               generation = excluded.generation,
+               release_group_mbid = excluded.release_group_mbid,
+               exact_release_mbid = excluded.exact_release_mbid,
+               artwork_scope = excluded.artwork_scope,
+               source_url = excluded.source_url,
+               managed_path = excluded.managed_path,
+               width = excluded.width, height = excluded.height,
+               attribution = excluded.attribution,
+               fetched_at = excluded.fetched_at,
+               expires_at = excluded.expires_at
+             WHERE enrichment_assets.generation != excluded.generation
+                OR enrichment_assets.fetched_at <= excluded.fetched_at",
+            params![
+                snapshot.artist_id,
+                catalog_key,
+                snapshot.provider_id,
+                generation,
+                release_group_mbid,
+                exact_release_mbid,
+                scope,
+                snapshot.source_url,
+                snapshot.managed_path,
+                snapshot.width,
+                snapshot.height,
+                attribution,
+                snapshot.fetched_at,
+                snapshot.expires_at,
+            ],
+        )
+        .map_err(storage)?;
+    let orphaned_path = if changed == 1 {
+        previous_path
+            .filter(|path| path != &snapshot.managed_path)
+            .map(|path| {
+                let referenced: bool = tx
+                    .query_row(
+                        "SELECT EXISTS(
+                           SELECT 1 FROM enrichment_assets WHERE managed_path = ?1
+                         ) OR EXISTS(
+                           SELECT 1 FROM songs WHERE artwork = ?1
+                         ) OR EXISTS(
+                           SELECT 1 FROM releases WHERE artwork = ?1
+                         )",
+                        [&path],
+                        |row| row.get(0),
+                    )
+                    .map_err(storage)?;
+                Ok((!referenced).then_some(path))
+            })
+            .transpose()?
+            .flatten()
+    } else {
+        None
+    };
+    tx.commit().map_err(storage)?;
+    Ok(ExternalArtworkStoreOutcome {
+        stored: changed == 1,
+        orphaned_path,
+    })
+}
+
 pub fn asset_path(
     conn: &Connection,
     artist_id: i64,
@@ -501,7 +674,7 @@ pub fn asset_path(
 ) -> CoreResult<Option<String>> {
     conn.query_row(
         "SELECT managed_path FROM enrichment_assets
-         WHERE artist_id = ?1 AND provider = ?2",
+         WHERE artist_id = ?1 AND provider = ?2 AND catalog_key = ''",
         params![artist_id, provider.as_str()],
         |row| row.get(0),
     )
@@ -564,6 +737,858 @@ pub fn collect_stale_asset_paths(conn: &Connection) -> CoreResult<Vec<String>> {
     }
     tx.commit().map_err(storage)?;
     Ok(orphaned)
+}
+
+/// Selects only missing or expired cover fallbacks from the visible catalog.
+/// Exact local editions prefer their exact asset, then a release-group asset.
+pub fn external_artwork_refresh_plan(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+    now: i64,
+    force: bool,
+) -> CoreResult<ExternalArtworkRefreshPlan> {
+    if artist_id < 0 {
+        return Err(invalid("Artist ID must be non-negative"));
+    }
+    let generation = i64::try_from(identity_generation).map_err(storage)?;
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(storage)?;
+    let state = tx
+        .query_row(
+            "SELECT d.active_generation, d.building_generation
+             FROM artist_discography_state d
+             JOIN artist_enrichment_state s USING (artist_id)
+             WHERE d.artist_id = ?1 AND d.identity_generation = ?2
+               AND s.generation = ?2",
+            params![artist_id, generation],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((active_generation, building_generation)) = state else {
+        tx.commit().map_err(storage)?;
+        return Ok(ExternalArtworkRefreshPlan {
+            targets: Vec::new(),
+            catalog_pending: false,
+        });
+    };
+    let mut catalog_targets = Vec::new();
+    if active_generation > 0 {
+        let mut stmt = tx
+            .prepare(
+                "SELECT ar.release_group_mbid,
+                        (SELECT l.release_mbid
+                         FROM local_release_external_ids l
+                         JOIN releases r ON r.release_id = l.release_id
+                         WHERE r.artist_id = ?1
+                           AND l.release_group_mbid = ar.release_group_mbid
+                           AND l.release_mbid IS NOT NULL
+                         ORDER BY l.release_id LIMIT 1)
+                 FROM external_artist_release_groups ar
+                 WHERE ar.artist_id = ?1 AND ar.identity_generation = ?2
+                   AND ar.catalog_generation = ?3
+                 ORDER BY ar.provider_position, ar.release_group_mbid",
+            )
+            .map_err(storage)?;
+        catalog_targets = stmt
+            .query_map(params![artist_id, generation, active_generation], |row| {
+                Ok(ExternalArtworkRefreshTarget {
+                    release_group_mbid: row.get(0)?,
+                    exact_release_mbid: row.get(1)?,
+                })
+            })
+            .map_err(storage)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage)?;
+    }
+    let mut expiries = std::collections::HashMap::new();
+    {
+        let mut stmt = tx
+            .prepare(
+                "SELECT catalog_key, expires_at FROM enrichment_assets
+                 WHERE artist_id = ?1 AND provider = 'cover_art_archive'
+                   AND generation = ?2",
+            )
+            .map_err(storage)?;
+        for row in stmt
+            .query_map(params![artist_id, generation], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(storage)?
+        {
+            let (key, expires_at) = row.map_err(storage)?;
+            expiries.insert(key, expires_at);
+        }
+    }
+    let targets = catalog_targets
+        .into_iter()
+        .filter(|target| {
+            if force {
+                return true;
+            }
+            let group_key = format!("release-group:{}", target.release_group_mbid);
+            let exact_expiry = target
+                .exact_release_mbid
+                .as_ref()
+                .and_then(|release| expiries.get(&format!("release:{release}")).copied());
+            let preferred_expiry = exact_expiry.or_else(|| expiries.get(&group_key).copied());
+            preferred_expiry.is_none_or(|expires_at| now >= expires_at)
+        })
+        .collect();
+    tx.commit().map_err(storage)?;
+    Ok(ExternalArtworkRefreshPlan {
+        targets,
+        catalog_pending: building_generation.is_some(),
+    })
+}
+
+/// Starts or resumes a hidden catalog generation. Returning `None` means the
+/// artist identity changed before the write could begin.
+pub fn begin_discography_snapshot(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+) -> CoreResult<Option<u64>> {
+    if artist_id < 0 {
+        return Err(invalid("Artist ID must be non-negative"));
+    }
+    let identity_generation = i64::try_from(identity_generation).map_err(storage)?;
+    crate::database::identity::read(conn, artist_id)?;
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let current: i64 = tx
+        .query_row(
+            "SELECT generation FROM artist_enrichment_state WHERE artist_id = ?1",
+            [artist_id],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if current != identity_generation {
+        return Ok(None);
+    }
+    let state = tx
+        .query_row(
+            "SELECT identity_generation, active_generation, building_generation
+             FROM artist_discography_state WHERE artist_id = ?1",
+            [artist_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    if let Some((state_identity, _, Some(building))) = state {
+        if state_identity == identity_generation {
+            return u64::try_from(building).map(Some).map_err(storage);
+        }
+    }
+    let active = state.map_or(0, |(_, active, _)| active);
+    let building = active
+        .checked_add(1)
+        .ok_or_else(|| invalid("Catalog generation is out of range"))?;
+    tx.execute(
+        "INSERT INTO artist_discography_state
+         (artist_id, identity_generation, active_generation, building_generation,
+          building_next_offset)
+         VALUES (?1, ?2, 0, ?3, 0)
+         ON CONFLICT (artist_id) DO UPDATE SET
+           active_generation = CASE
+             WHEN artist_discography_state.identity_generation != excluded.identity_generation
+             THEN 0 ELSE artist_discography_state.active_generation END,
+           active_remote_next_offset = CASE
+             WHEN artist_discography_state.identity_generation != excluded.identity_generation
+             THEN NULL ELSE artist_discography_state.active_remote_next_offset END,
+           active_remote_total = CASE
+             WHEN artist_discography_state.identity_generation != excluded.identity_generation
+             THEN NULL ELSE artist_discography_state.active_remote_total END,
+           active_remote_exhausted = CASE
+             WHEN artist_discography_state.identity_generation != excluded.identity_generation
+             THEN 0 ELSE artist_discography_state.active_remote_exhausted END,
+           active_fetched_at = CASE
+             WHEN artist_discography_state.identity_generation != excluded.identity_generation
+             THEN NULL ELSE artist_discography_state.active_fetched_at END,
+           active_expires_at = CASE
+             WHEN artist_discography_state.identity_generation != excluded.identity_generation
+             THEN NULL ELSE artist_discography_state.active_expires_at END,
+           active_etag = CASE
+             WHEN artist_discography_state.identity_generation != excluded.identity_generation
+             THEN NULL ELSE artist_discography_state.active_etag END,
+           active_last_modified = CASE
+             WHEN artist_discography_state.identity_generation != excluded.identity_generation
+             THEN NULL ELSE artist_discography_state.active_last_modified END,
+           identity_generation = excluded.identity_generation,
+           building_generation = excluded.building_generation,
+           building_next_offset = 0, building_remote_total = NULL,
+           building_fetched_at = NULL,
+           building_expires_at = NULL, building_etag = NULL,
+           building_last_modified = NULL",
+        params![artist_id, identity_generation, building],
+    )
+    .map_err(storage)?;
+    tx.execute(
+        "DELETE FROM external_artist_release_groups
+         WHERE artist_id = ?1 AND catalog_generation = ?2",
+        params![artist_id, building],
+    )
+    .map_err(storage)?;
+    tx.commit().map_err(storage)?;
+    u64::try_from(building).map(Some).map_err(storage)
+}
+
+/// Returns the durable cursor for an unpublished generation, allowing a later
+/// bounded refresh to resume without exposing partially fetched rows.
+pub fn discography_build_state(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+) -> CoreResult<Option<DiscographyBuildState>> {
+    if artist_id < 0 {
+        return Err(invalid("Artist ID must be non-negative"));
+    }
+    let identity_generation = i64::try_from(identity_generation).map_err(storage)?;
+    let state = conn
+        .query_row(
+            "SELECT d.building_generation, d.building_next_offset,
+                    d.building_remote_total, d.building_etag,
+                    d.building_last_modified
+             FROM artist_discography_state d
+             JOIN artist_enrichment_state s USING (artist_id)
+             WHERE d.artist_id = ?1 AND d.identity_generation = ?2
+               AND s.generation = ?2 AND d.building_generation IS NOT NULL
+               AND d.building_next_offset IS NOT NULL",
+            params![artist_id, identity_generation],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    state
+        .map(
+            |(generation, next_offset, remote_total, etag, last_modified)| {
+                Ok(DiscographyBuildState {
+                    catalog_generation: u64::try_from(generation).map_err(storage)?,
+                    next_offset: u64::try_from(next_offset).map_err(storage)?,
+                    remote_total: remote_total
+                        .map(u64::try_from)
+                        .transpose()
+                        .map_err(storage)?,
+                    validators: CacheValidators {
+                        etag,
+                        last_modified,
+                    },
+                })
+            },
+        )
+        .transpose()
+}
+
+/// Returns the active cache validators together with any durable hidden cursor.
+pub fn discography_refresh_state(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+) -> CoreResult<Option<DiscographyRefreshState>> {
+    if artist_id < 0 {
+        return Err(invalid("Artist ID must be non-negative"));
+    }
+    let generation = i64::try_from(identity_generation).map_err(storage)?;
+    crate::database::identity::read(conn, artist_id)?;
+    let current: i64 = conn
+        .query_row(
+            "SELECT generation FROM artist_enrichment_state WHERE artist_id = ?1",
+            [artist_id],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if current != generation {
+        return Ok(None);
+    }
+    let state = conn
+        .query_row(
+            "SELECT active_generation, active_expires_at, active_etag,
+                    active_last_modified, building_generation,
+                    building_next_offset, building_remote_total,
+                    building_etag, building_last_modified
+             FROM artist_discography_state
+             WHERE artist_id = ?1 AND identity_generation = ?2",
+            params![artist_id, generation],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Option<i64>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
+                    row.get::<_, Option<String>>(7)?,
+                    row.get::<_, Option<String>>(8)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((
+        active_generation,
+        active_expires_at,
+        active_etag,
+        active_last_modified,
+        building_generation,
+        building_next_offset,
+        building_remote_total,
+        building_etag,
+        building_last_modified,
+    )) = state
+    else {
+        return Ok(Some(DiscographyRefreshState {
+            active_generation: 0,
+            active_expires_at: None,
+            active_validators: CacheValidators::default(),
+            building: None,
+        }));
+    };
+    let building = match (building_generation, building_next_offset) {
+        (Some(catalog_generation), Some(next_offset)) => Some(DiscographyBuildState {
+            catalog_generation: u64::try_from(catalog_generation).map_err(storage)?,
+            next_offset: u64::try_from(next_offset).map_err(storage)?,
+            remote_total: building_remote_total
+                .map(u64::try_from)
+                .transpose()
+                .map_err(storage)?,
+            validators: CacheValidators {
+                etag: building_etag,
+                last_modified: building_last_modified,
+            },
+        }),
+        (None, None) => None,
+        _ => return Err(storage("Inconsistent discography build state")),
+    };
+    Ok(Some(DiscographyRefreshState {
+        active_generation: u64::try_from(active_generation).map_err(storage)?,
+        active_expires_at,
+        active_validators: CacheValidators {
+            etag: active_etag,
+            last_modified: active_last_modified,
+        },
+        building,
+    }))
+}
+
+/// Extends a published snapshot after a conditional 304 without exposing or
+/// mutating any hidden generation.
+pub fn revalidate_discography(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+    active_generation: u64,
+    fetched_at: i64,
+    expires_at: i64,
+    validators: &CacheValidators,
+) -> CoreResult<bool> {
+    if artist_id < 0 || active_generation == 0 || expires_at < fetched_at {
+        return Err(invalid("Invalid discography revalidation"));
+    }
+    let identity_generation = i64::try_from(identity_generation).map_err(storage)?;
+    let active_generation = i64::try_from(active_generation).map_err(storage)?;
+    let changed = conn
+        .execute(
+            "UPDATE artist_discography_state SET
+               active_fetched_at = ?4, active_expires_at = ?5,
+               active_etag = ?6, active_last_modified = ?7
+             WHERE artist_id = ?1 AND identity_generation = ?2
+               AND active_generation = ?3 AND building_generation IS NULL
+               AND EXISTS (
+                 SELECT 1 FROM artist_enrichment_state s
+                 WHERE s.artist_id = ?1 AND s.generation = ?2
+               )",
+            params![
+                artist_id,
+                identity_generation,
+                active_generation,
+                fetched_at,
+                expires_at,
+                validators.etag,
+                validators.last_modified,
+            ],
+        )
+        .map_err(storage)?;
+    Ok(changed == 1)
+}
+
+/// Abandons only the matching unpublished generation. The active catalog is
+/// never touched, and a superseded identity cannot discard newer work.
+pub fn discard_discography_snapshot(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+    catalog_generation: u64,
+) -> CoreResult<bool> {
+    if artist_id < 0 || catalog_generation == 0 {
+        return Err(invalid("Invalid discography generation"));
+    }
+    let identity_generation = i64::try_from(identity_generation).map_err(storage)?;
+    let catalog_generation = i64::try_from(catalog_generation).map_err(storage)?;
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let changed = tx
+        .execute(
+            "UPDATE artist_discography_state SET
+               building_generation = NULL, building_next_offset = NULL,
+               building_remote_total = NULL, building_fetched_at = NULL,
+               building_expires_at = NULL, building_etag = NULL,
+               building_last_modified = NULL
+             WHERE artist_id = ?1 AND identity_generation = ?2
+               AND building_generation = ?3
+               AND EXISTS (
+                 SELECT 1 FROM artist_enrichment_state s
+                 WHERE s.artist_id = ?1 AND s.generation = ?2
+               )",
+            params![artist_id, identity_generation, catalog_generation],
+        )
+        .map_err(storage)?;
+    if changed == 1 {
+        tx.execute(
+            "DELETE FROM external_artist_release_groups
+             WHERE artist_id = ?1 AND identity_generation = ?2
+               AND catalog_generation = ?3",
+            params![artist_id, identity_generation, catalog_generation],
+        )
+        .map_err(storage)?;
+    }
+    tx.commit().map_err(storage)?;
+    Ok(changed == 1)
+}
+
+/// Persists one provider page. Incomplete pages remain hidden; the last page
+/// atomically publishes the generation and removes older artist relations.
+pub fn store_discography_page(
+    conn: &Connection,
+    snapshot: &DiscographyPageSnapshot,
+) -> CoreResult<bool> {
+    if snapshot.artist_id < 0
+        || snapshot.catalog_generation == 0
+        || snapshot.expires_at < snapshot.fetched_at
+        || snapshot.remote_exhausted != snapshot.remote_next_offset.is_none()
+        || snapshot.groups.len() > 100
+        || snapshot
+            .provider_offset
+            .checked_add(snapshot.groups.len() as u64)
+            .is_none_or(|end| {
+                snapshot.remote_total < end
+                    || (snapshot.remote_exhausted && end < snapshot.remote_total)
+                    || snapshot
+                        .remote_next_offset
+                        .is_some_and(|next| next != end || end >= snapshot.remote_total)
+            })
+    {
+        return Err(invalid("Invalid discography snapshot"));
+    }
+    let identity_generation = i64::try_from(snapshot.identity_generation).map_err(storage)?;
+    let catalog_generation = i64::try_from(snapshot.catalog_generation).map_err(storage)?;
+    let provider_offset = i64::try_from(snapshot.provider_offset).map_err(storage)?;
+    let remote_next_offset = snapshot
+        .remote_next_offset
+        .map(i64::try_from)
+        .transpose()
+        .map_err(storage)?;
+    let remote_total = i64::try_from(snapshot.remote_total).map_err(storage)?;
+    let mut identifiers = std::collections::HashSet::new();
+    for group in &snapshot.groups {
+        if crate::enrichment::identity::normalize_mbid(&group.musicbrainz_id).is_none()
+            || group.title.trim().is_empty()
+            || group.title.len() > MAX_JSON_BYTES
+            || group
+                .primary_type
+                .as_ref()
+                .is_some_and(|value| value.trim().is_empty() || value.len() > 100)
+            || group
+                .secondary_types
+                .iter()
+                .any(|value| value.trim().is_empty() || value.len() > 100)
+            || group.attribution.source_url.trim().is_empty()
+            || !identifiers.insert(group.musicbrainz_id.to_ascii_lowercase())
+        {
+            return Err(invalid("Invalid or duplicate release-group"));
+        }
+        validate_date(&group.first_release_date)?;
+    }
+
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let current = tx
+        .query_row(
+            "SELECT s.generation, d.identity_generation, d.building_generation,
+                    d.building_next_offset, d.building_remote_total
+             FROM artist_enrichment_state s
+             JOIN artist_discography_state d USING (artist_id)
+             WHERE s.artist_id = ?1",
+            [snapshot.artist_id],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((
+        current_identity,
+        state_identity,
+        building_generation,
+        building_offset,
+        building_total,
+    )) = current
+    else {
+        return Ok(false);
+    };
+    if current_identity != identity_generation
+        || state_identity != identity_generation
+        || building_generation != Some(catalog_generation)
+        || building_offset != Some(provider_offset)
+    {
+        return Ok(false);
+    }
+    if building_total.is_some_and(|total| total != remote_total) {
+        return Err(invalid("Discography total changed during snapshot"));
+    }
+    for (index, group) in snapshot.groups.iter().enumerate() {
+        let musicbrainz_id = group.musicbrainz_id.to_ascii_lowercase();
+        let secondary_types = serde_json::to_string(&group.secondary_types).map_err(storage)?;
+        let attribution = serde_json::to_string(&group.attribution).map_err(storage)?;
+        let snapshot_payload = serde_json::to_string(group).map_err(storage)?;
+        if secondary_types.len() > MAX_JSON_BYTES
+            || attribution.len() > MAX_JSON_BYTES
+            || snapshot_payload.len() > MAX_JSON_BYTES
+        {
+            return Err(invalid("Release-group metadata exceeds size limit"));
+        }
+        let already_staged: bool = tx
+            .query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM external_artist_release_groups
+                   WHERE artist_id = ?1 AND catalog_generation = ?2
+                     AND release_group_mbid = ?3
+                 )",
+                params![snapshot.artist_id, catalog_generation, musicbrainz_id],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if already_staged {
+            return Err(invalid("Duplicate release-group across discography pages"));
+        }
+        let (year, month, day) = group
+            .first_release_date
+            .as_ref()
+            .map_or((None, None, None), |date| {
+                (Some(date.year), date.month, date.day)
+            });
+        tx.execute(
+            "INSERT INTO external_release_groups
+             (musicbrainz_id, title, primary_type, secondary_types,
+              first_release_year, first_release_month, first_release_day,
+              attribution, fetched_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT (musicbrainz_id) DO UPDATE SET
+               title = excluded.title, primary_type = excluded.primary_type,
+               secondary_types = excluded.secondary_types,
+               first_release_year = excluded.first_release_year,
+               first_release_month = excluded.first_release_month,
+               first_release_day = excluded.first_release_day,
+               attribution = excluded.attribution, fetched_at = excluded.fetched_at
+             WHERE external_release_groups.fetched_at <= excluded.fetched_at",
+            params![
+                musicbrainz_id,
+                group.title.trim(),
+                group.primary_type,
+                secondary_types,
+                year,
+                month,
+                day,
+                attribution,
+                snapshot.fetched_at
+            ],
+        )
+        .map_err(storage)?;
+        let index = i64::try_from(index).map_err(storage)?;
+        let position = provider_offset
+            .checked_add(index)
+            .ok_or_else(|| invalid("Provider position is out of range"))?;
+        tx.execute(
+            "INSERT INTO external_artist_release_groups
+             (artist_id, release_group_mbid, identity_generation,
+              catalog_generation, provider_position, snapshot_payload)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (artist_id, catalog_generation, release_group_mbid) DO UPDATE SET
+               identity_generation = excluded.identity_generation,
+               provider_position = excluded.provider_position,
+               snapshot_payload = excluded.snapshot_payload",
+            params![
+                snapshot.artist_id,
+                musicbrainz_id,
+                identity_generation,
+                catalog_generation,
+                position,
+                snapshot_payload
+            ],
+        )
+        .map_err(storage)?;
+    }
+    if snapshot.remote_exhausted {
+        let staged_count: i64 = tx
+            .query_row(
+                "SELECT COUNT(*) FROM external_artist_release_groups
+                 WHERE artist_id = ?1 AND identity_generation = ?2
+                   AND catalog_generation = ?3",
+                params![snapshot.artist_id, identity_generation, catalog_generation],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if staged_count != remote_total {
+            return Err(invalid("Incomplete discography snapshot"));
+        }
+    }
+    let changed = tx
+        .execute(
+            "UPDATE artist_discography_state SET
+               active_generation = CASE WHEN ?5 THEN ?3 ELSE active_generation END,
+               active_remote_next_offset = CASE WHEN ?5 THEN ?4 ELSE active_remote_next_offset END,
+               active_remote_total = CASE WHEN ?5 THEN ?11 ELSE active_remote_total END,
+               active_remote_exhausted = CASE WHEN ?5 THEN 1 ELSE active_remote_exhausted END,
+               active_fetched_at = CASE WHEN ?5 THEN ?6 ELSE active_fetched_at END,
+               active_expires_at = CASE WHEN ?5 THEN ?7 ELSE active_expires_at END,
+               active_etag = CASE WHEN ?5 THEN ?8 ELSE active_etag END,
+               active_last_modified = CASE WHEN ?5 THEN ?9 ELSE active_last_modified END,
+               building_generation = CASE WHEN ?5 THEN NULL ELSE building_generation END,
+               building_next_offset = CASE WHEN ?5 THEN NULL ELSE ?4 END,
+               building_remote_total = CASE WHEN ?5 THEN NULL ELSE ?11 END,
+               building_fetched_at = CASE WHEN ?5 THEN NULL ELSE ?6 END,
+               building_expires_at = CASE WHEN ?5 THEN NULL ELSE ?7 END,
+               building_etag = CASE WHEN ?5 THEN NULL ELSE ?8 END,
+               building_last_modified = CASE WHEN ?5 THEN NULL ELSE ?9 END
+             WHERE artist_id = ?1 AND identity_generation = ?2
+               AND building_generation = ?3 AND building_next_offset = ?10",
+            params![
+                snapshot.artist_id,
+                identity_generation,
+                catalog_generation,
+                remote_next_offset,
+                snapshot.remote_exhausted,
+                snapshot.fetched_at,
+                snapshot.expires_at,
+                snapshot.validators.etag,
+                snapshot.validators.last_modified,
+                provider_offset,
+                remote_total
+            ],
+        )
+        .map_err(storage)?;
+    if changed != 1 {
+        return Ok(false);
+    }
+    if snapshot.remote_exhausted {
+        tx.execute(
+            "DELETE FROM external_artist_release_groups
+             WHERE artist_id = ?1 AND catalog_generation != ?2",
+            params![snapshot.artist_id, catalog_generation],
+        )
+        .map_err(storage)?;
+    }
+    tx.commit().map_err(storage)?;
+    Ok(true)
+}
+
+pub fn read_discography(
+    conn: &Connection,
+    artist_id: i64,
+    page_size: u64,
+    offset: u64,
+    now: i64,
+) -> CoreResult<ArtistDiscographyPage> {
+    if artist_id < 0 || page_size == 0 || page_size > 200 || offset > i64::MAX as u64 {
+        return Err(invalid("Invalid discography page"));
+    }
+    // Identity, active generation and its rows belong to one SQLite snapshot;
+    // a concurrent final-page publication cannot produce a mixed/empty page.
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(storage)?;
+    let identity = crate::database::identity::read_inner(&tx, artist_id)?;
+    let state = tx
+        .query_row(
+            "SELECT active_generation, active_remote_next_offset,
+                    active_remote_exhausted, active_expires_at, active_remote_total
+             FROM artist_discography_state
+             WHERE artist_id = ?1 AND identity_generation = ?2",
+            params![
+                artist_id,
+                i64::try_from(identity.generation).map_err(storage)?
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Option<i64>>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, Option<i64>>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((catalog_generation, remote_next_offset, remote_exhausted, expires_at, remote_total)) =
+        state
+    else {
+        tx.commit().map_err(storage)?;
+        return Ok(ArtistDiscographyPage {
+            artist_id,
+            identity_generation: identity.generation,
+            catalog_generation: 0,
+            items: Vec::new(),
+            next_offset: None,
+            remote_exhausted: false,
+            remote_next_offset: Some(0),
+            remote_total: None,
+            stale: true,
+        });
+    };
+    if catalog_generation == 0 {
+        tx.commit().map_err(storage)?;
+        return Ok(ArtistDiscographyPage {
+            artist_id,
+            identity_generation: identity.generation,
+            catalog_generation: 0,
+            items: Vec::new(),
+            next_offset: None,
+            remote_exhausted: false,
+            remote_next_offset: Some(0),
+            remote_total: None,
+            stale: true,
+        });
+    }
+    let query_limit = page_size.saturating_add(1);
+    let mut stmt = tx
+        .prepare(
+            "WITH catalog AS (
+               SELECT ar.*,
+                      (SELECT l.release_id FROM local_release_external_ids l
+                       JOIN releases local_release ON local_release.release_id = l.release_id
+                       WHERE l.release_group_mbid = ar.release_group_mbid
+                         AND local_release.artist_id = ?1
+                       ORDER BY l.release_id LIMIT 1) AS local_release_id
+               FROM external_artist_release_groups ar
+               WHERE ar.artist_id = ?1 AND ar.identity_generation = ?2
+                 AND ar.catalog_generation = ?3
+             )
+             SELECT catalog.snapshot_payload, catalog.local_release_id,
+                    a.provider, a.provider_id, a.source_url, a.managed_path,
+                    a.width, a.height, a.attribution, a.fetched_at, a.expires_at,
+                    a.artwork_scope
+             FROM catalog
+             LEFT JOIN local_release_external_ids local_ids
+               ON local_ids.release_id = catalog.local_release_id
+             LEFT JOIN releases local_release
+               ON local_release.release_id = catalog.local_release_id
+             LEFT JOIN enrichment_assets a ON a.artist_id = catalog.artist_id
+               AND a.release_group_mbid = catalog.release_group_mbid
+               AND a.generation = catalog.identity_generation
+               AND a.provider = 'cover_art_archive'
+               AND COALESCE(TRIM(local_release.artwork), '') = ''
+               AND a.catalog_key = (
+                 SELECT a2.catalog_key FROM enrichment_assets a2
+                 WHERE a2.artist_id = catalog.artist_id
+                   AND a2.release_group_mbid = catalog.release_group_mbid
+                   AND a2.generation = catalog.identity_generation
+                   AND a2.provider = 'cover_art_archive'
+                   AND (a2.artwork_scope = 'release_group'
+                        OR (a2.artwork_scope = 'exact_release'
+                            AND a2.exact_release_mbid = local_ids.release_mbid))
+                 ORDER BY CASE a2.artwork_scope WHEN 'exact_release' THEN 0 ELSE 1 END
+                 LIMIT 1
+               )
+             ORDER BY catalog.provider_position, catalog.release_group_mbid
+             LIMIT ?4 OFFSET ?5",
+        )
+        .map_err(storage)?;
+    let mut rows = stmt
+        .query(params![
+            artist_id,
+            i64::try_from(identity.generation).map_err(storage)?,
+            catalog_generation,
+            i64::try_from(query_limit).map_err(storage)?,
+            i64::try_from(offset).map_err(storage)?
+        ])
+        .map_err(storage)?;
+    let mut items = Vec::new();
+    while let Some(row) = rows.next().map_err(storage)? {
+        let snapshot: ReleaseGroupSnapshot =
+            serde_json::from_str(&row.get::<_, String>(0).map_err(storage)?).map_err(storage)?;
+        let artwork_provider: Option<String> = row.get(2).map_err(storage)?;
+        let artwork = if let Some(provider) = artwork_provider {
+            let expires_at: i64 = row.get(10).map_err(storage)?;
+            let scope: String = row.get(11).map_err(storage)?;
+            Some(ExternalReleaseArtwork {
+                image: ArtistImageReference {
+                    provider: decode_enum(provider)?,
+                    provider_id: row.get(3).map_err(storage)?,
+                    source_url: row.get(4).map_err(storage)?,
+                    managed_path: row.get(5).map_err(storage)?,
+                    width: row.get(6).map_err(storage)?,
+                    height: row.get(7).map_err(storage)?,
+                    attribution: serde_json::from_str(&row.get::<_, String>(8).map_err(storage)?)
+                        .map_err(storage)?,
+                    fetched_at: row.get(9).map_err(storage)?,
+                    expires_at,
+                    stale: now >= expires_at,
+                },
+                scope: decode_enum(scope)?,
+            })
+        } else {
+            None
+        };
+        items.push(ExternalReleaseGroup {
+            musicbrainz_id: snapshot.musicbrainz_id,
+            title: snapshot.title,
+            primary_type: snapshot.primary_type,
+            secondary_types: snapshot.secondary_types,
+            first_release_date: snapshot.first_release_date,
+            local_release_id: row.get(1).map_err(storage)?,
+            artwork,
+            attribution: snapshot.attribution,
+        });
+    }
+    let has_more = items.len() > page_size as usize;
+    items.truncate(page_size as usize);
+    let result = ArtistDiscographyPage {
+        artist_id,
+        identity_generation: identity.generation,
+        catalog_generation: u64::try_from(catalog_generation).map_err(storage)?,
+        items,
+        next_offset: has_more.then(|| offset.saturating_add(page_size)),
+        remote_exhausted,
+        remote_next_offset: remote_next_offset
+            .map(u64::try_from)
+            .transpose()
+            .map_err(storage)?,
+        remote_total: remote_total
+            .map(u64::try_from)
+            .transpose()
+            .map_err(storage)?,
+        stale: expires_at.is_none_or(|expires_at| now >= expires_at),
+    };
+    drop(rows);
+    drop(stmt);
+    tx.commit().map_err(storage)?;
+    Ok(result)
 }
 
 pub fn set_override(
@@ -663,6 +1688,7 @@ fn parse_partial_date(value: &str) -> CoreResult<ArtistPartialDate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::enrichment::models::ReleaseGroupSnapshot;
 
     fn database() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
@@ -709,6 +1735,82 @@ mod tests {
                     revision: Some("123".into()),
                 },
             },
+        }
+    }
+
+    fn release_group(id: &str, title: &str, year: i32) -> ReleaseGroupSnapshot {
+        ReleaseGroupSnapshot {
+            musicbrainz_id: id.into(),
+            title: title.into(),
+            primary_type: Some("Album".into()),
+            secondary_types: vec!["Studio".into()],
+            first_release_date: Some(ArtistPartialDate {
+                year,
+                month: None,
+                day: None,
+            }),
+            attribution: EnrichmentAttribution {
+                source_url: format!("https://musicbrainz.org/release-group/{id}"),
+                author: Some("MusicBrainz contributors".into()),
+                license_name: Some("CC BY-SA 3.0".into()),
+                license_url: None,
+                revision: None,
+            },
+        }
+    }
+
+    fn discography_page(
+        generation: u64,
+        offset: u64,
+        groups: Vec<ReleaseGroupSnapshot>,
+        next: Option<u64>,
+    ) -> DiscographyPageSnapshot {
+        let remote_total = next.map_or_else(
+            || offset.saturating_add(groups.len() as u64),
+            |next| next.saturating_add(1),
+        );
+        DiscographyPageSnapshot {
+            artist_id: 7,
+            identity_generation: 0,
+            catalog_generation: generation,
+            provider_offset: offset,
+            groups,
+            remote_total,
+            remote_next_offset: next,
+            remote_exhausted: next.is_none(),
+            fetched_at: 100,
+            expires_at: 200,
+            validators: CacheValidators::default(),
+        }
+    }
+
+    fn external_artwork(
+        group_id: &str,
+        exact_release_mbid: Option<&str>,
+        scope: ExternalArtworkScope,
+        path: &str,
+        fetched_at: i64,
+    ) -> ExternalArtworkSnapshot {
+        ExternalArtworkSnapshot {
+            artist_id: 7,
+            identity_generation: 0,
+            release_group_mbid: group_id.into(),
+            exact_release_mbid: exact_release_mbid.map(str::to_owned),
+            scope,
+            provider_id: fetched_at.to_string(),
+            source_url: "https://coverartarchive.org/release/source/1".into(),
+            managed_path: path.into(),
+            width: 500,
+            height: 500,
+            attribution: EnrichmentAttribution {
+                source_url: "https://coverartarchive.org/release/source/1".into(),
+                author: None,
+                license_name: None,
+                license_url: None,
+                revision: None,
+            },
+            fetched_at,
+            expires_at: fetched_at + 100,
         }
     }
 
@@ -1033,5 +2135,457 @@ mod tests {
                 .overrides
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn discography_pages_stay_hidden_until_atomically_published() {
+        let conn = database();
+        let first_id = "11111111-1111-4111-8111-111111111111";
+        let second_id = "22222222-2222-4222-8222-222222222222";
+        let generation = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        assert_eq!(generation, 1);
+        assert_eq!(
+            discography_build_state(&conn, 7, 0).unwrap(),
+            Some(DiscographyBuildState {
+                catalog_generation: 1,
+                next_offset: 0,
+                remote_total: None,
+                validators: CacheValidators::default(),
+            })
+        );
+        assert!(
+            store_discography_page(
+                &conn,
+                &discography_page(
+                    generation,
+                    0,
+                    vec![release_group(first_id, "First", 1999)],
+                    Some(1),
+                ),
+            )
+            .unwrap()
+        );
+        let hidden = read_discography(&conn, 7, 10, 0, 150).unwrap();
+        assert!(hidden.items.is_empty());
+        assert!(!hidden.remote_exhausted);
+        assert_eq!(
+            discography_build_state(&conn, 7, 0).unwrap(),
+            Some(DiscographyBuildState {
+                catalog_generation: 1,
+                next_offset: 1,
+                remote_total: Some(2),
+                validators: CacheValidators::default(),
+            })
+        );
+
+        assert!(
+            store_discography_page(
+                &conn,
+                &discography_page(
+                    generation,
+                    1,
+                    vec![release_group(second_id, "Second", 2001)],
+                    None,
+                ),
+            )
+            .unwrap()
+        );
+        let first_page = read_discography(&conn, 7, 1, 0, 150).unwrap();
+        assert_eq!(first_page.catalog_generation, generation);
+        assert_eq!(first_page.items[0].title, "First");
+        assert_eq!(first_page.next_offset, Some(1));
+        assert!(first_page.remote_exhausted);
+        assert_eq!(first_page.remote_total, Some(2));
+        assert!(!first_page.stale);
+        assert_eq!(discography_build_state(&conn, 7, 0).unwrap(), None);
+        let second_page = read_discography(&conn, 7, 1, 1, 200).unwrap();
+        assert_eq!(second_page.items[0].title, "Second");
+        assert_eq!(second_page.next_offset, None);
+        assert!(second_page.stale);
+
+        let replacement = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        assert_eq!(replacement, 2);
+        let mut replacement_page = discography_page(
+            replacement,
+            0,
+            vec![release_group(first_id, "Interrupted replacement", 2020)],
+            Some(1),
+        );
+        replacement_page.fetched_at = 300;
+        replacement_page.expires_at = 400;
+        store_discography_page(&conn, &replacement_page).unwrap();
+        let still_active = read_discography(&conn, 7, 10, 0, 250).unwrap();
+        assert_eq!(
+            still_active
+                .items
+                .iter()
+                .map(|item| item.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["First", "Second"]
+        );
+        assert!(still_active.stale);
+        assert_eq!(still_active.items[0].title, "First");
+    }
+
+    #[test]
+    fn completed_discography_survives_database_reopening() {
+        let path = std::env::temp_dir().join(format!(
+            "durvald-discography-{}-{}.sqlite",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = std::fs::remove_file(&path);
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+            crate::database::operations::create_tables(&conn).unwrap();
+            crate::database::migrations::migrate_enrichment(&mut conn).unwrap();
+            conn.execute(
+                "INSERT INTO artists (artist_id, name) VALUES (7, 'An artist')",
+                [],
+            )
+            .unwrap();
+            let generation = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+            assert!(
+                store_discography_page(
+                    &conn,
+                    &discography_page(
+                        generation,
+                        0,
+                        vec![release_group(
+                            "11111111-1111-4111-8111-111111111111",
+                            "Persisted",
+                            2005,
+                        )],
+                        None,
+                    ),
+                )
+                .unwrap()
+            );
+        }
+        {
+            let mut conn = Connection::open(&path).unwrap();
+            conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+            crate::database::migrations::migrate_enrichment(&mut conn).unwrap();
+            let page = read_discography(&conn, 7, 10, 0, 150).unwrap();
+            assert_eq!(page.catalog_generation, 1);
+            assert_eq!(page.items[0].title, "Persisted");
+            assert!(page.remote_exhausted);
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn discography_read_links_local_release_and_external_artwork_without_mutating_it() {
+        let conn = database();
+        let group_id = "11111111-1111-4111-8111-111111111111";
+        let generation = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        store_discography_page(
+            &conn,
+            &discography_page(
+                generation,
+                0,
+                vec![release_group(group_id, "Linked", 2010)],
+                None,
+            ),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO releases (release_id, title, artist_id, artist_name)
+             VALUES (70, 'Local edition', 7, 'An artist')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO local_release_external_ids
+             (release_id, release_mbid, release_group_mbid, origin, updated_at)
+             VALUES (70, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', ?1, 'tag', 100)",
+            [group_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO enrichment_assets
+             (artist_id, provider, catalog_key, provider_id, generation,
+              release_group_mbid, artwork_scope, source_url, managed_path,
+              width, height, attribution, fetched_at, expires_at)
+             VALUES (7, 'cover_art_archive', ?1, 'front-250.jpg', 0, ?2,
+                     'release_group', 'https://coverartarchive.org/release-group/source',
+                     '/managed/covers/front.jpg', 250, 250, ?3, 100, 200)",
+            params![
+                format!("release-group:{group_id}"),
+                group_id,
+                serde_json::to_string(&EnrichmentAttribution {
+                    source_url: "https://coverartarchive.org/release-group/source".into(),
+                    author: None,
+                    license_name: None,
+                    license_url: None,
+                    revision: None,
+                })
+                .unwrap()
+            ],
+        )
+        .unwrap();
+
+        let page = read_discography(&conn, 7, 10, 0, 150).unwrap();
+        assert_eq!(page.items[0].local_release_id, Some(70));
+        let artwork = page.items[0].artwork.as_ref().unwrap();
+        assert_eq!(artwork.scope, ExternalArtworkScope::ReleaseGroup);
+        assert_eq!(artwork.image.provider, EnrichmentProvider::CoverArtArchive);
+        assert_eq!(artwork.image.managed_path, "/managed/covers/front.jpg");
+        assert_eq!(
+            conn.query_row(
+                "SELECT artwork FROM releases WHERE release_id = 70",
+                [],
+                |row| { row.get::<_, Option<String>>(0) }
+            )
+            .unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn local_artwork_wins_and_exact_external_artwork_requires_matching_identifiers() {
+        let conn = database();
+        let group_id = "11111111-1111-4111-8111-111111111111";
+        let release_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        let generation = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        store_discography_page(
+            &conn,
+            &discography_page(
+                generation,
+                0,
+                vec![release_group(group_id, "Linked", 2010)],
+                None,
+            ),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO releases
+             (release_id, title, artist_id, artist_name, artwork)
+             VALUES (70, 'Local edition', 7, 'An artist', '/managed/local.jpg')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO local_release_external_ids
+             (release_id, release_mbid, release_group_mbid, origin, updated_at)
+             VALUES (70, ?1, ?2, 'tag', 100)",
+            params![release_id, group_id],
+        )
+        .unwrap();
+
+        assert!(
+            store_external_artwork(
+                &conn,
+                &external_artwork(
+                    group_id,
+                    None,
+                    ExternalArtworkScope::ReleaseGroup,
+                    "/managed/group-old.jpg",
+                    100,
+                ),
+            )
+            .unwrap()
+            .stored
+        );
+        assert!(
+            store_external_artwork(
+                &conn,
+                &external_artwork(
+                    group_id,
+                    Some(release_id),
+                    ExternalArtworkScope::ExactRelease,
+                    "/managed/exact.jpg",
+                    100,
+                ),
+            )
+            .unwrap()
+            .stored
+        );
+        assert!(
+            store_external_artwork(
+                &conn,
+                &external_artwork(
+                    group_id,
+                    Some("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+                    ExternalArtworkScope::ExactRelease,
+                    "/managed/wrong.jpg",
+                    100,
+                ),
+            )
+            .is_err()
+        );
+
+        let local_wins = read_discography(&conn, 7, 10, 0, 150).unwrap();
+        assert_eq!(local_wins.items[0].local_release_id, Some(70));
+        assert_eq!(local_wins.items[0].artwork, None);
+        assert_eq!(
+            conn.query_row(
+                "SELECT artwork FROM releases WHERE release_id = 70",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "/managed/local.jpg"
+        );
+
+        conn.execute("UPDATE releases SET artwork = '' WHERE release_id = 70", [])
+            .unwrap();
+        let exact_wins = read_discography(&conn, 7, 10, 0, 150).unwrap();
+        let artwork = exact_wins.items[0].artwork.as_ref().unwrap();
+        assert_eq!(artwork.scope, ExternalArtworkScope::ExactRelease);
+        assert_eq!(artwork.image.managed_path, "/managed/exact.jpg");
+
+        conn.execute(
+            "DELETE FROM enrichment_assets
+             WHERE artist_id = 7 AND catalog_key = ?1",
+            [format!("release:{release_id}")],
+        )
+        .unwrap();
+        let group_fallback = read_discography(&conn, 7, 10, 0, 150).unwrap();
+        let artwork = group_fallback.items[0].artwork.as_ref().unwrap();
+        assert_eq!(artwork.scope, ExternalArtworkScope::ReleaseGroup);
+        assert_eq!(artwork.image.managed_path, "/managed/group-old.jpg");
+
+        let replaced = store_external_artwork(
+            &conn,
+            &external_artwork(
+                group_id,
+                None,
+                ExternalArtworkScope::ReleaseGroup,
+                "/managed/group-new.jpg",
+                200,
+            ),
+        )
+        .unwrap();
+        assert_eq!(
+            replaced.orphaned_path.as_deref(),
+            Some("/managed/group-old.jpg")
+        );
+        conn.execute(
+            "UPDATE releases SET artwork = '/managed/group-new.jpg' WHERE release_id = 70",
+            [],
+        )
+        .unwrap();
+        let conservatively_replaced = store_external_artwork(
+            &conn,
+            &external_artwork(
+                group_id,
+                None,
+                ExternalArtworkScope::ReleaseGroup,
+                "/managed/group-newest.jpg",
+                300,
+            ),
+        )
+        .unwrap();
+        assert_eq!(conservatively_replaced.orphaned_path, None);
+        assert_eq!(
+            conn.query_row(
+                "SELECT artwork FROM releases WHERE release_id = 70",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "/managed/group-new.jpg"
+        );
+    }
+
+    #[test]
+    fn discography_never_links_a_local_release_by_title() {
+        let conn = database();
+        let group_id = "11111111-1111-4111-8111-111111111111";
+        conn.execute(
+            "INSERT INTO releases (release_id, title, artist_id, artist_name)
+             VALUES (70, 'Same title', 7, 'An artist')",
+            [],
+        )
+        .unwrap();
+        let generation = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        store_discography_page(
+            &conn,
+            &discography_page(
+                generation,
+                0,
+                vec![release_group(group_id, "Same title", 2010)],
+                None,
+            ),
+        )
+        .unwrap();
+
+        let page = read_discography(&conn, 7, 10, 0, 150).unwrap();
+        assert_eq!(page.items[0].title, "Same title");
+        assert_eq!(page.items[0].local_release_id, None);
+    }
+
+    #[test]
+    fn discography_writes_are_generation_scoped_and_validate_pages() {
+        let conn = database();
+        let generation = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        let duplicate = release_group("11111111-1111-4111-8111-111111111111", "One", 2000);
+        let invalid = discography_page(generation, 0, vec![duplicate.clone(), duplicate], None);
+        assert!(store_discography_page(&conn, &invalid).is_err());
+        conn.execute("UPDATE artist_enrichment_state SET generation = 1", [])
+            .unwrap();
+        assert!(
+            !store_discography_page(&conn, &discography_page(generation, 0, Vec::new(), None))
+                .unwrap()
+        );
+        assert!(begin_discography_snapshot(&conn, 7, 0).unwrap().is_none());
+        let page = read_discography(&conn, 7, 10, 0, 0).unwrap();
+        assert!(page.items.is_empty());
+        assert_eq!(page.identity_generation, 1);
+    }
+
+    #[test]
+    fn discography_publication_requires_a_complete_stable_remote_total() {
+        let conn = database();
+        let generation = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        assert!(
+            store_discography_page(
+                &conn,
+                &discography_page(
+                    generation,
+                    0,
+                    vec![release_group(
+                        "11111111-1111-4111-8111-111111111111",
+                        "First",
+                        2000,
+                    )],
+                    Some(1),
+                ),
+            )
+            .unwrap()
+        );
+
+        let mut changed_total = discography_page(
+            generation,
+            1,
+            vec![release_group(
+                "22222222-2222-4222-8222-222222222222",
+                "Second",
+                2001,
+            )],
+            None,
+        );
+        changed_total.remote_total = 3;
+        assert!(store_discography_page(&conn, &changed_total).is_err());
+
+        let mut incomplete = changed_total;
+        incomplete.remote_total = 2;
+        incomplete.groups[0].musicbrainz_id = "11111111-1111-4111-8111-111111111111".into();
+        assert!(store_discography_page(&conn, &incomplete).is_err());
+        let active = read_discography(&conn, 7, 10, 0, 150).unwrap();
+        assert!(active.items.is_empty());
+        assert_eq!(active.catalog_generation, 0);
+        assert_eq!(
+            discography_build_state(&conn, 7, 0)
+                .unwrap()
+                .unwrap()
+                .next_offset,
+            1
+        );
+        assert!(discard_discography_snapshot(&conn, 7, 0, generation).unwrap());
+        assert_eq!(discography_build_state(&conn, 7, 0).unwrap(), None);
+        assert!(!discard_discography_snapshot(&conn, 7, 0, generation).unwrap());
     }
 }

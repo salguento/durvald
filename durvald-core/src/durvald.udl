@@ -61,6 +61,18 @@ typedef extern ArtistProfileSource;
 typedef extern ArtistImageReference;
 
 [Rust="enum"]
+typedef extern ExternalArtworkScope;
+
+[Rust="record"]
+typedef extern ExternalReleaseArtwork;
+
+[Rust="record"]
+typedef extern ExternalReleaseGroup;
+
+[Rust="record"]
+typedef extern ArtistDiscographyPage;
+
+[Rust="enum"]
 typedef extern ArtistProfileField;
 
 [Rust="record"]

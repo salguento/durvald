@@ -30,7 +30,7 @@ pub enum MetadataError {
 pub type MetadataResult<T> = Result<T, MetadataError>;
 
 pub(crate) const MAX_ARTWORK_BYTES: usize = 10 * 1024 * 1024;
-const MAX_ARTWORK_DIMENSION: u32 = 4096;
+pub(crate) const MAX_ARTWORK_DIMENSION: u32 = 4096;
 const MAX_ARTWORK_DECODE_BYTES: u64 = 64 * 1024 * 1024;
 
 fn decode_artwork_limited(bytes: &[u8]) -> MetadataResult<(DynamicImage, ImageFormat)> {
@@ -54,8 +54,8 @@ fn decode_artwork_limited(bytes: &[u8]) -> MetadataResult<(DynamicImage, ImageFo
     Ok((reader.decode()?, format))
 }
 
-pub(crate) fn validate_artwork_bytes(bytes: &[u8]) -> MetadataResult<()> {
-    decode_artwork_limited(bytes).map(|_| ())
+pub(crate) fn validate_artwork_bytes(bytes: &[u8]) -> MetadataResult<(u32, u32)> {
+    decode_artwork_limited(bytes).map(|(image, _)| (image.width(), image.height()))
 }
 
 fn cancellation_requested(cancel_requested: Option<&AtomicBool>) -> bool {
@@ -385,6 +385,7 @@ mod tests {
 
 /// IDs retain their entity role; recording IDs must never resolve an artist.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MusicBrainzTags {
     pub track_artists: Vec<String>,
     pub album_artists: Vec<String>,

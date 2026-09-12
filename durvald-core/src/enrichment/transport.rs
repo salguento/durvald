@@ -273,7 +273,39 @@ impl EnrichmentHttpClient {
         }
         timeout(
             self.policy.operation_timeout,
-            self.request(url, query, validators),
+            self.request(url, query, validators, None),
+        )
+        .await
+        .map_err(|_| TransportError::Timeout)?
+    }
+
+    /// Fetches public JSON while allowing only explicitly trusted HTTPS
+    /// redirect hosts. Query parameters and validators are not forwarded after
+    /// a redirect, preventing cross-origin metadata leakage.
+    pub async fn get_json_with_redirects<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &[(&str, &str)],
+        validators: &CacheValidators,
+        allowed_hosts: &[&str],
+    ) -> Result<JsonResponse<T>, TransportError> {
+        if path.contains(['?', '#', '\\']) {
+            return Err(TransportError::InvalidRequest);
+        }
+        let url = self
+            .base
+            .join(path)
+            .map_err(|_| TransportError::InvalidRequest)?;
+        if url.origin() != self.base.origin()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return Err(TransportError::InvalidRequest);
+        }
+        validate_public_url(&url, allowed_hosts)?;
+        timeout(
+            self.policy.operation_timeout,
+            self.request(url, query, validators, Some(allowed_hosts)),
         )
         .await
         .map_err(|_| TransportError::Timeout)?
@@ -281,13 +313,14 @@ impl EnrichmentHttpClient {
 
     /// Downloads public image bytes without forwarding API credentials. Every
     /// redirect target is revalidated against the adapter's explicit host set.
+    /// A dot-prefixed entry permits only subdomains of that DNS suffix.
     pub async fn get_image(
         &self,
         url: &str,
         allowed_hosts: &[&str],
     ) -> Result<Vec<u8>, TransportError> {
         let url = Url::parse(url).map_err(|_| TransportError::InvalidRequest)?;
-        validate_public_image_url(&url, allowed_hosts)?;
+        validate_public_url(&url, allowed_hosts)?;
         timeout(
             self.policy.operation_timeout,
             self.request_image(url, allowed_hosts),
@@ -331,7 +364,7 @@ impl EnrichmentHttpClient {
                 url = url
                     .join(location)
                     .map_err(|_| TransportError::InvalidRequest)?;
-                validate_public_image_url(&url, allowed_hosts)?;
+                validate_public_url(&url, allowed_hosts)?;
                 continue;
             }
             if response.status == StatusCode::TOO_MANY_REQUESTS {
@@ -352,6 +385,15 @@ impl EnrichmentHttpClient {
                     retry_after_seconds: None,
                 });
             }
+            if response
+                .headers
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| value.split(';').next().unwrap_or_default().trim())
+                .is_some_and(|mime| !matches!(mime, "image/jpeg" | "image/png"))
+            {
+                return Err(TransportError::InvalidJson);
+            }
             return self
                 .read_body_limit(&mut response, crate::metadata::MAX_ARTWORK_BYTES)
                 .await;
@@ -361,9 +403,10 @@ impl EnrichmentHttpClient {
 
     async fn request<T: DeserializeOwned>(
         &self,
-        url: Url,
-        query: &[(&str, &str)],
+        mut url: Url,
+        mut query: &[(&str, &str)],
         validators: &CacheValidators,
+        allowed_redirect_hosts: Option<&[&str]>,
     ) -> Result<JsonResponse<T>, TransportError> {
         let _permit = self
             .gate
@@ -371,7 +414,10 @@ impl EnrichmentHttpClient {
             .acquire()
             .await
             .map_err(|_| TransportError::Network)?;
-        for attempt in 0..3 {
+        let mut validators = validators.clone();
+        let mut redirects = 0;
+        let mut attempt = 0_u32;
+        loop {
             self.gate.wait().await;
             let mut request = self
                 .client
@@ -394,12 +440,40 @@ impl EnrichmentHttpClient {
                         && matches!(error, TransportError::Network | TransportError::Timeout)
                     {
                         self.backoff(attempt).await;
+                        attempt += 1;
                         continue;
                     }
                     return Err(error);
                 }
             };
             let status = response.status;
+            if status.is_redirection() && status != StatusCode::NOT_MODIFIED {
+                let Some(allowed_hosts) = allowed_redirect_hosts else {
+                    return Err(TransportError::HttpStatus {
+                        status: status.as_u16(),
+                        retry_after_seconds: None,
+                    });
+                };
+                if redirects >= 2 {
+                    return Err(TransportError::HttpStatus {
+                        status: status.as_u16(),
+                        retry_after_seconds: None,
+                    });
+                }
+                let location = response
+                    .headers
+                    .get(header::LOCATION)
+                    .and_then(|value| value.to_str().ok())
+                    .ok_or(TransportError::InvalidRequest)?;
+                url = url
+                    .join(location)
+                    .map_err(|_| TransportError::InvalidRequest)?;
+                validate_public_url(&url, allowed_hosts)?;
+                query = &[];
+                validators = CacheValidators::default();
+                redirects += 1;
+                continue;
+            }
             let retry_after = response
                 .headers
                 .get(header::RETRY_AFTER)
@@ -424,6 +498,7 @@ impl EnrichmentHttpClient {
             if matches!(status.as_u16(), 500 | 502 | 503 | 504) && attempt < 2 {
                 drop(response);
                 self.backoff(attempt).await;
+                attempt += 1;
                 continue;
             }
             let received = CacheValidators {
@@ -462,7 +537,6 @@ impl EnrichmentHttpClient {
                 validators: received,
             });
         }
-        unreachable!("The last attempt always returns")
     }
 
     async fn backoff(&self, attempt: u32) {
@@ -516,14 +590,22 @@ impl EnrichmentHttpClient {
     }
 }
 
-fn validate_public_image_url(url: &Url, allowed_hosts: &[&str]) -> Result<(), TransportError> {
+fn validate_public_url(url: &Url, allowed_hosts: &[&str]) -> Result<(), TransportError> {
     if url.scheme() != "https"
         || !url.username().is_empty()
         || url.password().is_some()
         || url.port().is_some()
-        || !url
-            .host_str()
-            .is_some_and(|host| allowed_hosts.contains(&host))
+        || !url.host_str().is_some_and(|host| {
+            allowed_hosts.iter().any(|allowed| {
+                allowed
+                    .strip_prefix('.')
+                    .map_or(host == *allowed, |suffix| {
+                        host.len() > suffix.len()
+                            && host.ends_with(suffix)
+                            && host.as_bytes()[host.len() - suffix.len() - 1] == b'.'
+                    })
+            })
+        })
     {
         return Err(TransportError::InvalidRequest);
     }
@@ -548,7 +630,7 @@ pub(crate) mod tests {
     use std::sync::Mutex as StdMutex;
 
     pub(crate) struct Step {
-        delay: Duration,
+        pub(crate) delay: Duration,
         response: Result<HttpResponse, TransportError>,
     }
 
@@ -624,13 +706,16 @@ pub(crate) mod tests {
         }
     }
 
-    pub(crate) fn client(steps: Vec<Step>) -> (EnrichmentHttpClient, Arc<MockTransport>) {
+    pub(crate) fn client_for(
+        base: &str,
+        steps: Vec<Step>,
+    ) -> (EnrichmentHttpClient, Arc<MockTransport>) {
         let scripted = Arc::new(MockTransport {
             steps: StdMutex::new(steps.into()),
             requests: StdMutex::new(Vec::new()),
         });
         let mut client = EnrichmentHttpClient::build(
-            Url::parse("https://musicbrainz.org/").unwrap(),
+            Url::parse(base).unwrap(),
             Arc::new(ProviderGate::new(Duration::ZERO)),
             TransportPolicy {
                 operation_timeout: Duration::from_secs(2),
@@ -642,6 +727,10 @@ pub(crate) mod tests {
         .unwrap();
         client.scripted = Some(scripted.clone());
         (client, scripted)
+    }
+
+    pub(crate) fn client(steps: Vec<Step>) -> (EnrichmentHttpClient, Arc<MockTransport>) {
+        client_for("https://musicbrainz.org/", steps)
     }
 
     async fn get(
@@ -673,6 +762,49 @@ pub(crate) mod tests {
             Err(TransportError::HttpStatus { status: 502, .. })
         ));
         assert_eq!(mock.calls(), 3);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn redirect_after_exhausted_retries_does_not_fall_through_or_leak_metadata() {
+        let (client, mock) = client(vec![
+            Step {
+                delay: Duration::ZERO,
+                response: Err(TransportError::Network),
+            },
+            Step {
+                delay: Duration::ZERO,
+                response: Err(TransportError::Timeout),
+            },
+            response(
+                307,
+                &[("location", "https://archive.org/metadata/cover")],
+                &[],
+                None,
+            ),
+            response(200, &[], &["{\"ok\":true}"], None),
+        ]);
+        let validators = CacheValidators {
+            etag: Some("\"private-validator\"".into()),
+            last_modified: None,
+        };
+
+        let result = client
+            .get_json_with_redirects::<serde_json::Value>(
+                "data",
+                &[("key", "private-value")],
+                &validators,
+                &["musicbrainz.org", "archive.org"],
+            )
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(mock.calls(), 4);
+        let requests = mock.requests.lock().unwrap();
+        assert_eq!(
+            requests[3].url().as_str(),
+            "https://archive.org/metadata/cover"
+        );
+        assert!(requests[3].headers().get(header::IF_NONE_MATCH).is_none());
     }
 
     #[tokio::test(start_paused = true)]
@@ -904,6 +1036,41 @@ pub(crate) mod tests {
             );
         }
         assert_eq!(mock.calls(), 1);
+        for valid in [
+            "https://archive.org/download/cover.jpg",
+            "https://ia801.us.archive.org/download/cover.jpg",
+        ] {
+            validate_public_url(
+                &Url::parse(valid).unwrap(),
+                &["archive.org", ".archive.org"],
+            )
+            .unwrap();
+        }
+        for invalid in [
+            "https://evilarchive.org/cover.jpg",
+            "https://archive.org.evil.example/cover.jpg",
+        ] {
+            assert!(
+                validate_public_url(
+                    &Url::parse(invalid).unwrap(),
+                    &["archive.org", ".archive.org"]
+                )
+                .is_err()
+            );
+        }
+
+        let (mime_client, _) = self::client(vec![response(
+            200,
+            &[("content-type", "text/html")],
+            &["not an image"],
+            None,
+        )]);
+        assert!(matches!(
+            mime_client
+                .get_image("https://musicbrainz.org/cover.jpg", &["musicbrainz.org"])
+                .await,
+            Err(TransportError::InvalidJson)
+        ));
     }
 
     #[test]
