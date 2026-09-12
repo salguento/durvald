@@ -101,6 +101,46 @@ pub struct ArtistProfileSource {
     pub stale: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistImageReference {
+    pub provider: EnrichmentProvider,
+    /// Stable provider identifier, currently the Commons file title.
+    pub provider_id: String,
+    pub source_url: String,
+    /// Absolute path inside the core-managed covers directory.
+    pub managed_path: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub attribution: EnrichmentAttribution,
+    pub fetched_at: i64,
+    pub expires_at: i64,
+    pub stale: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ArtistProfileField {
+    EntityKind,
+    BirthDate,
+    BirthPlace,
+    FormationDate,
+    FormationPlace,
+    OriginPlace,
+    Biography,
+}
+
+/// `value = None` explicitly clears the selected field. Dates use YYYY,
+/// YYYY-MM or YYYY-MM-DD; entity kind uses person/group/other/unknown.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistFieldOverride {
+    pub field: ArtistProfileField,
+    pub language: String,
+    pub value: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ArtistDetails {
@@ -111,6 +151,8 @@ pub struct ArtistDetails {
     pub requested_language: String,
     /// Exact requested language plus "und"; language fallback arrives with providers.
     pub sources: Vec<ArtistProfileSource>,
+    pub portrait: Option<ArtistImageReference>,
+    pub overrides: Vec<ArtistFieldOverride>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,4 +206,55 @@ pub struct ArtistIdentityCandidates {
     pub lookup_status: ArtistIdentityLookupStatus,
     pub retry_after_seconds: Option<u64>,
     pub truncated: bool,
+}
+
+/// Sections are explicit so later discography/video work can extend refreshes
+/// without changing the semantics of the phase-3 profile request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ArtistRefreshSection {
+    Profile,
+    Portrait,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistRefreshRequest {
+    pub sections: Vec<ArtistRefreshSection>,
+    pub language: String,
+    /// Revalidate expired or still-fresh cache entries. Provider cooldowns and
+    /// operation deadlines continue to apply.
+    pub force: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ArtistRefreshStatus {
+    Updated,
+    Unchanged,
+    NotFound,
+    NeedsIdentity,
+    Unavailable,
+    RateLimited,
+    Disabled,
+    Offline,
+    Superseded,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistRefreshSectionResult {
+    pub section: ArtistRefreshSection,
+    pub status: ArtistRefreshStatus,
+    pub retry_after_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistRefreshResult {
+    pub artist_id: i64,
+    pub identity_generation: u64,
+    pub sections: Vec<ArtistRefreshSectionResult>,
 }

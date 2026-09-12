@@ -10,6 +10,24 @@ struct IdentityFlight {
     receiver: tokio::sync::watch::Receiver<Option<LookupResult>>,
     abort: tokio::task::AbortHandle,
 }
+
+type RefreshResult = CoreResult<ArtistRefreshResult>;
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RefreshKey {
+    artist_id: i64,
+    language: String,
+    sections: u8,
+    force: bool,
+}
+struct RefreshFlight {
+    receiver: tokio::sync::watch::Receiver<Option<RefreshResult>>,
+    abort: tokio::task::AbortHandle,
+}
+impl Drop for RefreshFlight {
+    fn drop(&mut self) {
+        self.abort.abort();
+    }
+}
 impl Drop for IdentityFlight {
     fn drop(&mut self) {
         self.abort.abort();
@@ -19,20 +37,41 @@ impl Drop for IdentityFlight {
 #[derive(Clone)]
 pub struct EnrichmentService {
     flights: Arc<std::sync::Mutex<std::collections::HashMap<i64, std::sync::Weak<IdentityFlight>>>>,
+    refresh_flights: Arc<
+        std::sync::Mutex<std::collections::HashMap<RefreshKey, std::sync::Weak<RefreshFlight>>>,
+    >,
     musicbrainz: Arc<
         std::sync::OnceLock<
             Result<super::providers::musicbrainz::MusicBrainz, super::transport::TransportError>,
         >,
     >,
+    wikidata: Arc<
+        std::sync::OnceLock<
+            Result<super::providers::wikidata::Wikidata, super::transport::TransportError>,
+        >,
+    >,
+    commons: Arc<
+        std::sync::OnceLock<
+            Result<super::providers::commons::Commons, super::transport::TransportError>,
+        >,
+    >,
     pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
+    covers_dir: Arc<std::path::PathBuf>,
 }
 
 impl EnrichmentService {
-    pub fn new(pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>) -> Self {
+    pub fn new(
+        pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
+        covers_dir: String,
+    ) -> Self {
         Self {
             pool,
+            covers_dir: Arc::new(covers_dir.into()),
             musicbrainz: Arc::new(std::sync::OnceLock::new()),
+            wikidata: Arc::new(std::sync::OnceLock::new()),
+            commons: Arc::new(std::sync::OnceLock::new()),
             flights: Arc::default(),
+            refresh_flights: Arc::default(),
         }
     }
 
@@ -214,12 +253,670 @@ impl EnrichmentService {
         })
         .await
     }
+
+    pub async fn set_artist_override(
+        &self,
+        artist_id: i64,
+        value: ArtistFieldOverride,
+    ) -> CoreResult<()> {
+        self.database(move |conn| enrichment::set_override(conn, artist_id, value))
+            .await
+    }
+
+    pub async fn clear_artist_override(
+        &self,
+        artist_id: i64,
+        field: ArtistProfileField,
+        language: String,
+    ) -> CoreResult<()> {
+        self.database(move |conn| enrichment::clear_override(conn, artist_id, field, &language))
+            .await
+    }
+
+    pub async fn refresh_artist(
+        &self,
+        artist_id: i64,
+        mut request: ArtistRefreshRequest,
+    ) -> CoreResult<ArtistRefreshResult> {
+        if artist_id < 0 {
+            return Err(CoreError::InvalidInput {
+                message: "Artist ID must be non-negative".into(),
+            });
+        }
+        let language = normalize_language(&request.language)?;
+        if request.sections.is_empty() {
+            return Err(CoreError::InvalidInput {
+                message: "At least one refresh section is required".into(),
+            });
+        }
+        request.language = language.clone();
+        let sections = u8::from(request.sections.contains(&ArtistRefreshSection::Profile))
+            | (u8::from(request.sections.contains(&ArtistRefreshSection::Portrait)) << 1);
+        request.sections = [
+            ArtistRefreshSection::Profile,
+            ArtistRefreshSection::Portrait,
+        ]
+        .into_iter()
+        .filter(|section| request.sections.contains(section))
+        .collect();
+        let key = RefreshKey {
+            artist_id,
+            language,
+            sections,
+            force: request.force,
+        };
+        let flight = {
+            let mut flights = self
+                .refresh_flights
+                .lock()
+                .map_err(|_| CoreError::Storage {
+                    message: "Profile refresh coordinator unavailable".into(),
+                })?;
+            flights.retain(|_, flight| flight.strong_count() > 0);
+            if let Some(flight) = flights.get(&key).and_then(std::sync::Weak::upgrade) {
+                flight
+            } else {
+                let (sender, receiver) = tokio::sync::watch::channel(None);
+                let service = self.clone();
+                let task = tokio::spawn(async move {
+                    let result = service.refresh_artist_once(artist_id, request).await;
+                    let _ = sender.send(Some(result));
+                });
+                let flight = Arc::new(RefreshFlight {
+                    receiver,
+                    abort: task.abort_handle(),
+                });
+                flights.insert(key, Arc::downgrade(&flight));
+                flight
+            }
+        };
+        let mut receiver = flight.receiver.clone();
+        loop {
+            if let Some(result) = receiver.borrow_and_update().clone() {
+                return result;
+            }
+            receiver.changed().await.map_err(|_| CoreError::Network {
+                message: "Profile refresh interrupted".into(),
+            })?;
+        }
+    }
+
+    async fn refresh_artist_once(
+        &self,
+        artist_id: i64,
+        request: ArtistRefreshRequest,
+    ) -> CoreResult<ArtistRefreshResult> {
+        let language = request.language.clone();
+        let identity = self.artist_identity(artist_id).await?;
+        self.cleanup_stale_assets().await?;
+        let settings = self.settings().await?;
+        let common = if !settings.enabled {
+            Some(ArtistRefreshStatus::Disabled)
+        } else if settings.offline {
+            Some(ArtistRefreshStatus::Offline)
+        } else if identity.status != ArtistIdentityStatus::Resolved || identity.conflicting_tags {
+            Some(ArtistRefreshStatus::NeedsIdentity)
+        } else {
+            None
+        };
+        if let Some(status) = common {
+            return Ok(refresh_result(
+                artist_id,
+                identity.generation,
+                request.sections,
+                status,
+                None,
+            ));
+        }
+        let cached = self.artist_details(artist_id, language.clone()).await?;
+        if !request.force
+            && !request.sections.contains(&ArtistRefreshSection::Portrait)
+            && cached
+                .sources
+                .iter()
+                .any(|source| source.provider == EnrichmentProvider::Wikidata && !source.stale)
+        {
+            return Ok(refresh_result(
+                artist_id,
+                identity.generation,
+                request.sections,
+                ArtistRefreshStatus::Unchanged,
+                None,
+            ));
+        }
+        let requested_profile = request.sections.contains(&ArtistRefreshSection::Profile);
+        let requested_portrait = request.sections.contains(&ArtistRefreshSection::Portrait);
+        let mut results = Vec::new();
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        let profile_result = if requested_profile || requested_portrait {
+            tokio::time::timeout_at(deadline, self.refresh_profile_once(&identity, &language))
+                .await
+                .unwrap_or(Err(super::transport::TransportError::Timeout))
+        } else {
+            unreachable!()
+        };
+        match profile_result {
+            Ok(outcome) => {
+                if requested_profile {
+                    results.push(ArtistRefreshSectionResult {
+                        section: ArtistRefreshSection::Profile,
+                        status: outcome.profile_status,
+                        retry_after_seconds: None,
+                    });
+                }
+                if requested_portrait {
+                    let (status, retry_after_seconds) = match outcome.commons_file {
+                        Some(filename) => {
+                            let portrait = tokio::time::timeout_at(
+                                deadline,
+                                self.refresh_portrait_once(
+                                    identity.artist_id,
+                                    identity.generation,
+                                    &filename,
+                                ),
+                            )
+                            .await
+                            .unwrap_or(Err(super::transport::TransportError::Timeout));
+                            match portrait {
+                                Ok(status) => (status, None),
+                                Err(error) => refresh_transport_error(&error),
+                            }
+                        }
+                        None => (ArtistRefreshStatus::NotFound, None),
+                    };
+                    results.push(ArtistRefreshSectionResult {
+                        section: ArtistRefreshSection::Portrait,
+                        status,
+                        retry_after_seconds,
+                    });
+                }
+            }
+            Err(error) => {
+                let (status, retry) = refresh_transport_error(&error);
+                for section in request.sections {
+                    results.push(ArtistRefreshSectionResult {
+                        section,
+                        status,
+                        retry_after_seconds: retry,
+                    });
+                }
+            }
+        }
+        Ok(ArtistRefreshResult {
+            artist_id,
+            identity_generation: identity.generation,
+            sections: results,
+        })
+    }
+
+    async fn refresh_profile_once(
+        &self,
+        identity: &ArtistIdentity,
+        language: &str,
+    ) -> Result<ProfileRefreshOutcome, super::transport::TransportError> {
+        use super::models::ProfileSnapshot;
+        use super::policy::PROFILE_TTL;
+        use super::transport::TransportError;
+        let artist_id = identity.artist_id;
+        let generation = identity.generation;
+        let mbid = identity
+            .musicbrainz_id
+            .as_deref()
+            .ok_or(TransportError::InvalidRequest)?;
+        let cached_qid = self
+            .database(move |conn| {
+                enrichment::external_id(conn, artist_id, generation, EnrichmentProvider::Wikidata)
+            })
+            .await
+            .map_err(|_| TransportError::Network)?;
+        let qid = if let Some(qid) = cached_qid {
+            qid
+        } else {
+            let musicbrainz = self
+                .musicbrainz
+                .get_or_init(super::providers::musicbrainz::MusicBrainz::new)
+                .as_ref()
+                .map_err(|_| TransportError::Configuration)?;
+            let Some(qid) = musicbrainz.wikidata_id(mbid).await? else {
+                return Ok(ProfileRefreshOutcome {
+                    profile_status: ArtistRefreshStatus::NotFound,
+                    commons_file: None,
+                });
+            };
+            let stored_qid = qid.clone();
+            let stored = self
+                .database(move |conn| {
+                    enrichment::store_external_id(
+                        conn,
+                        artist_id,
+                        generation,
+                        EnrichmentProvider::Wikidata,
+                        &stored_qid,
+                        "musicbrainz_relation",
+                        chrono::Utc::now().timestamp(),
+                    )
+                })
+                .await
+                .map_err(|_| TransportError::Network)?;
+            if !stored {
+                return Ok(ProfileRefreshOutcome {
+                    profile_status: ArtistRefreshStatus::Superseded,
+                    commons_file: None,
+                });
+            }
+            qid
+        };
+        let wikidata = self
+            .wikidata
+            .get_or_init(super::providers::wikidata::Wikidata::new)
+            .as_ref()
+            .map_err(|_| TransportError::Configuration)?;
+        let cached_validators = self
+            .database(move |conn| {
+                enrichment::profile_validators(conn, artist_id, EnrichmentProvider::Wikidata, "und")
+            })
+            .await
+            .map_err(|_| TransportError::Network)?
+            .unwrap_or_default();
+        let response = wikidata.profile(&qid, language, &cached_validators).await?;
+        let now = chrono::Utc::now().timestamp();
+        let expires_at = now.saturating_add(PROFILE_TTL.as_secs() as i64);
+        if let super::models::ProviderResponse::NotModified { validators } = response {
+            let touched = self
+                .database(move |conn| {
+                    enrichment::touch_profile(
+                        conn,
+                        artist_id,
+                        generation,
+                        EnrichmentProvider::Wikidata,
+                        "und",
+                        now,
+                        expires_at,
+                        &validators,
+                    )
+                })
+                .await
+                .map_err(|_| TransportError::Network)?;
+            if !touched {
+                return Ok(ProfileRefreshOutcome {
+                    profile_status: ArtistRefreshStatus::Superseded,
+                    commons_file: None,
+                });
+            }
+            let commons_file = self
+                .database(move |conn| {
+                    enrichment::external_id(
+                        conn,
+                        artist_id,
+                        generation,
+                        EnrichmentProvider::Commons,
+                    )
+                })
+                .await
+                .map_err(|_| TransportError::Network)?;
+            let article = self
+                .database(move |conn| {
+                    enrichment::external_id(
+                        conn,
+                        artist_id,
+                        generation,
+                        EnrichmentProvider::Wikipedia,
+                    )
+                })
+                .await
+                .map_err(|_| TransportError::Network)?
+                .and_then(|value| serde_json::from_str::<(String, String)>(&value).ok());
+            let mut status = ArtistRefreshStatus::Unchanged;
+            if let Some((article_language, article_title)) = article {
+                match self
+                    .refresh_wikipedia_once(
+                        artist_id,
+                        generation,
+                        article_language,
+                        article_title,
+                        now,
+                        expires_at,
+                    )
+                    .await
+                {
+                    Ok(ArtistRefreshStatus::Updated) => status = ArtistRefreshStatus::Updated,
+                    Ok(ArtistRefreshStatus::Superseded) => status = ArtistRefreshStatus::Superseded,
+                    _ => {}
+                }
+            }
+            return Ok(ProfileRefreshOutcome {
+                profile_status: status,
+                commons_file,
+            });
+        }
+        let super::models::ProviderResponse::Modified {
+            value: remote,
+            validators,
+        } = response
+        else {
+            unreachable!()
+        };
+        let article = remote
+            .article_language
+            .clone()
+            .zip(remote.article_title.clone());
+        let commons_file = remote.commons_file.clone();
+        let snapshot = ProfileSnapshot {
+            artist_id,
+            identity_generation: generation,
+            provider: EnrichmentProvider::Wikidata,
+            language: "und".into(),
+            profile: remote.profile,
+            fetched_at: now,
+            expires_at,
+            validators,
+        };
+        let stored = self
+            .database(move |conn| enrichment::store_profile(conn, &snapshot))
+            .await
+            .map_err(|_| TransportError::Network)?;
+        if !stored {
+            return Ok(ProfileRefreshOutcome {
+                profile_status: ArtistRefreshStatus::Superseded,
+                commons_file,
+            });
+        }
+        let article_json = article
+            .as_ref()
+            .and_then(|value| serde_json::to_string(value).ok());
+        let stored_article = self
+            .database(move |conn| {
+                enrichment::replace_external_id(
+                    conn,
+                    artist_id,
+                    generation,
+                    EnrichmentProvider::Wikipedia,
+                    article_json.as_deref(),
+                    "wikidata_sitelink",
+                    now,
+                )
+            })
+            .await
+            .map_err(|_| TransportError::Network)?;
+        let stored_commons = commons_file.clone();
+        let targets_current = self
+            .database(move |conn| {
+                enrichment::replace_external_id(
+                    conn,
+                    artist_id,
+                    generation,
+                    EnrichmentProvider::Commons,
+                    stored_commons.as_deref(),
+                    "wikidata_p18",
+                    now,
+                )
+            })
+            .await
+            .map_err(|_| TransportError::Network)?;
+        if !stored_article || !targets_current {
+            return Ok(ProfileRefreshOutcome {
+                profile_status: ArtistRefreshStatus::Superseded,
+                commons_file,
+            });
+        }
+        let mut status = ArtistRefreshStatus::Updated;
+        if let Some((article_language, article_title)) = article {
+            if matches!(
+                self.refresh_wikipedia_once(
+                    artist_id,
+                    generation,
+                    article_language,
+                    article_title,
+                    now,
+                    expires_at,
+                )
+                .await,
+                Ok(ArtistRefreshStatus::Superseded)
+            ) {
+                status = ArtistRefreshStatus::Superseded;
+            }
+        }
+        Ok(ProfileRefreshOutcome {
+            profile_status: status,
+            commons_file,
+        })
+    }
+
+    async fn refresh_wikipedia_once(
+        &self,
+        artist_id: i64,
+        generation: u64,
+        language: String,
+        title: String,
+        fetched_at: i64,
+        expires_at: i64,
+    ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
+        use super::models::{ProfileSnapshot, ProviderResponse};
+        use super::transport::TransportError;
+        let lookup_language = language.clone();
+        let validators = self
+            .database(move |conn| {
+                enrichment::profile_validators(
+                    conn,
+                    artist_id,
+                    EnrichmentProvider::Wikipedia,
+                    &lookup_language,
+                )
+            })
+            .await
+            .map_err(|_| TransportError::Network)?
+            .unwrap_or_default();
+        let wikipedia = super::providers::wikipedia::Wikipedia::new(&language)?;
+        match wikipedia
+            .introduction(&title, &language, &validators)
+            .await?
+        {
+            ProviderResponse::Modified { value, validators } => {
+                let snapshot = ProfileSnapshot {
+                    artist_id,
+                    identity_generation: generation,
+                    provider: EnrichmentProvider::Wikipedia,
+                    language,
+                    profile: value,
+                    fetched_at,
+                    expires_at,
+                    validators,
+                };
+                Ok(
+                    if self
+                        .database(move |conn| enrichment::store_profile(conn, &snapshot))
+                        .await
+                        .map_err(|_| TransportError::Network)?
+                    {
+                        ArtistRefreshStatus::Updated
+                    } else {
+                        ArtistRefreshStatus::Superseded
+                    },
+                )
+            }
+            ProviderResponse::NotModified { validators } => Ok(
+                if self
+                    .database(move |conn| {
+                        enrichment::touch_profile(
+                            conn,
+                            artist_id,
+                            generation,
+                            EnrichmentProvider::Wikipedia,
+                            &language,
+                            fetched_at,
+                            expires_at,
+                            &validators,
+                        )
+                    })
+                    .await
+                    .map_err(|_| TransportError::Network)?
+                {
+                    ArtistRefreshStatus::Unchanged
+                } else {
+                    ArtistRefreshStatus::Superseded
+                },
+            ),
+        }
+    }
+
+    async fn refresh_portrait_once(
+        &self,
+        artist_id: i64,
+        generation: u64,
+        filename: &str,
+    ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
+        use super::models::AssetSnapshot;
+        use super::policy::PROFILE_TTL;
+        use super::transport::TransportError;
+        let commons = self
+            .commons
+            .get_or_init(super::providers::commons::Commons::new)
+            .as_ref()
+            .map_err(|_| TransportError::Configuration)?;
+        let metadata = commons.metadata(filename).await?;
+        let bytes = commons.download(&metadata.download_url).await?;
+        let covers_dir = self.covers_dir.clone();
+        let managed_path =
+            tokio::task::spawn_blocking(move || crate::artwork::write_managed(&covers_dir, &bytes))
+                .await
+                .map_err(|_| TransportError::Network)?
+                .map_err(|_| TransportError::InvalidJson)?;
+        let previous_path = self
+            .database(move |conn| {
+                enrichment::asset_path(conn, artist_id, EnrichmentProvider::Commons)
+            })
+            .await
+            .map_err(|_| TransportError::Network)?;
+        let now = chrono::Utc::now().timestamp();
+        let snapshot = AssetSnapshot {
+            artist_id,
+            identity_generation: generation,
+            provider: EnrichmentProvider::Commons,
+            provider_id: metadata.provider_id,
+            source_url: metadata.source_url,
+            managed_path: managed_path.to_string_lossy().into_owned(),
+            width: metadata.width,
+            height: metadata.height,
+            attribution: metadata.attribution,
+            fetched_at: now,
+            expires_at: now.saturating_add(PROFILE_TTL.as_secs() as i64),
+        };
+        if self
+            .database(move |conn| enrichment::store_asset(conn, &snapshot))
+            .await
+            .map_err(|_| TransportError::Network)?
+        {
+            if let Some(previous_path) =
+                previous_path.filter(|path| path != managed_path.to_string_lossy().as_ref())
+            {
+                let check_path = previous_path.clone();
+                let referenced = self
+                    .database(move |conn| enrichment::path_is_referenced(conn, &check_path))
+                    .await
+                    .map_err(|_| TransportError::Network)?;
+                if !referenced {
+                    let covers_dir = self.covers_dir.clone();
+                    tokio::task::spawn_blocking(move || {
+                        crate::artwork::remove_managed_if_safe(
+                            &covers_dir,
+                            std::path::Path::new(&previous_path),
+                        )
+                    })
+                    .await
+                    .map_err(|_| TransportError::Network)?
+                    .map_err(|_| TransportError::Network)?;
+                }
+            }
+            Ok(ArtistRefreshStatus::Updated)
+        } else {
+            let check_path = managed_path.to_string_lossy().into_owned();
+            let referenced = self
+                .database(move |conn| enrichment::path_is_referenced(conn, &check_path))
+                .await
+                .map_err(|_| TransportError::Network)?;
+            if !referenced {
+                let covers_dir = self.covers_dir.clone();
+                tokio::task::spawn_blocking(move || {
+                    crate::artwork::remove_managed_if_safe(&covers_dir, &managed_path)
+                })
+                .await
+                .map_err(|_| TransportError::Network)?
+                .map_err(|_| TransportError::Network)?;
+            }
+            Ok(ArtistRefreshStatus::Superseded)
+        }
+    }
+
+    async fn cleanup_stale_assets(&self) -> CoreResult<()> {
+        let paths = self.database(enrichment::collect_stale_asset_paths).await?;
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let covers_dir = self.covers_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            for path in paths {
+                crate::artwork::remove_managed_if_safe(&covers_dir, std::path::Path::new(&path))?;
+            }
+            Ok::<_, CoreError>(())
+        })
+        .await
+        .map_err(|error| CoreError::Storage {
+            message: format!("Artwork cleanup task failed: {error}"),
+        })?
+    }
+}
+
+struct ProfileRefreshOutcome {
+    profile_status: ArtistRefreshStatus,
+    commons_file: Option<String>,
+}
+
+fn refresh_result(
+    artist_id: i64,
+    generation: u64,
+    sections: Vec<ArtistRefreshSection>,
+    status: ArtistRefreshStatus,
+    retry_after_seconds: Option<u64>,
+) -> ArtistRefreshResult {
+    ArtistRefreshResult {
+        artist_id,
+        identity_generation: generation,
+        sections: sections
+            .into_iter()
+            .map(|section| ArtistRefreshSectionResult {
+                section,
+                status,
+                retry_after_seconds,
+            })
+            .collect(),
+    }
+}
+
+fn refresh_transport_error(
+    error: &super::transport::TransportError,
+) -> (ArtistRefreshStatus, Option<u64>) {
+    use super::transport::TransportError;
+    match error {
+        TransportError::RateLimited {
+            retry_after_seconds,
+        } => (ArtistRefreshStatus::RateLimited, Some(*retry_after_seconds)),
+        TransportError::HttpStatus { status: 404, .. } => (ArtistRefreshStatus::NotFound, None),
+        TransportError::HttpStatus {
+            retry_after_seconds,
+            ..
+        } => (ArtistRefreshStatus::Unavailable, *retry_after_seconds),
+        _ => (ArtistRefreshStatus::Unavailable, None),
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::{providers::musicbrainz::MusicBrainz, transport::EnrichmentHttpClient};
+    use super::super::{
+        providers::{commons::Commons, musicbrainz::MusicBrainz, wikidata::Wikidata},
+        transport::{EnrichmentHttpClient, tests::client, tests::response, tests::response_bytes},
+    };
     use super::*;
+    use std::io::Cursor;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     fn service() -> EnrichmentService {
@@ -234,9 +931,13 @@ mod tests {
             )?;
             Ok(())
         });
-        EnrichmentService::new(Arc::new(
-            r2d2::Pool::builder().max_size(1).build(manager).unwrap(),
-        ))
+        EnrichmentService::new(
+            Arc::new(r2d2::Pool::builder().max_size(1).build(manager).unwrap()),
+            std::env::temp_dir()
+                .join("durvald-enrichment-service-tests")
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 
     /// Real loopback HTTP plus SQLite: gates hold no database connection, and
@@ -344,5 +1045,96 @@ mod tests {
             ArtistIdentityLookupStatus::Offline
         );
         assert!(service.musicbrainz.get().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn profile_and_portrait_flow_persists_an_offline_generation_scoped_view() {
+        let service = service();
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: false,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        service
+            .confirm_artist_identity(1, Some("11111111-1111-4111-8111-111111111111".into()))
+            .await
+            .unwrap();
+        let (musicbrainz, _) = client(vec![response(
+            200,
+            &[],
+            &[
+                r#"{"relations":[{"type":"wikidata","url":{"resource":"https://www.wikidata.org/wiki/Q1"}}]}"#,
+            ],
+            None,
+        )]);
+        service
+            .musicbrainz
+            .set(Ok(MusicBrainz { http: musicbrainz }))
+            .ok()
+            .unwrap();
+        let (wikidata, _) = client(vec![response(
+            200,
+            &[],
+            &[
+                r#"{"entities":{"Q1":{"lastrevid":7,"labels":{},"claims":{"P31":[{"rank":"normal","mainsnak":{"datavalue":{"value":{"id":"Q5"}}}}],"P569":[{"rank":"normal","mainsnak":{"datavalue":{"value":{"time":"+1965-00-00T00:00:00Z","precision":9}}}}],"P18":[{"rank":"normal","mainsnak":{"datavalue":{"value":"Portrait.png"}}}]},"sitelinks":{}}}}"#,
+            ],
+            None,
+        )]);
+        service
+            .wikidata
+            .set(Ok(Wikidata { http: wikidata }))
+            .ok()
+            .unwrap();
+        let mut png = Vec::new();
+        image::DynamicImage::new_rgb8(2, 2)
+            .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let commons_json = r#"{"query":{"pages":[{"title":"File:Portrait.png","imageinfo":[{"url":"https://upload.wikimedia.org/portrait.png","descriptionurl":"https://commons.wikimedia.org/wiki/File:Portrait.png","width":2,"height":2,"mime":"image/png","extmetadata":{"Artist":{"value":"Photographer"},"LicenseShortName":{"value":"CC0"}}}]}]}}"#;
+        let (commons, _) = client(vec![
+            response(200, &[], &[commons_json], None),
+            response_bytes(200, &[], &[&png], Some(png.len() as u64)),
+        ]);
+        service
+            .commons
+            .set(Ok(Commons { http: commons }))
+            .ok()
+            .unwrap();
+        let result = service
+            .refresh_artist(
+                1,
+                ArtistRefreshRequest {
+                    sections: vec![
+                        ArtistRefreshSection::Profile,
+                        ArtistRefreshSection::Portrait,
+                    ],
+                    language: "pt".into(),
+                    force: true,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            result
+                .sections
+                .iter()
+                .all(|section| section.status == ArtistRefreshStatus::Updated)
+        );
+        let details = service.artist_details(1, "pt".into()).await.unwrap();
+        assert_eq!(details.sources.len(), 1);
+        assert_eq!(
+            details.sources[0].profile.birth_date,
+            Some(ArtistPartialDate {
+                year: 1965,
+                month: None,
+                day: None,
+            })
+        );
+        let portrait = details.portrait.unwrap();
+        assert_eq!(portrait.provider_id, "Portrait.png");
+        assert!(std::path::Path::new(&portrait.managed_path).is_file());
+        assert_eq!(portrait.attribution.author.as_deref(), Some("Photographer"));
     }
 }

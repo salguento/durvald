@@ -279,6 +279,86 @@ impl EnrichmentHttpClient {
         .map_err(|_| TransportError::Timeout)?
     }
 
+    /// Downloads public image bytes without forwarding API credentials. Every
+    /// redirect target is revalidated against the adapter's explicit host set.
+    pub async fn get_image(
+        &self,
+        url: &str,
+        allowed_hosts: &[&str],
+    ) -> Result<Vec<u8>, TransportError> {
+        let url = Url::parse(url).map_err(|_| TransportError::InvalidRequest)?;
+        validate_public_image_url(&url, allowed_hosts)?;
+        timeout(
+            self.policy.operation_timeout,
+            self.request_image(url, allowed_hosts),
+        )
+        .await
+        .map_err(|_| TransportError::Timeout)?
+    }
+
+    async fn request_image(
+        &self,
+        mut url: Url,
+        allowed_hosts: &[&str],
+    ) -> Result<Vec<u8>, TransportError> {
+        let _permit = self
+            .gate
+            .slots
+            .acquire()
+            .await
+            .map_err(|_| TransportError::Network)?;
+        for redirect in 0..=3 {
+            self.gate.wait().await;
+            let request = self
+                .client
+                .get(url.clone())
+                .header(header::ACCEPT, "image/jpeg,image/png")
+                .build()
+                .map_err(|_| TransportError::InvalidRequest)?;
+            let mut response = self.send(request).await?;
+            if response.status.is_redirection() {
+                if redirect == 3 {
+                    return Err(TransportError::HttpStatus {
+                        status: response.status.as_u16(),
+                        retry_after_seconds: None,
+                    });
+                }
+                let location = response
+                    .headers
+                    .get(header::LOCATION)
+                    .and_then(|value| value.to_str().ok())
+                    .ok_or(TransportError::InvalidRequest)?;
+                url = url
+                    .join(location)
+                    .map_err(|_| TransportError::InvalidRequest)?;
+                validate_public_image_url(&url, allowed_hosts)?;
+                continue;
+            }
+            if response.status == StatusCode::TOO_MANY_REQUESTS {
+                let seconds = response
+                    .headers
+                    .get(header::RETRY_AFTER)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| retry_after_seconds(value, chrono::Utc::now().timestamp()))
+                    .unwrap_or(60);
+                self.gate.defer(Duration::from_secs(seconds)).await;
+                return Err(TransportError::RateLimited {
+                    retry_after_seconds: seconds,
+                });
+            }
+            if !response.status.is_success() {
+                return Err(TransportError::HttpStatus {
+                    status: response.status.as_u16(),
+                    retry_after_seconds: None,
+                });
+            }
+            return self
+                .read_body_limit(&mut response, crate::metadata::MAX_ARTWORK_BYTES)
+                .await;
+        }
+        unreachable!("redirect loop is bounded")
+    }
+
     async fn request<T: DeserializeOwned>(
         &self,
         url: Url,
@@ -333,7 +413,7 @@ impl EnrichmentHttpClient {
                 });
             }
             if status == StatusCode::SERVICE_UNAVAILABLE {
-                if let Some(seconds) = retry_after {
+                if let Some(seconds @ 1..) = retry_after {
                     self.gate.defer(Duration::from_secs(seconds)).await;
                     return Err(TransportError::HttpStatus {
                         status: status.as_u16(),
@@ -411,21 +491,43 @@ impl EnrichmentHttpClient {
     }
 
     async fn read_body(&self, response: &mut HttpResponse) -> Result<Vec<u8>, TransportError> {
+        self.read_body_limit(response, self.policy.max_bytes).await
+    }
+
+    async fn read_body_limit(
+        &self,
+        response: &mut HttpResponse,
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, TransportError> {
         if response
             .content_length
-            .is_some_and(|len| len > self.policy.max_bytes as u64)
+            .is_some_and(|len| len > max_bytes as u64)
         {
             return Err(TransportError::BodyTooLarge);
         }
         let mut body = Vec::new();
         while let Some(chunk) = response.body.chunk().await? {
-            if body.len().saturating_add(chunk.len()) > self.policy.max_bytes {
+            if body.len().saturating_add(chunk.len()) > max_bytes {
                 return Err(TransportError::BodyTooLarge);
             }
             body.extend_from_slice(&chunk);
         }
         Ok(body)
     }
+}
+
+fn validate_public_image_url(url: &Url, allowed_hosts: &[&str]) -> Result<(), TransportError> {
+    if url.scheme() != "https"
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || !url
+            .host_str()
+            .is_some_and(|host| allowed_hosts.contains(&host))
+    {
+        return Err(TransportError::InvalidRequest);
+    }
+    Ok(())
 }
 
 fn retry_after_seconds(value: &str, now: i64) -> Option<u64> {
@@ -491,6 +593,16 @@ pub(crate) mod tests {
         chunks: &[&str],
         length: Option<u64>,
     ) -> Step {
+        let chunks: Vec<&[u8]> = chunks.iter().map(|chunk| chunk.as_bytes()).collect();
+        response_bytes(status, headers, &chunks, length)
+    }
+
+    pub(crate) fn response_bytes(
+        status: u16,
+        headers: &[(&'static str, &'static str)],
+        chunks: &[&[u8]],
+        length: Option<u64>,
+    ) -> Step {
         let mut map = header::HeaderMap::new();
         for (name, value) in headers {
             map.insert(
@@ -505,10 +617,7 @@ pub(crate) mod tests {
                 headers: map,
                 content_length: length,
                 body: ResponseBody::Scripted {
-                    chunks: chunks
-                        .iter()
-                        .map(|chunk| chunk.as_bytes().to_vec())
-                        .collect(),
+                    chunks: chunks.iter().map(|chunk| chunk.to_vec()).collect(),
                     delay: Duration::ZERO,
                 },
             }),
@@ -647,6 +756,16 @@ pub(crate) mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn zero_retry_after_on_unavailable_uses_bounded_retry_policy() {
+        let (client, mock) = client(vec![
+            response(503, &[("retry-after", "0")], &[], None),
+            response(200, &[], &["{}"], None),
+        ]);
+        assert!(get(&client).await.is_ok());
+        assert_eq!(mock.calls(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn timeout_covers_headers_and_streaming_body_and_releases_permits() {
         for delay_headers in [true, false] {
             let mut step = response(200, &[], &["{}"], None);
@@ -750,6 +869,40 @@ pub(crate) mod tests {
                 .await,
             Err(TransportError::InvalidRequest)
         ));
+        assert_eq!(mock.calls(), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn image_redirects_are_revalidated_against_an_explicit_host_set() {
+        let (client, mock) = client(vec![response(
+            302,
+            &[("location", "https://evil.example/portrait.jpg")],
+            &[],
+            None,
+        )]);
+        assert!(matches!(
+            client
+                .get_image(
+                    "https://upload.wikimedia.org/portrait.jpg",
+                    &["upload.wikimedia.org"]
+                )
+                .await,
+            Err(TransportError::InvalidRequest)
+        ));
+        assert_eq!(mock.calls(), 1);
+        for invalid in [
+            "http://upload.wikimedia.org/portrait.jpg",
+            "https://user@upload.wikimedia.org/portrait.jpg",
+            "https://upload.wikimedia.org:8443/portrait.jpg",
+            "https://example.org/portrait.jpg",
+        ] {
+            assert!(
+                client
+                    .get_image(invalid, &["upload.wikimedia.org"])
+                    .await
+                    .is_err()
+            );
+        }
         assert_eq!(mock.calls(), 1);
     }
 

@@ -724,7 +724,10 @@ impl DurvaldCore {
 
         let db_pool = Arc::new(pool);
         let core = Self {
-            enrichment: crate::enrichment::service::EnrichmentService::new(db_pool.clone()),
+            enrichment: crate::enrichment::service::EnrichmentService::new(
+                db_pool.clone(),
+                config.covers_dir.clone(),
+            ),
             db_pool,
             audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
             playback_transition: tokio::sync::Mutex::new(()),
@@ -1238,6 +1241,35 @@ impl DurvaldCore {
     /// Persists optional enrichment preferences; does not start network work.
     pub async fn configure_enrichment(&self, settings: EnrichmentSettings) -> CoreResult<()> {
         self.enrichment.configure(settings).await
+    }
+
+    /// Explicitly refreshes the requested remote sections. Local reads remain
+    /// network-free and scanning/playback never call this method implicitly.
+    pub async fn refresh_artist(
+        &self,
+        artist_id: i64,
+        request: ArtistRefreshRequest,
+    ) -> CoreResult<ArtistRefreshResult> {
+        self.enrichment.refresh_artist(artist_id, request).await
+    }
+
+    pub async fn set_artist_override(
+        &self,
+        artist_id: i64,
+        value: ArtistFieldOverride,
+    ) -> CoreResult<()> {
+        self.enrichment.set_artist_override(artist_id, value).await
+    }
+
+    pub async fn clear_artist_override(
+        &self,
+        artist_id: i64,
+        field: ArtistProfileField,
+        language: String,
+    ) -> CoreResult<()> {
+        self.enrichment
+            .clear_artist_override(artist_id, field, language)
+            .await
     }
 
     /// Returns releases by an artist.

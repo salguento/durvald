@@ -37,6 +37,22 @@ struct ReleaseGroup {
     title: String,
 }
 
+#[derive(Deserialize)]
+struct ArtistLookup {
+    #[serde(default)]
+    relations: Vec<UrlRelation>,
+}
+#[derive(Deserialize)]
+struct UrlRelation {
+    #[serde(rename = "type")]
+    kind: String,
+    url: RelationUrl,
+}
+#[derive(Deserialize)]
+struct RelationUrl {
+    resource: String,
+}
+
 /// Quote a Lucene phrase separately from URL query encoding.
 fn phrase(value: &str) -> String {
     let escaped: String = value
@@ -137,6 +153,43 @@ impl MusicBrainz {
         }
         Ok((candidates, truncated))
     }
+
+    /// Follow the curated MusicBrainz URL relationship. Text search is never
+    /// used to guess a Wikidata entity.
+    pub async fn wikidata_id(&self, mbid: &str) -> Result<Option<String>, TransportError> {
+        let mbid = normalize_mbid(mbid).ok_or(TransportError::InvalidRequest)?;
+        let path = format!("ws/2/artist/{mbid}");
+        let JsonResponse::Modified { body, .. } = self
+            .http
+            .get_json::<ArtistLookup>(
+                &path,
+                &[("fmt", "json"), ("inc", "url-rels")],
+                &CacheValidators::default(),
+            )
+            .await?
+        else {
+            return Err(TransportError::InvalidJson);
+        };
+        Ok(body.relations.into_iter().find_map(|relation| {
+            if relation.kind != "wikidata" {
+                return None;
+            }
+            relation
+                .url
+                .resource
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .filter(|id| valid_wikidata_id(id))
+                .map(str::to_owned)
+        }))
+    }
+}
+
+fn valid_wikidata_id(value: &str) -> bool {
+    value
+        .strip_prefix('Q')
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
 }
 
 impl RemoteArtist {
@@ -247,5 +300,24 @@ mod tests {
         ] {
             assert!(normalize_mbid(invalid).is_none());
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wikidata_relation_is_curated_and_validated() {
+        let (http, _) = client(vec![response(
+            200,
+            &[],
+            &[
+                r#"{"relations":[{"type":"official homepage","url":{"resource":"https://example.test"}},{"type":"wikidata","url":{"resource":"https://www.wikidata.org/wiki/Q123"}}]}"#,
+            ],
+            None,
+        )]);
+        assert_eq!(
+            MusicBrainz { http }
+                .wikidata_id("11111111-1111-4111-8111-111111111111")
+                .await
+                .unwrap(),
+            Some("Q123".into())
+        );
     }
 }

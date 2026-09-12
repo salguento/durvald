@@ -58,6 +58,15 @@ typedef extern ArtistProfile;
 typedef extern ArtistProfileSource;
 
 [Rust="record"]
+typedef extern ArtistImageReference;
+
+[Rust="enum"]
+typedef extern ArtistProfileField;
+
+[Rust="record"]
+typedef extern ArtistFieldOverride;
+
+[Rust="record"]
 typedef extern ArtistDetails;
 
 [Rust="record"]
@@ -122,3 +131,18 @@ typedef extern ArtistIdentityOrigin;
 
 [Rust="enum"]
 typedef extern ArtistIdentityLookupStatus;
+
+[Rust="enum"]
+typedef extern ArtistRefreshSection;
+
+[Rust="record"]
+typedef extern ArtistRefreshRequest;
+
+[Rust="enum"]
+typedef extern ArtistRefreshStatus;
+
+[Rust="record"]
+typedef extern ArtistRefreshSectionResult;
+
+[Rust="record"]
+typedef extern ArtistRefreshResult;

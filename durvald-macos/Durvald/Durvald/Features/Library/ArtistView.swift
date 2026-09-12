@@ -31,6 +31,7 @@ struct ArtistView: View {
 
     @State private var tracks: [Track] = []
     @State private var albums: [Release] = []
+    @State private var details: ArtistDetails?
     @State private var trackSearchText = ""
     @State private var trackOrder: TrackOrder = .album
     @FocusState private var isTrackSearchFocused: Bool
@@ -43,7 +44,8 @@ struct ArtistView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ArtworkView(
-                        artworkID: albums.compactMap(\.artworkId).first,
+                        artworkID: details?.portrait?.managedPath
+                            ?? albums.compactMap(\.artworkId).first,
                         size: geometry.size.width,
                         aspectRatio: 16.0 / 9.0,
                         showsBorder: false
@@ -202,7 +204,15 @@ struct ArtistView: View {
             isLoading = true
             async let loadedTracks = store.tracks(forArtistID: artist.id)
             async let loadedAlbums = store.releases(forArtistID: artist.id)
-            let (resolvedTracks, resolvedAlbums) = await (loadedTracks, loadedAlbums)
+            async let loadedDetails = store.artistDetails(
+                artistId: artist.id,
+                language: enrichmentLanguage
+            )
+            let (resolvedTracks, resolvedAlbums, resolvedDetails) = await (
+                loadedTracks,
+                loadedAlbums,
+                loadedDetails
+            )
             tracks = resolvedTracks.sorted {
                 if $0.release != $1.release {
                     return $0.release.localizedStandardCompare($1.release) == .orderedAscending
@@ -214,7 +224,14 @@ struct ArtistView: View {
             albums = resolvedAlbums.sorted {
                 $0.title.localizedStandardCompare($1.title) == .orderedAscending
             }
+            details = resolvedDetails
             isLoading = false
+            if let refreshed = await store.refreshArtistDetails(
+                artistId: artist.id,
+                language: enrichmentLanguage
+            ) {
+                details = refreshed
+            }
         }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
     }
@@ -588,9 +605,23 @@ struct ArtistView: View {
                     .accessibilityAddTraits(.isHeader)
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Vivamus lacinia odio vitae vestibulum vestibulum. Cras venenatis euismod malesuada. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.")
-                    Text("Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Donec aliquet, nisl sed semper tempor, justo diam cursus libero, vel feugiat nunc purus at odio.")
-                    Text("Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris.")
+                    if let factsSummary {
+                        Text(factsSummary)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                    }
+                    if let biography = biographyText {
+                        Text(biography)
+                        if biographyOverride == nil,
+                           let biographySource,
+                           let sourceURL = URL(string: biographySource.profile.attribution.sourceUrl) {
+                            Link("Fonte: Wikipedia", destination: sourceURL)
+                                .font(.caption)
+                        }
+                    } else {
+                        Text("Informações biográficas ainda não disponíveis.")
+                            .italic()
+                    }
                 }
                 .font(.body)
                 .foregroundStyle(.secondary)
@@ -644,6 +675,81 @@ struct ArtistView: View {
         }
         .backgroundExtensionEffect()
         .accessibilityIdentifier("artist.footer")
+    }
+
+    private var enrichmentLanguage: String {
+        store.enrichmentSettings?.preferredLanguage
+            ?? Locale.current.language.languageCode?.identifier
+            ?? "pt"
+    }
+
+    private var biographySource: ArtistProfileSource? {
+        details?.sources.first { $0.provider == .wikipedia && $0.profile.biography != nil }
+    }
+
+    private var biographyOverride: ArtistFieldOverride? {
+        details?.overrides.first { $0.field == .biography }
+    }
+
+    private var biographyText: String? {
+        if let biographyOverride { return biographyOverride.value }
+        return biographySource?.profile.biography
+    }
+
+    private var factsSummary: String? {
+        let profile = details?.sources.first(where: { $0.provider == .wikidata })?.profile
+        let hasManualFacts = details?.overrides.contains { $0.field != .biography } == true
+        guard profile != nil || hasManualFacts else {
+            return nil
+        }
+        var facts: [String] = []
+        if let date = overriddenDate(.birthDate, fallback: profile?.birthDate) {
+            facts.append("Nascimento: \(formatted(date))")
+        } else if let date = overriddenDate(.formationDate, fallback: profile?.formationDate) {
+            facts.append("Formação: \(formatted(date))")
+        }
+        let place = overriddenText(.birthPlace, fallback: profile?.birthPlace)
+            ?? overriddenText(.formationPlace, fallback: profile?.formationPlace)
+            ?? overriddenText(.originPlace, fallback: profile?.originPlace)
+        if let place {
+            facts.append(place)
+        }
+        return facts.isEmpty ? nil : facts.joined(separator: " · ")
+    }
+
+    private func formatted(_ date: ArtistPartialDate) -> String {
+        if let month = date.month, let day = date.day {
+            return String(format: "%02d/%02d/%04d", day, month, date.year)
+        }
+        if let month = date.month {
+            return String(format: "%02d/%04d", month, date.year)
+        }
+        return String(date.year)
+    }
+
+    private func override(for field: ArtistProfileField) -> ArtistFieldOverride? {
+        details?.overrides.first { $0.field == field }
+    }
+
+    private func overriddenText(_ field: ArtistProfileField, fallback: String?) -> String? {
+        guard let value = override(for: field) else { return fallback }
+        return value.value
+    }
+
+    private func overriddenDate(
+        _ field: ArtistProfileField,
+        fallback: ArtistPartialDate?
+    ) -> ArtistPartialDate? {
+        guard let value = override(for: field) else { return fallback }
+        return value.value.flatMap(parseDate)
+    }
+
+    private func parseDate(_ value: String) -> ArtistPartialDate? {
+        let fields = value.split(separator: "-")
+        guard let year = fields.first.flatMap({ Int32($0) }) else { return nil }
+        let month = fields.count > 1 ? UInt8(fields[1]) : nil
+        let day = fields.count > 2 ? UInt8(fields[2]) : nil
+        return ArtistPartialDate(year: year, month: month, day: day)
     }
 
     private var similarArtists: [Artist] {

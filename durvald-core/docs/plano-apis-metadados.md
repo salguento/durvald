@@ -1,6 +1,6 @@
 # Plano de integração de APIs de metadados no core Rust
 
-Data: 11/09/2026. Status: fases 1 (fundação) e 2 (identidade) implementadas; fases 3–5 pendentes.
+Data: 11/09/2026. Status: fases 1 (fundação) e 2 (identidade) implementadas; fase 3 em andamento; fases 4–5 pendentes.
 
 ## Objetivo e escopo
 
@@ -221,3 +221,35 @@ Os detalhes de perfil, relações Wikidata, retrato, discografia pública e UI d
 Verificação: fixtures de homônimos, tags com papéis distintos, créditos incertos, conflitos, confirmação/limpeza, rescan idêntico, reabertura, resposta superada e teste de HTTP local com consumidores concorrentes. As rotas de busca e browse seguem a [documentação oficial do MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_API); os testes automatizados não acessam serviços públicos.
 
 Validação concluída: `cargo fmt --check`, `cargo test` (87 testes), `cargo test --features uniffi` (87 testes) e `cargo check --features uniffi`. Bindings Swift e biblioteca arm64 regenerados pelo script do projeto; build Debug do app macOS concluído com `CODE_SIGNING_ALLOWED=NO`. O teste de HTTP local exige permissão de abertura de porta quando executado dentro de sandbox.
+
+## Fase 3 — perfil (concluída)
+
+Primeiro recorte implementado em 12/09/2026:
+
+- `refresh_artist` e seus DTOs públicos distinguem perfil e retrato e retornam estado por seção, incluindo identidade pendente, modo offline, indisponibilidade, rate limit e resposta superada.
+- O vínculo curado do MusicBrainz resolve o QID sem busca textual e é persistido na migração 3, sempre associado à geração atual da identidade.
+- O adaptador Wikidata normaliza pessoa/grupo, nascimento ou formação com precisão parcial, locais, país de origem, sitelink e arquivo de imagem. Rótulos de locais são complementares: sua falha não invalida os demais fatos.
+- O adaptador Wikipedia consulta somente o artigo vindo do sitelink, extrai a introdução, registra idioma efetivo, URL canônica, revisão, autoria e licença. Falha da Wikipedia preserva o snapshot Wikidata como resultado parcial utilizável offline.
+- Snapshots usam o TTL de perfil já definido, são substitutivos e só são gravados quando a geração ainda coincide. Leituras continuam estritamente locais.
+- Bindings Swift e biblioteca arm64 foram regenerados para o novo contrato.
+
+Segundo recorte implementado em 12/09/2026:
+
+- O adaptador Commons consulta `imageinfo`, seleciona miniatura JPEG/PNG, preserva página de origem, autoria e licença e rejeita outros formatos.
+- Downloads usam teto incremental de 10 MiB, não carregam credenciais e validam novamente cada redirect contra a lista explícita de hosts Wikimedia permitidos.
+- Retratos são validados pelo decoder existente e gravados em `covers_dir` por hash de conteúdo, com temporário no mesmo diretório e rename atômico. O mesmo conteúdo é deduplicado.
+- A migração 4 adiciona `enrichment_assets`; `ArtistDetails.portrait` expõe a referência offline somente quando sua geração ainda coincide com a identidade do artista.
+- Refreshes equivalentes agora compartilham uma única tarefa por artista, idioma, seções e opção de força. O último consumidor cancelado interrompe a tarefa compartilhada.
+- O orçamento total de perfil e retrato é limitado a 30 segundos. Falha no retrato não elimina fatos ou biografia já persistidos.
+- Há fixture integrada cobrindo MBID → QID → fatos → Commons → arquivo gerenciado → leitura offline, além de testes de redirect, formato, atribuição, migração e geração superada.
+
+- O cliente macOS agora oferece habilitação explícita, modo offline e idioma preferido em Ajustes. A tela do artista lê o cache antes da rede, atualiza em segundo plano, usa o retrato gerenciado no cabeçalho e apresenta fatos e biografia com link de atribuição.
+
+Recorte final implementado em 12/09/2026:
+
+- Wikidata e Wikipedia reutilizam `ETag`/`Last-Modified`; respostas `304` renovam timestamps e TTL sem regravar o payload. Sitelink e alvo Commons derivados ficam associados à geração para que todas as fontes possam ser revalidadas independentemente.
+- A coleta remove referências de retratos pertencentes a gerações antigas e apaga somente arquivos content-addressed dentro de `covers_dir` que não estejam mais referenciados por outra fonte, faixa ou lançamento. Substituição e resposta superada seguem a mesma verificação conservadora.
+- A migração 5 adiciona overrides manuais por campo. Fatos são globais (`und`), biografias são específicas por idioma e `None` representa limpeza explícita; valores, enums e datas parciais são validados antes da gravação. Overrides sobrevivem à troca de geração e têm precedência no consumidor Swift.
+- Smoke tests opt-in separados exercitam MusicBrainz e as rotas públicas de Wikidata, Wikipedia e Commons. A execução real corrigiu a presença de metadados Commons não textuais, o host oficial `thumb.wikimedia.org` e o caso transitório `Retry-After: 0` do MusicBrainz.
+
+Validação final: `cargo fmt --check`, suíte Rust com e sem UniFFI, smoke tests públicos opt-in e build Debug arm64 do app macOS com assinatura desabilitada. Bindings Swift e biblioteca arm64 foram regenerados para o contrato final.

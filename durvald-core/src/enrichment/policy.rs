@@ -52,6 +52,20 @@ impl EnrichmentProvider {
     }
 }
 
+impl crate::api::ArtistProfileField {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::EntityKind => "entity_kind",
+            Self::BirthDate => "birth_date",
+            Self::BirthPlace => "birth_place",
+            Self::FormationDate => "formation_date",
+            Self::FormationPlace => "formation_place",
+            Self::OriginPlace => "origin_place",
+            Self::Biography => "biography",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

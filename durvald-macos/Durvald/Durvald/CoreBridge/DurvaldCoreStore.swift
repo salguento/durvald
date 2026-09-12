@@ -1245,7 +1245,7 @@ final class DurvaldCoreStore {
         }
     }
 
-    // MARK: - Enriquecimento de metadados (Fase 1 — somente leitura local)
+    // MARK: - Enriquecimento de metadados
 
     /// Retorna os detalhes locais do artista (cache SQLite) para o idioma preferido.
     /// Nunca faz chamadas de rede; seguro chamar mesmo offline ou com enriquecimento desabilitado.
@@ -1256,6 +1256,27 @@ final class DurvaldCoreStore {
         } catch {
             errorMessage = String(describing: error)
             return nil
+        }
+    }
+
+    /// Atualiza perfil/retrato explicitamente e sempre relê o cache local ao final.
+    /// Estados esperados como identidade pendente, offline ou conteúdo ausente não
+    /// são apresentados como erro global da aplicação.
+    func refreshArtistDetails(artistId: Int64, language: String) async -> ArtistDetails? {
+        guard let core else { return nil }
+        do {
+            _ = try await core.refreshArtist(
+                artistId: artistId,
+                request: ArtistRefreshRequest(
+                    sections: [.profile, .portrait],
+                    language: language,
+                    force: false
+                )
+            )
+            return try await core.artistDetails(artistId: artistId, language: language)
+        } catch {
+            errorMessage = String(describing: error)
+            return try? await core.artistDetails(artistId: artistId, language: language)
         }
     }
 

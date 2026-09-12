@@ -39,6 +39,11 @@ struct SettingsView: View {
                 .tabItem {
                     Label("Biblioteca", systemImage: "books.vertical")
                 }
+            EnrichmentSettingsView()
+                .padding()
+                .tabItem {
+                    Label("Metadados", systemImage: "person.text.rectangle")
+                }
             LastFmSettingsView()
                 .padding()
                 .tabItem { Label("Last.fm", systemImage: "dot.radiowaves.left.and.right") }

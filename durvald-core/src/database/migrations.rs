@@ -75,8 +75,61 @@ CREATE TRIGGER invalidate_deleted_artist_tag AFTER DELETE ON artist_tag_evidence
 END;
 "#;
 
+const PROFILE: &str = r#"
+CREATE TABLE artist_external_ids (
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    generation INTEGER NOT NULL CHECK (generation >= 0),
+    origin TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL,
+    PRIMARY KEY (artist_id, provider)
+);
+CREATE INDEX idx_artist_external_provider_id
+    ON artist_external_ids(provider, external_id);
+"#;
+
+const PROFILE_ASSETS: &str = r#"
+CREATE TABLE enrichment_assets (
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    generation INTEGER NOT NULL CHECK (generation >= 0),
+    source_url TEXT NOT NULL,
+    managed_path TEXT NOT NULL,
+    width INTEGER CHECK (width IS NULL OR width > 0),
+    height INTEGER CHECK (height IS NULL OR height > 0),
+    attribution TEXT NOT NULL CHECK (json_valid(attribution)),
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL CHECK (expires_at >= fetched_at),
+    PRIMARY KEY (artist_id, provider)
+);
+CREATE INDEX idx_enrichment_asset_provider_id
+    ON enrichment_assets(provider, provider_id);
+"#;
+
+const PROFILE_OVERRIDES: &str = r#"
+CREATE TABLE artist_profile_overrides (
+    artist_id INTEGER NOT NULL REFERENCES artists(artist_id) ON DELETE CASCADE,
+    field TEXT NOT NULL,
+    language TEXT NOT NULL,
+    value TEXT,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (artist_id, field, language)
+);
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
-    apply(conn, &[(1, FOUNDATION), (2, IDENTITY)])
+    apply(
+        conn,
+        &[
+            (1, FOUNDATION),
+            (2, IDENTITY),
+            (3, PROFILE),
+            (4, PROFILE_ASSETS),
+            (5, PROFILE_OVERRIDES),
+        ],
+    )
 }
 
 fn apply(conn: &mut Connection, migrations: &[(i64, &str)]) -> rusqlite::Result<()> {
@@ -144,7 +197,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            2
+            5
         );
     }
 
@@ -159,8 +212,11 @@ mod tests {
                 &[
                     (1, FOUNDATION),
                     (2, IDENTITY),
+                    (3, PROFILE),
+                    (4, PROFILE_ASSETS),
+                    (5, PROFILE_OVERRIDES),
                     (
-                        3,
+                        6,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -173,7 +229,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            2
+            5
         );
     }
 }
