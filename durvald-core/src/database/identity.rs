@@ -269,13 +269,7 @@ pub(crate) fn read_persisted_inner(
             message: "Artist ID must be non-negative".into(),
         });
     }
-    type PersistedIdentityRow = (
-        String,
-        Option<String>,
-        u64,
-        Option<String>,
-        Option<String>,
-    );
+    type PersistedIdentityRow = (String, Option<String>, u64, Option<String>, Option<String>);
     let row: Option<PersistedIdentityRow> = conn
         .query_row(
             "SELECT COALESCE(s.identity_status, 'unresolved'), s.musicbrainz_id,
