@@ -153,7 +153,7 @@ mod tests {
         let _ = fs::remove_dir_all(&directory);
         let managed = write_managed(&directory, &png()).unwrap();
         let unrelated = directory.join("keep.jpg");
-        fs::write(&unrelated, &png()).unwrap();
+        fs::write(&unrelated, png()).unwrap();
         assert!(!remove_managed_if_safe(&directory, &unrelated).unwrap());
         assert!(unrelated.exists());
         assert!(remove_managed_if_safe(&directory, &managed).unwrap());

@@ -415,6 +415,7 @@ pub fn profile_validators(
 
 /// Renews a cached representation after a conditional request returned 304.
 /// The generation guard prevents old in-flight work from reviving stale data.
+#[allow(clippy::too_many_arguments)]
 pub fn touch_profile(
     conn: &Connection,
     artist_id: i64,

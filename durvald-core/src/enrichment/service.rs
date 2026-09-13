@@ -182,6 +182,7 @@ impl EnrichmentService {
         })?
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn provider_request<T, F>(
         &self,
         artist_id: i64,
@@ -196,8 +197,6 @@ impl EnrichmentService {
         F: Future<Output = Result<T, super::transport::TransportError>>,
     {
         use super::models::ProviderFailureSnapshot;
-        use super::transport::TransportError;
-
         let now = chrono::Utc::now().timestamp();
         if !force {
             let lookup_key = resource_key.clone();
@@ -1169,6 +1168,7 @@ impl EnrichmentService {
         Ok(CoverRefreshOutcome { status, progress })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn record_external_artwork_negative_result(
         &self,
         identity: &ArtistIdentity,
@@ -1183,8 +1183,6 @@ impl EnrichmentService {
         use super::policy::{
             COVER_INVALID_IMAGE_TTL, COVER_NOT_FOUND_TTL, COVER_TRANSIENT_FAILURE_TTL,
         };
-        use super::transport::TransportError;
-
         let ttl = match result {
             super::models::ExternalArtworkNegativeResult::NotFound => COVER_NOT_FOUND_TTL,
             super::models::ExternalArtworkNegativeResult::InvalidImage => COVER_INVALID_IMAGE_TTL,
@@ -1525,6 +1523,7 @@ impl EnrichmentService {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn refresh_wikipedia_once(
         &self,
         artist_id: i64,
@@ -1536,7 +1535,6 @@ impl EnrichmentService {
         force: bool,
     ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
         use super::models::{ProfileSnapshot, ProviderResponse};
-        use super::transport::TransportError;
         let lookup_language = language.clone();
         let validators = self
             .database(move |conn| {
