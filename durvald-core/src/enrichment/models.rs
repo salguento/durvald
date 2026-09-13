@@ -201,3 +201,24 @@ pub struct ExternalArtworkRefreshPlan {
     pub queue_has_more: bool,
     pub progress: crate::api::CoverRefreshProgress,
 }
+
+/// Sanitized persistent suppression for a permanent provider response.
+/// `resource_key` is a digest, never a URL, query or provider payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderFailureSnapshot {
+    pub artist_id: i64,
+    pub identity_generation: u64,
+    pub provider: EnrichmentProvider,
+    pub operation: String,
+    pub resource_key: String,
+    pub error_code: String,
+    pub retry_after_seconds: Option<u64>,
+    pub recorded_at: i64,
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CachedProviderFailure {
+    pub error_code: String,
+    pub retry_after_seconds: Option<u64>,
+}

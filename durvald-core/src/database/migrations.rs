@@ -322,6 +322,23 @@ CREATE INDEX idx_external_artwork_queue_schedule
     );
 "#;
 
+const PROVIDER_FAILURE_CACHE: &str = r#"
+CREATE TABLE enrichment_provider_failures (
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    operation TEXT NOT NULL CHECK (length(operation) BETWEEN 1 AND 64),
+    resource_key TEXT NOT NULL CHECK (length(resource_key) = 32),
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    error_code TEXT NOT NULL CHECK (length(error_code) BETWEEN 1 AND 64),
+    retry_after_seconds INTEGER CHECK (retry_after_seconds IS NULL OR retry_after_seconds >= 0),
+    recorded_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL CHECK (expires_at >= recorded_at),
+    PRIMARY KEY (artist_id, provider, operation)
+);
+CREATE INDEX idx_enrichment_provider_failure_expiry
+    ON enrichment_provider_failures(artist_id, identity_generation, expires_at);
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -337,6 +354,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
             (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
             (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
+            (12, PROVIDER_FAILURE_CACHE),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -407,7 +425,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            11
+            12
         );
     }
 
@@ -431,8 +449,9 @@ mod tests {
                     (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
                     (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
                     (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
+                    (12, PROVIDER_FAILURE_CACHE),
                     (
-                        12,
+                        13,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -445,7 +464,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            11
+            12
         );
     }
 

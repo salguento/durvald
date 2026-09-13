@@ -8,6 +8,7 @@ pub const MAX_JSON_BYTES: usize = 2 * 1024 * 1024;
 pub const PROFILE_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub const DISCOGRAPHY_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 pub const NOT_FOUND_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+pub const PERMANENT_FAILURE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 pub const COVER_NOT_FOUND_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub const COVER_INVALID_IMAGE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 pub const COVER_TRANSIENT_FAILURE_TTL: Duration = Duration::from_secs(15 * 60);

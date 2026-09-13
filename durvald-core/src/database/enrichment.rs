@@ -2,10 +2,10 @@
 
 use crate::api::*;
 use crate::enrichment::models::{
-    AssetSnapshot, CacheValidators, DiscographyBuildState, DiscographyPageSnapshot,
-    DiscographyRefreshState, ExternalArtworkNegativeSnapshot, ExternalArtworkRefreshPlan,
-    ExternalArtworkRefreshTarget, ExternalArtworkSnapshot, ExternalArtworkStoreOutcome,
-    ProfileSnapshot, ReleaseGroupSnapshot,
+    AssetSnapshot, CacheValidators, CachedProviderFailure, DiscographyBuildState,
+    DiscographyPageSnapshot, DiscographyRefreshState, ExternalArtworkNegativeSnapshot,
+    ExternalArtworkRefreshPlan, ExternalArtworkRefreshTarget, ExternalArtworkSnapshot,
+    ExternalArtworkStoreOutcome, ProfileSnapshot, ProviderFailureSnapshot, ReleaseGroupSnapshot,
 };
 use crate::enrichment::policy::{MAX_JSON_BYTES, normalize_language, normalized_settings};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -23,6 +23,124 @@ fn invalid(message: &str) -> CoreError {
 
 fn decode_enum<T: DeserializeOwned>(value: String) -> CoreResult<T> {
     serde_json::from_value(serde_json::Value::String(value)).map_err(storage)
+}
+
+pub fn active_provider_failure(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+    provider: EnrichmentProvider,
+    operation: &str,
+    resource_key: &str,
+    now: i64,
+) -> CoreResult<Option<CachedProviderFailure>> {
+    if artist_id < 0 || operation.is_empty() || resource_key.len() != 32 {
+        return Err(invalid("Invalid provider failure lookup"));
+    }
+    let generation = i64::try_from(identity_generation).map_err(storage)?;
+    conn.query_row(
+        "SELECT error_code, retry_after_seconds
+         FROM enrichment_provider_failures
+         WHERE artist_id = ?1 AND provider = ?2 AND operation = ?3
+           AND resource_key = ?4 AND identity_generation = ?5 AND expires_at > ?6",
+        params![
+            artist_id,
+            provider.as_str(),
+            operation,
+            resource_key,
+            generation,
+            now
+        ],
+        |row| {
+            let retry_after = row.get::<_, Option<i64>>(1)?;
+            Ok(CachedProviderFailure {
+                error_code: row.get(0)?,
+                retry_after_seconds: retry_after.and_then(|value| u64::try_from(value).ok()),
+            })
+        },
+    )
+    .optional()
+    .map_err(storage)
+}
+
+pub fn store_provider_failure(
+    conn: &Connection,
+    snapshot: &ProviderFailureSnapshot,
+) -> CoreResult<bool> {
+    if snapshot.artist_id < 0
+        || snapshot.operation.is_empty()
+        || snapshot.operation.len() > 64
+        || snapshot.resource_key.len() != 32
+        || snapshot.error_code.is_empty()
+        || snapshot.error_code.len() > 64
+        || snapshot.expires_at < snapshot.recorded_at
+    {
+        return Err(invalid("Invalid provider failure snapshot"));
+    }
+    let generation = i64::try_from(snapshot.identity_generation).map_err(storage)?;
+    let retry_after = snapshot
+        .retry_after_seconds
+        .map(i64::try_from)
+        .transpose()
+        .map_err(storage)?;
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let current = tx
+        .query_row(
+            "SELECT generation FROM artist_enrichment_state WHERE artist_id = ?1",
+            [snapshot.artist_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    if current != Some(generation) {
+        tx.rollback().map_err(storage)?;
+        return Ok(false);
+    }
+    tx.execute(
+        "INSERT INTO enrichment_provider_failures
+         (artist_id, provider, operation, resource_key, identity_generation,
+          error_code, retry_after_seconds, recorded_at, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT (artist_id, provider, operation) DO UPDATE SET
+           resource_key = excluded.resource_key,
+           identity_generation = excluded.identity_generation,
+           error_code = excluded.error_code,
+           retry_after_seconds = excluded.retry_after_seconds,
+           recorded_at = excluded.recorded_at,
+           expires_at = excluded.expires_at",
+        params![
+            snapshot.artist_id,
+            snapshot.provider.as_str(),
+            snapshot.operation,
+            snapshot.resource_key,
+            generation,
+            snapshot.error_code,
+            retry_after,
+            snapshot.recorded_at,
+            snapshot.expires_at,
+        ],
+    )
+    .map_err(storage)?;
+    tx.commit().map_err(storage)?;
+    Ok(true)
+}
+
+pub fn clear_provider_failure(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+    provider: EnrichmentProvider,
+    operation: &str,
+) -> CoreResult<()> {
+    let generation = i64::try_from(identity_generation).map_err(storage)?;
+    conn.execute(
+        "DELETE FROM enrichment_provider_failures
+         WHERE artist_id = ?1 AND provider = ?2 AND operation = ?3
+           AND identity_generation = ?4",
+        params![artist_id, provider.as_str(), operation, generation],
+    )
+    .map_err(storage)?;
+    Ok(())
 }
 
 pub fn read_settings(conn: &Connection) -> CoreResult<EnrichmentSettings> {
@@ -3395,5 +3513,110 @@ mod tests {
         assert!(discard_discography_snapshot(&conn, 7, 0, generation).unwrap());
         assert_eq!(discography_build_state(&conn, 7, 0).unwrap(), None);
         assert!(!discard_discography_snapshot(&conn, 7, 0, generation).unwrap());
+    }
+
+    #[test]
+    fn permanent_provider_failures_expire_and_follow_identity_and_resource() {
+        let conn = database();
+        conn.execute(
+            "INSERT INTO artist_enrichment_state
+             (artist_id, generation, identity_status, musicbrainz_id)
+             VALUES (7, 2, 'resolved', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')",
+            [],
+        )
+        .unwrap();
+        let mut failure = ProviderFailureSnapshot {
+            artist_id: 7,
+            identity_generation: 2,
+            provider: EnrichmentProvider::MusicBrainz,
+            operation: "discography".into(),
+            resource_key: "11111111111111111111111111111111".into(),
+            error_code: "http_404".into(),
+            retry_after_seconds: None,
+            recorded_at: 100,
+            expires_at: 200,
+        };
+        assert!(store_provider_failure(&conn, &failure).unwrap());
+        assert!(
+            active_provider_failure(
+                &conn,
+                7,
+                2,
+                EnrichmentProvider::MusicBrainz,
+                "discography",
+                &failure.resource_key,
+                199,
+            )
+            .unwrap()
+            .is_some()
+        );
+        assert!(
+            active_provider_failure(
+                &conn,
+                7,
+                2,
+                EnrichmentProvider::MusicBrainz,
+                "discography",
+                &failure.resource_key,
+                200,
+            )
+            .unwrap()
+            .is_none()
+        );
+        assert!(
+            active_provider_failure(
+                &conn,
+                7,
+                2,
+                EnrichmentProvider::MusicBrainz,
+                "discography",
+                "22222222222222222222222222222222",
+                150,
+            )
+            .unwrap()
+            .is_none()
+        );
+
+        conn.execute(
+            "UPDATE artist_enrichment_state SET generation = 3 WHERE artist_id = 7",
+            [],
+        )
+        .unwrap();
+        assert!(
+            active_provider_failure(
+                &conn,
+                7,
+                3,
+                EnrichmentProvider::MusicBrainz,
+                "discography",
+                &failure.resource_key,
+                150,
+            )
+            .unwrap()
+            .is_none()
+        );
+        failure.identity_generation = 3;
+        assert!(store_provider_failure(&conn, &failure).unwrap());
+        clear_provider_failure(
+            &conn,
+            7,
+            3,
+            EnrichmentProvider::MusicBrainz,
+            "discography",
+        )
+        .unwrap();
+        assert!(
+            active_provider_failure(
+                &conn,
+                7,
+                3,
+                EnrichmentProvider::MusicBrainz,
+                "discography",
+                &failure.resource_key,
+                150,
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 }

@@ -3,6 +3,8 @@
 use crate::api::*;
 use crate::database::enrichment;
 use crate::enrichment::policy::{normalize_language, normalized_settings};
+use md5::{Digest, Md5};
+use std::future::Future;
 use std::sync::Arc;
 
 type LookupResult = CoreResult<ArtistIdentityCandidates>;
@@ -178,6 +180,83 @@ impl EnrichmentService {
         .map_err(|error| CoreError::Storage {
             message: format!("Enrichment database task failed: {error}"),
         })?
+    }
+
+    async fn provider_request<T, F>(
+        &self,
+        artist_id: i64,
+        identity_generation: u64,
+        provider: EnrichmentProvider,
+        operation: &'static str,
+        resource_key: String,
+        force: bool,
+        request: F,
+    ) -> Result<T, super::transport::TransportError>
+    where
+        F: Future<Output = Result<T, super::transport::TransportError>>,
+    {
+        use super::models::ProviderFailureSnapshot;
+        use super::transport::TransportError;
+
+        let now = chrono::Utc::now().timestamp();
+        if !force {
+            let lookup_key = resource_key.clone();
+            if let Some(failure) = self
+                .database(move |conn| {
+                    enrichment::active_provider_failure(
+                        conn,
+                        artist_id,
+                        identity_generation,
+                        provider,
+                        operation,
+                        &lookup_key,
+                        now,
+                    )
+                })
+                .await
+                .map_err(storage_transport)?
+            {
+                return Err(cached_transport_error(&failure));
+            }
+        }
+
+        match request.await {
+            Ok(value) => {
+                self.write_database_idempotent("provider_failure.clear", move |conn| {
+                    enrichment::clear_provider_failure(
+                        conn,
+                        artist_id,
+                        identity_generation,
+                        provider,
+                        operation,
+                    )
+                })
+                .await
+                .map_err(storage_transport)?;
+                Ok(value)
+            }
+            Err(error) => {
+                if let Some(ttl) = permanent_failure_ttl(&error) {
+                    let snapshot = ProviderFailureSnapshot {
+                        artist_id,
+                        identity_generation,
+                        provider,
+                        operation: operation.into(),
+                        resource_key,
+                        error_code: provider_error_code(&error),
+                        retry_after_seconds: error.retry_after_seconds(),
+                        recorded_at: now,
+                        expires_at: now.saturating_add(ttl.as_secs() as i64),
+                    };
+                    self.write_database_idempotent("provider_failure.store", move |conn| {
+                        enrichment::store_provider_failure(conn, &snapshot)
+                    })
+                    .await
+                    .map_err(storage_transport)?;
+                }
+                Err(error)
+            }
+        }
     }
 
     pub async fn artist_identity(&self, artist_id: i64) -> CoreResult<ArtistIdentity> {
@@ -523,7 +602,10 @@ impl EnrichmentService {
         if requested_profile || requested_portrait {
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
             let profile_result =
-                tokio::time::timeout_at(deadline, self.refresh_profile_once(&identity, &language))
+                tokio::time::timeout_at(
+                    deadline,
+                    self.refresh_profile_once(&identity, &language, request.force),
+                )
                     .await
                     .unwrap_or(Err(super::transport::TransportError::Timeout));
             match profile_result {
@@ -545,6 +627,7 @@ impl EnrichmentService {
                                         identity.artist_id,
                                         identity.generation,
                                         &filename,
+                                        request.force,
                                     ),
                                 )
                                 .await
@@ -654,7 +737,7 @@ impl EnrichmentService {
                 enrichment::discography_refresh_state(conn, artist_id, identity_generation)
             })
             .await
-            .map_err(|_| TransportError::Network)?
+            .map_err(storage_transport)?
             .ok_or(TransportError::InvalidRequest)?;
         if state.building.is_none()
             && !force
@@ -676,8 +759,17 @@ impl EnrichmentService {
             .get_or_init(super::providers::musicbrainz::MusicBrainz::new)
             .as_ref()
             .map_err(|_| TransportError::Configuration)?;
-        let response = musicbrainz
-            .discography(mbid, start_offset, &request_validators)
+        let resource_key = provider_resource_key(&[mbid]);
+        let response = self
+            .provider_request(
+                artist_id,
+                identity_generation,
+                EnrichmentProvider::MusicBrainz,
+                "discography",
+                resource_key,
+                force,
+                musicbrainz.discography(mbid, start_offset, &request_validators),
+            )
             .await?;
         let (value, validators) = match response {
             ProviderResponse::NotModified { validators } => {
@@ -698,7 +790,7 @@ impl EnrichmentService {
                         )
                     })
                     .await
-                    .map_err(|_| TransportError::Network)?;
+                    .map_err(storage_transport)?;
                 return Ok(if stored {
                     ArtistRefreshStatus::Unchanged
                 } else {
@@ -721,7 +813,7 @@ impl EnrichmentService {
                 enrichment::discography_build_state(conn, artist_id, identity_generation)
             })
             .await
-            .map_err(|_| TransportError::Network)?
+            .map_err(storage_transport)?
             .filter(|build| {
                 build.catalog_generation == catalog_generation && build.next_offset == start_offset
             });
@@ -767,7 +859,7 @@ impl EnrichmentService {
                         )
                     })
                     .await
-                    .map_err(|_| TransportError::Network)?;
+                    .map_err(storage_transport)?;
                     return Err(TransportError::InvalidJson);
                 }
                 Err(_) => return Err(TransportError::Network),
@@ -1160,9 +1252,10 @@ impl EnrichmentService {
         &self,
         identity: &ArtistIdentity,
         language: &str,
+        force: bool,
     ) -> Result<ProfileRefreshOutcome, super::transport::TransportError> {
-        use super::models::ProfileSnapshot;
-        use super::policy::PROFILE_TTL;
+        use super::models::{ProfileSnapshot, ProviderFailureSnapshot};
+        use super::policy::{NOT_FOUND_TTL, PROFILE_TTL};
         use super::transport::TransportError;
         let artist_id = identity.artist_id;
         let generation = identity.generation;
@@ -1175,7 +1268,7 @@ impl EnrichmentService {
                 enrichment::external_id(conn, artist_id, generation, EnrichmentProvider::Wikidata)
             })
             .await
-            .map_err(|_| TransportError::Network)?;
+            .map_err(storage_transport)?;
         let qid = if let Some(qid) = cached_qid {
             qid
         } else {
@@ -1184,7 +1277,36 @@ impl EnrichmentService {
                 .get_or_init(super::providers::musicbrainz::MusicBrainz::new)
                 .as_ref()
                 .map_err(|_| TransportError::Configuration)?;
-            let Some(qid) = musicbrainz.wikidata_id(mbid).await? else {
+            let resource_key = provider_resource_key(&[mbid]);
+            let Some(qid) = self
+                .provider_request(
+                    artist_id,
+                    generation,
+                    EnrichmentProvider::MusicBrainz,
+                    "profile_relation",
+                    resource_key.clone(),
+                    force,
+                    musicbrainz.wikidata_id(mbid),
+                )
+                .await?
+            else {
+                let now = chrono::Utc::now().timestamp();
+                let failure = ProviderFailureSnapshot {
+                    artist_id,
+                    identity_generation: generation,
+                    provider: EnrichmentProvider::MusicBrainz,
+                    operation: "profile_relation".into(),
+                    resource_key,
+                    error_code: "http_404".into(),
+                    retry_after_seconds: None,
+                    recorded_at: now,
+                    expires_at: now.saturating_add(NOT_FOUND_TTL.as_secs() as i64),
+                };
+                self.write_database_idempotent("provider_failure.store", move |conn| {
+                    enrichment::store_provider_failure(conn, &failure)
+                })
+                .await
+                .map_err(storage_transport)?;
                 return Ok(ProfileRefreshOutcome {
                     profile_status: ArtistRefreshStatus::NotFound,
                     commons_file: None,
@@ -1204,7 +1326,7 @@ impl EnrichmentService {
                     )
                 })
                 .await
-                .map_err(|_| TransportError::Network)?;
+                .map_err(storage_transport)?;
             if !stored {
                 return Ok(ProfileRefreshOutcome {
                     profile_status: ArtistRefreshStatus::Superseded,
@@ -1223,9 +1345,20 @@ impl EnrichmentService {
                 enrichment::profile_validators(conn, artist_id, EnrichmentProvider::Wikidata, "und")
             })
             .await
-            .map_err(|_| TransportError::Network)?
+            .map_err(storage_transport)?
             .unwrap_or_default();
-        let response = wikidata.profile(&qid, language, &cached_validators).await?;
+        let resource_key = provider_resource_key(&[&qid, language]);
+        let response = self
+            .provider_request(
+                artist_id,
+                generation,
+                EnrichmentProvider::Wikidata,
+                "profile",
+                resource_key,
+                force,
+                wikidata.profile(&qid, language, &cached_validators),
+            )
+            .await?;
         let now = chrono::Utc::now().timestamp();
         let expires_at = now.saturating_add(PROFILE_TTL.as_secs() as i64);
         if let super::models::ProviderResponse::NotModified { validators } = response {
@@ -1243,7 +1376,7 @@ impl EnrichmentService {
                     )
                 })
                 .await
-                .map_err(|_| TransportError::Network)?;
+                .map_err(storage_transport)?;
             if !touched {
                 return Ok(ProfileRefreshOutcome {
                     profile_status: ArtistRefreshStatus::Superseded,
@@ -1260,7 +1393,7 @@ impl EnrichmentService {
                     )
                 })
                 .await
-                .map_err(|_| TransportError::Network)?;
+                .map_err(storage_transport)?;
             let article = self
                 .database(move |conn| {
                     enrichment::external_id(
@@ -1271,7 +1404,7 @@ impl EnrichmentService {
                     )
                 })
                 .await
-                .map_err(|_| TransportError::Network)?
+                .map_err(storage_transport)?
                 .and_then(|value| serde_json::from_str::<(String, String)>(&value).ok());
             let mut status = ArtistRefreshStatus::Unchanged;
             if let Some((article_language, article_title)) = article {
@@ -1283,6 +1416,7 @@ impl EnrichmentService {
                         article_title,
                         now,
                         expires_at,
+                        force,
                     )
                     .await
                 {
@@ -1323,7 +1457,7 @@ impl EnrichmentService {
                 enrichment::store_profile(conn, &snapshot)
             })
             .await
-            .map_err(|_| TransportError::Network)?;
+            .map_err(storage_transport)?;
         if !stored {
             return Ok(ProfileRefreshOutcome {
                 profile_status: ArtistRefreshStatus::Superseded,
@@ -1346,7 +1480,7 @@ impl EnrichmentService {
                 )
             })
             .await
-            .map_err(|_| TransportError::Network)?;
+            .map_err(storage_transport)?;
         let stored_commons = commons_file.clone();
         let targets_current = self
             .write_database_idempotent("external_id.replace_commons", move |conn| {
@@ -1361,7 +1495,7 @@ impl EnrichmentService {
                 )
             })
             .await
-            .map_err(|_| TransportError::Network)?;
+            .map_err(storage_transport)?;
         if !stored_article || !targets_current {
             return Ok(ProfileRefreshOutcome {
                 profile_status: ArtistRefreshStatus::Superseded,
@@ -1378,6 +1512,7 @@ impl EnrichmentService {
                     article_title,
                     now,
                     expires_at,
+                    force,
                 )
                 .await,
                 Ok(ArtistRefreshStatus::Superseded)
@@ -1399,6 +1534,7 @@ impl EnrichmentService {
         title: String,
         fetched_at: i64,
         expires_at: i64,
+        force: bool,
     ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
         use super::models::{ProfileSnapshot, ProviderResponse};
         use super::transport::TransportError;
@@ -1413,13 +1549,22 @@ impl EnrichmentService {
                 )
             })
             .await
-            .map_err(|_| TransportError::Network)?
+            .map_err(storage_transport)?
             .unwrap_or_default();
         let wikipedia = super::providers::wikipedia::Wikipedia::new(&language)?;
-        match wikipedia
-            .introduction(&title, &language, &validators)
-            .await?
-        {
+        let resource_key = provider_resource_key(&[&language, &title]);
+        let response = self
+            .provider_request(
+                artist_id,
+                generation,
+                EnrichmentProvider::Wikipedia,
+                "profile",
+                resource_key,
+                force,
+                wikipedia.introduction(&title, &language, &validators),
+            )
+            .await?;
+        match response {
             ProviderResponse::Modified { value, validators } => {
                 let snapshot = ProfileSnapshot {
                     artist_id,
@@ -1437,7 +1582,7 @@ impl EnrichmentService {
                             enrichment::store_profile(conn, &snapshot)
                         })
                         .await
-                        .map_err(|_| TransportError::Network)?
+                        .map_err(storage_transport)?
                     {
                         ArtistRefreshStatus::Updated
                     } else {
@@ -1460,7 +1605,7 @@ impl EnrichmentService {
                         )
                     })
                     .await
-                    .map_err(|_| TransportError::Network)?
+                    .map_err(storage_transport)?
                 {
                     ArtistRefreshStatus::Unchanged
                 } else {
@@ -1475,6 +1620,7 @@ impl EnrichmentService {
         artist_id: i64,
         generation: u64,
         filename: &str,
+        force: bool,
     ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
         use super::models::AssetSnapshot;
         use super::policy::PROFILE_TTL;
@@ -1484,8 +1630,29 @@ impl EnrichmentService {
             .get_or_init(super::providers::commons::Commons::new)
             .as_ref()
             .map_err(|_| TransportError::Configuration)?;
-        let metadata = commons.metadata(filename).await?;
-        let bytes = commons.download(&metadata.download_url).await?;
+        let resource_key = provider_resource_key(&[filename]);
+        let metadata = self
+            .provider_request(
+                artist_id,
+                generation,
+                EnrichmentProvider::Commons,
+                "portrait_metadata",
+                resource_key.clone(),
+                force,
+                commons.metadata(filename),
+            )
+            .await?;
+        let bytes = self
+            .provider_request(
+                artist_id,
+                generation,
+                EnrichmentProvider::Commons,
+                "portrait_image",
+                resource_key,
+                force,
+                commons.download(&metadata.download_url),
+            )
+            .await?;
         let covers_dir = self.covers_dir.clone();
         let managed_path =
             tokio::task::spawn_blocking(move || crate::artwork::write_managed(&covers_dir, &bytes))
@@ -1497,7 +1664,7 @@ impl EnrichmentService {
                 enrichment::asset_path(conn, artist_id, EnrichmentProvider::Commons)
             })
             .await
-            .map_err(|_| TransportError::Network)?;
+            .map_err(storage_transport)?;
         let now = chrono::Utc::now().timestamp();
         let snapshot = AssetSnapshot {
             artist_id,
@@ -1517,7 +1684,7 @@ impl EnrichmentService {
                 enrichment::store_asset(conn, &snapshot)
             })
             .await
-            .map_err(|_| TransportError::Network)?
+            .map_err(storage_transport)?
         {
             if let Some(previous_path) =
                 previous_path.filter(|path| path != managed_path.to_string_lossy().as_ref())
@@ -1526,7 +1693,7 @@ impl EnrichmentService {
                 let referenced = self
                     .database(move |conn| enrichment::path_is_referenced(conn, &check_path))
                     .await
-                    .map_err(|_| TransportError::Network)?;
+                    .map_err(storage_transport)?;
                 if !referenced {
                     let covers_dir = self.covers_dir.clone();
                     tokio::task::spawn_blocking(move || {
@@ -1546,7 +1713,7 @@ impl EnrichmentService {
             let referenced = self
                 .database(move |conn| enrichment::path_is_referenced(conn, &check_path))
                 .await
-                .map_err(|_| TransportError::Network)?;
+                .map_err(storage_transport)?;
             if !referenced {
                 let covers_dir = self.covers_dir.clone();
                 tokio::task::spawn_blocking(move || {
@@ -1636,6 +1803,64 @@ fn refresh_transport_error(
 fn storage_transport(error: CoreError) -> super::transport::TransportError {
     super::transport::TransportError::Storage {
         extended_code: crate::database::sqlite_busy_extended_code(&error),
+    }
+}
+
+fn provider_resource_key(parts: &[&str]) -> String {
+    let mut digest = Md5::new();
+    for part in parts {
+        digest.update((part.len() as u64).to_be_bytes());
+        digest.update(part.as_bytes());
+    }
+    format!("{:x}", digest.finalize())
+}
+
+fn permanent_failure_ttl(
+    error: &super::transport::TransportError,
+) -> Option<std::time::Duration> {
+    use super::policy::{NOT_FOUND_TTL, PERMANENT_FAILURE_TTL};
+    use super::transport::TransportError;
+    match error {
+        TransportError::HttpStatus { status: 404, .. } => Some(NOT_FOUND_TTL),
+        TransportError::HttpStatus { status, .. }
+            if (400..500).contains(status) && *status != 408 && *status != 429 =>
+        {
+            Some(PERMANENT_FAILURE_TTL)
+        }
+        TransportError::InvalidJson
+        | TransportError::InvalidImage
+        | TransportError::BodyTooLarge => Some(PERMANENT_FAILURE_TTL),
+        _ => None,
+    }
+}
+
+fn provider_error_code(error: &super::transport::TransportError) -> String {
+    use super::transport::TransportError;
+    match error {
+        TransportError::BodyTooLarge => "body_too_large".into(),
+        TransportError::InvalidJson => "invalid_json".into(),
+        TransportError::InvalidImage => "invalid_image".into(),
+        TransportError::HttpStatus { status, .. } => format!("http_{status}"),
+        _ => "permanent_provider_error".into(),
+    }
+}
+
+fn cached_transport_error(
+    failure: &super::models::CachedProviderFailure,
+) -> super::transport::TransportError {
+    use super::transport::TransportError;
+    match failure.error_code.as_str() {
+        "body_too_large" => TransportError::BodyTooLarge,
+        "invalid_json" => TransportError::InvalidJson,
+        "invalid_image" => TransportError::InvalidImage,
+        code if code.starts_with("http_") => code[5..]
+            .parse::<u16>()
+            .map(|status| TransportError::HttpStatus {
+                status,
+                retry_after_seconds: failure.retry_after_seconds,
+            })
+            .unwrap_or(TransportError::Network),
+        _ => TransportError::Network,
     }
 }
 

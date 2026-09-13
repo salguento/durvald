@@ -16,7 +16,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{Instant, sleep, sleep_until, timeout};
 
 /// No error stores a request URL, response body or reqwest error containing keys.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum TransportError {
     #[error("Invalid enrichment HTTP configuration")]
     Configuration,
@@ -1147,8 +1147,53 @@ pub(crate) mod tests {
             mime_client
                 .get_image("https://musicbrainz.org/cover.jpg", &["musicbrainz.org"])
                 .await,
-            Err(TransportError::InvalidJson)
+            Err(TransportError::InvalidImage)
         ));
+    }
+
+    #[test]
+    fn musicbrainz_gate_is_process_wide_and_limited_to_one_request_per_second() {
+        let first = EnrichmentHttpClient::new(
+            EnrichmentProvider::MusicBrainz,
+            None,
+            "DurvaldTest/1.0 (tests@example.test)",
+        )
+        .unwrap();
+        let second = EnrichmentHttpClient::new(
+            EnrichmentProvider::MusicBrainz,
+            None,
+            "DurvaldTest/1.0 (tests@example.test)",
+        )
+        .unwrap();
+        assert!(Arc::ptr_eq(&first.gate, &second.gate));
+        assert_eq!(first.gate.interval, Duration::from_secs(1));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn connection_failures_are_retried_as_transient() {
+        let (client, mock) = client(vec![
+            Step {
+                delay: Duration::ZERO,
+                response: Err(TransportError::Connection),
+            },
+            response(200, &[], &["{\"ok\":true}"], None),
+        ]);
+        assert!(get(&client).await.is_ok());
+        assert_eq!(mock.calls(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_user_agent_is_sent() {
+        let (client, mock) = client(vec![response(200, &[], &["{\"ok\":true}"], None)]);
+        get(&client).await.unwrap();
+        let requests = mock.requests.lock().unwrap();
+        assert_eq!(
+            requests[0]
+                .headers()
+                .get(header::USER_AGENT)
+                .and_then(|value| value.to_str().ok()),
+            Some("DurvaldTest/1.0 (in-memory fixture)")
+        );
     }
 
     #[test]
