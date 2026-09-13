@@ -176,6 +176,7 @@ pub struct EnrichmentHttpClient {
     base: Url,
     gate: Arc<ProviderGate>,
     policy: TransportPolicy,
+    user_agent: String,
     #[cfg(test)]
     scripted: Option<Arc<tests::MockTransport>>,
 }
@@ -287,6 +288,7 @@ impl EnrichmentHttpClient {
             base,
             gate,
             policy,
+            user_agent: user_agent.into(),
             #[cfg(test)]
             scripted: None,
         })
@@ -388,6 +390,7 @@ impl EnrichmentHttpClient {
             let request = self
                 .client
                 .get(url.clone())
+                .header(header::USER_AGENT, self.user_agent.as_str())
                 .header(header::ACCEPT, "image/jpeg,image/png")
                 .build()
                 .map_err(|_| TransportError::InvalidRequest)?;
@@ -500,6 +503,7 @@ impl EnrichmentHttpClient {
             let mut request = self
                 .client
                 .get(url.clone())
+                .header(header::USER_AGENT, self.user_agent.as_str())
                 .query(query)
                 .header(header::ACCEPT, "application/json");
             if let Some(etag) = &validators.etag {
