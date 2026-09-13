@@ -16,7 +16,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{Instant, sleep, sleep_until, timeout};
 
 /// No error stores a request URL, response body or reqwest error containing keys.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum TransportError {
     #[error("Invalid enrichment HTTP configuration")]
     Configuration,
@@ -176,6 +176,7 @@ pub struct EnrichmentHttpClient {
     base: Url,
     gate: Arc<ProviderGate>,
     policy: TransportPolicy,
+    user_agent: String,
     #[cfg(test)]
     scripted: Option<Arc<tests::MockTransport>>,
 }
@@ -287,6 +288,7 @@ impl EnrichmentHttpClient {
             base,
             gate,
             policy,
+            user_agent: user_agent.into(),
             #[cfg(test)]
             scripted: None,
         })
@@ -388,6 +390,7 @@ impl EnrichmentHttpClient {
             let request = self
                 .client
                 .get(url.clone())
+                .header(header::USER_AGENT, self.user_agent.as_str())
                 .header(header::ACCEPT, "image/jpeg,image/png")
                 .build()
                 .map_err(|_| TransportError::InvalidRequest)?;
@@ -500,6 +503,7 @@ impl EnrichmentHttpClient {
             let mut request = self
                 .client
                 .get(url.clone())
+                .header(header::USER_AGENT, self.user_agent.as_str())
                 .query(query)
                 .header(header::ACCEPT, "application/json");
             if let Some(etag) = &validators.etag {
@@ -514,9 +518,7 @@ impl EnrichmentHttpClient {
             let mut response = match self.send(request).await {
                 Ok(response) => response,
                 Err(error) => {
-                    if attempt < 2
-                        && error.is_retryable_io()
-                    {
+                    if attempt < 2 && error.is_retryable_io() {
                         self.backoff(attempt).await;
                         attempt += 1;
                         continue;
@@ -1147,8 +1149,53 @@ pub(crate) mod tests {
             mime_client
                 .get_image("https://musicbrainz.org/cover.jpg", &["musicbrainz.org"])
                 .await,
-            Err(TransportError::InvalidJson)
+            Err(TransportError::InvalidImage)
         ));
+    }
+
+    #[test]
+    fn musicbrainz_gate_is_process_wide_and_limited_to_one_request_per_second() {
+        let first = EnrichmentHttpClient::new(
+            EnrichmentProvider::MusicBrainz,
+            None,
+            "DurvaldTest/1.0 (tests@example.test)",
+        )
+        .unwrap();
+        let second = EnrichmentHttpClient::new(
+            EnrichmentProvider::MusicBrainz,
+            None,
+            "DurvaldTest/1.0 (tests@example.test)",
+        )
+        .unwrap();
+        assert!(Arc::ptr_eq(&first.gate, &second.gate));
+        assert_eq!(first.gate.interval, Duration::from_secs(1));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn connection_failures_are_retried_as_transient() {
+        let (client, mock) = client(vec![
+            Step {
+                delay: Duration::ZERO,
+                response: Err(TransportError::Connection),
+            },
+            response(200, &[], &["{\"ok\":true}"], None),
+        ]);
+        assert!(get(&client).await.is_ok());
+        assert_eq!(mock.calls(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn configured_user_agent_is_sent() {
+        let (client, mock) = client(vec![response(200, &[], &["{\"ok\":true}"], None)]);
+        get(&client).await.unwrap();
+        let requests = mock.requests.lock().unwrap();
+        assert_eq!(
+            requests[0]
+                .headers()
+                .get(header::USER_AGENT)
+                .and_then(|value| value.to_str().ok()),
+            Some("DurvaldTest/1.0 (in-memory fixture)")
+        );
     }
 
     #[test]

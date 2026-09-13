@@ -269,7 +269,8 @@ pub(crate) fn read_persisted_inner(
             message: "Artist ID must be non-negative".into(),
         });
     }
-    let row: Option<(String, Option<String>, u64, Option<String>, Option<String>)> = conn
+    type PersistedIdentityRow = (String, Option<String>, u64, Option<String>, Option<String>);
+    let row: Option<PersistedIdentityRow> = conn
         .query_row(
             "SELECT COALESCE(s.identity_status, 'unresolved'), s.musicbrainz_id,
                     COALESCE(s.generation, 0), s.identity_origin,
@@ -529,7 +530,14 @@ mod tests {
             evidence: vec!["exact_name".into(), "local_release_title:Album".into()],
         };
         assert!(
-            store_candidates(&conn, 1, unresolved.generation, &[candidate.clone()], true).unwrap()
+            store_candidates(
+                &conn,
+                1,
+                unresolved.generation,
+                std::slice::from_ref(&candidate),
+                true,
+            )
+            .unwrap()
         );
         let cached = candidates(&conn, 1).unwrap();
         assert_eq!(cached.identity.status, ArtistIdentityStatus::Ambiguous);
