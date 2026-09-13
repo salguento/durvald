@@ -21,7 +21,9 @@ struct AlbumView: View {
 
     @Environment(DurvaldCoreStore.self) private var store
 
-    let album: Release
+    private let album: Release?
+    private let externalRelease: ExternalReleaseGroup?
+    private let externalArtist: Artist?
     let onSelectArtist: (Artist) -> Void
 
     @State private var tracks: [Track] = []
@@ -32,8 +34,44 @@ struct AlbumView: View {
 
     private let artworkSize: CGFloat = 268
 
-    private var currentAlbum: Release {
-        store.releases.first(where: { $0.id == album.id }) ?? album
+    init(album: Release, onSelectArtist: @escaping (Artist) -> Void) {
+        self.album = album
+        externalRelease = nil
+        externalArtist = nil
+        self.onSelectArtist = onSelectArtist
+    }
+
+    init(
+        externalRelease: ExternalReleaseGroup,
+        artist: Artist,
+        onSelectArtist: @escaping (Artist) -> Void
+    ) {
+        album = nil
+        self.externalRelease = externalRelease
+        externalArtist = artist
+        self.onSelectArtist = onSelectArtist
+    }
+
+    private var currentAlbum: Release? {
+        guard let album else { return nil }
+        return store.releases.first(where: { $0.id == album.id }) ?? album
+    }
+
+    private var title: String {
+        album?.title ?? externalRelease?.title ?? "Álbum"
+    }
+
+    private var artistName: String {
+        album?.artist ?? externalArtist?.name ?? ""
+    }
+
+    private var artworkID: String? {
+        album?.artworkId ?? externalRelease?.artwork?.image.managedPath
+    }
+
+    private var detailID: String {
+        if let album { return "local.\(album.id)" }
+        return "remote.\(externalRelease?.musicbrainzId ?? "unknown")"
     }
 
     var body: some View {
@@ -45,49 +83,74 @@ struct AlbumView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task(id: album.id) {
+        .task(id: detailID) {
             isLoading = true
-            tracks = await store.tracks(forReleaseID: album.id)
+            if let album {
+                tracks = await store.tracks(forReleaseID: album.id)
+            } else {
+                tracks = []
+            }
             isLoading = false
         }
-        .accessibilityIdentifier("album.detail.\(album.id)")
+        .accessibilityIdentifier("album.detail.\(detailID)")
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 28) {
             HStack(alignment: .top, spacing: 24) {
                 ArtworkView(
-                    artworkID: album.artworkId,
+                    artworkID: artworkID,
                     size: artworkSize
                 )
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(album.title)
+                    Text(title)
                         .font(.largeTitle)
                         .fontWeight(.bold)
                         .multilineTextAlignment(.leading)
                         .padding(.top, 24)
 
                     Button {
-                        guard let artist = store.artists.first(where: { $0.id == album.artistId }) else {
-                            return
-                        }
+                        guard let artist = selectedArtist else { return }
                         onSelectArtist(artist)
                     } label: {
-                        Text(album.artist)
+                        Text(artistName)
                             .font(.title)
                             .foregroundStyle(Color.accentColor)
                             .multilineTextAlignment(.leading)
                     }
                     .buttonStyle(.plain)
-                    .help("Abrir artista \(album.artist)")
-                    .accessibilityLabel("Abrir artista \(album.artist)")
+                    .help("Abrir artista \(artistName)")
+                    .accessibilityLabel("Abrir artista \(artistName)")
                     .accessibilityIdentifier("album.artist")
+
+                    if let externalRelease {
+                        Text(externalReleaseSubtitle(externalRelease))
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 8)
+
+                        Text("Este lançamento está disponível somente na discografia online.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                    }
                 }
                 .frame(maxWidth: .infinity, minHeight: artworkSize, alignment: .topLeading)
             }
 
-            HStack(spacing: 10) {
+            if let album, let currentAlbum {
+                localAlbumControls(album: album, currentAlbum: currentAlbum)
+            } else if let externalRelease,
+                      let source = URL(string: externalRelease.attribution.sourceUrl) {
+                Link("Ver no MusicBrainz", destination: source)
+                    .accessibilityIdentifier("album.external.musicbrainz")
+            }
+        }
+    }
+
+    private func localAlbumControls(album: Release, currentAlbum: Release) -> some View {
+        HStack(spacing: 10) {
                 CollectionPlaybackControls(
                     isEnabled: !isLoading && !tracks.isEmpty,
                     presentation: .groupedCompactShuffle,
@@ -177,8 +240,22 @@ struct AlbumView: View {
                 .help("Organizar ou filtrar faixas")
                 .accessibilityLabel("Organizar ou filtrar faixas")
                 .accessibilityIdentifier("album.tracks.organize")
-            }
         }
+    }
+
+    private var selectedArtist: Artist? {
+        if let externalArtist { return externalArtist }
+        guard let album else { return nil }
+        return store.artists.first(where: { $0.id == album.artistId })
+    }
+
+    private func externalReleaseSubtitle(_ release: ExternalReleaseGroup) -> String {
+        let kind = release.primaryType ?? "Lançamento"
+        guard let date = release.firstReleaseDate else { return kind }
+        var components = [String(date.year)]
+        if let month = date.month { components.append(String(format: "%02d", month)) }
+        if let day = date.day { components.append(String(format: "%02d", day)) }
+        return "\(kind) · \(components.joined(separator: "-"))"
     }
 
     @ViewBuilder
@@ -186,6 +263,13 @@ struct AlbumView: View {
         if isLoading {
             ProgressView("Carregando faixas…")
                 .frame(maxWidth: .infinity, alignment: .center)
+        } else if externalRelease != nil {
+            ContentUnavailableView(
+                "Faixas não disponíveis",
+                systemImage: "music.note.list",
+                description: Text("O catálogo online contém os dados do lançamento, mas não oferece faixas para reprodução.")
+            )
+            .frame(maxWidth: .infinity)
         } else if tracks.isEmpty {
             ContentUnavailableView(
                 "Nenhuma faixa",
@@ -243,7 +327,7 @@ struct AlbumView: View {
                     .activeTrackTitle(trackID: track.id)
                     .lineLimit(1)
 
-                if !track.artist.isEmpty && track.artist != album.artist {
+                if !track.artist.isEmpty && track.artist != artistName {
                     Text(track.artist)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -267,9 +351,11 @@ struct AlbumView: View {
         }
         .padding(.vertical, 9)
         .playTrackOnDoubleClick {
+            guard let album else { return }
             Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
         }
         .trackContextMenu(track: track) {
+            guard let album else { return }
             Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
         }
         .accessibilityElement(children: .contain)
@@ -277,7 +363,7 @@ struct AlbumView: View {
     }
 
     private func trackNumber(for track: Track) -> String {
-        guard album.totalDiscs > 1 else {
+        guard let album, album.totalDiscs > 1 else {
             return "\(track.trackNumber)"
         }
 

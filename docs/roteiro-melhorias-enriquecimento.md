@@ -8,6 +8,8 @@ Melhorar a atualização de perfis, discografias e capas, mantendo conformidade 
 
 ### 1. Eliminar contenção desnecessária no SQLite — prioridade máxima
 
+**Status: concluído em 13/09/2026.** As leituras de planejamento de capas e discografia usam transações `Deferred`; as publicações passam por um coordenador único; retries limitados com jitter são aplicados somente a escritas idempotentes em `SQLITE_BUSY`/`SQLITE_LOCKED`; e a telemetria registra operação, código estendido e espera sem dados sensíveis.
+
 - Substituir transações `Immediate` por `Deferred` nas operações somente de leitura, especialmente no plano de capas e na leitura da discografia.
 - Manter transações de escrita curtas e sem chamadas de rede ou outros `await` durante sua execução.
 - Serializar publicações do enriquecimento por uma fila de escrita única ou coordenador equivalente.
@@ -19,6 +21,8 @@ Referência: [SQLite — Set a Busy Timeout](https://sqlite.org/c3ref/busy_timeo
 
 ### 2. Persistir resultados negativos de capas
 
+**Status: concluído em 13/09/2026.** Resultados `not_found`, `invalid_image` e `temporary_failure` são persistidos por alvo, com TTLs de 30 dias, 7 dias e 15 minutos, respectivamente. O planejador ignora resultados ainda válidos e os invalida logicamente quando mudam a identidade, o MBID do lançamento ou a geração do catálogo.
+
 - Registrar separadamente `NotFound`, imagem inválida e falha temporária.
 - Aplicar TTL maior para ausência confirmada e TTL curto para falhas transitórias.
 - Impedir que os mesmos lançamentos sem capa ocupem continuamente o início de cada lote.
@@ -29,6 +33,8 @@ O Cover Art Archive usa `404` como resposta normal quando um release ou release-
 Referência: [Cover Art Archive API](https://musicbrainz.org/doc/Cover_Art_Archive/API).
 
 ### 3. Transformar a atualização de capas em uma fila persistente
+
+**Status: implementado em 13/09/2026.** A fila mantém cursor rotativo por artista e, por lançamento, estado, tentativas, próxima tentativa e último erro. Cada execução reivindica no máximo 10 alvos, recupera itens interrompidos após reinício e expõe contadores de concluídos, pendentes, ausentes e temporariamente bloqueados no resultado da seção de capas.
 
 - Salvar cursor, estado, número de tentativas, próxima tentativa e último erro por lançamento.
 - Processar lotes limitados em ordem rotativa e retomá-los após reiniciar o aplicativo.

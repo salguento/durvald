@@ -8,6 +8,9 @@ pub const MAX_JSON_BYTES: usize = 2 * 1024 * 1024;
 pub const PROFILE_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub const DISCOGRAPHY_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 pub const NOT_FOUND_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+pub const COVER_NOT_FOUND_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+pub const COVER_INVALID_IMAGE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+pub const COVER_TRANSIENT_FAILURE_TTL: Duration = Duration::from_secs(15 * 60);
 
 /// Accept bounded language tags, not URLs or arbitrary SQL/cache-key fragments.
 /// Provider adapters will separately map tags to supported Wikipedia editions.
@@ -82,5 +85,11 @@ mod tests {
             offline: true,
             ..Default::default()
         }));
+    }
+
+    #[test]
+    fn cover_negative_ttls_distinguish_confirmed_and_transient_failures() {
+        assert!(COVER_NOT_FOUND_TTL > COVER_INVALID_IMAGE_TTL);
+        assert!(COVER_INVALID_IMAGE_TTL > COVER_TRANSIENT_FAILURE_TTL);
     }
 }

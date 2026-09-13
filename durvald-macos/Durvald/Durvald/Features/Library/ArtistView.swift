@@ -27,6 +27,7 @@ struct ArtistView: View {
 
     let artist: Artist
     let onSelectAlbum: (Release) -> Void
+    let onSelectExternalRelease: (ExternalReleaseGroup) -> Void
     var onSelectArtist: ((Artist) -> Void)? = nil
 
     @State private var tracks: [Track] = []
@@ -634,7 +635,8 @@ struct ArtistView: View {
                         ForEach(onlineOnlyReleases, id: \.musicbrainzId) { release in
                             ExternalReleaseCard(
                                 release: release,
-                                subtitle: externalReleaseSubtitle(release)
+                                subtitle: externalReleaseSubtitle(release),
+                                onSelectRelease: onSelectExternalRelease
                             )
                         }
                     }
@@ -644,6 +646,13 @@ struct ArtistView: View {
                     Text(catalogStatusMessage)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                if let progress = coverQueueProgress {
+                    Text("Capas: \(progress.completed) concluídas · \(progress.pending) pendentes · \(progress.absent) ausentes · \(progress.temporarilyBlocked) bloqueadas temporariamente")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("artist.covers.progress")
                 }
 
                 HStack(spacing: 10) {
@@ -698,6 +707,12 @@ struct ArtistView: View {
             return true
         }
         return catalogRefreshResults.isEmpty && discographyPage?.remoteExhausted == false
+    }
+
+    private var coverQueueProgress: CoverRefreshProgress? {
+        catalogRefreshResults
+            .first { $0.section == .covers }?
+            .coverProgress
     }
 
     private var catalogStatusMessage: String? {
@@ -1191,7 +1206,6 @@ struct ArtistView: View {
                 .ignoresSafeArea(.container, edges: .bottom)
                 .padding(.bottom, -1000)
         }
-        .backgroundExtensionEffect()
         .accessibilityIdentifier("artist.footer")
     }
 
@@ -1318,34 +1332,44 @@ struct ArtistView: View {
 private struct ExternalReleaseCard: View {
     let release: ExternalReleaseGroup
     let subtitle: String
+    let onSelectRelease: (ExternalReleaseGroup) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .topTrailing) {
-                ArtworkView(
-                    artworkID: release.artwork?.image.managedPath,
-                    size: AlbumGridLayout.cardWidth
-                )
+            Button {
+                onSelectRelease(release)
+            } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    ZStack(alignment: .topTrailing) {
+                        ArtworkView(
+                            artworkID: release.artwork?.image.managedPath,
+                            size: AlbumGridLayout.cardWidth
+                        )
 
-                Text("Somente online")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(.black.opacity(0.68), in: .capsule)
-                    .padding(7)
-            }
+                        Text("Somente online")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 4)
+                            .background(.black.opacity(0.68), in: .capsule)
+                            .padding(7)
+                    }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(release.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(release.title)
+                            .font(.headline)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(width: AlbumGridLayout.cardWidth, alignment: .leading)
+                }
             }
-            .frame(width: AlbumGridLayout.cardWidth, alignment: .leading)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Abrir \(release.title), \(subtitle), somente online")
+            .accessibilityIdentifier("artist.discography.remote.\(release.musicbrainzId)")
 
             if let source = URL(string: release.attribution.sourceUrl) {
                 Link("MusicBrainz", destination: source)
@@ -1353,8 +1377,5 @@ private struct ExternalReleaseCard: View {
             }
         }
         .frame(width: AlbumGridLayout.cardWidth, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(release.title), \(subtitle), somente online")
-        .accessibilityIdentifier("artist.discography.remote.\(release.musicbrainzId)")
     }
 }

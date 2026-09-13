@@ -262,6 +262,66 @@ SET snapshot_payload = (
 );
 "#;
 
+const EXTERNAL_ARTWORK_NEGATIVE_RESULTS: &str = r#"
+CREATE TABLE external_artwork_negative_results (
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    catalog_key TEXT NOT NULL,
+    release_group_mbid TEXT NOT NULL REFERENCES external_release_groups(musicbrainz_id) ON DELETE CASCADE,
+    exact_release_mbid TEXT,
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    catalog_generation INTEGER NOT NULL CHECK (catalog_generation > 0),
+    result TEXT NOT NULL CHECK (result IN ('not_found', 'invalid_image', 'temporary_failure')),
+    recorded_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL CHECK (expires_at >= recorded_at),
+    PRIMARY KEY (artist_id, catalog_key),
+    CHECK (
+        (exact_release_mbid IS NULL AND catalog_key = 'release-group:' || release_group_mbid)
+        OR
+        (exact_release_mbid IS NOT NULL AND catalog_key = 'release:' || exact_release_mbid)
+    )
+);
+CREATE INDEX idx_external_artwork_negative_expiry
+    ON external_artwork_negative_results(artist_id, identity_generation, catalog_generation, expires_at);
+"#;
+
+const PERSISTENT_EXTERNAL_ARTWORK_QUEUE: &str = r#"
+CREATE TABLE artist_artwork_queue_state (
+    artist_id INTEGER PRIMARY KEY REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    catalog_generation INTEGER NOT NULL CHECK (catalog_generation > 0),
+    cursor_position INTEGER NOT NULL DEFAULT -1 CHECK (cursor_position >= -1),
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE external_artwork_queue (
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    catalog_key TEXT NOT NULL,
+    release_group_mbid TEXT NOT NULL REFERENCES external_release_groups(musicbrainz_id) ON DELETE CASCADE,
+    exact_release_mbid TEXT,
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    catalog_generation INTEGER NOT NULL CHECK (catalog_generation > 0),
+    provider_position INTEGER NOT NULL CHECK (provider_position >= 0),
+    state TEXT NOT NULL CHECK (state IN ('pending', 'in_progress', 'completed', 'absent', 'blocked')),
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    next_attempt_at INTEGER,
+    last_error TEXT CHECK (last_error IS NULL OR length(last_error) BETWEEN 1 AND 64),
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (artist_id, catalog_key),
+    CHECK (
+        (exact_release_mbid IS NULL AND catalog_key = 'release-group:' || release_group_mbid)
+        OR
+        (exact_release_mbid IS NOT NULL AND catalog_key = 'release:' || exact_release_mbid)
+    ),
+    CHECK ((state IN ('absent', 'blocked') AND next_attempt_at IS NOT NULL)
+        OR (state NOT IN ('absent', 'blocked') AND next_attempt_at IS NULL))
+);
+CREATE INDEX idx_external_artwork_queue_schedule
+    ON external_artwork_queue(
+        artist_id, identity_generation, catalog_generation,
+        state, next_attempt_at, provider_position
+    );
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -275,6 +335,8 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (7, RELEASE_IDENTIFIER_BACKFILL),
             (8, DISCOGRAPHY_TOTALS),
             (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
+            (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
+            (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -345,7 +407,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            9
+            11
         );
     }
 
@@ -367,8 +429,10 @@ mod tests {
                     (7, RELEASE_IDENTIFIER_BACKFILL),
                     (8, DISCOGRAPHY_TOTALS),
                     (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
+                    (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
+                    (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
                     (
-                        10,
+                        12,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -381,7 +445,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            9
+            11
         );
     }
 

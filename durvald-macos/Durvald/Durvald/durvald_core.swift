@@ -3800,13 +3800,15 @@ public struct ArtistRefreshSectionResult {
     public var section: ArtistRefreshSection
     public var status: ArtistRefreshStatus
     public var retryAfterSeconds: UInt64?
+    public var coverProgress: CoverRefreshProgress?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(section: ArtistRefreshSection, status: ArtistRefreshStatus, retryAfterSeconds: UInt64?) {
+    public init(section: ArtistRefreshSection, status: ArtistRefreshStatus, retryAfterSeconds: UInt64?, coverProgress: CoverRefreshProgress?) {
         self.section = section
         self.status = status
         self.retryAfterSeconds = retryAfterSeconds
+        self.coverProgress = coverProgress
     }
 }
 
@@ -3823,6 +3825,9 @@ extension ArtistRefreshSectionResult: Equatable, Hashable {
         if lhs.retryAfterSeconds != rhs.retryAfterSeconds {
             return false
         }
+        if lhs.coverProgress != rhs.coverProgress {
+            return false
+        }
         return true
     }
 
@@ -3830,6 +3835,7 @@ extension ArtistRefreshSectionResult: Equatable, Hashable {
         hasher.combine(section)
         hasher.combine(status)
         hasher.combine(retryAfterSeconds)
+        hasher.combine(coverProgress)
     }
 }
 
@@ -3840,7 +3846,8 @@ public struct FfiConverterTypeArtistRefreshSectionResult: FfiConverterRustBuffer
             try ArtistRefreshSectionResult(
                 section: FfiConverterTypeArtistRefreshSection.read(from: &buf),
                 status: FfiConverterTypeArtistRefreshStatus.read(from: &buf),
-                retryAfterSeconds: FfiConverterOptionUInt64.read(from: &buf)
+                retryAfterSeconds: FfiConverterOptionUInt64.read(from: &buf),
+                coverProgress: FfiConverterOptionTypeCoverRefreshProgress.read(from: &buf)
         )
     }
 
@@ -3848,6 +3855,7 @@ public struct FfiConverterTypeArtistRefreshSectionResult: FfiConverterRustBuffer
         FfiConverterTypeArtistRefreshSection.write(value.section, into: &buf)
         FfiConverterTypeArtistRefreshStatus.write(value.status, into: &buf)
         FfiConverterOptionUInt64.write(value.retryAfterSeconds, into: &buf)
+        FfiConverterOptionTypeCoverRefreshProgress.write(value.coverProgress, into: &buf)
     }
 }
 
@@ -4174,6 +4182,82 @@ public func FfiConverterTypeCoreConfig_lift(_ buf: RustBuffer) throws -> CoreCon
 
 public func FfiConverterTypeCoreConfig_lower(_ value: CoreConfig) -> RustBuffer {
     return FfiConverterTypeCoreConfig.lower(value)
+}
+
+
+/**
+ * Durable cover-queue counters for the artist's active catalog snapshot.
+ */
+public struct CoverRefreshProgress {
+    public var completed: UInt64
+    public var pending: UInt64
+    public var absent: UInt64
+    public var temporarilyBlocked: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(completed: UInt64, pending: UInt64, absent: UInt64, temporarilyBlocked: UInt64) {
+        self.completed = completed
+        self.pending = pending
+        self.absent = absent
+        self.temporarilyBlocked = temporarilyBlocked
+    }
+}
+
+
+
+extension CoverRefreshProgress: Equatable, Hashable {
+    public static func ==(lhs: CoverRefreshProgress, rhs: CoverRefreshProgress) -> Bool {
+        if lhs.completed != rhs.completed {
+            return false
+        }
+        if lhs.pending != rhs.pending {
+            return false
+        }
+        if lhs.absent != rhs.absent {
+            return false
+        }
+        if lhs.temporarilyBlocked != rhs.temporarilyBlocked {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(completed)
+        hasher.combine(pending)
+        hasher.combine(absent)
+        hasher.combine(temporarilyBlocked)
+    }
+}
+
+
+public struct FfiConverterTypeCoverRefreshProgress: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoverRefreshProgress {
+        return
+            try CoverRefreshProgress(
+                completed: FfiConverterUInt64.read(from: &buf),
+                pending: FfiConverterUInt64.read(from: &buf),
+                absent: FfiConverterUInt64.read(from: &buf),
+                temporarilyBlocked: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CoverRefreshProgress, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.completed, into: &buf)
+        FfiConverterUInt64.write(value.pending, into: &buf)
+        FfiConverterUInt64.write(value.absent, into: &buf)
+        FfiConverterUInt64.write(value.temporarilyBlocked, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeCoverRefreshProgress_lift(_ buf: RustBuffer) throws -> CoverRefreshProgress {
+    return try FfiConverterTypeCoverRefreshProgress.lift(buf)
+}
+
+public func FfiConverterTypeCoverRefreshProgress_lower(_ value: CoverRefreshProgress) -> RustBuffer {
+    return FfiConverterTypeCoverRefreshProgress.lower(value)
 }
 
 
@@ -7264,6 +7348,27 @@ fileprivate struct FfiConverterOptionTypeArtistPartialDate: FfiConverterRustBuff
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeArtistPartialDate.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+fileprivate struct FfiConverterOptionTypeCoverRefreshProgress: FfiConverterRustBuffer {
+    typealias SwiftType = CoverRefreshProgress?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCoverRefreshProgress.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCoverRefreshProgress.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

@@ -24,12 +24,16 @@ pub enum TransportError {
     InvalidRequest,
     #[error("Enrichment request timed out")]
     Timeout,
+    #[error("Enrichment connection failed")]
+    Connection,
     #[error("Enrichment network request failed")]
     Network,
     #[error("Enrichment response exceeded its byte limit")]
     BodyTooLarge,
     #[error("Invalid enrichment JSON response")]
     InvalidJson,
+    #[error("Invalid enrichment image response")]
+    InvalidImage,
     #[error("Enrichment provider returned HTTP {status}")]
     HttpStatus {
         status: u16,
@@ -37,6 +41,41 @@ pub enum TransportError {
     },
     #[error("Enrichment provider is rate limited")]
     RateLimited { retry_after_seconds: u64 },
+    #[error("Enrichment SQLite operation failed")]
+    Storage { extended_code: Option<i32> },
+}
+
+impl TransportError {
+    fn is_retryable_io(&self) -> bool {
+        matches!(self, Self::Timeout | Self::Connection | Self::Network)
+    }
+
+    pub fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            Self::Timeout
+                | Self::Connection
+                | Self::Network
+                | Self::RateLimited { .. }
+                | Self::HttpStatus {
+                    status: 429 | 500 | 502 | 503 | 504,
+                    ..
+                }
+        )
+    }
+
+    pub fn retry_after_seconds(&self) -> Option<u64> {
+        match self {
+            Self::RateLimited {
+                retry_after_seconds,
+            } => Some(*retry_after_seconds),
+            Self::HttpStatus {
+                retry_after_seconds,
+                ..
+            } => *retry_after_seconds,
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -179,6 +218,8 @@ fn network_error(error: reqwest::Error) -> TransportError {
         TransportError::InvalidRequest
     } else if error.is_timeout() {
         TransportError::Timeout
+    } else if error.is_connect() {
+        TransportError::Connection
     } else {
         TransportError::Network
     }
@@ -340,7 +381,9 @@ impl EnrichmentHttpClient {
             .acquire()
             .await
             .map_err(|_| TransportError::Network)?;
-        for redirect in 0..=3 {
+        let mut redirect = 0_u32;
+        let mut attempt = 0_u32;
+        loop {
             self.gate.wait().await;
             let request = self
                 .client
@@ -348,9 +391,17 @@ impl EnrichmentHttpClient {
                 .header(header::ACCEPT, "image/jpeg,image/png")
                 .build()
                 .map_err(|_| TransportError::InvalidRequest)?;
-            let mut response = self.send(request).await?;
+            let mut response = match self.send(request).await {
+                Ok(response) => response,
+                Err(error) if attempt < 2 && error.is_retryable_io() => {
+                    self.backoff(attempt).await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             if response.status.is_redirection() {
-                if redirect == 3 {
+                if redirect >= 3 {
                     return Err(TransportError::HttpStatus {
                         status: response.status.as_u16(),
                         retry_after_seconds: None,
@@ -365,6 +416,7 @@ impl EnrichmentHttpClient {
                     .join(location)
                     .map_err(|_| TransportError::InvalidRequest)?;
                 validate_public_url(&url, allowed_hosts)?;
+                redirect += 1;
                 continue;
             }
             if response.status == StatusCode::TOO_MANY_REQUESTS {
@@ -379,10 +431,30 @@ impl EnrichmentHttpClient {
                     retry_after_seconds: seconds,
                 });
             }
+            let retry_after = response
+                .headers
+                .get(header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| retry_after_seconds(value, chrono::Utc::now().timestamp()));
+            if response.status == StatusCode::SERVICE_UNAVAILABLE {
+                if let Some(seconds @ 1..) = retry_after {
+                    self.gate.defer(Duration::from_secs(seconds)).await;
+                    return Err(TransportError::HttpStatus {
+                        status: response.status.as_u16(),
+                        retry_after_seconds: Some(seconds),
+                    });
+                }
+            }
+            if matches!(response.status.as_u16(), 500 | 502 | 503 | 504) && attempt < 2 {
+                drop(response);
+                self.backoff(attempt).await;
+                attempt += 1;
+                continue;
+            }
             if !response.status.is_success() {
                 return Err(TransportError::HttpStatus {
                     status: response.status.as_u16(),
-                    retry_after_seconds: None,
+                    retry_after_seconds: retry_after,
                 });
             }
             if response
@@ -392,13 +464,19 @@ impl EnrichmentHttpClient {
                 .map(|value| value.split(';').next().unwrap_or_default().trim())
                 .is_some_and(|mime| !matches!(mime, "image/jpeg" | "image/png"))
             {
-                return Err(TransportError::InvalidJson);
+                return Err(TransportError::InvalidImage);
             }
-            return self
+            match self
                 .read_body_limit(&mut response, crate::metadata::MAX_ARTWORK_BYTES)
-                .await;
+                .await
+            {
+                Err(error) if attempt < 2 && error.is_retryable_io() => {
+                    self.backoff(attempt).await;
+                    attempt += 1;
+                }
+                result => return result,
+            }
         }
-        unreachable!("redirect loop is bounded")
     }
 
     async fn request<T: DeserializeOwned>(
@@ -437,7 +515,7 @@ impl EnrichmentHttpClient {
                 Ok(response) => response,
                 Err(error) => {
                     if attempt < 2
-                        && matches!(error, TransportError::Network | TransportError::Timeout)
+                        && error.is_retryable_io()
                     {
                         self.backoff(attempt).await;
                         attempt += 1;

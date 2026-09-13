@@ -300,12 +300,23 @@ pub enum ArtistRefreshStatus {
     Superseded,
 }
 
+/// Durable cover-queue counters for the artist's active catalog snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct CoverRefreshProgress {
+    pub completed: u64,
+    pub pending: u64,
+    pub absent: u64,
+    pub temporarily_blocked: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ArtistRefreshSectionResult {
     pub section: ArtistRefreshSection,
     pub status: ArtistRefreshStatus,
     pub retry_after_seconds: Option<u64>,
+    pub cover_progress: Option<CoverRefreshProgress>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -154,6 +154,9 @@ typedef extern ArtistRefreshRequest;
 typedef extern ArtistRefreshStatus;
 
 [Rust="record"]
+typedef extern CoverRefreshProgress;
+
+[Rust="record"]
 typedef extern ArtistRefreshSectionResult;
 
 [Rust="record"]

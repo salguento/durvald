@@ -348,6 +348,10 @@ struct ContentView: View {
         shell.navigationHistory.navigate(to: .album(album))
     }
 
+    private func showExternalAlbum(_ release: ExternalReleaseGroup, artist: Artist) {
+        shell.navigationHistory.navigate(to: .externalAlbum(release, artist))
+    }
+
     private func showArtist(_ artist: Artist) {
         shell.navigationHistory.navigate(to: .artist(artist))
     }
@@ -362,8 +366,18 @@ struct ContentView: View {
         case .album(let album):
             AlbumView(album: album, onSelectArtist: showArtist)
                 .id(album.id)
+        case .externalAlbum(let release, let artist):
+            AlbumView(externalRelease: release, artist: artist, onSelectArtist: showArtist)
+                .id(release.musicbrainzId)
         case .artist(let artist):
-            ArtistView(artist: artist, onSelectAlbum: showAlbum, onSelectArtist: showArtist)
+            ArtistView(
+                artist: artist,
+                onSelectAlbum: showAlbum,
+                onSelectExternalRelease: { release in
+                    showExternalAlbum(release, artist: artist)
+                },
+                onSelectArtist: showArtist
+            )
                 .id(artist.id)
         case .playlist(let playlist):
             PlaylistView(playlist: playlist)

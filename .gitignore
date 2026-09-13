@@ -59,3 +59,6 @@ Thumbs.db
 # LLVM profiling and coverage output
 *.profraw
 *.profdata
+
+# Obsidian
+/.obsidian

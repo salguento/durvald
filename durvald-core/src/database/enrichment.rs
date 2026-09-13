@@ -3,17 +3,16 @@
 use crate::api::*;
 use crate::enrichment::models::{
     AssetSnapshot, CacheValidators, DiscographyBuildState, DiscographyPageSnapshot,
-    DiscographyRefreshState, ExternalArtworkRefreshPlan, ExternalArtworkRefreshTarget,
-    ExternalArtworkSnapshot, ExternalArtworkStoreOutcome, ProfileSnapshot, ReleaseGroupSnapshot,
+    DiscographyRefreshState, ExternalArtworkNegativeSnapshot, ExternalArtworkRefreshPlan,
+    ExternalArtworkRefreshTarget, ExternalArtworkSnapshot, ExternalArtworkStoreOutcome,
+    ProfileSnapshot, ReleaseGroupSnapshot,
 };
 use crate::enrichment::policy::{MAX_JSON_BYTES, normalize_language, normalized_settings};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::de::DeserializeOwned;
 
-fn storage(error: impl std::fmt::Display) -> CoreError {
-    CoreError::Storage {
-        message: format!("Enrichment storage: {error}"),
-    }
+fn storage(error: impl std::fmt::Display + 'static) -> CoreError {
+    crate::database::storage_error("Enrichment storage", error)
 }
 
 fn invalid(message: &str) -> CoreError {
@@ -64,7 +63,6 @@ pub fn read_artist_details(
         return Err(invalid("Artist ID must be non-negative"));
     }
     let language = normalize_language(language)?;
-    crate::database::identity::read(conn, artist_id)?;
     let tx = conn.unchecked_transaction().map_err(storage)?;
     let row = tx
         .query_row(
@@ -660,11 +658,223 @@ pub fn store_external_artwork(
     } else {
         None
     };
+    if changed == 1 {
+        tx.execute(
+            "DELETE FROM external_artwork_negative_results
+             WHERE artist_id = ?1 AND catalog_key = ?2",
+            params![snapshot.artist_id, catalog_key],
+        )
+        .map_err(storage)?;
+    }
     tx.commit().map_err(storage)?;
     Ok(ExternalArtworkStoreOutcome {
         stored: changed == 1,
         orphaned_path,
     })
+}
+
+/// Persists a bounded negative cover lookup only while the target still
+/// belongs to the active identity and catalog snapshot. Old generations and
+/// changed local release MBIDs are therefore ignored without blocking a new
+/// lookup.
+pub fn store_external_artwork_negative_result(
+    conn: &Connection,
+    snapshot: &ExternalArtworkNegativeSnapshot,
+) -> CoreResult<bool> {
+    let release_group_mbid =
+        crate::enrichment::identity::normalize_mbid(&snapshot.release_group_mbid)
+            .ok_or_else(|| invalid("Invalid release-group MBID"))?;
+    let exact_release_mbid = snapshot
+        .exact_release_mbid
+        .as_deref()
+        .map(|value| {
+            crate::enrichment::identity::normalize_mbid(value)
+                .ok_or_else(|| invalid("Invalid release MBID"))
+        })
+        .transpose()?;
+    if snapshot.artist_id < 0
+        || snapshot.expires_at < snapshot.recorded_at
+        || snapshot.last_error.is_empty()
+        || snapshot.last_error.len() > 64
+        || !snapshot
+            .last_error
+            .bytes()
+            .all(|value| value.is_ascii_alphanumeric() || matches!(value, b'_' | b'-'))
+    {
+        return Err(invalid("Invalid external artwork negative result"));
+    }
+    let identity_generation = i64::try_from(snapshot.identity_generation).map_err(storage)?;
+    let catalog_generation = i64::try_from(snapshot.catalog_generation).map_err(storage)?;
+    if catalog_generation <= 0 {
+        return Err(invalid("Invalid external artwork catalog generation"));
+    }
+    let catalog_key = exact_release_mbid.as_ref().map_or_else(
+        || format!("release-group:{release_group_mbid}"),
+        |release| format!("release:{release}"),
+    );
+
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let current_target = tx
+        .query_row(
+            "SELECT d.active_generation,
+                    (SELECT l.release_mbid
+                     FROM local_release_external_ids l
+                     JOIN releases r ON r.release_id = l.release_id
+                     WHERE r.artist_id = ?1
+                       AND l.release_group_mbid = ar.release_group_mbid
+                       AND l.release_mbid IS NOT NULL
+                     ORDER BY l.release_id LIMIT 1)
+             FROM external_artist_release_groups ar
+             JOIN artist_discography_state d USING (artist_id)
+             JOIN artist_enrichment_state s USING (artist_id)
+             WHERE ar.artist_id = ?1 AND ar.release_group_mbid = ?2
+               AND ar.identity_generation = ?3
+               AND ar.catalog_generation = ?4
+               AND d.identity_generation = ?3
+               AND d.active_generation = ?4
+               AND s.generation = ?3",
+            params![
+                snapshot.artist_id,
+                release_group_mbid,
+                identity_generation,
+                catalog_generation
+            ],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((active_generation, current_exact_release_mbid)) = current_target else {
+        tx.commit().map_err(storage)?;
+        return Ok(false);
+    };
+    if active_generation != catalog_generation || current_exact_release_mbid != exact_release_mbid {
+        tx.commit().map_err(storage)?;
+        return Ok(false);
+    }
+    tx.execute(
+        "INSERT INTO external_artwork_negative_results
+         (artist_id, catalog_key, release_group_mbid, exact_release_mbid,
+          identity_generation, catalog_generation, result, recorded_at, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT (artist_id, catalog_key) DO UPDATE SET
+           release_group_mbid = excluded.release_group_mbid,
+           exact_release_mbid = excluded.exact_release_mbid,
+           identity_generation = excluded.identity_generation,
+           catalog_generation = excluded.catalog_generation,
+           result = excluded.result,
+           recorded_at = excluded.recorded_at,
+           expires_at = excluded.expires_at
+         WHERE external_artwork_negative_results.identity_generation != excluded.identity_generation
+            OR external_artwork_negative_results.catalog_generation != excluded.catalog_generation
+            OR external_artwork_negative_results.recorded_at <= excluded.recorded_at",
+        params![
+            snapshot.artist_id,
+            catalog_key,
+            release_group_mbid,
+            exact_release_mbid,
+            identity_generation,
+            catalog_generation,
+            snapshot.result.as_str(),
+            snapshot.recorded_at,
+            snapshot.expires_at,
+        ],
+    )
+    .map_err(storage)?;
+    let queue_state = match snapshot.result {
+        crate::enrichment::models::ExternalArtworkNegativeResult::NotFound => "absent",
+        crate::enrichment::models::ExternalArtworkNegativeResult::InvalidImage
+        | crate::enrichment::models::ExternalArtworkNegativeResult::TemporaryFailure => "blocked",
+    };
+    tx.execute(
+        "UPDATE external_artwork_queue
+         SET state = ?3, next_attempt_at = ?4, last_error = ?5, updated_at = ?6
+         WHERE artist_id = ?1 AND catalog_key = ?2
+           AND identity_generation = ?7 AND catalog_generation = ?8",
+        params![
+            snapshot.artist_id,
+            catalog_key,
+            queue_state,
+            snapshot.expires_at,
+            snapshot.last_error,
+            snapshot.recorded_at,
+            identity_generation,
+            catalog_generation,
+        ],
+    )
+    .map_err(storage)?;
+    tx.commit().map_err(storage)?;
+    Ok(true)
+}
+
+pub fn complete_external_artwork_queue_target(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+    catalog_generation: u64,
+    catalog_key: &str,
+    now: i64,
+) -> CoreResult<bool> {
+    if artist_id < 0 || catalog_key.len() > 128 {
+        return Err(invalid("Invalid external artwork queue target"));
+    }
+    let identity_generation = i64::try_from(identity_generation).map_err(storage)?;
+    let catalog_generation = i64::try_from(catalog_generation).map_err(storage)?;
+    let changed = conn
+        .execute(
+            "UPDATE external_artwork_queue
+             SET state = 'completed', next_attempt_at = NULL,
+                 last_error = NULL, updated_at = ?5
+             WHERE artist_id = ?1 AND catalog_key = ?2
+               AND identity_generation = ?3 AND catalog_generation = ?4
+               AND EXISTS(
+                 SELECT 1 FROM artist_enrichment_state s
+                 JOIN artist_discography_state d USING (artist_id)
+                 WHERE s.artist_id = ?1 AND s.generation = ?3
+                   AND d.identity_generation = ?3 AND d.active_generation = ?4
+               )",
+            params![
+                artist_id,
+                catalog_key,
+                identity_generation,
+                catalog_generation,
+                now
+            ],
+        )
+        .map_err(storage)?;
+    Ok(changed == 1)
+}
+
+pub fn external_artwork_queue_progress(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+) -> CoreResult<CoverRefreshProgress> {
+    let identity_generation = i64::try_from(identity_generation).map_err(storage)?;
+    conn.query_row(
+        "SELECT
+           COALESCE(SUM(q.state = 'completed'), 0),
+           COALESCE(SUM(q.state IN ('pending', 'in_progress')), 0),
+           COALESCE(SUM(q.state = 'absent'), 0),
+           COALESCE(SUM(q.state = 'blocked'), 0)
+         FROM artist_discography_state d
+         LEFT JOIN external_artwork_queue q
+           ON q.artist_id = d.artist_id
+          AND q.identity_generation = d.identity_generation
+          AND q.catalog_generation = d.active_generation
+         WHERE d.artist_id = ?1 AND d.identity_generation = ?2",
+        params![artist_id, identity_generation],
+        |row| {
+            Ok(CoverRefreshProgress {
+                completed: row.get(0)?,
+                pending: row.get(1)?,
+                absent: row.get(2)?,
+                temporarily_blocked: row.get(3)?,
+            })
+        },
+    )
+    .optional()
+    .map(|progress| progress.unwrap_or_default())
+    .map_err(storage)
 }
 
 pub fn asset_path(
@@ -752,7 +962,10 @@ pub fn external_artwork_refresh_plan(
         return Err(invalid("Artist ID must be non-negative"));
     }
     let generation = i64::try_from(identity_generation).map_err(storage)?;
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(storage)?;
+    // This is a read snapshot.  Acquiring a RESERVED write lock here used to
+    // make cover planning contend with scans and enrichment publication even
+    // though the plan does not mutate the catalog.
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Deferred).map_err(storage)?;
     let state = tx
         .query_row(
             "SELECT d.active_generation, d.building_generation
@@ -770,6 +983,8 @@ pub fn external_artwork_refresh_plan(
         return Ok(ExternalArtworkRefreshPlan {
             targets: Vec::new(),
             catalog_pending: false,
+            queue_has_more: false,
+            progress: CoverRefreshProgress::default(),
         });
     };
     let mut catalog_targets = Vec::new();
@@ -793,8 +1008,13 @@ pub fn external_artwork_refresh_plan(
         catalog_targets = stmt
             .query_map(params![artist_id, generation, active_generation], |row| {
                 Ok(ExternalArtworkRefreshTarget {
+                    catalog_generation: u64::try_from(active_generation).map_err(|_| {
+                        rusqlite::Error::IntegralValueOutOfRange(0, active_generation)
+                    })?,
+                    catalog_key: String::new(),
                     release_group_mbid: row.get(0)?,
                     exact_release_mbid: row.get(1)?,
+                    attempt_count: 0,
                 })
             })
             .map_err(storage)?
@@ -820,8 +1040,35 @@ pub fn external_artwork_refresh_plan(
             expiries.insert(key, expires_at);
         }
     }
+    let mut negative_expiries = std::collections::HashMap::new();
+    {
+        let mut stmt = tx
+            .prepare(
+                "SELECT catalog_key, expires_at
+                 FROM external_artwork_negative_results
+                 WHERE artist_id = ?1 AND identity_generation = ?2
+                   AND catalog_generation = ?3",
+            )
+            .map_err(storage)?;
+        for row in stmt
+            .query_map(params![artist_id, generation, active_generation], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(storage)?
+        {
+            let (key, expires_at) = row.map_err(storage)?;
+            negative_expiries.insert(key, expires_at);
+        }
+    }
     let targets = catalog_targets
         .into_iter()
+        .map(|mut target| {
+            target.catalog_key = target.exact_release_mbid.as_ref().map_or_else(
+                || format!("release-group:{}", target.release_group_mbid),
+                |release| format!("release:{release}"),
+            );
+            target
+        })
         .filter(|target| {
             if force {
                 return true;
@@ -832,13 +1079,355 @@ pub fn external_artwork_refresh_plan(
                 .as_ref()
                 .and_then(|release| expiries.get(&format!("release:{release}")).copied());
             let preferred_expiry = exact_expiry.or_else(|| expiries.get(&group_key).copied());
-            preferred_expiry.is_none_or(|expires_at| now >= expires_at)
+            if preferred_expiry.is_some_and(|expires_at| now < expires_at) {
+                return false;
+            }
+            let negative_key = target
+                .exact_release_mbid
+                .as_ref()
+                .map_or_else(|| group_key, |release| format!("release:{release}"));
+            negative_expiries
+                .get(&negative_key)
+                .is_none_or(|expires_at| now >= *expires_at)
         })
         .collect();
     tx.commit().map_err(storage)?;
     Ok(ExternalArtworkRefreshPlan {
         targets,
         catalog_pending: building_generation.is_some(),
+        queue_has_more: false,
+        progress: CoverRefreshProgress::default(),
+    })
+}
+
+/// Synchronizes the durable cover queue with the active catalog and claims a
+/// small rotating batch. An interrupted `in_progress` item becomes pending on
+/// the next call, so application restarts do not strand work.
+pub fn dequeue_external_artwork_batch(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+    now: i64,
+    force: bool,
+) -> CoreResult<ExternalArtworkRefreshPlan> {
+    const BATCH_LIMIT: i64 = 10;
+    if artist_id < 0 {
+        return Err(invalid("Artist ID must be non-negative"));
+    }
+    let identity_generation = i64::try_from(identity_generation).map_err(storage)?;
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let state = tx
+        .query_row(
+            "SELECT d.active_generation, d.building_generation
+             FROM artist_discography_state d
+             JOIN artist_enrichment_state s USING (artist_id)
+             WHERE d.artist_id = ?1 AND d.identity_generation = ?2
+               AND s.generation = ?2 AND d.active_generation > 0",
+            params![artist_id, identity_generation],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?)),
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((catalog_generation, building_generation)) = state else {
+        tx.execute(
+            "DELETE FROM external_artwork_queue WHERE artist_id = ?1",
+            [artist_id],
+        )
+        .map_err(storage)?;
+        tx.execute(
+            "DELETE FROM artist_artwork_queue_state WHERE artist_id = ?1",
+            [artist_id],
+        )
+        .map_err(storage)?;
+        tx.commit().map_err(storage)?;
+        return Ok(ExternalArtworkRefreshPlan {
+            targets: Vec::new(),
+            catalog_pending: false,
+            queue_has_more: false,
+            progress: CoverRefreshProgress::default(),
+        });
+    };
+
+    tx.execute(
+        "DELETE FROM external_artwork_queue
+         WHERE artist_id = ?1
+           AND (identity_generation != ?2 OR catalog_generation != ?3)",
+        params![artist_id, identity_generation, catalog_generation],
+    )
+    .map_err(storage)?;
+    tx.execute(
+        "INSERT INTO artist_artwork_queue_state
+         (artist_id, identity_generation, catalog_generation, cursor_position, updated_at)
+         VALUES (?1, ?2, ?3, -1, ?4)
+         ON CONFLICT (artist_id) DO UPDATE SET
+           cursor_position = CASE
+             WHEN identity_generation != excluded.identity_generation
+               OR catalog_generation != excluded.catalog_generation
+             THEN -1 ELSE cursor_position END,
+           identity_generation = excluded.identity_generation,
+           catalog_generation = excluded.catalog_generation,
+           updated_at = excluded.updated_at",
+        params![artist_id, identity_generation, catalog_generation, now],
+    )
+    .map_err(storage)?;
+
+    let catalog_rows = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT ar.provider_position, ar.release_group_mbid,
+                        (SELECT l.release_mbid
+                         FROM local_release_external_ids l
+                         JOIN releases r ON r.release_id = l.release_id
+                         WHERE r.artist_id = ?1
+                           AND l.release_group_mbid = ar.release_group_mbid
+                           AND l.release_mbid IS NOT NULL
+                         ORDER BY l.release_id LIMIT 1)
+                 FROM external_artist_release_groups ar
+                 WHERE ar.artist_id = ?1 AND ar.identity_generation = ?2
+                   AND ar.catalog_generation = ?3
+                 ORDER BY ar.provider_position, ar.release_group_mbid",
+            )
+            .map_err(storage)?;
+        stmt.query_map(
+            params![artist_id, identity_generation, catalog_generation],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?
+    };
+    let mut active_keys = std::collections::HashSet::new();
+    for (provider_position, release_group_mbid, exact_release_mbid) in catalog_rows {
+        let group_key = format!("release-group:{release_group_mbid}");
+        let catalog_key = exact_release_mbid
+            .as_ref()
+            .map_or_else(|| group_key.clone(), |release| format!("release:{release}"));
+        active_keys.insert(catalog_key.clone());
+        let has_fresh_asset: bool = tx
+            .query_row(
+                "SELECT EXISTS(
+                   SELECT 1 FROM enrichment_assets
+                   WHERE artist_id = ?1 AND provider = 'cover_art_archive'
+                     AND generation = ?2 AND expires_at > ?3
+                     AND catalog_key IN (?4, ?5)
+                 )",
+                params![artist_id, identity_generation, now, catalog_key, group_key],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        let negative = tx
+            .query_row(
+                "SELECT result, expires_at
+                 FROM external_artwork_negative_results
+                 WHERE artist_id = ?1 AND catalog_key = ?2
+                   AND identity_generation = ?3 AND catalog_generation = ?4
+                   AND expires_at > ?5",
+                params![
+                    artist_id,
+                    catalog_key,
+                    identity_generation,
+                    catalog_generation,
+                    now
+                ],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()
+            .map_err(storage)?;
+        let (queue_state, next_attempt_at, last_error) = if has_fresh_asset {
+            ("completed", None, None)
+        } else if let Some((result, expires_at)) = negative {
+            let state = if result == "not_found" {
+                "absent"
+            } else {
+                "blocked"
+            };
+            (state, Some(expires_at), Some(result))
+        } else {
+            ("pending", None, None)
+        };
+        tx.execute(
+            "INSERT INTO external_artwork_queue
+             (artist_id, catalog_key, release_group_mbid, exact_release_mbid,
+              identity_generation, catalog_generation, provider_position, state,
+              attempt_count, next_attempt_at, last_error, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?11)
+             ON CONFLICT (artist_id, catalog_key) DO UPDATE SET
+               release_group_mbid = excluded.release_group_mbid,
+               exact_release_mbid = excluded.exact_release_mbid,
+               identity_generation = excluded.identity_generation,
+               catalog_generation = excluded.catalog_generation,
+               provider_position = excluded.provider_position,
+               state = excluded.state,
+               attempt_count = CASE
+                 WHEN external_artwork_queue.identity_generation = excluded.identity_generation
+                   AND external_artwork_queue.catalog_generation = excluded.catalog_generation
+                 THEN external_artwork_queue.attempt_count ELSE 0 END,
+               next_attempt_at = excluded.next_attempt_at,
+               last_error = COALESCE(excluded.last_error, external_artwork_queue.last_error),
+               updated_at = excluded.updated_at",
+            params![
+                artist_id,
+                catalog_key,
+                release_group_mbid,
+                exact_release_mbid,
+                identity_generation,
+                catalog_generation,
+                provider_position,
+                queue_state,
+                next_attempt_at,
+                last_error,
+                now,
+            ],
+        )
+        .map_err(storage)?;
+    }
+    let existing_keys = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT catalog_key FROM external_artwork_queue
+                 WHERE artist_id = ?1 AND identity_generation = ?2
+                   AND catalog_generation = ?3",
+            )
+            .map_err(storage)?;
+        stmt.query_map(
+            params![artist_id, identity_generation, catalog_generation],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?
+    };
+    for key in existing_keys {
+        if !active_keys.contains(&key) {
+            tx.execute(
+                "DELETE FROM external_artwork_queue WHERE artist_id = ?1 AND catalog_key = ?2",
+                params![artist_id, key],
+            )
+            .map_err(storage)?;
+        }
+    }
+
+    let cursor: i64 = tx
+        .query_row(
+            "SELECT cursor_position FROM artist_artwork_queue_state WHERE artist_id = ?1",
+            [artist_id],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    let claimed = {
+        let mut stmt = tx
+            .prepare(
+                "SELECT catalog_key, release_group_mbid, exact_release_mbid,
+                        provider_position, attempt_count
+                 FROM external_artwork_queue
+                 WHERE artist_id = ?1 AND identity_generation = ?2
+                   AND catalog_generation = ?3
+                   AND (?4 OR state = 'pending'
+                     OR (state IN ('absent', 'blocked') AND next_attempt_at <= ?5))
+                 ORDER BY CASE WHEN provider_position > ?6 THEN 0 ELSE 1 END,
+                          provider_position, catalog_key
+                 LIMIT ?7",
+            )
+            .map_err(storage)?;
+        stmt.query_map(
+            params![
+                artist_id,
+                identity_generation,
+                catalog_generation,
+                force,
+                now,
+                cursor,
+                BATCH_LIMIT
+            ],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, u32>(4)?,
+                ))
+            },
+        )
+        .map_err(storage)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(storage)?
+    };
+    let mut targets = Vec::with_capacity(claimed.len());
+    for (catalog_key, release_group_mbid, exact_release_mbid, position, attempts) in &claimed {
+        tx.execute(
+            "UPDATE external_artwork_queue
+             SET state = 'in_progress', attempt_count = attempt_count + 1,
+                 next_attempt_at = NULL, updated_at = ?3
+             WHERE artist_id = ?1 AND catalog_key = ?2",
+            params![artist_id, catalog_key, now],
+        )
+        .map_err(storage)?;
+        targets.push(ExternalArtworkRefreshTarget {
+            catalog_generation: u64::try_from(catalog_generation).map_err(storage)?,
+            catalog_key: catalog_key.clone(),
+            release_group_mbid: release_group_mbid.clone(),
+            exact_release_mbid: exact_release_mbid.clone(),
+            attempt_count: attempts.saturating_add(1),
+        });
+        let _ = position;
+    }
+    if let Some((_, _, _, position, _)) = claimed.last() {
+        tx.execute(
+            "UPDATE artist_artwork_queue_state
+             SET cursor_position = ?2, updated_at = ?3 WHERE artist_id = ?1",
+            params![artist_id, position, now],
+        )
+        .map_err(storage)?;
+    }
+    let (completed, pending, absent, blocked): (u64, u64, u64, u64) = tx
+        .query_row(
+            "SELECT
+               COALESCE(SUM(state = 'completed'), 0),
+               COALESCE(SUM(state IN ('pending', 'in_progress')), 0),
+               COALESCE(SUM(state = 'absent'), 0),
+               COALESCE(SUM(state = 'blocked'), 0)
+             FROM external_artwork_queue
+             WHERE artist_id = ?1 AND identity_generation = ?2
+               AND catalog_generation = ?3",
+            params![artist_id, identity_generation, catalog_generation],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .map_err(storage)?;
+    let eligible_count: u64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM external_artwork_queue
+             WHERE artist_id = ?1 AND identity_generation = ?2
+               AND catalog_generation = ?3
+               AND (?4 OR state = 'pending'
+                 OR (state IN ('absent', 'blocked') AND next_attempt_at <= ?5))",
+            params![
+                artist_id,
+                identity_generation,
+                catalog_generation,
+                force,
+                now
+            ],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    tx.commit().map_err(storage)?;
+    Ok(ExternalArtworkRefreshPlan {
+        queue_has_more: eligible_count > 0,
+        targets,
+        catalog_pending: building_generation.is_some(),
+        progress: CoverRefreshProgress {
+            completed,
+            pending,
+            absent,
+            temporarily_blocked: blocked,
+        },
     })
 }
 
@@ -1002,14 +1591,9 @@ pub fn discography_refresh_state(
         return Err(invalid("Artist ID must be non-negative"));
     }
     let generation = i64::try_from(identity_generation).map_err(storage)?;
-    crate::database::identity::read(conn, artist_id)?;
-    let current: i64 = conn
-        .query_row(
-            "SELECT generation FROM artist_enrichment_state WHERE artist_id = ?1",
-            [artist_id],
-            |row| row.get(0),
-        )
-        .map_err(storage)?;
+    let current =
+        i64::try_from(crate::database::identity::read_persisted_inner(conn, artist_id)?.generation)
+            .map_err(storage)?;
     if current != generation {
         return Ok(None);
     }
@@ -1421,8 +2005,10 @@ pub fn read_discography(
     }
     // Identity, active generation and its rows belong to one SQLite snapshot;
     // a concurrent final-page publication cannot produce a mixed/empty page.
-    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(storage)?;
-    let identity = crate::database::identity::read_inner(&tx, artist_id)?;
+    // A deferred transaction still gives all queries below one consistent
+    // snapshot, without taking a RESERVED writer lock for a read operation.
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Deferred).map_err(storage)?;
+    let identity = crate::database::identity::read_persisted_inner(&tx, artist_id)?;
     let state = tx
         .query_row(
             "SELECT active_generation, active_remote_next_offset,
@@ -1703,6 +2289,72 @@ mod tests {
         conn
     }
 
+    #[test]
+    fn read_snapshots_do_not_compete_with_an_active_writer() {
+        let unique = format!(
+            "durvald-enrichment-locks-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+        let mut writer = Connection::open(&path).unwrap();
+        writer
+            .execute_batch(
+                "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON;",
+            )
+            .unwrap();
+        crate::database::operations::create_tables(&writer).unwrap();
+        crate::database::migrations::migrate_enrichment(&mut writer).unwrap();
+        writer
+            .execute(
+                "INSERT INTO artists (artist_id, name) VALUES (7, 'An artist')",
+                [],
+            )
+            .unwrap();
+        let catalog_generation = begin_discography_snapshot(&writer, 7, 0).unwrap().unwrap();
+        store_discography_page(
+            &writer,
+            &discography_page(
+                catalog_generation,
+                0,
+                vec![release_group(
+                    "11111111-1111-4111-8111-111111111111",
+                    "Album",
+                    2001,
+                )],
+                None,
+            ),
+        )
+        .unwrap();
+
+        let reader = Connection::open(&path).unwrap();
+        reader
+            .execute_batch("PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON;")
+            .unwrap();
+        let write_tx = Transaction::new_unchecked(&writer, TransactionBehavior::Immediate).unwrap();
+        write_tx
+            .execute(
+                "UPDATE enrichment_settings SET offline = offline WHERE id = 1",
+                [],
+            )
+            .unwrap();
+
+        let plan = external_artwork_refresh_plan(&reader, 7, 0, 150, false).unwrap();
+        assert_eq!(plan.targets.len(), 1);
+        let page = read_discography(&reader, 7, 10, 0, 150).unwrap();
+        assert_eq!(page.items.len(), 1);
+
+        write_tx.rollback().unwrap();
+        drop(reader);
+        drop(writer);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("sqlite-wal"));
+        let _ = std::fs::remove_file(path.with_extension("sqlite-shm"));
+    }
+
     fn snapshot() -> ProfileSnapshot {
         ProfileSnapshot {
             artist_id: 7,
@@ -1812,6 +2464,162 @@ mod tests {
             fetched_at,
             expires_at: fetched_at + 100,
         }
+    }
+
+    #[test]
+    fn negative_artwork_results_expire_and_are_scoped_to_catalog_identity_and_mbid() {
+        use crate::enrichment::models::{
+            ExternalArtworkNegativeResult, ExternalArtworkNegativeSnapshot,
+        };
+
+        let conn = database();
+        let group_id = "11111111-1111-4111-8111-111111111111";
+        let first_release_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+        let second_release_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+        let first_catalog = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        store_discography_page(
+            &conn,
+            &discography_page(
+                first_catalog,
+                0,
+                vec![release_group(group_id, "Album", 2010)],
+                None,
+            ),
+        )
+        .unwrap();
+        let mut negative = ExternalArtworkNegativeSnapshot {
+            artist_id: 7,
+            identity_generation: 0,
+            catalog_generation: first_catalog,
+            release_group_mbid: group_id.into(),
+            exact_release_mbid: None,
+            result: ExternalArtworkNegativeResult::NotFound,
+            last_error: "http_404".into(),
+            recorded_at: 100,
+            expires_at: 1_000,
+        };
+        assert!(store_external_artwork_negative_result(&conn, &negative).unwrap());
+        assert_eq!(
+            conn.query_row(
+                "SELECT result FROM external_artwork_negative_results",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "not_found"
+        );
+        assert!(
+            external_artwork_refresh_plan(&conn, 7, 0, 999, false)
+                .unwrap()
+                .targets
+                .is_empty()
+        );
+        assert_eq!(
+            external_artwork_refresh_plan(&conn, 7, 0, 1_000, false)
+                .unwrap()
+                .targets
+                .len(),
+            1
+        );
+
+        let second_catalog = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        store_discography_page(
+            &conn,
+            &discography_page(
+                second_catalog,
+                0,
+                vec![release_group(group_id, "Album", 2010)],
+                None,
+            ),
+        )
+        .unwrap();
+        let fresh_catalog_plan = external_artwork_refresh_plan(&conn, 7, 0, 200, false).unwrap();
+        assert_eq!(fresh_catalog_plan.targets.len(), 1);
+        assert_eq!(
+            fresh_catalog_plan.targets[0].catalog_generation,
+            second_catalog
+        );
+
+        conn.execute(
+            "INSERT INTO releases
+             (release_id, title, artist_id, artist_name, artwork)
+             VALUES (70, 'Local edition', 7, 'An artist', '')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO local_release_external_ids
+             (release_id, release_mbid, release_group_mbid, origin, updated_at)
+             VALUES (70, ?1, ?2, 'tag', 200)",
+            params![first_release_id, group_id],
+        )
+        .unwrap();
+        negative.catalog_generation = second_catalog;
+        negative.exact_release_mbid = Some(first_release_id.into());
+        negative.result = ExternalArtworkNegativeResult::InvalidImage;
+        negative.last_error = "invalid_image".into();
+        negative.recorded_at = 200;
+        negative.expires_at = 800;
+        assert!(store_external_artwork_negative_result(&conn, &negative).unwrap());
+        assert_eq!(
+            conn.query_row(
+                "SELECT result FROM external_artwork_negative_results
+                 WHERE catalog_key = ?1",
+                [format!("release:{first_release_id}")],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "invalid_image"
+        );
+        assert!(
+            external_artwork_refresh_plan(&conn, 7, 0, 300, false)
+                .unwrap()
+                .targets
+                .is_empty()
+        );
+
+        negative.result = ExternalArtworkNegativeResult::TemporaryFailure;
+        negative.last_error = "timeout".into();
+        negative.recorded_at = 300;
+        negative.expires_at = 350;
+        assert!(store_external_artwork_negative_result(&conn, &negative).unwrap());
+        assert_eq!(
+            conn.query_row(
+                "SELECT result FROM external_artwork_negative_results
+                 WHERE catalog_key = ?1",
+                [format!("release:{first_release_id}")],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "temporary_failure"
+        );
+
+        conn.execute(
+            "UPDATE local_release_external_ids
+             SET release_mbid = ?1, updated_at = 301 WHERE release_id = 70",
+            [second_release_id],
+        )
+        .unwrap();
+        let changed_mbid_plan = external_artwork_refresh_plan(&conn, 7, 0, 301, false).unwrap();
+        assert_eq!(changed_mbid_plan.targets.len(), 1);
+        assert_eq!(
+            changed_mbid_plan.targets[0].exact_release_mbid.as_deref(),
+            Some(second_release_id)
+        );
+
+        conn.execute(
+            "UPDATE artist_enrichment_state SET generation = 1 WHERE artist_id = 7",
+            [],
+        )
+        .unwrap();
+        negative.exact_release_mbid = Some(second_release_id.into());
+        assert!(!store_external_artwork_negative_result(&conn, &negative).unwrap());
+        assert!(
+            external_artwork_refresh_plan(&conn, 7, 1, 301, false)
+                .unwrap()
+                .targets
+                .is_empty()
+        );
     }
 
     #[test]

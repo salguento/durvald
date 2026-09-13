@@ -3,10 +3,8 @@ use crate::metadata::AudioMetadata;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use std::collections::BTreeSet;
 
-fn storage(error: impl std::fmt::Display) -> CoreError {
-    CoreError::Storage {
-        message: format!("Identity storage: {error}"),
-    }
+fn storage(error: impl std::fmt::Display + 'static) -> CoreError {
+    crate::database::storage_error("Identity storage", error)
 }
 
 /// Called inside the scan's transaction. Legacy standalone database utilities
@@ -255,6 +253,76 @@ pub(crate) fn read_inner(conn: &Connection, artist_id: i64) -> CoreResult<Artist
         origin,
         confirmed_musicbrainz_id: confirmed,
         conflicting_tags: conflict,
+    })
+}
+
+/// Reads the last published identity state without repairing or recomputing
+/// it. This is intended for larger read snapshots that must never upgrade to
+/// a SQLite write transaction. Tag changes already invalidate the published
+/// state through database triggers.
+pub(crate) fn read_persisted_inner(
+    conn: &Connection,
+    artist_id: i64,
+) -> CoreResult<ArtistIdentity> {
+    if artist_id < 0 {
+        return Err(CoreError::InvalidInput {
+            message: "Artist ID must be non-negative".into(),
+        });
+    }
+    let row: Option<(String, Option<String>, u64, Option<String>, Option<String>)> = conn
+        .query_row(
+            "SELECT COALESCE(s.identity_status, 'unresolved'), s.musicbrainz_id,
+                    COALESCE(s.generation, 0), s.identity_origin,
+                    s.confirmed_musicbrainz_id
+             FROM artists a LEFT JOIN artist_enrichment_state s USING (artist_id)
+             WHERE a.artist_id = ?1",
+            [artist_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(storage)?;
+    let Some((status, musicbrainz_id, generation, origin, confirmed_musicbrainz_id)) = row else {
+        return Err(CoreError::NotFound {
+            message: format!("Artist {artist_id} not found"),
+        });
+    };
+    let conflicting_tags: bool = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT musicbrainz_id) > 1
+                    OR COALESCE(MAX(uncertain), 0)
+                    OR (?2 IS NOT NULL AND EXISTS(
+                        SELECT 1 FROM artist_tag_evidence
+                        WHERE artist_id = ?1 AND musicbrainz_id != ?2
+                    ))
+             FROM artist_tag_evidence WHERE artist_id = ?1",
+            params![artist_id, confirmed_musicbrainz_id],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    let status = serde_json::from_value(serde_json::Value::String(status)).map_err(storage)?;
+    let origin = origin
+        .map(|origin| match origin.as_str() {
+            "tag" => Ok(ArtistIdentityOrigin::Tag),
+            "manual" => Ok(ArtistIdentityOrigin::Manual),
+            _ => Err(storage("Invalid persisted identity origin")),
+        })
+        .transpose()?;
+    Ok(ArtistIdentity {
+        artist_id,
+        status,
+        musicbrainz_id,
+        generation,
+        origin,
+        confirmed_musicbrainz_id,
+        conflicting_tags,
     })
 }
 

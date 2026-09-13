@@ -108,7 +108,7 @@ impl CoverArtArchive {
             )
             .await?;
         let (width, height) = crate::metadata::validate_artwork_bytes(&bytes)
-            .map_err(|_| TransportError::InvalidJson)?;
+            .map_err(|_| TransportError::InvalidImage)?;
         Ok(DownloadedCoverArt {
             candidate,
             bytes,
@@ -430,7 +430,7 @@ mod tests {
             .unwrap();
         assert!(matches!(
             archive.download(candidate).await,
-            Err(TransportError::InvalidJson)
+            Err(TransportError::InvalidImage)
         ));
 
         let (http, _) = client_for(

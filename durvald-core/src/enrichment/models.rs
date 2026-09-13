@@ -154,14 +154,50 @@ pub struct ExternalArtworkStoreOutcome {
     pub orphaned_path: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExternalArtworkRefreshTarget {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalArtworkNegativeResult {
+    NotFound,
+    InvalidImage,
+    TemporaryFailure,
+}
+
+impl ExternalArtworkNegativeResult {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotFound => "not_found",
+            Self::InvalidImage => "invalid_image",
+            Self::TemporaryFailure => "temporary_failure",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternalArtworkNegativeSnapshot {
+    pub artist_id: i64,
+    pub identity_generation: u64,
+    pub catalog_generation: u64,
     pub release_group_mbid: String,
     pub exact_release_mbid: Option<String>,
+    pub result: ExternalArtworkNegativeResult,
+    /// Sanitized bounded category only; never a URL, payload or raw error.
+    pub last_error: String,
+    pub recorded_at: i64,
+    pub expires_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalArtworkRefreshTarget {
+    pub catalog_generation: u64,
+    pub catalog_key: String,
+    pub release_group_mbid: String,
+    pub exact_release_mbid: Option<String>,
+    pub attempt_count: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExternalArtworkRefreshPlan {
     pub targets: Vec<ExternalArtworkRefreshTarget>,
     pub catalog_pending: bool,
+    pub queue_has_more: bool,
+    pub progress: crate::api::CoverRefreshProgress,
 }

@@ -64,10 +64,16 @@ pub struct EnrichmentService {
         >,
     >,
     pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
+    /// Enrichment snapshots are published in short, serialized database jobs.
+    /// Network and filesystem work always happens before this gate is taken.
+    write_coordinator: Arc<tokio::sync::Mutex<()>>,
     covers_dir: Arc<std::path::PathBuf>,
 }
 
 impl EnrichmentService {
+    const SQLITE_WRITE_ATTEMPTS: u32 = 3;
+    const SQLITE_RETRY_BASE: std::time::Duration = std::time::Duration::from_millis(25);
+
     pub fn new(
         pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
         covers_dir: String,
@@ -81,6 +87,7 @@ impl EnrichmentService {
             cover_art_archive: Arc::new(std::sync::OnceLock::new()),
             flights: Arc::default(),
             refresh_flights: Arc::default(),
+            write_coordinator: Arc::default(),
         }
     }
 
@@ -102,9 +109,84 @@ impl EnrichmentService {
         })?
     }
 
+    /// Runs a single enrichment write while holding the service-wide
+    /// publication gate. The closure must contain database work only.
+    async fn write_database<T, F>(&self, operation: F) -> CoreResult<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
+    {
+        let _publication = self.write_coordinator.lock().await;
+        self.database(operation).await
+    }
+
+    /// Retries an idempotent publication only when SQLite reports BUSY or
+    /// LOCKED. Other storage and domain failures are returned immediately.
+    async fn write_database_idempotent<T, F>(
+        &self,
+        operation_name: &'static str,
+        operation: F,
+    ) -> CoreResult<T>
+    where
+        T: Send + 'static,
+        F: Fn(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
+    {
+        let _publication = self.write_coordinator.lock().await;
+        let pool = self.pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = pool.get().map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })?;
+            let mut waited = std::time::Duration::ZERO;
+            for attempt in 0..Self::SQLITE_WRITE_ATTEMPTS {
+                match operation(&conn) {
+                    Ok(value) => return Ok(value),
+                    Err(error) => {
+                        let Some(extended_code) =
+                            crate::database::sqlite_busy_extended_code(&error)
+                        else {
+                            return Err(error);
+                        };
+                        if attempt + 1 == Self::SQLITE_WRITE_ATTEMPTS {
+                            eprintln!(
+                                "enrichment_sqlite_retry operation={operation_name} extended_code={extended_code} wait_ms={} exhausted=true",
+                                waited.as_millis()
+                            );
+                            return Err(error);
+                        }
+                        let jitter_ms = u64::from(
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .subsec_nanos()
+                                % 26,
+                        );
+                        let delay = Self::SQLITE_RETRY_BASE * (1 << attempt)
+                            + std::time::Duration::from_millis(jitter_ms);
+                        waited += delay;
+                        eprintln!(
+                            "enrichment_sqlite_retry operation={operation_name} extended_code={extended_code} wait_ms={} exhausted=false",
+                            waited.as_millis()
+                        );
+                        std::thread::sleep(delay);
+                    }
+                }
+            }
+            unreachable!()
+        })
+        .await
+        .map_err(|error| CoreError::Storage {
+            message: format!("Enrichment database task failed: {error}"),
+        })?
+    }
+
     pub async fn artist_identity(&self, artist_id: i64) -> CoreResult<ArtistIdentity> {
-        self.database(move |conn| crate::database::identity::read(conn, artist_id))
-            .await
+        // Identity resolution currently repairs its materialized state, so it
+        // participates in the same publication queue as snapshot writes.
+        self.write_database_idempotent("identity.read", move |conn| {
+            crate::database::identity::read(conn, artist_id)
+        })
+        .await
     }
 
     pub async fn confirm_artist_identity(
@@ -112,7 +194,7 @@ impl EnrichmentService {
         artist_id: i64,
         mbid: Option<String>,
     ) -> CoreResult<ArtistIdentity> {
-        self.database(move |conn| crate::database::identity::confirm(conn, artist_id, mbid))
+        self.write_database(move |conn| crate::database::identity::confirm(conn, artist_id, mbid))
             .await
     }
 
@@ -155,7 +237,9 @@ impl EnrichmentService {
         use super::transport::TransportError;
         use crate::database::identity;
         let mut result = self
-            .database(move |conn| identity::candidates(conn, artist_id))
+            .write_database_idempotent("identity.candidates", move |conn| {
+                identity::candidates(conn, artist_id)
+            })
             .await?;
         let settings = self.settings().await?;
         if !settings.enabled || settings.offline {
@@ -191,7 +275,7 @@ impl EnrichmentService {
         match response {
             Ok((candidates, truncated)) => {
                 let stored = self
-                    .database(move |conn| {
+                    .write_database_idempotent("identity.store_candidates", move |conn| {
                         identity::store_candidates(
                             conn,
                             artist_id,
@@ -202,7 +286,9 @@ impl EnrichmentService {
                     })
                     .await?;
                 result = self
-                    .database(move |conn| identity::candidates(conn, artist_id))
+                    .write_database_idempotent("identity.candidates", move |conn| {
+                        identity::candidates(conn, artist_id)
+                    })
                     .await?;
                 if !stored {
                     result.lookup_status = ArtistIdentityLookupStatus::Superseded;
@@ -210,7 +296,9 @@ impl EnrichmentService {
             }
             Err(error) => {
                 result = self
-                    .database(move |conn| identity::candidates(conn, artist_id))
+                    .write_database_idempotent("identity.candidates", move |conn| {
+                        identity::candidates(conn, artist_id)
+                    })
                     .await?;
                 result.lookup_status = ArtistIdentityLookupStatus::Unavailable;
                 match error {
@@ -237,8 +325,10 @@ impl EnrichmentService {
 
     pub async fn configure(&self, settings: EnrichmentSettings) -> CoreResult<()> {
         let settings = normalized_settings(settings)?;
-        self.database(move |conn| enrichment::write_settings(conn, settings))
-            .await
+        self.write_database_idempotent("settings.write", move |conn| {
+            enrichment::write_settings(conn, settings.clone())
+        })
+        .await
     }
 
     pub async fn artist_details(
@@ -286,8 +376,10 @@ impl EnrichmentService {
         artist_id: i64,
         value: ArtistFieldOverride,
     ) -> CoreResult<()> {
-        self.database(move |conn| enrichment::set_override(conn, artist_id, value))
-            .await
+        self.write_database_idempotent("override.set", move |conn| {
+            enrichment::set_override(conn, artist_id, value.clone())
+        })
+        .await
     }
 
     pub async fn clear_artist_override(
@@ -296,8 +388,10 @@ impl EnrichmentService {
         field: ArtistProfileField,
         language: String,
     ) -> CoreResult<()> {
-        self.database(move |conn| enrichment::clear_override(conn, artist_id, field, &language))
-            .await
+        self.write_database_idempotent("override.clear", move |conn| {
+            enrichment::clear_override(conn, artist_id, field, &language)
+        })
+        .await
     }
 
     pub async fn refresh_artist(
@@ -439,6 +533,7 @@ impl EnrichmentService {
                             section: ArtistRefreshSection::Profile,
                             status: outcome.profile_status,
                             retry_after_seconds: None,
+                            cover_progress: None,
                         });
                     }
                     if requested_portrait {
@@ -465,6 +560,7 @@ impl EnrichmentService {
                             section: ArtistRefreshSection::Portrait,
                             status,
                             retry_after_seconds,
+                            cover_progress: None,
                         });
                     }
                 }
@@ -479,6 +575,7 @@ impl EnrichmentService {
                                 section,
                                 status,
                                 retry_after_seconds: retry,
+                                cover_progress: None,
                             });
                         }
                     }
@@ -497,18 +594,34 @@ impl EnrichmentService {
                 section: ArtistRefreshSection::Discography,
                 status,
                 retry_after_seconds,
+                cover_progress: None,
             });
         }
         if requested_covers {
-            let (status, retry_after_seconds) =
+            let (status, retry_after_seconds, cover_progress) =
                 match self.refresh_covers_once(&identity, request.force).await {
-                    Ok(status) => (status, None),
-                    Err(error) => refresh_transport_error(&error),
+                    Ok(outcome) => (outcome.status, None, Some(outcome.progress)),
+                    Err(error) => {
+                        let (status, retry) = refresh_transport_error(&error);
+                        let progress = self
+                            .database({
+                                let generation = identity.generation;
+                                move |conn| {
+                                    enrichment::external_artwork_queue_progress(
+                                        conn, artist_id, generation,
+                                    )
+                                }
+                            })
+                            .await
+                            .ok();
+                        (status, retry, progress)
+                    }
                 };
             results.push(ArtistRefreshSectionResult {
                 section: ArtistRefreshSection::Covers,
                 status,
                 retry_after_seconds,
+                cover_progress,
             });
         }
         Ok(ArtistRefreshResult {
@@ -573,7 +686,7 @@ impl EnrichmentService {
                 }
                 let expires_at = now.saturating_add(DISCOGRAPHY_TTL.as_secs() as i64);
                 let stored = self
-                    .database(move |conn| {
+                    .write_database_idempotent("discography.revalidate", move |conn| {
                         enrichment::revalidate_discography(
                             conn,
                             artist_id,
@@ -595,11 +708,11 @@ impl EnrichmentService {
             ProviderResponse::Modified { value, validators } => (value, validators),
         };
         let catalog_generation = self
-            .database(move |conn| {
+            .write_database_idempotent("discography.begin_snapshot", move |conn| {
                 enrichment::begin_discography_snapshot(conn, artist_id, identity_generation)
             })
             .await
-            .map_err(|_| TransportError::Network)?;
+            .map_err(storage_transport)?;
         let Some(catalog_generation) = catalog_generation else {
             return Ok(ArtistRefreshStatus::Superseded);
         };
@@ -638,12 +751,14 @@ impl EnrichmentService {
                 validators: snapshot_validators.clone(),
             };
             let store_result = self
-                .database(move |conn| enrichment::store_discography_page(conn, &snapshot))
+                .write_database_idempotent("discography.store_page", move |conn| {
+                    enrichment::store_discography_page(conn, &snapshot)
+                })
                 .await;
             let stored = match store_result {
                 Ok(stored) => stored,
                 Err(CoreError::InvalidInput { .. }) => {
-                    self.database(move |conn| {
+                    self.write_database_idempotent("discography.discard_snapshot", move |conn| {
                         enrichment::discard_discography_snapshot(
                             conn,
                             artist_id,
@@ -677,18 +792,17 @@ impl EnrichmentService {
         &self,
         identity: &ArtistIdentity,
         force: bool,
-    ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
-        use super::models::ExternalArtworkSnapshot;
+    ) -> Result<CoverRefreshOutcome, super::transport::TransportError> {
+        use super::models::{ExternalArtworkNegativeResult, ExternalArtworkSnapshot};
         use super::policy::{DISCOGRAPHY_TTL, OPERATION_TIMEOUT};
         use super::transport::TransportError;
 
-        const MAX_COVERS_PER_REFRESH: usize = 10;
         let artist_id = identity.artist_id;
         let identity_generation = identity.generation;
         let now = chrono::Utc::now().timestamp();
         let plan = self
-            .database(move |conn| {
-                enrichment::external_artwork_refresh_plan(
+            .write_database_idempotent("artwork.dequeue_batch", move |conn| {
+                enrichment::dequeue_external_artwork_batch(
                     conn,
                     artist_id,
                     identity_generation,
@@ -697,16 +811,19 @@ impl EnrichmentService {
                 )
             })
             .await
-            .map_err(|_| TransportError::Network)?;
+            .map_err(storage_transport)?;
         if plan.targets.is_empty() {
-            return Ok(if plan.catalog_pending {
+            let status = if plan.catalog_pending || plan.progress.pending > 0 {
                 ArtistRefreshStatus::Partial
             } else {
                 ArtistRefreshStatus::Unchanged
+            };
+            return Ok(CoverRefreshOutcome {
+                status,
+                progress: plan.progress,
             });
         }
-        let has_more = plan.catalog_pending || plan.targets.len() > MAX_COVERS_PER_REFRESH;
-        let target_count = plan.targets.len().min(MAX_COVERS_PER_REFRESH);
+        let has_more = plan.catalog_pending || plan.queue_has_more;
         let cover_art_archive = self
             .cover_art_archive
             .get_or_init(super::providers::cover_art_archive::CoverArtArchive::new)
@@ -715,7 +832,10 @@ impl EnrichmentService {
         let deadline = tokio::time::Instant::now() + OPERATION_TIMEOUT;
         let mut updated = false;
         let mut found = false;
-        for target in plan.targets.into_iter().take(target_count) {
+        let mut recorded_not_found = false;
+        let mut recorded_invalid_image = false;
+        let mut recorded_temporary_failure = false;
+        for target in plan.targets {
             let candidate = match tokio::time::timeout_at(
                 deadline,
                 cover_art_archive.artwork(
@@ -725,11 +845,71 @@ impl EnrichmentService {
             )
             .await
             {
-                Ok(result) => result?,
-                Err(_) if updated || found => return Ok(ArtistRefreshStatus::Partial),
-                Err(_) => return Err(TransportError::Timeout),
+                Ok(Ok(candidate)) => candidate,
+                Ok(Err(error)) => {
+                    if cover_cacheable_failure(&error) {
+                        let transient = error.is_transient();
+                        let retry_after = error.retry_after_seconds();
+                        let stored = self
+                            .record_external_artwork_negative_result(
+                                identity,
+                                &target,
+                                ExternalArtworkNegativeResult::TemporaryFailure,
+                                cover_error_code(&error),
+                                retry_after,
+                                transient,
+                                now,
+                            )
+                            .await?;
+                        if !stored {
+                            return self
+                                .cover_refresh_outcome(identity, ArtistRefreshStatus::Superseded)
+                                .await;
+                        }
+                        recorded_temporary_failure = true;
+                        continue;
+                    }
+                    return Err(error);
+                }
+                Err(_) => {
+                    let stored = self
+                        .record_external_artwork_negative_result(
+                            identity,
+                        &target,
+                        ExternalArtworkNegativeResult::TemporaryFailure,
+                        "timeout".into(),
+                        None,
+                        true,
+                        now,
+                        )
+                        .await?;
+                    if !stored {
+                        return self
+                            .cover_refresh_outcome(identity, ArtistRefreshStatus::Superseded)
+                            .await;
+                    }
+                    recorded_temporary_failure = true;
+                    break;
+                }
             };
             let Some(candidate) = candidate else {
+                let stored = self
+                    .record_external_artwork_negative_result(
+                        identity,
+                        &target,
+                        ExternalArtworkNegativeResult::NotFound,
+                        "http_404".into(),
+                        None,
+                        false,
+                        now,
+                    )
+                    .await?;
+                if !stored {
+                    return self
+                        .cover_refresh_outcome(identity, ArtistRefreshStatus::Superseded)
+                        .await;
+                }
+                recorded_not_found = true;
                 continue;
             };
             found = true;
@@ -739,9 +919,72 @@ impl EnrichmentService {
             )
             .await
             {
-                Ok(result) => result?,
-                Err(_) if updated => return Ok(ArtistRefreshStatus::Partial),
-                Err(_) => return Err(TransportError::Timeout),
+                Ok(Ok(downloaded)) => downloaded,
+                Ok(Err(error @ (TransportError::InvalidImage | TransportError::BodyTooLarge))) => {
+                    let stored = self
+                        .record_external_artwork_negative_result(
+                            identity,
+                            &target,
+                            ExternalArtworkNegativeResult::InvalidImage,
+                            cover_error_code(&error),
+                            None,
+                            false,
+                            now,
+                        )
+                        .await?;
+                    if !stored {
+                        return self
+                            .cover_refresh_outcome(identity, ArtistRefreshStatus::Superseded)
+                            .await;
+                    }
+                    recorded_invalid_image = true;
+                    continue;
+                }
+                Ok(Err(error)) => {
+                    if cover_cacheable_failure(&error) {
+                        let transient = error.is_transient();
+                        let retry_after = error.retry_after_seconds();
+                        let stored = self
+                            .record_external_artwork_negative_result(
+                                identity,
+                                &target,
+                                ExternalArtworkNegativeResult::TemporaryFailure,
+                                cover_error_code(&error),
+                                retry_after,
+                                transient,
+                                now,
+                            )
+                            .await?;
+                        if !stored {
+                            return self
+                                .cover_refresh_outcome(identity, ArtistRefreshStatus::Superseded)
+                                .await;
+                        }
+                        recorded_temporary_failure = true;
+                        continue;
+                    }
+                    return Err(error);
+                }
+                Err(_) => {
+                    let stored = self
+                        .record_external_artwork_negative_result(
+                            identity,
+                        &target,
+                        ExternalArtworkNegativeResult::TemporaryFailure,
+                        "timeout".into(),
+                        None,
+                        true,
+                        now,
+                        )
+                        .await?;
+                    if !stored {
+                        return self
+                            .cover_refresh_outcome(identity, ArtistRefreshStatus::Superseded)
+                            .await;
+                    }
+                    recorded_temporary_failure = true;
+                    break;
+                }
             };
             let covers_dir = self.covers_dir.clone();
             let bytes = downloaded.bytes;
@@ -750,7 +993,7 @@ impl EnrichmentService {
             })
             .await
             .map_err(|_| TransportError::Network)?
-            .map_err(|_| TransportError::InvalidJson)?;
+            .map_err(|_| TransportError::Network)?;
             let snapshot = ExternalArtworkSnapshot {
                 artist_id,
                 identity_generation,
@@ -767,27 +1010,128 @@ impl EnrichmentService {
                 expires_at: now.saturating_add(DISCOGRAPHY_TTL.as_secs() as i64),
             };
             let outcome = self
-                .database(move |conn| enrichment::store_external_artwork(conn, &snapshot))
+                .write_database_idempotent("artwork.store", move |conn| {
+                    enrichment::store_external_artwork(conn, &snapshot)
+                })
                 .await
-                .map_err(|_| TransportError::Network)?;
+                .map_err(storage_transport)?;
             if !outcome.stored {
                 self.remove_unreferenced_managed_path(managed_path).await?;
-                return Ok(ArtistRefreshStatus::Superseded);
+                return self
+                    .cover_refresh_outcome(identity, ArtistRefreshStatus::Superseded)
+                    .await;
+            }
+            let catalog_key = target.catalog_key.clone();
+            let catalog_generation = target.catalog_generation;
+            let completed = self
+                .write_database_idempotent("artwork.complete_queue_target", move |conn| {
+                    enrichment::complete_external_artwork_queue_target(
+                        conn,
+                        artist_id,
+                        identity_generation,
+                        catalog_generation,
+                        &catalog_key,
+                        now,
+                    )
+                })
+                .await
+                .map_err(storage_transport)?;
+            if !completed {
+                return self
+                    .cover_refresh_outcome(identity, ArtistRefreshStatus::Superseded)
+                    .await;
             }
             updated = true;
             if let Some(path) = outcome.orphaned_path {
                 self.remove_unreferenced_managed_path(path.into()).await?;
             }
         }
-        Ok(if has_more {
+        let status = if has_more || recorded_temporary_failure {
             ArtistRefreshStatus::Partial
         } else if updated {
             ArtistRefreshStatus::Updated
+        } else if recorded_invalid_image {
+            ArtistRefreshStatus::Partial
+        } else if recorded_not_found {
+            ArtistRefreshStatus::NotFound
         } else if found {
             ArtistRefreshStatus::Unchanged
         } else {
             ArtistRefreshStatus::NotFound
+        };
+        self.cover_refresh_outcome(identity, status).await
+    }
+
+    async fn cover_refresh_outcome(
+        &self,
+        identity: &ArtistIdentity,
+        status: ArtistRefreshStatus,
+    ) -> Result<CoverRefreshOutcome, super::transport::TransportError> {
+        let artist_id = identity.artist_id;
+        let identity_generation = identity.generation;
+        let progress = self
+            .database(move |conn| {
+                enrichment::external_artwork_queue_progress(conn, artist_id, identity_generation)
+            })
+            .await
+            .map_err(storage_transport)?;
+        Ok(CoverRefreshOutcome { status, progress })
+    }
+
+    async fn record_external_artwork_negative_result(
+        &self,
+        identity: &ArtistIdentity,
+        target: &super::models::ExternalArtworkRefreshTarget,
+        result: super::models::ExternalArtworkNegativeResult,
+        last_error: String,
+        retry_after_seconds: Option<u64>,
+        transient: bool,
+        now: i64,
+    ) -> Result<bool, super::transport::TransportError> {
+        use super::models::ExternalArtworkNegativeSnapshot;
+        use super::policy::{
+            COVER_INVALID_IMAGE_TTL, COVER_NOT_FOUND_TTL, COVER_TRANSIENT_FAILURE_TTL,
+        };
+        use super::transport::TransportError;
+
+        let ttl = match result {
+            super::models::ExternalArtworkNegativeResult::NotFound => COVER_NOT_FOUND_TTL,
+            super::models::ExternalArtworkNegativeResult::InvalidImage => COVER_INVALID_IMAGE_TTL,
+            super::models::ExternalArtworkNegativeResult::TemporaryFailure if transient => {
+                let exponent = target.attempt_count.saturating_sub(1).min(5);
+                let jitter = std::time::Duration::from_secs(u64::from(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .subsec_nanos()
+                        % 61,
+                ));
+                let calculated = (COVER_TRANSIENT_FAILURE_TTL * (1 << exponent) + jitter)
+                    .min(std::time::Duration::from_secs(6 * 60 * 60));
+                calculated.max(std::time::Duration::from_secs(
+                    retry_after_seconds.unwrap_or_default(),
+                ))
+            }
+            super::models::ExternalArtworkNegativeResult::TemporaryFailure => {
+                COVER_INVALID_IMAGE_TTL
+            }
+        };
+        let snapshot = ExternalArtworkNegativeSnapshot {
+            artist_id: identity.artist_id,
+            identity_generation: identity.generation,
+            catalog_generation: target.catalog_generation,
+            release_group_mbid: target.release_group_mbid.clone(),
+            exact_release_mbid: target.exact_release_mbid.clone(),
+            result,
+            last_error,
+            recorded_at: now,
+            expires_at: now.saturating_add(ttl.as_secs() as i64),
+        };
+        self.write_database_idempotent("artwork.store_negative", move |conn| {
+            enrichment::store_external_artwork_negative_result(conn, &snapshot)
         })
+        .await
+        .map_err(storage_transport)
     }
 
     async fn remove_unreferenced_managed_path(
@@ -799,7 +1143,7 @@ impl EnrichmentService {
         let referenced = self
             .database(move |conn| enrichment::path_is_referenced(conn, &path_text))
             .await
-            .map_err(|_| TransportError::Network)?;
+            .map_err(storage_transport)?;
         if !referenced {
             let covers_dir = self.covers_dir.clone();
             tokio::task::spawn_blocking(move || {
@@ -848,7 +1192,7 @@ impl EnrichmentService {
             };
             let stored_qid = qid.clone();
             let stored = self
-                .database(move |conn| {
+                .write_database_idempotent("external_id.store", move |conn| {
                     enrichment::store_external_id(
                         conn,
                         artist_id,
@@ -886,7 +1230,7 @@ impl EnrichmentService {
         let expires_at = now.saturating_add(PROFILE_TTL.as_secs() as i64);
         if let super::models::ProviderResponse::NotModified { validators } = response {
             let touched = self
-                .database(move |conn| {
+                .write_database_idempotent("profile.touch", move |conn| {
                     enrichment::touch_profile(
                         conn,
                         artist_id,
@@ -975,7 +1319,9 @@ impl EnrichmentService {
             validators,
         };
         let stored = self
-            .database(move |conn| enrichment::store_profile(conn, &snapshot))
+            .write_database_idempotent("profile.store", move |conn| {
+                enrichment::store_profile(conn, &snapshot)
+            })
             .await
             .map_err(|_| TransportError::Network)?;
         if !stored {
@@ -988,7 +1334,7 @@ impl EnrichmentService {
             .as_ref()
             .and_then(|value| serde_json::to_string(value).ok());
         let stored_article = self
-            .database(move |conn| {
+            .write_database_idempotent("external_id.replace_wikipedia", move |conn| {
                 enrichment::replace_external_id(
                     conn,
                     artist_id,
@@ -1003,7 +1349,7 @@ impl EnrichmentService {
             .map_err(|_| TransportError::Network)?;
         let stored_commons = commons_file.clone();
         let targets_current = self
-            .database(move |conn| {
+            .write_database_idempotent("external_id.replace_commons", move |conn| {
                 enrichment::replace_external_id(
                     conn,
                     artist_id,
@@ -1087,7 +1433,9 @@ impl EnrichmentService {
                 };
                 Ok(
                     if self
-                        .database(move |conn| enrichment::store_profile(conn, &snapshot))
+                        .write_database_idempotent("profile.store", move |conn| {
+                            enrichment::store_profile(conn, &snapshot)
+                        })
                         .await
                         .map_err(|_| TransportError::Network)?
                     {
@@ -1099,7 +1447,7 @@ impl EnrichmentService {
             }
             ProviderResponse::NotModified { validators } => Ok(
                 if self
-                    .database(move |conn| {
+                    .write_database_idempotent("profile.touch", move |conn| {
                         enrichment::touch_profile(
                             conn,
                             artist_id,
@@ -1165,7 +1513,9 @@ impl EnrichmentService {
             expires_at: now.saturating_add(PROFILE_TTL.as_secs() as i64),
         };
         if self
-            .database(move |conn| enrichment::store_asset(conn, &snapshot))
+            .write_database_idempotent("portrait.store", move |conn| {
+                enrichment::store_asset(conn, &snapshot)
+            })
             .await
             .map_err(|_| TransportError::Network)?
         {
@@ -1211,7 +1561,12 @@ impl EnrichmentService {
     }
 
     async fn cleanup_stale_assets(&self) -> CoreResult<()> {
-        let paths = self.database(enrichment::collect_stale_asset_paths).await?;
+        let paths = self
+            .write_database_idempotent(
+                "artwork.cleanup_stale",
+                enrichment::collect_stale_asset_paths,
+            )
+            .await?;
         if paths.is_empty() {
             return Ok(());
         }
@@ -1234,6 +1589,11 @@ struct ProfileRefreshOutcome {
     commons_file: Option<String>,
 }
 
+struct CoverRefreshOutcome {
+    status: ArtistRefreshStatus,
+    progress: CoverRefreshProgress,
+}
+
 fn refresh_result(
     artist_id: i64,
     generation: u64,
@@ -1250,6 +1610,7 @@ fn refresh_result(
                 section,
                 status,
                 retry_after_seconds,
+                cover_progress: None,
             })
             .collect(),
     }
@@ -1269,6 +1630,45 @@ fn refresh_transport_error(
             ..
         } => (ArtistRefreshStatus::Unavailable, *retry_after_seconds),
         _ => (ArtistRefreshStatus::Unavailable, None),
+    }
+}
+
+fn storage_transport(error: CoreError) -> super::transport::TransportError {
+    super::transport::TransportError::Storage {
+        extended_code: crate::database::sqlite_busy_extended_code(&error),
+    }
+}
+
+fn cover_cacheable_failure(error: &super::transport::TransportError) -> bool {
+    use super::transport::TransportError;
+    !matches!(
+        error,
+        TransportError::Configuration
+            | TransportError::InvalidRequest
+            | TransportError::Storage { .. }
+            | TransportError::InvalidImage
+    )
+}
+
+fn cover_error_code(error: &super::transport::TransportError) -> String {
+    use super::transport::TransportError;
+    match error {
+        TransportError::Configuration => "configuration".into(),
+        TransportError::InvalidRequest => "invalid_request".into(),
+        TransportError::Timeout => "timeout".into(),
+        TransportError::Connection => "connection".into(),
+        TransportError::Network => "network".into(),
+        TransportError::BodyTooLarge => "image_too_large".into(),
+        TransportError::InvalidJson => "invalid_json".into(),
+        TransportError::InvalidImage => "invalid_image".into(),
+        TransportError::HttpStatus { status, .. } => format!("http_{status}"),
+        TransportError::RateLimited { .. } => "http_429".into(),
+        TransportError::Storage {
+            extended_code: Some(code),
+        } => format!("sqlite_{code}"),
+        TransportError::Storage {
+            extended_code: None,
+        } => "sqlite".into(),
     }
 }
 
@@ -1307,6 +1707,139 @@ mod tests {
                 .to_string_lossy()
                 .into_owned(),
         )
+    }
+
+    #[tokio::test]
+    async fn enrichment_writes_hold_one_publication_gate() {
+        let service = service();
+        let worker = service.clone();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let write = tokio::spawn(async move {
+            worker
+                .write_database(move |_| {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(())
+                })
+                .await
+        });
+
+        entered_rx.await.unwrap();
+        assert!(service.write_coordinator.try_lock().is_err());
+        release_tx.send(()).unwrap();
+        write.await.unwrap().unwrap();
+        assert!(service.write_coordinator.try_lock().is_ok());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn idempotent_writes_retry_only_sqlite_lock_errors_with_a_limit() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let unique = format!(
+            "durvald-enrichment-retry-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+        let mut writer = rusqlite::Connection::open(&path).unwrap();
+        writer
+            .execute_batch(
+                "PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON;",
+            )
+            .unwrap();
+        crate::database::operations::create_tables(&writer).unwrap();
+        crate::database::migrations::migrate_enrichment(&mut writer).unwrap();
+        let manager = r2d2_sqlite::SqliteConnectionManager::file(&path).with_init(|conn| {
+            conn.execute_batch("PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON;")
+        });
+        let service = EnrichmentService::new(
+            Arc::new(r2d2::Pool::builder().max_size(1).build(manager).unwrap()),
+            std::env::temp_dir().to_string_lossy().into_owned(),
+        );
+        let write_tx =
+            rusqlite::Transaction::new_unchecked(&writer, rusqlite::TransactionBehavior::Immediate)
+                .unwrap();
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let counted = attempts.clone();
+        let started = std::time::Instant::now();
+        let error = service
+            .write_database_idempotent("test.locked_write", move |conn| {
+                counted.fetch_add(1, Ordering::SeqCst);
+                conn.execute(
+                    "UPDATE enrichment_settings SET offline = offline WHERE id = 1",
+                    [],
+                )
+                .map(|_| ())
+                .map_err(|error| crate::database::storage_error("Test storage", error))
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            EnrichmentService::SQLITE_WRITE_ATTEMPTS as usize
+        );
+        assert!(started.elapsed() >= EnrichmentService::SQLITE_RETRY_BASE * 3);
+        assert!(crate::database::sqlite_busy_extended_code(&error).is_some());
+        write_tx.rollback().unwrap();
+
+        let transient_tx =
+            rusqlite::Transaction::new_unchecked(&writer, rusqlite::TransactionBehavior::Immediate)
+                .unwrap();
+        let transient_service = service.clone();
+        let transient_attempts = Arc::new(AtomicUsize::new(0));
+        let transient_failures = Arc::new(AtomicUsize::new(0));
+        let counted = transient_attempts.clone();
+        let failed = transient_failures.clone();
+        let transient = tokio::spawn(async move {
+            transient_service
+                .write_database_idempotent("test.transient_lock", move |conn| {
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    conn.execute(
+                        "UPDATE enrichment_settings SET offline = offline WHERE id = 1",
+                        [],
+                    )
+                    .map(|_| ())
+                    .map_err(|error| {
+                        failed.fetch_add(1, Ordering::SeqCst);
+                        crate::database::storage_error("Test storage", error)
+                    })
+                })
+                .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            while transient_failures.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        transient_tx.rollback().unwrap();
+        transient.await.unwrap().unwrap();
+        assert!(transient_attempts.load(Ordering::SeqCst) >= 2);
+
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let counted = attempts.clone();
+        let error = service
+            .write_database_idempotent("test.permanent_error", move |_| {
+                counted.fetch_add(1, Ordering::SeqCst);
+                Err::<(), _>(CoreError::InvalidInput {
+                    message: "permanent".into(),
+                })
+            })
+            .await
+            .unwrap_err();
+        assert!(matches!(error, CoreError::InvalidInput { .. }));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+
+        drop(service);
+        drop(writer);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("sqlite-wal"));
+        let _ = std::fs::remove_file(path.with_extension("sqlite-shm"));
     }
 
     /// Real loopback HTTP plus SQLite: gates hold no database connection, and
@@ -1584,18 +2117,28 @@ mod tests {
             .confirm_artist_identity(1, Some("11111111-1111-4111-8111-111111111111".into()))
             .await
             .unwrap();
-        let group_id = "22222222-2222-4222-8222-222222222222";
+        let group_without_cover = "22222222-2222-4222-8222-222222222222";
+        let group_with_cover = "44444444-4444-4444-8444-444444444444";
         let source_release = "33333333-3333-4333-8333-333333333333";
         let discography = serde_json::json!({
-            "release-group-count": 1,
+            "release-group-count": 2,
             "release-group-offset": 0,
-            "release-groups": [{
-                "id": group_id,
-                "title": "Remote album",
-                "primary-type": "Album",
-                "secondary-types": [],
-                "first-release-date": "2024"
-            }]
+            "release-groups": [
+                {
+                    "id": group_without_cover,
+                    "title": "Remote album without cover",
+                    "primary-type": "Album",
+                    "secondary-types": [],
+                    "first-release-date": "2023"
+                },
+                {
+                    "id": group_with_cover,
+                    "title": "Remote album with cover",
+                    "primary-type": "Album",
+                    "secondary-types": [],
+                    "first-release-date": "2024"
+                }
+            ]
         })
         .to_string();
         let (musicbrainz, musicbrainz_mock) = client(vec![response(
@@ -1626,6 +2169,7 @@ mod tests {
         let (cover_art, cover_art_mock) = client_for(
             "https://coverartarchive.org/",
             vec![
+                response(404, &[], &[""], None),
                 response(200, &[], &[metadata.as_str()], None),
                 response_bytes(200, &[], &[&png], Some(png.len() as u64)),
             ],
@@ -1653,7 +2197,8 @@ mod tests {
             vec![ArtistRefreshStatus::Updated, ArtistRefreshStatus::Updated]
         );
         let stored = service.artist_discography(1, 10, 0).await.unwrap();
-        let artwork = stored.items[0].artwork.as_ref().unwrap();
+        assert!(stored.items[0].artwork.is_none());
+        let artwork = stored.items[1].artwork.as_ref().unwrap();
         assert_eq!(artwork.scope, ExternalArtworkScope::ReleaseGroup);
         assert!(std::path::Path::new(&artwork.image.managed_path).is_file());
 
@@ -1665,7 +2210,20 @@ mod tests {
                 .all(|result| result.status == ArtistRefreshStatus::Unchanged)
         );
         assert_eq!(musicbrainz_mock.calls(), 1);
-        assert_eq!(cover_art_mock.calls(), 2);
+        assert_eq!(cover_art_mock.calls(), 3);
+        let negative_result = service
+            .database(move |conn| {
+                conn.query_row(
+                    "SELECT result FROM external_artwork_negative_results
+                     WHERE artist_id = 1 AND release_group_mbid = ?1",
+                    [group_without_cover],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|error| crate::database::storage_error("test", error))
+            })
+            .await
+            .unwrap();
+        assert_eq!(negative_result, "not_found");
     }
 
     #[tokio::test(start_paused = true)]

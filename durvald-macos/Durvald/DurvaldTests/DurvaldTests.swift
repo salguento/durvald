@@ -304,6 +304,36 @@ final class DurvaldCoreStoreTests: XCTestCase {
 }
 
 final class LibraryNavigationHistoryTests: XCTestCase {
+    func testExternalAlbumParticipatesInBackAndForwardHistory() {
+        let artist = Artist(id: 7, name: "Artista")
+        let release = ExternalReleaseGroup(
+            musicbrainzId: "11111111-1111-4111-8111-111111111111",
+            title: "Lançamento remoto",
+            primaryType: "Album",
+            secondaryTypes: [],
+            firstReleaseDate: nil,
+            localReleaseId: nil,
+            artwork: nil,
+            attribution: EnrichmentAttribution(
+                sourceUrl: "https://musicbrainz.org/release-group/11111111-1111-4111-8111-111111111111",
+                author: nil,
+                licenseName: nil,
+                licenseUrl: nil,
+                revision: nil
+            )
+        )
+        var history = LibraryNavigationHistory()
+
+        history.navigate(to: .artist(artist))
+        history.navigate(to: .externalAlbum(release, artist))
+        XCTAssertEqual(history.current, .albums)
+        XCTAssertEqual(history.currentRoute, .externalAlbum(release, artist))
+        history.goBack()
+        XCTAssertEqual(history.currentRoute, .artist(artist))
+        history.goForward()
+        XCTAssertEqual(history.currentRoute, .externalAlbum(release, artist))
+    }
+
     @MainActor
     func testDetailsPreserveTheirIdentityWhenGoingBackAndForward() {
         let album = Fixtures.release
