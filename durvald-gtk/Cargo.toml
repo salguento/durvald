@@ -1,0 +1,12 @@
+[package]
+name = "durvald-gtk"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Linux GTK4 frontend for Durvald"
+license = "MIT"
+
+[dependencies]
+durvald-core = { path = "../durvald-core" }
+gtk = { package = "gtk4", version = "0.10" }
+tokio = { version = "1.48", features = ["rt-multi-thread", "sync"] }

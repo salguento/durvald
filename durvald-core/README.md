@@ -2,8 +2,9 @@
 
 `durvald-core` is the UI-independent Rust engine for Durvald. It owns library
 indexing, SQLite persistence, local playback, playback history, settings, and
-Last.fm integration. SwiftUI, GTK, and Windows clients consume the same UniFFI
-surface; no UI policy belongs in this crate.
+Last.fm integration. Native Rust clients such as GTK consume the public Rust API
+directly; SwiftUI and other FFI clients use its UniFFI surface. No UI policy
+belongs in this crate. See [the Linux frontend](../durvald-gtk/README.md).
 
 ## Core contracts
 
