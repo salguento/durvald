@@ -514,9 +514,7 @@ impl EnrichmentHttpClient {
             let mut response = match self.send(request).await {
                 Ok(response) => response,
                 Err(error) => {
-                    if attempt < 2
-                        && error.is_retryable_io()
-                    {
+                    if attempt < 2 && error.is_retryable_io() {
                         self.backoff(attempt).await;
                         attempt += 1;
                         continue;

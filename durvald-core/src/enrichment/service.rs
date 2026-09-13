@@ -601,13 +601,12 @@ impl EnrichmentService {
         let mut results = Vec::new();
         if requested_profile || requested_portrait {
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-            let profile_result =
-                tokio::time::timeout_at(
-                    deadline,
-                    self.refresh_profile_once(&identity, &language, request.force),
-                )
-                    .await
-                    .unwrap_or(Err(super::transport::TransportError::Timeout));
+            let profile_result = tokio::time::timeout_at(
+                deadline,
+                self.refresh_profile_once(&identity, &language, request.force),
+            )
+            .await
+            .unwrap_or(Err(super::transport::TransportError::Timeout));
             match profile_result {
                 Ok(outcome) => {
                     if requested_profile {
@@ -967,12 +966,12 @@ impl EnrichmentService {
                     let stored = self
                         .record_external_artwork_negative_result(
                             identity,
-                        &target,
-                        ExternalArtworkNegativeResult::TemporaryFailure,
-                        "timeout".into(),
-                        None,
-                        true,
-                        now,
+                            &target,
+                            ExternalArtworkNegativeResult::TemporaryFailure,
+                            "timeout".into(),
+                            None,
+                            true,
+                            now,
                         )
                         .await?;
                     if !stored {
@@ -1061,12 +1060,12 @@ impl EnrichmentService {
                     let stored = self
                         .record_external_artwork_negative_result(
                             identity,
-                        &target,
-                        ExternalArtworkNegativeResult::TemporaryFailure,
-                        "timeout".into(),
-                        None,
-                        true,
-                        now,
+                            &target,
+                            ExternalArtworkNegativeResult::TemporaryFailure,
+                            "timeout".into(),
+                            None,
+                            true,
+                            now,
                         )
                         .await?;
                     if !stored {
@@ -1815,9 +1814,7 @@ fn provider_resource_key(parts: &[&str]) -> String {
     format!("{:x}", digest.finalize())
 }
 
-fn permanent_failure_ttl(
-    error: &super::transport::TransportError,
-) -> Option<std::time::Duration> {
+fn permanent_failure_ttl(error: &super::transport::TransportError) -> Option<std::time::Duration> {
     use super::policy::{NOT_FOUND_TTL, PERMANENT_FAILURE_TTL};
     use super::transport::TransportError;
     match error {

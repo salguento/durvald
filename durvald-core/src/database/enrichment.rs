@@ -3597,14 +3597,8 @@ mod tests {
         );
         failure.identity_generation = 3;
         assert!(store_provider_failure(&conn, &failure).unwrap());
-        clear_provider_failure(
-            &conn,
-            7,
-            3,
-            EnrichmentProvider::MusicBrainz,
-            "discography",
-        )
-        .unwrap();
+        clear_provider_failure(&conn, 7, 3, EnrichmentProvider::MusicBrainz, "discography")
+            .unwrap();
         assert!(
             active_provider_failure(
                 &conn,
