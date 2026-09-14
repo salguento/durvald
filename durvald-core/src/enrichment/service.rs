@@ -25,6 +25,36 @@ struct RefreshFlight {
     receiver: tokio::sync::watch::Receiver<Option<RefreshResult>>,
     abort: tokio::task::AbortHandle,
 }
+
+fn format_partial_date(date: &ArtistPartialDate) -> String {
+    match (date.month, date.day) {
+        (Some(month), Some(day)) => format!("{:04}-{month:02}-{day:02}", date.year),
+        (Some(month), None) => format!("{:04}-{month:02}", date.year),
+        _ => format!("{:04}", date.year),
+    }
+}
+
+fn release_group_metadata_snapshot(
+    context: &super::models::LocalReleaseMatchContext,
+    group: &super::models::ReleaseGroupSnapshot,
+    identity_generation: u64,
+    fetched_at: i64,
+) -> super::models::MatchedReleaseMetadata {
+    super::models::MatchedReleaseMetadata {
+        release_id: context.release_id,
+        artist_id: context.artist_id,
+        identity_generation,
+        release_group_mbid: group.musicbrainz_id.clone(),
+        release_mbid: context.tagged_release_mbid.clone(),
+        release_date: group.first_release_date.as_ref().map(format_partial_date),
+        genres: group.genres.clone(),
+        composers: group.composers.clone(),
+        producers: group.producers.clone(),
+        source_url: group.attribution.source_url.clone(),
+        fetched_at,
+    }
+}
+
 impl Drop for RefreshFlight {
     fn drop(&mut self) {
         self.abort.abort();
@@ -449,6 +479,40 @@ impl EnrichmentService {
         .await
     }
 
+    /// Applies unambiguous release-group metadata already present in the local
+    /// MusicBrainz catalog. This operation is network-free and remains useful
+    /// while enrichment is offline.
+    pub async fn sync_local_release_metadata(&self, artist_id: i64) -> CoreResult<()> {
+        if artist_id < 0 {
+            return Err(CoreError::InvalidInput {
+                message: "Artist ID must be non-negative".into(),
+            });
+        }
+        let identity = self.artist_identity(artist_id).await?;
+        if identity.status != ArtistIdentityStatus::Resolved || identity.conflicting_tags {
+            return Ok(());
+        }
+        let identity_generation = identity.generation;
+        let contexts = self
+            .database(move |conn| {
+                enrichment::local_release_match_contexts(conn, artist_id, identity_generation, true)
+            })
+            .await?;
+        let now = chrono::Utc::now().timestamp();
+        for context in contexts {
+            let [group] = context.candidate_release_groups.as_slice() else {
+                continue;
+            };
+            let snapshot =
+                release_group_metadata_snapshot(&context, group, identity_generation, now);
+            self.write_database_idempotent("release_metadata.store_cached_group", move |conn| {
+                enrichment::store_matched_release_metadata(conn, &snapshot)
+            })
+            .await?;
+        }
+        Ok(())
+    }
+
     pub async fn set_artist_override(
         &self,
         artist_id: i64,
@@ -745,6 +809,7 @@ impl EnrichmentService {
                 .active_expires_at
                 .is_some_and(|expires_at| now < expires_at)
         {
+            self.refresh_local_release_metadata(identity, false).await?;
             return Ok(ArtistRefreshStatus::Unchanged);
         }
         let start_offset = state.building.as_ref().map_or(0, |build| build.next_offset);
@@ -790,6 +855,9 @@ impl EnrichmentService {
                     })
                     .await
                     .map_err(storage_transport)?;
+                if stored {
+                    self.refresh_local_release_metadata(identity, force).await?;
+                }
                 return Ok(if stored {
                     ArtistRefreshStatus::Unchanged
                 } else {
@@ -868,6 +936,9 @@ impl EnrichmentService {
             }
             stored_any = true;
         }
+        if remote_exhausted {
+            self.refresh_local_release_metadata(identity, force).await?;
+        }
         Ok(if !remote_exhausted {
             ArtistRefreshStatus::Partial
         } else if stored_any {
@@ -875,6 +946,98 @@ impl EnrichmentService {
         } else {
             ArtistRefreshStatus::Unchanged
         })
+    }
+
+    async fn refresh_local_release_metadata(
+        &self,
+        identity: &ArtistIdentity,
+        force: bool,
+    ) -> Result<(), super::transport::TransportError> {
+        use super::transport::TransportError;
+        const MAX_LOCAL_RELEASES_PER_REFRESH: usize = 10;
+
+        let artist_id = identity.artist_id;
+        let identity_generation = identity.generation;
+        if force {
+            self.write_database_idempotent("release_metadata.reset_attempts", move |conn| {
+                enrichment::reset_local_release_metadata_attempts(conn, artist_id)
+            })
+            .await
+            .map_err(storage_transport)?;
+        }
+        let contexts = self
+            .database(move |conn| {
+                enrichment::local_release_match_contexts(
+                    conn,
+                    artist_id,
+                    identity_generation,
+                    false,
+                )
+            })
+            .await
+            .map_err(storage_transport)?;
+        let musicbrainz = self
+            .musicbrainz
+            .get_or_init(super::providers::musicbrainz::MusicBrainz::new)
+            .as_ref()
+            .map_err(|_| TransportError::Configuration)?;
+        let now = chrono::Utc::now().timestamp();
+        for context in contexts.into_iter().take(MAX_LOCAL_RELEASES_PER_REFRESH) {
+            if let [group] = context.candidate_release_groups.as_slice() {
+                let snapshot =
+                    release_group_metadata_snapshot(&context, group, identity_generation, now);
+                self.write_database_idempotent("release_metadata.store_group", move |conn| {
+                    enrichment::store_matched_release_metadata(conn, &snapshot)
+                })
+                .await
+                .map_err(storage_transport)?;
+            }
+            let mut matches = Vec::new();
+            let mut request_failed = false;
+            for group in &context.candidate_release_groups {
+                match musicbrainz
+                    .match_local_release(&context, &group.musicbrainz_id, identity_generation, now)
+                    .await
+                {
+                    Ok(Some(metadata)) => matches.push(metadata),
+                    Ok(None) => {}
+                    Err(
+                        TransportError::RateLimited { .. }
+                        | TransportError::HttpStatus { status: 503, .. }
+                        | TransportError::Timeout
+                        | TransportError::Network,
+                    ) => {
+                        request_failed = true;
+                        break;
+                    }
+                    Err(_) => {}
+                }
+            }
+            if request_failed {
+                break;
+            }
+            if matches.len() == 1 {
+                let snapshot = matches.pop().unwrap();
+                self.write_database_idempotent("release_metadata.store", move |conn| {
+                    enrichment::store_matched_release_metadata(conn, &snapshot)
+                })
+                .await
+                .map_err(storage_transport)?;
+            }
+            let release_id = context.release_id;
+            self.write_database_idempotent("release_metadata.mark_attempt", move |conn| {
+                enrichment::mark_local_release_metadata_attempted(
+                    conn,
+                    release_id,
+                    artist_id,
+                    identity_generation,
+                    now,
+                )
+            })
+            .await
+            .map_err(storage_transport)?;
+        }
+        Ok(())
     }
 
     /// Refreshes a bounded set of missing or expired covers from the active

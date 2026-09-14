@@ -53,7 +53,49 @@ pub struct ReleaseGroupSnapshot {
     pub primary_type: Option<String>,
     pub secondary_types: Vec<String>,
     pub first_release_date: Option<ArtistPartialDate>,
+    #[serde(default)]
+    pub genres: Vec<String>,
+    #[serde(default)]
+    pub composers: Vec<String>,
+    #[serde(default)]
+    pub producers: Vec<String>,
     pub attribution: EnrichmentAttribution,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalReleaseTrackContext {
+    pub title: String,
+    pub disc_number: u8,
+    pub track_number: u8,
+    pub duration_seconds: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalReleaseMatchContext {
+    pub release_id: i64,
+    pub artist_id: i64,
+    pub artist_mbid: String,
+    pub artist_name: String,
+    pub title: String,
+    pub tagged_release_mbid: Option<String>,
+    pub tagged_release_group_mbid: Option<String>,
+    pub candidate_release_groups: Vec<ReleaseGroupSnapshot>,
+    pub tracks: Vec<LocalReleaseTrackContext>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchedReleaseMetadata {
+    pub release_id: i64,
+    pub artist_id: i64,
+    pub identity_generation: u64,
+    pub release_group_mbid: String,
+    pub release_mbid: Option<String>,
+    pub release_date: Option<String>,
+    pub genres: Vec<String>,
+    pub composers: Vec<String>,
+    pub producers: Vec<String>,
+    pub source_url: String,
+    pub fetched_at: i64,
 }
 
 #[derive(Debug, Clone)]

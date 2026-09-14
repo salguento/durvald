@@ -920,6 +920,12 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func stop() async throws
 
     /**
+     * Applies metadata from the artist's cached MusicBrainz catalog to local
+     * releases and returns the refreshed local collection without network I/O.
+     */
+    func syncArtistReleaseMetadata(artistId: Int64) async throws  -> [Release]
+
+    /**
      * Gets a track by ID.
      */
     func track(trackId: Int64) async throws  -> Track
@@ -2476,6 +2482,27 @@ open func stop()async throws  {
 }
 
     /**
+     * Applies metadata from the artist's cached MusicBrainz catalog to local
+     * releases and returns the refreshed local collection without network I/O.
+     */
+open func syncArtistReleaseMetadata(artistId: Int64)async throws  -> [Release] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_sync_artist_release_metadata(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(artistId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeRelease.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
      * Gets a track by ID.
      */
 open func track(trackId: Int64)async throws  -> Track {
@@ -3913,6 +3940,7 @@ public struct AudioMetadata {
     public var durationSeconds: Double
     public var bitrate: UInt32?
     public var sampleRate: UInt32?
+    public var bitDepth: UInt8?
     public var channels: UInt8?
     public var coverArtworkId: String?
     public var allFields: [KeyValuePair]
@@ -3920,7 +3948,7 @@ public struct AudioMetadata {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(title: String?, artist: String?, release: String?, genre: String?, year: UInt32?, track: UInt32?, disc: UInt32?, durationSeconds: Double, bitrate: UInt32?, sampleRate: UInt32?, channels: UInt8?, coverArtworkId: String?, allFields: [KeyValuePair], filePath: String) {
+    public init(title: String?, artist: String?, release: String?, genre: String?, year: UInt32?, track: UInt32?, disc: UInt32?, durationSeconds: Double, bitrate: UInt32?, sampleRate: UInt32?, bitDepth: UInt8?, channels: UInt8?, coverArtworkId: String?, allFields: [KeyValuePair], filePath: String) {
         self.title = title
         self.artist = artist
         self.release = release
@@ -3931,6 +3959,7 @@ public struct AudioMetadata {
         self.durationSeconds = durationSeconds
         self.bitrate = bitrate
         self.sampleRate = sampleRate
+        self.bitDepth = bitDepth
         self.channels = channels
         self.coverArtworkId = coverArtworkId
         self.allFields = allFields
@@ -3972,6 +4001,9 @@ extension AudioMetadata: Equatable, Hashable {
         if lhs.sampleRate != rhs.sampleRate {
             return false
         }
+        if lhs.bitDepth != rhs.bitDepth {
+            return false
+        }
         if lhs.channels != rhs.channels {
             return false
         }
@@ -3998,6 +4030,7 @@ extension AudioMetadata: Equatable, Hashable {
         hasher.combine(durationSeconds)
         hasher.combine(bitrate)
         hasher.combine(sampleRate)
+        hasher.combine(bitDepth)
         hasher.combine(channels)
         hasher.combine(coverArtworkId)
         hasher.combine(allFields)
@@ -4020,6 +4053,7 @@ public struct FfiConverterTypeAudioMetadata: FfiConverterRustBuffer {
                 durationSeconds: FfiConverterDouble.read(from: &buf),
                 bitrate: FfiConverterOptionUInt32.read(from: &buf),
                 sampleRate: FfiConverterOptionUInt32.read(from: &buf),
+                bitDepth: FfiConverterOptionUInt8.read(from: &buf),
                 channels: FfiConverterOptionUInt8.read(from: &buf),
                 coverArtworkId: FfiConverterOptionString.read(from: &buf),
                 allFields: FfiConverterSequenceTypeKeyValuePair.read(from: &buf),
@@ -4038,6 +4072,7 @@ public struct FfiConverterTypeAudioMetadata: FfiConverterRustBuffer {
         FfiConverterDouble.write(value.durationSeconds, into: &buf)
         FfiConverterOptionUInt32.write(value.bitrate, into: &buf)
         FfiConverterOptionUInt32.write(value.sampleRate, into: &buf)
+        FfiConverterOptionUInt8.write(value.bitDepth, into: &buf)
         FfiConverterOptionUInt8.write(value.channels, into: &buf)
         FfiConverterOptionString.write(value.coverArtworkId, into: &buf)
         FfiConverterSequenceTypeKeyValuePair.write(value.allFields, into: &buf)
@@ -5371,6 +5406,9 @@ public struct Release {
     public var artist: String
     public var artistId: Int64
     public var releaseDate: String?
+    public var genres: [String]
+    public var composers: [String]
+    public var producers: [String]
     public var totalTracks: UInt8
     public var totalDiscs: UInt8
     public var durationSeconds: UInt64
@@ -5382,12 +5420,15 @@ public struct Release {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, title: String, artist: String, artistId: Int64, releaseDate: String?, totalTracks: UInt8, totalDiscs: UInt8, durationSeconds: UInt64, artworkId: String?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool, rating: UInt8?) {
+    public init(id: Int64, title: String, artist: String, artistId: Int64, releaseDate: String?, genres: [String], composers: [String], producers: [String], totalTracks: UInt8, totalDiscs: UInt8, durationSeconds: UInt64, artworkId: String?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool, rating: UInt8?) {
         self.id = id
         self.title = title
         self.artist = artist
         self.artistId = artistId
         self.releaseDate = releaseDate
+        self.genres = genres
+        self.composers = composers
+        self.producers = producers
         self.totalTracks = totalTracks
         self.totalDiscs = totalDiscs
         self.durationSeconds = durationSeconds
@@ -5416,6 +5457,15 @@ extension Release: Equatable, Hashable {
             return false
         }
         if lhs.releaseDate != rhs.releaseDate {
+            return false
+        }
+        if lhs.genres != rhs.genres {
+            return false
+        }
+        if lhs.composers != rhs.composers {
+            return false
+        }
+        if lhs.producers != rhs.producers {
             return false
         }
         if lhs.totalTracks != rhs.totalTracks {
@@ -5451,6 +5501,9 @@ extension Release: Equatable, Hashable {
         hasher.combine(artist)
         hasher.combine(artistId)
         hasher.combine(releaseDate)
+        hasher.combine(genres)
+        hasher.combine(composers)
+        hasher.combine(producers)
         hasher.combine(totalTracks)
         hasher.combine(totalDiscs)
         hasher.combine(durationSeconds)
@@ -5472,6 +5525,9 @@ public struct FfiConverterTypeRelease: FfiConverterRustBuffer {
                 artist: FfiConverterString.read(from: &buf),
                 artistId: FfiConverterInt64.read(from: &buf),
                 releaseDate: FfiConverterOptionString.read(from: &buf),
+                genres: FfiConverterSequenceString.read(from: &buf),
+                composers: FfiConverterSequenceString.read(from: &buf),
+                producers: FfiConverterSequenceString.read(from: &buf),
                 totalTracks: FfiConverterUInt8.read(from: &buf),
                 totalDiscs: FfiConverterUInt8.read(from: &buf),
                 durationSeconds: FfiConverterUInt64.read(from: &buf),
@@ -5489,6 +5545,9 @@ public struct FfiConverterTypeRelease: FfiConverterRustBuffer {
         FfiConverterString.write(value.artist, into: &buf)
         FfiConverterInt64.write(value.artistId, into: &buf)
         FfiConverterOptionString.write(value.releaseDate, into: &buf)
+        FfiConverterSequenceString.write(value.genres, into: &buf)
+        FfiConverterSequenceString.write(value.composers, into: &buf)
+        FfiConverterSequenceString.write(value.producers, into: &buf)
         FfiConverterUInt8.write(value.totalTracks, into: &buf)
         FfiConverterUInt8.write(value.totalDiscs, into: &buf)
         FfiConverterUInt64.write(value.durationSeconds, into: &buf)
@@ -6015,6 +6074,7 @@ public struct Track {
     public var artworkId: String?
     public var bitrate: UInt32?
     public var sampleRate: UInt32?
+    public var bitDepth: UInt8?
     public var playCount: UInt64
     public var lastPlayed: String?
     public var rating: UInt8?
@@ -6024,7 +6084,7 @@ public struct Track {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, title: String, artist: String, artistId: Int64, release: String, releaseId: Int64, trackNumber: UInt8, discNumber: UInt8, durationSeconds: Double, filePath: String, artworkId: String?, bitrate: UInt32?, sampleRate: UInt32?, playCount: UInt64, lastPlayed: String?, rating: UInt8?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool) {
+    public init(id: Int64, title: String, artist: String, artistId: Int64, release: String, releaseId: Int64, trackNumber: UInt8, discNumber: UInt8, durationSeconds: Double, filePath: String, artworkId: String?, bitrate: UInt32?, sampleRate: UInt32?, bitDepth: UInt8?, playCount: UInt64, lastPlayed: String?, rating: UInt8?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool) {
         self.id = id
         self.title = title
         self.artist = artist
@@ -6038,6 +6098,7 @@ public struct Track {
         self.artworkId = artworkId
         self.bitrate = bitrate
         self.sampleRate = sampleRate
+        self.bitDepth = bitDepth
         self.playCount = playCount
         self.lastPlayed = lastPlayed
         self.rating = rating
@@ -6090,6 +6151,9 @@ extension Track: Equatable, Hashable {
         if lhs.sampleRate != rhs.sampleRate {
             return false
         }
+        if lhs.bitDepth != rhs.bitDepth {
+            return false
+        }
         if lhs.playCount != rhs.playCount {
             return false
         }
@@ -6125,6 +6189,7 @@ extension Track: Equatable, Hashable {
         hasher.combine(artworkId)
         hasher.combine(bitrate)
         hasher.combine(sampleRate)
+        hasher.combine(bitDepth)
         hasher.combine(playCount)
         hasher.combine(lastPlayed)
         hasher.combine(rating)
@@ -6152,6 +6217,7 @@ public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
                 artworkId: FfiConverterOptionString.read(from: &buf),
                 bitrate: FfiConverterOptionUInt32.read(from: &buf),
                 sampleRate: FfiConverterOptionUInt32.read(from: &buf),
+                bitDepth: FfiConverterOptionUInt8.read(from: &buf),
                 playCount: FfiConverterUInt64.read(from: &buf),
                 lastPlayed: FfiConverterOptionString.read(from: &buf),
                 rating: FfiConverterOptionUInt8.read(from: &buf),
@@ -6175,6 +6241,7 @@ public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.artworkId, into: &buf)
         FfiConverterOptionUInt32.write(value.bitrate, into: &buf)
         FfiConverterOptionUInt32.write(value.sampleRate, into: &buf)
+        FfiConverterOptionUInt8.write(value.bitDepth, into: &buf)
         FfiConverterUInt64.write(value.playCount, into: &buf)
         FfiConverterOptionString.write(value.lastPlayed, into: &buf)
         FfiConverterOptionUInt8.write(value.rating, into: &buf)
@@ -8256,6 +8323,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_stop() != 19367) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_sync_artist_release_metadata() != 53712) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_track() != 44215) {

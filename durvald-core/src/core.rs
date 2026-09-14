@@ -351,6 +351,7 @@ fn metadata_to_api(meta: crate::metadata::AudioMetadata) -> AudioMetadata {
         duration_seconds: meta.duration,
         bitrate: meta.bitrate,
         sample_rate: meta.sample_rate,
+        bit_depth: meta.bit_depth,
         channels: meta.channels,
         cover_artwork_id: meta.cover_path,
         all_fields: meta
@@ -401,6 +402,7 @@ fn track_from_song(track: crate::database::models::SongItem) -> Track {
         artwork_id: (!track.artwork.is_empty()).then_some(track.artwork),
         bitrate: track.bitrate.map(u32::from),
         sample_rate: track.sample_rate.map(u32::from),
+        bit_depth: track.bit_depth,
         play_count: track.play_count,
         last_played: track.last_played,
         rating: track.rating,
@@ -416,7 +418,10 @@ fn release_from_database(release: crate::database::models::Releases) -> Release 
         title: release.title,
         artist: release.artist_name,
         artist_id: release.artist_id as i64,
-        release_date: Some(release.release_date),
+        release_date: (!release.release_date.is_empty()).then_some(release.release_date),
+        genres: release.genres,
+        composers: release.composers,
+        producers: release.producers,
         total_tracks: release.total_tracks,
         total_discs: release.total_discs,
         duration_seconds: release.duration,
@@ -1265,6 +1270,16 @@ impl DurvaldCore {
         request: ArtistRefreshRequest,
     ) -> CoreResult<ArtistRefreshResult> {
         self.enrichment.refresh_artist(artist_id, request).await
+    }
+
+    /// Applies metadata from the artist's cached MusicBrainz catalog to local
+    /// releases and returns the refreshed local collection without network I/O.
+    pub async fn sync_artist_release_metadata(&self, artist_id: i64) -> CoreResult<Vec<Release>> {
+        non_negative_id(artist_id, "Artist ID")?;
+        self.enrichment
+            .sync_local_release_metadata(artist_id)
+            .await?;
+        self.artist_releases(artist_id).await
     }
 
     pub async fn set_artist_override(

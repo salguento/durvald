@@ -97,6 +97,7 @@ pub struct AudioMetadata {
     pub duration: f64,
     pub bitrate: Option<u32>,
     pub sample_rate: Option<u32>,
+    pub bit_depth: Option<u8>,
     pub channels: Option<u8>,
     /// Absolute path of the cover file. Empty only when the track has no
     /// embedded artwork.
@@ -241,6 +242,7 @@ pub fn extract_metadata_blocking_with_cancel(
         duration: properties.duration().as_secs_f64(),
         bitrate: properties.audio_bitrate(),
         sample_rate: properties.sample_rate(),
+        bit_depth: properties.bit_depth(),
         channels: properties.channels(),
         cover_path: None,
         all_fields: HashMap::new(),

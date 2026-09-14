@@ -11,12 +11,14 @@ final class DurvaldCoreStore {
     // must not invalidate library lists, the sidebar or every artwork cell.
     private(set) var playback: PlaybackSnapshot? {
         didSet {
+            let playbackActivityChanged = oldValue?.isPlaying != playback?.isPlaying
             let trackID = playback?.currentTrack?.id
             if activeTrackID != trackID { activeTrackID = trackID }
             let updatedQueue = playback?.queue ?? []
             if queue != updatedQueue { queue = updatedQueue }
             let paused = playback?.isPaused ?? true
             if isPlaybackPaused != paused { isPlaybackPaused = paused }
+            if playbackActivityChanged { startPlaybackPolling() }
         }
     }
     private(set) var activeTrackID: Int64?
@@ -34,6 +36,9 @@ final class DurvaldCoreStore {
     private(set) var libraryPaths: [String] = []
     /// Configurações de enriquecimento de metadados. Nil até o core ser inicializado.
     private(set) var enrichmentSettings: EnrichmentSettings?
+    private(set) var isUpdatingLibraryMetadata = false
+    private(set) var metadataUpdateCompleted = 0
+    private(set) var metadataUpdateTotal = 0
 
 
     private(set) var core: DurvaldCore?
@@ -55,6 +60,8 @@ final class DurvaldCoreStore {
     @ObservationIgnored private var isLoadingHistoryPage = false
     private static let libraryPageSize: UInt64 = 100
     private static let pagePrefetchDistance = 12
+    private static let activePlaybackPollingInterval = Duration.milliseconds(250)
+    private static let idlePlaybackPollingInterval = Duration.seconds(5)
 
     private struct SeekRequest {
         let id: Int
@@ -100,6 +107,9 @@ final class DurvaldCoreStore {
             playback = initialPlayback
 
             startPlaybackPolling()
+            Task { [weak self] in
+                await self?.updateLibraryMetadata(refreshRemote: true)
+            }
         } catch {
             errorMessage = String(describing: error)
         }
@@ -111,6 +121,15 @@ final class DurvaldCoreStore {
         playbackPollingTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
+
+                let interval = self.playback?.isPlaying == true
+                    ? Self.activePlaybackPollingInterval
+                    : Self.idlePlaybackPollingInterval
+                do {
+                    try await Task.sleep(for: interval)
+                } catch {
+                    return
+                }
 
                 if let core = self.core,
                    !self.isChangingTrack,
@@ -125,7 +144,6 @@ final class DurvaldCoreStore {
                     }
                 }
 
-                try? await Task.sleep(for: .milliseconds(250))
             }
         }
     }
@@ -489,6 +507,7 @@ final class DurvaldCoreStore {
                     "Durvald: scan concluído — encontrados: \(result.totalFilesFound), novos: \(result.newTracksAdded), atualizados: \(result.updatedTracks), erros: \(result.errors)"
                 )
                 try await reloadLibrary(using: core)
+                await updateLibraryMetadata(refreshRemote: true)
 
                 if !result.errors.isEmpty {
                     errorMessage = result.errors.joined(separator: "\n")
@@ -950,6 +969,7 @@ final class DurvaldCoreStore {
             guard snapshot.currentTrack?.id == request.trackID else { return }
             snapshot.positionSeconds = Double(request.seconds)
         }
+        guard playback != snapshot else { return }
         playback = snapshot
     }
 
@@ -1335,7 +1355,7 @@ final class DurvaldCoreStore {
     ) async -> ArtistRefreshResult? {
         guard let core else { return nil }
         do {
-            return try await core.refreshArtist(
+            let result = try await core.refreshArtist(
                 artistId: artistId,
                 request: ArtistRefreshRequest(
                     sections: [.discography, .covers],
@@ -1343,9 +1363,81 @@ final class DurvaldCoreStore {
                     force: force
                 )
             )
+            let refreshedReleases = try await core.artistReleases(artistId: artistId)
+            let refreshedByID = Dictionary(uniqueKeysWithValues: refreshedReleases.map { ($0.id, $0) })
+            releases = releases.map { refreshedByID[$0.id] ?? $0 }
+            return result
         } catch {
             errorMessage = String(describing: error)
             return nil
+        }
+    }
+
+    /// Aplica imediatamente os metadados do catálogo MusicBrainz armazenado e
+    /// publica a coleção local atualizada. Não depende de rede.
+    func syncArtistReleaseMetadata(artistId: Int64) async -> [Release]? {
+        guard let core else { return nil }
+        do {
+            let refreshedReleases = try await core.syncArtistReleaseMetadata(artistId: artistId)
+            let refreshedByID = Dictionary(uniqueKeysWithValues: refreshedReleases.map { ($0.id, $0) })
+            releases = releases.map { refreshedByID[$0.id] ?? $0 }
+            return refreshedReleases
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
+    func syncReleaseMetadata(artistId: Int64, releaseId: Int64) async -> Release? {
+        guard let releases = await syncArtistReleaseMetadata(artistId: artistId) else {
+            return nil
+        }
+        return releases.first(where: { $0.id == releaseId })
+    }
+
+    /// Atualiza toda a biblioteca em série para respeitar os limites dos
+    /// provedores. O cache local é sempre aplicado; rede só é usada quando o
+    /// enriquecimento está habilitado e fora do modo offline.
+    func updateLibraryMetadata(refreshRemote: Bool = true) async {
+        guard let core, !isUpdatingLibraryMetadata else { return }
+
+        isUpdatingLibraryMetadata = true
+        metadataUpdateCompleted = 0
+        metadataUpdateTotal = artists.count
+        defer { isUpdatingLibraryMetadata = false }
+
+        let shouldRefreshRemote = refreshRemote
+            && enrichmentSettings?.enabled == true
+            && enrichmentSettings?.offline == false
+        var refreshedByID: [Int64: Release] = [:]
+
+        for artist in artists {
+            guard !Task.isCancelled else { break }
+            do {
+                if shouldRefreshRemote {
+                    _ = try await core.refreshArtist(
+                        artistId: artist.id,
+                        request: ArtistRefreshRequest(
+                            sections: [.discography],
+                            language: enrichmentSettings?.preferredLanguage ?? "pt",
+                            force: false
+                        )
+                    )
+                }
+                let artistReleases = try await core.syncArtistReleaseMetadata(artistId: artist.id)
+                for release in artistReleases {
+                    refreshedByID[release.id] = release
+                }
+            } catch {
+                // Continue with the remaining artists; one unavailable provider
+                // must not prevent cached metadata from updating the library.
+                print("Durvald: falha ao atualizar metadados de \(artist.name): \(error)")
+            }
+            metadataUpdateCompleted += 1
+        }
+
+        if !refreshedByID.isEmpty {
+            releases = releases.map { refreshedByID[$0.id] ?? $0 }
         }
     }
 

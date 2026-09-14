@@ -20,7 +20,6 @@ struct ArtistView: View {
     }
 
     @Environment(DurvaldCoreStore.self) private var store
-    @Environment(\.libraryScrollOffset) private var savedScrollOffset
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("followedArtistIDs") private var followedArtistIDs = ""
@@ -41,6 +40,7 @@ struct ArtistView: View {
     @State private var catalogRefreshResults: [ArtistRefreshSectionResult] = []
     @State private var isRefreshingCatalog = false
     @State private var isLoadingMoreDiscography = false
+    @State private var isIdentityPopoverPresented = false
     @State private var isIdentityPickerPresented = false
     @State private var isLoadingIdentityCandidates = false
     @State private var isSavingIdentity = false
@@ -50,7 +50,6 @@ struct ArtistView: View {
     @State private var trackOrder: TrackOrder = .album
     @FocusState private var isTrackSearchFocused: Bool
     @State private var isLoading = true
-    @State private var currentScrollOffset: CGFloat = 0
     @ScaledMetric(relativeTo: .largeTitle) private var artistNameFontSize =
         NSFont.preferredFont(forTextStyle: .largeTitle).pointSize * 1.275
 
@@ -64,25 +63,47 @@ struct ArtistView: View {
                             ?? discographyItems.compactMap { $0.artwork?.image.managedPath }.first,
                         size: geometry.size.width,
                         aspectRatio: 16.0 / 9.0,
+                        alignment: .top,
                         showsBorder: false
                     )
                     .backgroundExtensionEffect()
                     .overlay(alignment: .bottomLeading) {
-                        Text(artist.name)
-                            .font(.system(size: artistNameFontSize, weight: .bold))
-                            .accessibilityAddTraits(.isHeader)
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
-                            .padding(24)
+                        HStack(alignment: .lastTextBaseline, spacing: 10) {
+                            Text(artist.name)
+                                .font(.system(size: artistNameFontSize, weight: .bold))
+                                .accessibilityAddTraits(.isHeader)
+
+                            if let identity {
+                                Button {
+                                    isIdentityPopoverPresented.toggle()
+                                } label: {
+                                    Image(systemName: identity.status == .resolved
+                                          ? "checkmark.seal.fill"
+                                          : "person.crop.circle.badge.questionmark")
+                                        .font(.title2)
+                                        .foregroundStyle(identity.status == .resolved ? Color.blue : Color.white)
+                                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                }
+                                .buttonStyle(.plain)
+                                .alignmentGuide(.lastTextBaseline) { dimensions in
+                                    dimensions[.bottom]
+                                }
+                                .help("Ver identidade e conexões de metadados")
+                                .accessibilityLabel("Ver identidade de \(artist.name)")
+                                .accessibilityIdentifier("artist.identity.badge")
+                                .popover(isPresented: $isIdentityPopoverPresented, arrowEdge: .bottom) {
+                                    identityInformationPopover(identity)
+                                }
+                            }
+                        }
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
+                        .padding(24)
                     }
                     .accessibilityIdentifier("artist.header.\(artist.id)")
 
                     VStack(alignment: .leading, spacing: 24) {
                         collectionControls
-
-                        identityCallout
-
-                        enrichmentDiagnostics
 
                         artistHighlights(width: geometry.size.width)
 
@@ -105,11 +126,6 @@ struct ArtistView: View {
                     artistFooter(width: geometry.size.width)
                 }
                 .frame(minHeight: geometry.size.height, alignment: .top)
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                max(0, geometry.visibleRect.minY)
-            } action: { _, offset in
-                currentScrollOffset = offset
             }
             .preservesLibraryScrollPosition(isContentReady: !isLoading)
         }
@@ -155,46 +171,134 @@ struct ArtistView: View {
                 applyDiscographyPage(resolvedDiscography, reset: true)
             }
             isLoading = false
-            await refreshEnrichment()
+            if let synchronizedAlbums = await store.syncArtistReleaseMetadata(artistId: artist.id) {
+                albums = synchronizedAlbums.sorted {
+                    $0.title.localizedStandardCompare($1.title) == .orderedAscending
+                }
+            }
         }
         .sheet(isPresented: $isIdentityPickerPresented) {
             identityPicker
         }
+        .onChange(of: store.releases) { _, refreshedReleases in
+            let refreshedByID = Dictionary(
+                uniqueKeysWithValues: refreshedReleases.map { ($0.id, $0) }
+            )
+            albums = albums.map { refreshedByID[$0.id] ?? $0 }
+        }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
     }
 
-    @ViewBuilder
-    private var identityCallout: some View {
-        if let identity {
-            HStack(alignment: .center, spacing: 12) {
-                Image(systemName: identity.status == .resolved ? "checkmark.seal.fill" : "person.crop.circle.badge.questionmark")
-                    .font(.title2)
-                    .foregroundStyle(identity.status == .resolved ? Color.green : Color.accentColor)
+    private func identityInformationPopover(_ identity: ArtistIdentity) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: identity.status == .resolved
+                          ? "checkmark.seal.fill"
+                          : "person.crop.circle.badge.questionmark")
+                        .font(.title2)
+                        .foregroundStyle(identity.status == .resolved ? Color.blue : Color.accentColor)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(identityCalloutTitle(for: identity))
-                        .font(.headline)
-                    Text(identityCalloutDescription(for: identity))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(identityCalloutTitle(for: identity))
+                            .font(.headline)
+                        Text(identityCalloutDescription(for: identity))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
-                Spacer(minLength: 16)
+                Divider()
 
-                Button(identity.status == .resolved ? "Ver identidade" : "Escolher identidade") {
-                    presentIdentityPicker()
+                VStack(alignment: .leading, spacing: 10) {
+                    identityInformationRow("Artista", value: artist.name)
+                    identityInformationRow(
+                        "MusicBrainz ID",
+                        value: identity.musicbrainzId ?? identity.confirmedMusicbrainzId ?? "Não vinculado",
+                        monospaced: true
+                    )
+                    identityInformationRow("Origem", value: identityOriginLabel(identity.origin))
+                    identityInformationRow("Geração", value: String(identity.generation))
                 }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("artist.identity.open")
+
+                if identity.conflictingTags {
+                    Label(
+                        "As faixas possuem identificadores MusicBrainz conflitantes.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+                }
+
+                if identity.status == .resolved {
+                    HStack(spacing: 12) {
+                        Button {
+                            Task { await refreshEnrichment(force: true) }
+                        } label: {
+                            if isRefreshingCatalog {
+                                HStack(spacing: 7) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Atualizando…")
+                                }
+                            } else {
+                                Label("Atualizar metadados", systemImage: "arrow.clockwise")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isRefreshingCatalog || isSavingIdentity)
+                        .accessibilityIdentifier("artist.enrichment.refresh")
+
+                        Button("Remover vínculo…", role: .destructive) {
+                            isClearIdentityConfirmationPresented = true
+                        }
+                        .disabled(isSavingIdentity || isRefreshingCatalog)
+                    }
+                } else {
+                    Button("Escolher identidade…") {
+                        isIdentityPopoverPresented = false
+                        Task { @MainActor in
+                            await Task.yield()
+                            presentIdentityPicker()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+
+                if !catalogRefreshResults.isEmpty || isRefreshingCatalog {
+                    Divider()
+                    enrichmentDiagnostics
+                }
             }
-            .padding(14)
-            .background(Color.accentColor.opacity(0.08), in: .rect(cornerRadius: 12))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.accentColor.opacity(0.18))
+            .padding(20)
+        }
+        .frame(width: 500, height: 500)
+        .confirmationDialog(
+            "Remover a identidade de \(artist.name)?",
+            isPresented: $isClearIdentityConfirmationPresented
+        ) {
+            Button("Remover vínculo", role: .destructive) {
+                Task { await clearIdentity() }
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("artist.identity.status")
+            Button("Cancelar", role: .cancel) {}
+        } message: {
+            Text("Os dados enriquecidos associados serão ocultados até que outra identidade seja confirmada.")
+        }
+        .accessibilityIdentifier("artist.identity.information")
+    }
+
+    private func identityInformationRow(
+        _ title: String,
+        value: String,
+        monospaced: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(monospaced ? .caption.monospaced() : .body)
+                .textSelection(.enabled)
         }
     }
 
@@ -463,18 +567,20 @@ struct ArtistView: View {
         }
     }
 
-    private func refreshEnrichment() async {
+    private func refreshEnrichment(force: Bool = false) async {
         guard !isRefreshingCatalog else { return }
         isRefreshingCatalog = true
         defer { isRefreshingCatalog = false }
 
         async let refreshedDetails = store.refreshArtistDetailsWithResult(
             artistId: artist.id,
-            language: enrichmentLanguage
+            language: enrichmentLanguage,
+            force: force
         )
         async let refreshedCatalog = store.refreshArtistCatalog(
             artistId: artist.id,
-            language: enrichmentLanguage
+            language: enrichmentLanguage,
+            force: force
         )
         let (detailsRefresh, catalogResult) = await (refreshedDetails, refreshedCatalog)
         if let newDetails = detailsRefresh.details {
@@ -513,6 +619,14 @@ struct ArtistView: View {
             return "Tente uma nova busca ou mantenha apenas os metadados locais."
         case .unresolved:
             return "Confirme um candidato antes de buscar perfil, discografia e capas."
+        }
+    }
+
+    private func identityOriginLabel(_ origin: ArtistIdentityOrigin?) -> String {
+        switch origin {
+        case .tag: "Tags dos arquivos"
+        case .manual: "Confirmação manual"
+        case nil: "Não definida"
         }
     }
 
@@ -911,6 +1025,9 @@ struct ArtistView: View {
         }
         if result != nil, let page = await store.artistDiscography(artistId: artist.id) {
             applyDiscographyPage(page, reset: true)
+            albums = await store.releases(forArtistID: artist.id).sorted {
+                $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
         }
     }
 
@@ -1485,22 +1602,15 @@ struct ArtistView: View {
     }
 
     private func selectAlbum(_ album: Release) {
-        preserveCurrentScrollOffset()
         onSelectAlbum(album)
     }
 
     private func selectExternalRelease(_ release: ExternalReleaseGroup) {
-        preserveCurrentScrollOffset()
         onSelectExternalRelease(release)
     }
 
     private func selectArtist(_ artist: Artist) {
-        preserveCurrentScrollOffset()
         onSelectArtist?(artist)
-    }
-
-    private func preserveCurrentScrollOffset() {
-        savedScrollOffset.wrappedValue = currentScrollOffset
     }
 }
 

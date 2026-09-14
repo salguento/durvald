@@ -27,6 +27,7 @@ struct AlbumView: View {
     let onSelectArtist: (Artist) -> Void
 
     @State private var tracks: [Track] = []
+    @State private var refreshedAlbum: Release?
     @State private var isLoading = true
     @State private var trackSearchText = ""
     @State private var trackOrder: TrackOrder = .album
@@ -54,7 +55,9 @@ struct AlbumView: View {
 
     private var currentAlbum: Release? {
         guard let album else { return nil }
-        return store.releases.first(where: { $0.id == album.id }) ?? album
+        return store.releases.first(where: { $0.id == album.id })
+            ?? refreshedAlbum
+            ?? album
     }
 
     private var title: String {
@@ -86,12 +89,19 @@ struct AlbumView: View {
         .preservesLibraryScrollPosition(isContentReady: !isLoading)
         .task(id: detailID) {
             isLoading = true
+            refreshedAlbum = nil
             if let album {
                 tracks = await store.tracks(forReleaseID: album.id)
             } else {
                 tracks = []
             }
             isLoading = false
+            if let album {
+                refreshedAlbum = await store.syncReleaseMetadata(
+                    artistId: album.artistId,
+                    releaseId: album.id
+                )
+            }
         }
         .accessibilityIdentifier("album.detail.\(detailID)")
     }
@@ -124,6 +134,11 @@ struct AlbumView: View {
                     .help("Abrir artista \(artistName)")
                     .accessibilityLabel("Abrir artista \(artistName)")
                     .accessibilityIdentifier("album.artist")
+
+                    if let currentAlbum {
+                        localReleaseMetadata(currentAlbum)
+                            .padding(.top, 8)
+                    }
 
                     if let externalRelease {
                         Text(externalReleaseSubtitle(externalRelease))
@@ -248,6 +263,122 @@ struct AlbumView: View {
         if let externalArtist { return externalArtist }
         guard let album else { return nil }
         return store.artists.first(where: { $0.id == album.artistId })
+    }
+
+    @ViewBuilder
+    private func localReleaseMetadata(_ album: Release) -> some View {
+        let metadata = releaseMetadataText(album)
+
+        Text(metadata)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .help(metadata)
+            .textSelection(.enabled)
+            .accessibilityIdentifier("album.metadata")
+    }
+
+    private func releaseMetadataText(_ album: Release) -> String {
+        let genre = album.genres
+            .lazy
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? "Gênero desconhecido"
+        let year = releaseYear(album.releaseDate) ?? "Ano desconhecido"
+        let trackCount = album.totalTracks > 0 ? Int(album.totalTracks) : tracks.count
+        let trackLabel = trackCount == 1 ? "1 faixa" : "\(trackCount) faixas"
+
+        return [
+            genre,
+            year,
+            trackLabel,
+            albumDurationText(album.durationSeconds),
+            fileQualityText
+        ].joined(separator: " • ")
+    }
+
+    private func releaseYear(_ releaseDate: String?) -> String? {
+        guard let releaseDate else { return nil }
+        let candidate = releaseDate
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "-", maxSplits: 1)
+            .first
+            .map(String.init)
+        guard let candidate,
+              candidate.count == 4,
+              candidate.allSatisfy(\.isNumber) else {
+            return nil
+        }
+        return candidate
+    }
+
+    private func albumDurationText(_ durationSeconds: UInt64) -> String {
+        let totalMinutes = Int(durationSeconds) / 60
+        let hours = totalMinutes / 60
+        let minutes = totalMinutes % 60
+
+        if hours > 0 {
+            return minutes > 0 ? "\(hours) h \(minutes) min" : "\(hours) h"
+        }
+        return "\(totalMinutes) min"
+    }
+
+    private var fileQualityText: String {
+        let tracksByFormat = Dictionary(grouping: tracks) { track -> String in
+            let fileExtension = URL(fileURLWithPath: track.filePath).pathExtension
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return fileExtension.uppercased()
+        }
+
+        let descriptions = tracksByFormat.keys
+            .filter { !$0.isEmpty }
+            .sorted()
+            .compactMap { format -> String? in
+                guard let formatTracks = tracksByFormat[format] else { return nil }
+
+                switch format {
+                case "MP3", "OGG", "OGA":
+                    let bitrates = Set(formatTracks.compactMap(\.bitrate)).sorted()
+                    guard let value = rangeText(bitrates, suffix: "kbps") else {
+                        return format
+                    }
+                    return "\(format) (\(value))"
+
+                case "FLAC", "WAV":
+                    var properties: [String] = []
+                    let sampleRates = Set(formatTracks.compactMap(\.sampleRate)).sorted()
+                    if let first = sampleRates.first, let last = sampleRates.last {
+                        properties.append(
+                            first == last
+                                ? sampleRateText(first)
+                                : "\(sampleRateText(first))–\(sampleRateText(last))"
+                        )
+                    }
+                    let bitDepths = Set(formatTracks.compactMap(\.bitDepth)).sorted()
+                    if let value = rangeText(bitDepths, suffix: "bit") {
+                        properties.append(value)
+                    }
+                    return properties.isEmpty
+                        ? format
+                        : "\(format) (\(properties.joined(separator: ", ")))"
+
+                default:
+                    return format
+                }
+            }
+
+        return descriptions.isEmpty ? "Qualidade indisponível" : descriptions.joined(separator: " / ")
+    }
+
+    private func rangeText<T: BinaryInteger>(_ values: [T], suffix: String) -> String? {
+        guard let first = values.first, let last = values.last else { return nil }
+        return first == last ? "\(first) \(suffix)" : "\(first)–\(last) \(suffix)"
+    }
+
+    private func sampleRateText(_ sampleRate: UInt32) -> String {
+        if sampleRate.isMultiple(of: 1_000) {
+            return "\(sampleRate / 1_000) kHz"
+        }
+        return String(format: "%.1f kHz", locale: Locale(identifier: "en_US_POSIX"), Double(sampleRate) / 1_000)
     }
 
     private func externalReleaseSubtitle(_ release: ExternalReleaseGroup) -> String {

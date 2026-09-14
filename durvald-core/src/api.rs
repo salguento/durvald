@@ -74,6 +74,7 @@ pub struct Track {
     pub artwork_id: Option<String>, // Relative asset identifier
     pub bitrate: Option<u32>,
     pub sample_rate: Option<u32>,
+    pub bit_depth: Option<u8>,
     pub play_count: u64,
     pub last_played: Option<String>, // ISO 8601
     pub rating: Option<u8>,
@@ -117,6 +118,9 @@ pub struct Release {
     pub artist: String,
     pub artist_id: i64,
     pub release_date: Option<String>, // ISO 8601
+    pub genres: Vec<String>,
+    pub composers: Vec<String>,
+    pub producers: Vec<String>,
     pub total_tracks: u8,
     pub total_discs: u8,
     pub duration_seconds: u64,
@@ -297,6 +301,7 @@ pub struct AudioMetadata {
     pub duration_seconds: f64,
     pub bitrate: Option<u32>,
     pub sample_rate: Option<u32>,
+    pub bit_depth: Option<u8>,
     pub channels: Option<u8>,
     pub cover_artwork_id: Option<String>,
     pub all_fields: Vec<KeyValuePair>,

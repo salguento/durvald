@@ -5,6 +5,7 @@ struct ArtworkView: View {
     let artworkID: String?
     let size: CGFloat
     var aspectRatio: CGFloat = 1
+    var alignment: Alignment = .center
     var showsBorder = true
 
     @Environment(DurvaldCoreStore.self) private var store
@@ -43,7 +44,7 @@ struct ArtworkView: View {
                 }
             }
         }
-        .frame(width: size, height: size / aspectRatio)
+        .frame(width: size, height: size / aspectRatio, alignment: alignment)
         .clipped()
         .modifier(ArtworkBorderModifier(size: size, isEnabled: showsBorder))
         .task(id: request) {

@@ -363,7 +363,7 @@
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				"SWIFT_INCLUDE_PATHS[arch=*]" = "$(SRCROOT)/Generated/arm64";
-				"SWIFT_OBJC_BRIDGING_HEADER[arch=*]" = "$(SRCROOT)/Generated/arm64/durvald_coreFFI.h";
+				"SWIFT_OBJC_BRIDGING_HEADER[arch=*]" = "$(SRCROOT)/Durvald/Durvald-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
@@ -421,7 +421,7 @@
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				"SWIFT_INCLUDE_PATHS[arch=*]" = "$(SRCROOT)/Generated/arm64";
-				"SWIFT_OBJC_BRIDGING_HEADER[arch=*]" = "$(SRCROOT)/Generated/arm64/durvald_coreFFI.h";
+				"SWIFT_OBJC_BRIDGING_HEADER[arch=*]" = "$(SRCROOT)/Durvald/Durvald-Bridging-Header.h";
 			};
 			name = Release;
 		};

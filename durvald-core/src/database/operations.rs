@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
-const CURRENT_METADATA_VERSION: i64 = 4;
+const CURRENT_METADATA_VERSION: i64 = 6;
 static SCAN_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 const SCAN_DISCOVERY_BATCH_SIZE: usize = 512;
 
@@ -84,7 +84,9 @@ macro_rules! song_columns {
             $table,
             ".created_at, ",
             $table,
-            ".updated_at"
+            ".updated_at, ",
+            $table,
+            ".bit_depth"
         )
     };
 }
@@ -100,8 +102,13 @@ macro_rules! release_columns {
             ".artist_id, ",
             $table,
             ".artist_name, ",
+            "COALESCE((SELECT m.release_date FROM local_release_metadata m ",
+            "WHERE m.release_id = ",
             $table,
-            ".release_date, ",
+            ".release_id ",
+            "), CAST(",
+            $table,
+            ".release_date AS TEXT)), ",
             $table,
             ".total_tracks, ",
             $table,
@@ -121,7 +128,22 @@ macro_rules! release_columns {
             $table,
             ".suggest_less, ",
             $table,
-            ".rating"
+            ".rating, ",
+            "COALESCE((SELECT m.genres FROM local_release_metadata m ",
+            "WHERE m.release_id = ",
+            $table,
+            ".release_id ",
+            "), '[]'), ",
+            "COALESCE((SELECT m.composers FROM local_release_metadata m ",
+            "WHERE m.release_id = ",
+            $table,
+            ".release_id ",
+            "), '[]'), ",
+            "COALESCE((SELECT m.producers FROM local_release_metadata m ",
+            "WHERE m.release_id = ",
+            $table,
+            ".release_id ",
+            "), '[]')"
         )
     };
 }
@@ -166,6 +188,7 @@ fn song_item_from_row(row: &Row<'_>) -> rusqlite::Result<SongItem> {
         file_path: row.get(19)?,
         created_at: row.get(20)?,
         updated_at: row.get(21)?,
+        bit_depth: row.get(22)?,
     })
 }
 
@@ -175,10 +198,7 @@ fn release_from_row(row: &Row<'_>) -> rusqlite::Result<Releases> {
         title: row.get(1)?,
         artist_id: row.get(2)?,
         artist_name: row.get(3)?,
-        release_date: row
-            .get::<_, Option<i64>>(4)?
-            .map(|date| date.to_string())
-            .unwrap_or_default(),
+        release_date: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
         total_tracks: row.get(5)?,
         total_discs: row.get(6)?,
         duration: duration_from_row(row, 7)?,
@@ -189,6 +209,20 @@ fn release_from_row(row: &Row<'_>) -> rusqlite::Result<Releases> {
         is_hidden: row.get(12)?,
         suggest_less: row.get(13)?,
         rating: row.get(14)?,
+        genres: json_string_list(row, 15)?,
+        composers: json_string_list(row, 16)?,
+        producers: json_string_list(row, 17)?,
+    })
+}
+
+fn json_string_list(row: &Row<'_>, index: usize) -> rusqlite::Result<Vec<String>> {
+    let payload: String = row.get(index)?;
+    serde_json::from_str(&payload).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
     })
 }
 
@@ -280,6 +314,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             duration INTEGER NOT NULL,
             bitrate INTEGER,
             sample_rate INTEGER,
+            bit_depth INTEGER,
             play_count INTEGER DEFAULT 0,
             last_played DATETIME,
             rating INTEGER DEFAULT NULL CHECK (rating IS NULL OR rating BETWEEN 0 AND 5),
@@ -307,6 +342,16 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             "ALTER TABLE songs ADD COLUMN metadata_version INTEGER NOT NULL DEFAULT 0",
             [],
         )?;
+    }
+
+    let has_bit_depth = conn
+        .prepare("PRAGMA table_info(songs)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .any(|column| column == "bit_depth");
+    if !has_bit_depth {
+        conn.execute("ALTER TABLE songs ADD COLUMN bit_depth INTEGER", [])?;
     }
 
     conn.execute(
@@ -377,6 +422,34 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             suggest_less BOOL DEFAULT FALSE,
             rating INTEGER DEFAULT NULL CHECK (rating IS NULL OR rating BETWEEN 0 AND 5),
             FOREIGN KEY (artist_id) REFERENCES artists(artist_id) ON DELETE CASCADE
+        )",
+        (),
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS local_release_metadata (
+            release_id INTEGER PRIMARY KEY REFERENCES releases(release_id) ON DELETE CASCADE,
+            artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+            identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+            release_group_mbid TEXT NOT NULL REFERENCES external_release_groups(musicbrainz_id) ON DELETE CASCADE,
+            release_mbid TEXT,
+            match_kind TEXT NOT NULL CHECK (match_kind IN ('tag', 'catalog_exact')),
+            release_date TEXT,
+            genres TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(genres)),
+            composers TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(composers)),
+            producers TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(producers)),
+            source_url TEXT NOT NULL,
+            updated_at INTEGER NOT NULL
+        )",
+        (),
+    )?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS local_release_metadata_attempts (
+            release_id INTEGER PRIMARY KEY REFERENCES releases(release_id) ON DELETE CASCADE,
+            artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+            identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+            attempted_at INTEGER NOT NULL
         )",
         (),
     )?;
@@ -826,7 +899,7 @@ pub(crate) fn add_song(
         let artist_id = lookup_artist_id(conn, &song)?;
         let release_id = lookup_release_id(conn, &song)?;
         conn.execute(
-            "UPDATE songs SET title=?1, artwork=?2, artist_id=?3, artist_name=?4, release_id=?5, release_title=?6, track_number=?7, disc_number=?8, duration=?9, file_mtime=?10, metadata_version=?11, updated_at=CURRENT_TIMESTAMP WHERE song_id=?12",
+            "UPDATE songs SET title=?1, artwork=?2, artist_id=?3, artist_name=?4, release_id=?5, release_title=?6, track_number=?7, disc_number=?8, duration=?9, bitrate=?10, sample_rate=?11, bit_depth=?12, file_mtime=?13, metadata_version=?14, updated_at=CURRENT_TIMESTAMP WHERE song_id=?15",
             params![
                 &song.title,
                 artwork,
@@ -837,6 +910,9 @@ pub(crate) fn add_song(
                 &song.track.unwrap_or(1),
                 &song.disc.unwrap_or(1),
                 &song.duration,
+                &song.bitrate,
+                &song.sample_rate,
+                &song.bit_depth,
                 mtime,
                 CURRENT_METADATA_VERSION,
                 song_id,
@@ -858,7 +934,7 @@ pub(crate) fn add_song(
 
     if !exists {
         conn.execute(
-            "INSERT INTO songs (title, artwork, artist_id, artist_name, release_id, release_title, duration, track_number, disc_number, file_path, file_mtime, metadata_version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO songs (title, artwork, artist_id, artist_name, release_id, release_title, duration, bitrate, sample_rate, bit_depth, track_number, disc_number, file_path, file_mtime, metadata_version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 &song.title,
                 artwork,
@@ -867,6 +943,9 @@ pub(crate) fn add_song(
                 release_id,
                 &song.release,
                 &song.duration,
+                &song.bitrate,
+                &song.sample_rate,
+                &song.bit_depth,
                 &song.track.unwrap_or(1),
                 &song.disc.unwrap_or(1),
                 &song.file_path,
@@ -1283,6 +1362,7 @@ pub fn get_songs_by_artist_id(conn: &Connection, artist_id: &str) -> DatabaseRes
                 file_path: row.get(19)?,
                 created_at: row.get(20)?,
                 updated_at: row.get(21)?,
+                bit_depth: row.get(22)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1309,10 +1389,7 @@ pub fn get_releases_by_artist_id(
                 title: row.get(1)?,
                 artist_id: row.get(2)?,
                 artist_name: row.get(3)?,
-                release_date: row
-                    .get::<_, Option<i64>>(4)?
-                    .map(|date| date.to_string())
-                    .unwrap_or_default(),
+                release_date: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
                 total_tracks: row.get(5)?,
                 total_discs: row.get(6)?,
                 duration: duration_from_row(row, 7)?,
@@ -1323,6 +1400,9 @@ pub fn get_releases_by_artist_id(
                 is_hidden: row.get(12)?,
                 suggest_less: row.get(13)?,
                 rating: row.get(14)?,
+                genres: json_string_list(row, 15)?,
+                composers: json_string_list(row, 16)?,
+                producers: json_string_list(row, 17)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -1368,7 +1448,7 @@ pub fn search_library_page(
                 s.release_id, s.release_title, s.track_number, s.disc_number,
                 s.duration, s.bitrate, s.sample_rate, s.play_count, s.last_played,
                 s.rating, NULL, s.is_favorite, s.is_hidden, s.suggest_less,
-                s.file_path, s.created_at, s.updated_at
+                s.file_path, s.created_at, s.updated_at, s.bit_depth
          FROM songs_search
          JOIN songs s ON s.song_id = songs_search.rowid
          WHERE songs_search MATCH ?1
@@ -1379,7 +1459,7 @@ pub fn search_library_page(
                 s.release_id, s.release_title, s.track_number, s.disc_number,
                 s.duration, s.bitrate, s.sample_rate, s.play_count, s.last_played,
                 s.rating, NULL, s.is_favorite, s.is_hidden, s.suggest_less,
-                s.file_path, s.created_at, s.updated_at
+                s.file_path, s.created_at, s.updated_at, s.bit_depth
          FROM songs s
          WHERE s.title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
             OR s.artist_name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
@@ -1394,23 +1474,25 @@ pub fn search_library_page(
         .collect::<Result<Vec<_>, _>>()?;
 
     let releases_sql = if use_fts {
-        "SELECT r.release_id, r.title, r.artist_id, r.artist_name, r.release_date,
-                r.total_tracks, r.total_discs, r.duration, r.artwork, r.created_at,
-                r.updated_at, r.is_favorite, r.is_hidden, r.suggest_less, r.rating
-         FROM releases_search
+        concat!(
+            "SELECT ",
+            release_columns!("r"),
+            " FROM releases_search
          JOIN releases r ON r.release_id = releases_search.rowid
          WHERE releases_search MATCH ?1
          ORDER BY bm25(releases_search), r.title COLLATE NOCASE
          LIMIT ?2 OFFSET ?3"
+        )
     } else {
-        "SELECT r.release_id, r.title, r.artist_id, r.artist_name, r.release_date,
-                r.total_tracks, r.total_discs, r.duration, r.artwork, r.created_at,
-                r.updated_at, r.is_favorite, r.is_hidden, r.suggest_less, r.rating
-         FROM releases r
+        concat!(
+            "SELECT ",
+            release_columns!("r"),
+            " FROM releases r
          WHERE r.title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
             OR r.artist_name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
          ORDER BY r.title COLLATE NOCASE
          LIMIT ?2 OFFSET ?3"
+        )
     };
     let mut releases_stmt = conn.prepare(releases_sql)?;
     let releases = releases_stmt
@@ -1693,6 +1775,7 @@ pub fn get_playlist_tracks(conn: &Connection, playlist_id: u64) -> DatabaseResul
                 file_path: row.get(19)?,
                 created_at: row.get(20)?,
                 updated_at: row.get(21)?,
+                bit_depth: row.get(22)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -2683,6 +2766,7 @@ mod tests {
             duration: 180.0,
             bitrate: Some(320),
             sample_rate: Some(44_100),
+            bit_depth: Some(16),
             channels: Some(2),
             cover_path: Some("/covers/cover.jpg".to_string()),
             all_fields: HashMap::new(),

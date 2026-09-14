@@ -339,6 +339,45 @@ CREATE INDEX idx_enrichment_provider_failure_expiry
     ON enrichment_provider_failures(artist_id, identity_generation, expires_at);
 "#;
 
+// Enriched album fields stay separate from metadata read from the audio files.
+// Readers only apply rows belonging to the artist's current identity generation.
+const LOCAL_RELEASE_METADATA: &str = r#"
+CREATE TABLE IF NOT EXISTS local_release_metadata (
+    release_id INTEGER PRIMARY KEY REFERENCES releases(release_id) ON DELETE CASCADE,
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    release_group_mbid TEXT NOT NULL REFERENCES external_release_groups(musicbrainz_id) ON DELETE CASCADE,
+    release_mbid TEXT,
+    match_kind TEXT NOT NULL CHECK (match_kind IN ('tag', 'catalog_exact')),
+    release_date TEXT,
+    genres TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(genres)),
+    composers TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(composers)),
+    producers TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(producers)),
+    source_url TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX idx_local_release_metadata_identity
+    ON local_release_metadata(artist_id, identity_generation);
+CREATE TABLE local_release_metadata_attempts (
+    release_id INTEGER PRIMARY KEY REFERENCES releases(release_id) ON DELETE CASCADE,
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    attempted_at INTEGER NOT NULL
+);
+CREATE TRIGGER invalidate_local_release_metadata_identity
+AFTER UPDATE OF generation ON artist_enrichment_state
+WHEN NEW.generation != OLD.generation
+BEGIN
+    DELETE FROM local_release_metadata
+    WHERE artist_id = NEW.artist_id AND identity_generation != NEW.generation;
+    DELETE FROM local_release_metadata_attempts
+    WHERE artist_id = NEW.artist_id AND identity_generation != NEW.generation;
+    DELETE FROM local_release_external_ids
+    WHERE origin = 'catalog_exact'
+      AND release_id IN (SELECT release_id FROM releases WHERE artist_id = NEW.artist_id);
+END;
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -355,6 +394,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
             (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
             (12, PROVIDER_FAILURE_CACHE),
+            (13, LOCAL_RELEASE_METADATA),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)

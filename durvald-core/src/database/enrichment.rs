@@ -1,11 +1,13 @@
 //! Synchronous enrichment persistence. Call through a blocking task, never over HTTP.
 
 use crate::api::*;
+use crate::enrichment::identity::normalized_match_text;
 use crate::enrichment::models::{
     AssetSnapshot, CacheValidators, CachedProviderFailure, DiscographyBuildState,
     DiscographyPageSnapshot, DiscographyRefreshState, ExternalArtworkNegativeSnapshot,
     ExternalArtworkRefreshPlan, ExternalArtworkRefreshTarget, ExternalArtworkSnapshot,
-    ExternalArtworkStoreOutcome, ProfileSnapshot, ProviderFailureSnapshot, ReleaseGroupSnapshot,
+    ExternalArtworkStoreOutcome, LocalReleaseMatchContext, LocalReleaseTrackContext,
+    MatchedReleaseMetadata, ProfileSnapshot, ProviderFailureSnapshot, ReleaseGroupSnapshot,
 };
 use crate::enrichment::policy::{MAX_JSON_BYTES, normalize_language, normalized_settings};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -1917,6 +1919,14 @@ pub fn store_discography_page(
                 .secondary_types
                 .iter()
                 .any(|value| value.trim().is_empty() || value.len() > 100)
+            || [&group.genres, &group.composers, &group.producers]
+                .into_iter()
+                .any(|values| {
+                    values.len() > 100
+                        || values
+                            .iter()
+                            .any(|value| value.trim().is_empty() || value.len() > 500)
+                })
             || group.attribution.source_url.trim().is_empty()
             || !identifiers.insert(group.musicbrainz_id.to_ascii_lowercase())
         {
@@ -2110,6 +2120,328 @@ pub fn store_discography_page(
     }
     tx.commit().map_err(storage)?;
     Ok(true)
+}
+
+pub fn local_release_match_contexts(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+    include_attempted: bool,
+) -> CoreResult<Vec<LocalReleaseMatchContext>> {
+    let generation = i64::try_from(identity_generation).map_err(storage)?;
+    let (artist_mbid, artist_name, catalog_generation): (String, String, i64) = conn
+        .query_row(
+            "SELECT s.musicbrainz_id, a.name, d.active_generation
+             FROM artist_enrichment_state s
+             JOIN artists a USING (artist_id)
+             JOIN artist_discography_state d USING (artist_id)
+             WHERE s.artist_id = ?1 AND s.identity_status = 'resolved'
+               AND s.generation = ?2 AND d.identity_generation = ?2
+               AND d.active_generation > 0",
+            params![artist_id, generation],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(storage)?;
+    let catalog = {
+        let mut statement = conn
+            .prepare(
+                "SELECT ar.release_group_mbid, ar.snapshot_payload
+                 FROM external_artist_release_groups ar
+                 WHERE ar.artist_id = ?1 AND ar.identity_generation = ?2
+                   AND ar.catalog_generation = ?3",
+            )
+            .map_err(storage)?;
+        statement
+            .query_map(params![artist_id, generation, catalog_generation], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?
+    };
+    let catalog = catalog
+        .into_iter()
+        .map(|(id, payload)| {
+            serde_json::from_str::<ReleaseGroupSnapshot>(&payload)
+                .map(|group| (id, group))
+                .map_err(storage)
+        })
+        .collect::<CoreResult<Vec<_>>>()?;
+    let releases = {
+        let mut statement = conn
+            .prepare(
+                "SELECT r.release_id, r.title, ids.release_mbid,
+                        ids.release_group_mbid, ids.origin
+                 FROM releases r
+                 LEFT JOIN local_release_external_ids ids ON ids.release_id = r.release_id
+                 WHERE r.artist_id = ?1
+                   AND (?3 OR NOT EXISTS (
+                     SELECT 1 FROM local_release_metadata_attempts attempt
+                     WHERE attempt.release_id = r.release_id
+                       AND attempt.identity_generation = ?2
+                   ))
+                 ORDER BY r.release_id",
+            )
+            .map_err(storage)?;
+        statement
+            .query_map(params![artist_id, generation, include_attempted], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                ))
+            })
+            .map_err(storage)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(storage)?
+    };
+    let mut contexts = Vec::new();
+    for (release_id, title, release_mbid, group_mbid, origin) in releases {
+        let mut candidates: Vec<ReleaseGroupSnapshot> = if origin.as_deref() == Some("tag") {
+            catalog
+                .iter()
+                .filter(|(id, _)| group_mbid.as_deref() == Some(id.as_str()))
+                .map(|(_, group)| group.clone())
+                .collect()
+        } else {
+            let normalized_title = normalized_match_text(&title);
+            catalog
+                .iter()
+                .filter(|(_, group)| normalized_match_text(&group.title) == normalized_title)
+                .map(|(_, group)| group.clone())
+                .collect()
+        };
+        if candidates.len() > 1 {
+            let album_candidates = candidates
+                .iter()
+                .filter(|group| {
+                    group
+                        .primary_type
+                        .as_deref()
+                        .is_some_and(|kind| kind.eq_ignore_ascii_case("album"))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            if album_candidates.len() == 1 {
+                candidates = album_candidates;
+            }
+        }
+        if candidates.is_empty() {
+            continue;
+        }
+        let tracks = {
+            let mut statement = conn
+                .prepare(
+                    "SELECT title, disc_number, track_number, duration
+                     FROM songs WHERE release_id = ?1
+                     ORDER BY disc_number, track_number, song_id",
+                )
+                .map_err(storage)?;
+            statement
+                .query_map([release_id], |row| {
+                    Ok(LocalReleaseTrackContext {
+                        title: row.get(0)?,
+                        disc_number: row.get(1)?,
+                        track_number: row.get(2)?,
+                        duration_seconds: row.get::<_, f64>(3)?.max(0.0).round() as u64,
+                    })
+                })
+                .map_err(storage)?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .map_err(storage)?
+        };
+        if tracks.is_empty() {
+            continue;
+        }
+        contexts.push(LocalReleaseMatchContext {
+            release_id,
+            artist_id,
+            artist_mbid: artist_mbid.clone(),
+            artist_name: artist_name.clone(),
+            title,
+            tagged_release_mbid: (origin.as_deref() == Some("tag"))
+                .then_some(release_mbid)
+                .flatten(),
+            tagged_release_group_mbid: (origin.as_deref() == Some("tag"))
+                .then_some(group_mbid)
+                .flatten(),
+            candidate_release_groups: candidates,
+            tracks,
+        });
+    }
+    Ok(contexts)
+}
+
+pub fn reset_local_release_metadata_attempts(conn: &Connection, artist_id: i64) -> CoreResult<()> {
+    conn.execute(
+        "DELETE FROM local_release_metadata_attempts WHERE artist_id = ?1",
+        [artist_id],
+    )
+    .map_err(storage)?;
+    Ok(())
+}
+
+pub fn mark_local_release_metadata_attempted(
+    conn: &Connection,
+    release_id: i64,
+    artist_id: i64,
+    identity_generation: u64,
+    attempted_at: i64,
+) -> CoreResult<()> {
+    conn.execute(
+        "INSERT INTO local_release_metadata_attempts
+         (release_id, artist_id, identity_generation, attempted_at)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(release_id) DO UPDATE SET
+           artist_id = excluded.artist_id,
+           identity_generation = excluded.identity_generation,
+           attempted_at = excluded.attempted_at",
+        params![
+            release_id,
+            artist_id,
+            i64::try_from(identity_generation).map_err(storage)?,
+            attempted_at
+        ],
+    )
+    .map_err(storage)?;
+    Ok(())
+}
+
+pub fn store_matched_release_metadata(
+    conn: &Connection,
+    snapshot: &MatchedReleaseMetadata,
+) -> CoreResult<bool> {
+    let generation = i64::try_from(snapshot.identity_generation).map_err(storage)?;
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let current: bool = tx
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM artist_enrichment_state s
+                JOIN artist_discography_state d USING (artist_id)
+                JOIN external_artist_release_groups ar
+                  ON ar.artist_id = s.artist_id
+                 AND ar.identity_generation = s.generation
+                 AND ar.catalog_generation = d.active_generation
+                 AND ar.release_group_mbid = ?3
+                JOIN releases r ON r.release_id = ?4 AND r.artist_id = s.artist_id
+                WHERE s.artist_id = ?1 AND s.generation = ?2
+                  AND s.identity_status = 'resolved'
+            )",
+            params![
+                snapshot.artist_id,
+                generation,
+                snapshot.release_group_mbid,
+                snapshot.release_id
+            ],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !current {
+        return Ok(false);
+    }
+    let origin: Option<String> = tx
+        .query_row(
+            "SELECT origin FROM local_release_external_ids WHERE release_id = ?1",
+            [snapshot.release_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    if origin.as_deref() != Some("tag") {
+        tx.execute(
+            "INSERT INTO local_release_external_ids
+             (release_id, release_mbid, release_group_mbid, origin, updated_at)
+             VALUES (?1, ?2, ?3, 'catalog_exact', ?4)
+             ON CONFLICT(release_id) DO UPDATE SET
+               release_mbid = excluded.release_mbid,
+               release_group_mbid = excluded.release_group_mbid,
+               origin = excluded.origin, updated_at = excluded.updated_at
+             WHERE local_release_external_ids.origin = 'catalog_exact'",
+            params![
+                snapshot.release_id,
+                snapshot.release_mbid,
+                snapshot.release_group_mbid,
+                snapshot.fetched_at
+            ],
+        )
+        .map_err(storage)?;
+    }
+    let group = tx
+        .query_row(
+            "SELECT snapshot_payload FROM external_artist_release_groups
+             WHERE artist_id = ?1 AND identity_generation = ?2
+               AND release_group_mbid = ?3
+             ORDER BY catalog_generation DESC LIMIT 1",
+            params![snapshot.artist_id, generation, snapshot.release_group_mbid],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(storage)
+        .and_then(|payload| {
+            serde_json::from_str::<ReleaseGroupSnapshot>(&payload).map_err(storage)
+        })?;
+    let genres = if snapshot.genres.is_empty() {
+        group.genres.clone()
+    } else {
+        snapshot.genres.clone()
+    };
+    // The album header represents the work/release group, not a particular
+    // pressing. Keep its original release year even after an exact edition is
+    // identified (for example, a 2003 reissue of a 1975 album).
+    let release_date = group
+        .first_release_date
+        .as_ref()
+        .map(format_release_group_date)
+        .or_else(|| snapshot.release_date.clone());
+    tx.execute(
+        "INSERT INTO local_release_metadata
+         (release_id, artist_id, identity_generation, release_group_mbid,
+          release_mbid, match_kind, release_date, genres, composers, producers,
+          source_url, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+         ON CONFLICT(release_id) DO UPDATE SET
+           artist_id = excluded.artist_id,
+           identity_generation = excluded.identity_generation,
+           release_group_mbid = excluded.release_group_mbid,
+           release_mbid = excluded.release_mbid,
+           match_kind = excluded.match_kind,
+           release_date = excluded.release_date,
+           genres = excluded.genres,
+           composers = excluded.composers,
+           producers = excluded.producers,
+           source_url = excluded.source_url,
+           updated_at = excluded.updated_at",
+        params![
+            snapshot.release_id,
+            snapshot.artist_id,
+            generation,
+            snapshot.release_group_mbid,
+            snapshot.release_mbid,
+            if origin.as_deref() == Some("tag") {
+                "tag"
+            } else {
+                "catalog_exact"
+            },
+            release_date,
+            serde_json::to_string(&genres).map_err(storage)?,
+            serde_json::to_string(&snapshot.composers).map_err(storage)?,
+            serde_json::to_string(&snapshot.producers).map_err(storage)?,
+            snapshot.source_url,
+            snapshot.fetched_at,
+        ],
+    )
+    .map_err(storage)?;
+    tx.commit().map_err(storage)?;
+    Ok(true)
+}
+
+fn format_release_group_date(date: &ArtistPartialDate) -> String {
+    match (date.month, date.day) {
+        (Some(month), Some(day)) => format!("{:04}-{month:02}-{day:02}", date.year),
+        (Some(month), None) => format!("{:04}-{month:02}", date.year),
+        _ => format!("{:04}", date.year),
+    }
 }
 
 pub fn read_discography(
@@ -2531,6 +2863,9 @@ mod tests {
                 month: None,
                 day: None,
             }),
+            genres: Vec::new(),
+            composers: Vec::new(),
+            producers: Vec::new(),
             attribution: EnrichmentAttribution {
                 source_url: format!("https://musicbrainz.org/release-group/{id}"),
                 author: Some("MusicBrainz contributors".into()),

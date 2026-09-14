@@ -1,8 +1,9 @@
 use crate::api::*;
 use crate::enrichment::{
-    identity::normalize_mbid,
+    identity::{normalize_mbid, normalized_match_text},
     models::{
-        CacheValidators, DiscographyBatch, ProviderResponse, ReleaseGroupPage, ReleaseGroupSnapshot,
+        CacheValidators, DiscographyBatch, LocalReleaseMatchContext, MatchedReleaseMetadata,
+        ProviderResponse, ReleaseGroupPage, ReleaseGroupSnapshot,
     },
     policy::MAX_JSON_BYTES,
     transport::*,
@@ -71,6 +72,102 @@ struct RemoteReleaseGroup {
     secondary_types: Vec<String>,
     #[serde(rename = "first-release-date")]
     first_release_date: Option<String>,
+    #[serde(default)]
+    genres: Vec<RemoteGenre>,
+    #[serde(default)]
+    relations: Vec<RemoteArtistRelation>,
+}
+
+#[derive(Deserialize)]
+struct RemoteGenre {
+    name: String,
+    #[serde(default)]
+    count: i64,
+}
+
+#[derive(Deserialize)]
+struct RemoteArtistRelation {
+    #[serde(rename = "type")]
+    kind: String,
+    artist: Option<RemoteRelatedArtist>,
+}
+
+#[derive(Deserialize)]
+struct RemoteRelatedArtist {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct RemoteReleasesPage {
+    #[serde(rename = "release-count")]
+    count: u64,
+    #[serde(rename = "release-offset")]
+    offset: u64,
+    releases: Vec<RemoteRelease>,
+}
+
+#[derive(Deserialize)]
+struct RemoteRelease {
+    id: String,
+    title: String,
+    date: Option<String>,
+    #[serde(default, rename = "artist-credit")]
+    artist_credit: Vec<RemoteArtistCredit>,
+    #[serde(default)]
+    media: Vec<RemoteMedium>,
+    #[serde(default)]
+    genres: Vec<RemoteGenre>,
+    #[serde(default)]
+    relations: Vec<RemoteArtistRelation>,
+}
+
+#[derive(Deserialize)]
+struct RemoteArtistCredit {
+    name: Option<String>,
+    artist: RemoteCreditArtist,
+}
+
+#[derive(Deserialize)]
+struct RemoteCreditArtist {
+    id: String,
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct RemoteMedium {
+    position: u32,
+    #[serde(default)]
+    tracks: Vec<RemoteTrack>,
+}
+
+#[derive(Deserialize)]
+struct RemoteTrack {
+    position: u32,
+    title: String,
+    length: Option<u64>,
+    recording: Option<RemoteRecording>,
+}
+
+#[derive(Deserialize)]
+struct RemoteRecording {
+    title: String,
+    length: Option<u64>,
+    #[serde(default)]
+    relations: Vec<RemoteRelation>,
+}
+
+#[derive(Deserialize)]
+struct RemoteRelation {
+    #[serde(rename = "type")]
+    kind: String,
+    artist: Option<RemoteRelatedArtist>,
+    work: Option<RemoteWork>,
+}
+
+#[derive(Deserialize)]
+struct RemoteWork {
+    #[serde(default)]
+    relations: Vec<RemoteArtistRelation>,
 }
 
 #[derive(Deserialize)]
@@ -239,6 +336,55 @@ impl MusicBrainz {
         .await
     }
 
+    pub async fn match_local_release(
+        &self,
+        local: &LocalReleaseMatchContext,
+        release_group_mbid: &str,
+        identity_generation: u64,
+        fetched_at: i64,
+    ) -> Result<Option<MatchedReleaseMetadata>, TransportError> {
+        let release_group_mbid =
+            normalize_mbid(release_group_mbid).ok_or(TransportError::InvalidRequest)?;
+        let response = self
+            .http
+            .get_json::<RemoteReleasesPage>(
+                "ws/2/release/",
+                &[
+                    ("release-group", &release_group_mbid),
+                    ("fmt", "json"),
+                    (
+                        "inc",
+                        "recordings+artist-credits+media+genres+artist-rels+recording-level-rels+work-rels+work-level-rels",
+                    ),
+                    ("limit", "100"),
+                ],
+                &CacheValidators::default(),
+            )
+            .await?;
+        let JsonResponse::Modified { body, .. } = response else {
+            return Err(TransportError::InvalidJson);
+        };
+        if body.offset != 0 || body.count != body.releases.len() as u64 {
+            // An incomplete edition list cannot prove that a match is unique.
+            return Ok(None);
+        }
+        let mut matches = body
+            .releases
+            .into_iter()
+            .filter(|release| release.matches(local))
+            .collect::<Vec<_>>();
+        if let Some(tagged) = local.tagged_release_mbid.as_deref() {
+            matches.retain(|release| release.id.eq_ignore_ascii_case(tagged));
+        }
+        if matches.len() != 1 {
+            return Ok(None);
+        }
+        matches
+            .pop()
+            .unwrap()
+            .metadata(local, release_group_mbid, identity_generation, fetched_at)
+    }
+
     async fn discography_with_limits(
         &self,
         mbid: &str,
@@ -340,6 +486,7 @@ impl MusicBrainz {
                 &[
                     ("artist", mbid),
                     ("fmt", "json"),
+                    ("inc", "genres+artist-rels"),
                     ("limit", &limit_text),
                     ("offset", &offset_text),
                 ],
@@ -383,6 +530,166 @@ impl MusicBrainz {
     }
 }
 
+impl RemoteRelease {
+    fn matches(&self, local: &LocalReleaseMatchContext) -> bool {
+        if normalized_match_text(&self.title) != normalized_match_text(&local.title)
+            || !self.artist_credit.iter().any(|credit| {
+                normalize_mbid(&credit.artist.id).as_deref() == Some(local.artist_mbid.as_str())
+                    && [credit.name.as_deref(), Some(credit.artist.name.as_str())]
+                        .into_iter()
+                        .flatten()
+                        .any(|name| {
+                            normalized_match_text(name) == normalized_match_text(&local.artist_name)
+                        })
+            })
+        {
+            return false;
+        }
+        let mut remote_tracks = self
+            .media
+            .iter()
+            .flat_map(|medium| {
+                medium.tracks.iter().map(move |track| {
+                    (
+                        medium.position,
+                        track.position,
+                        track
+                            .recording
+                            .as_ref()
+                            .map_or(track.title.as_str(), |recording| recording.title.as_str()),
+                        track.length.or_else(|| {
+                            track
+                                .recording
+                                .as_ref()
+                                .and_then(|recording| recording.length)
+                        }),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        remote_tracks.sort_by_key(|track| (track.0, track.1));
+        if remote_tracks.len() != local.tracks.len() {
+            return false;
+        }
+        local
+            .tracks
+            .iter()
+            .zip(remote_tracks)
+            .all(|(local, remote)| {
+                u32::from(local.disc_number) == remote.0
+                    && u32::from(local.track_number) == remote.1
+                    && normalized_match_text(&local.title) == normalized_match_text(remote.2)
+                    && remote.3.is_some_and(|milliseconds| {
+                        let remote_seconds = milliseconds.div_ceil(1_000);
+                        let difference = local.duration_seconds.abs_diff(remote_seconds);
+                        difference <= 3
+                            || difference.saturating_mul(100)
+                                <= local.duration_seconds.max(1).saturating_mul(2)
+                    })
+            })
+    }
+
+    fn metadata(
+        self,
+        local: &LocalReleaseMatchContext,
+        release_group_mbid: String,
+        identity_generation: u64,
+        fetched_at: i64,
+    ) -> Result<Option<MatchedReleaseMetadata>, TransportError> {
+        let release_mbid = normalize_mbid(&self.id).ok_or(TransportError::InvalidJson)?;
+        let release_date = self
+            .date
+            .as_deref()
+            .map(|date| normalize_partial_date(Some(date)))
+            .transpose()?
+            .flatten()
+            .map(|date| match (date.month, date.day) {
+                (Some(month), Some(day)) => format!("{:04}-{month:02}-{day:02}", date.year),
+                (Some(month), None) => format!("{:04}-{month:02}", date.year),
+                _ => format!("{:04}", date.year),
+            });
+        let genres = normalize_genres(self.genres)?;
+        let mut composers = Vec::new();
+        let mut producers = Vec::new();
+        collect_artist_relations(&self.relations, &mut composers, &mut producers)?;
+        for recording in self
+            .media
+            .iter()
+            .flat_map(|medium| medium.tracks.iter())
+            .filter_map(|track| track.recording.as_ref())
+        {
+            collect_recording_relations(recording, &mut composers, &mut producers)?;
+        }
+        Ok(Some(MatchedReleaseMetadata {
+            release_id: local.release_id,
+            artist_id: local.artist_id,
+            identity_generation,
+            release_group_mbid,
+            release_mbid: Some(release_mbid),
+            release_date,
+            genres,
+            composers,
+            producers,
+            source_url: format!("https://musicbrainz.org/release/{}", self.id),
+            fetched_at,
+        }))
+    }
+}
+
+fn collect_recording_relations(
+    recording: &RemoteRecording,
+    composers: &mut Vec<String>,
+    producers: &mut Vec<String>,
+) -> Result<(), TransportError> {
+    for relation in &recording.relations {
+        collect_relation(
+            &relation.kind,
+            relation.artist.as_ref(),
+            composers,
+            producers,
+        )?;
+        if let Some(work) = &relation.work {
+            collect_artist_relations(&work.relations, composers, producers)?;
+        }
+    }
+    Ok(())
+}
+
+fn collect_artist_relations(
+    relations: &[RemoteArtistRelation],
+    composers: &mut Vec<String>,
+    producers: &mut Vec<String>,
+) -> Result<(), TransportError> {
+    for relation in relations {
+        collect_relation(
+            &relation.kind,
+            relation.artist.as_ref(),
+            composers,
+            producers,
+        )?;
+    }
+    Ok(())
+}
+
+fn collect_relation(
+    kind: &str,
+    artist: Option<&RemoteRelatedArtist>,
+    composers: &mut Vec<String>,
+    producers: &mut Vec<String>,
+) -> Result<(), TransportError> {
+    let Some(artist) = artist else { return Ok(()) };
+    let Some(name) = normalize_text(&artist.name, 500)? else {
+        return Ok(());
+    };
+    let kind = kind.to_lowercase();
+    if matches!(kind.as_str(), "composer" | "writer") {
+        push_unique(composers, name);
+    } else if kind.contains("producer") {
+        push_unique(producers, name);
+    }
+    Ok(())
+}
+
 impl RemoteReleaseGroup {
     fn normalize(self) -> Result<ReleaseGroupSnapshot, TransportError> {
         let musicbrainz_id = normalize_mbid(&self.id).ok_or(TransportError::InvalidJson)?;
@@ -404,12 +711,31 @@ impl RemoteReleaseGroup {
                 secondary_types.push(value);
             }
         }
+        let genres = normalize_genres(self.genres)?;
+        let mut composers = Vec::new();
+        let mut producers = Vec::new();
+        for relation in self.relations {
+            let Some(artist) = relation.artist else {
+                continue;
+            };
+            let Some(name) = normalize_text(&artist.name, 500)? else {
+                continue;
+            };
+            let kind = relation.kind.to_lowercase();
+            if kind == "composer" {
+                push_unique(&mut composers, name);
+            } else if kind.contains("producer") {
+                push_unique(&mut producers, name);
+            }
+        }
         Ok(ReleaseGroupSnapshot {
             attribution: EnrichmentAttribution {
                 source_url: format!("https://musicbrainz.org/release-group/{musicbrainz_id}"),
                 author: Some("MusicBrainz contributors".into()),
-                license_name: Some("CC0 1.0".into()),
-                license_url: Some("https://creativecommons.org/publicdomain/zero/1.0/".into()),
+                // Genres are MusicBrainz tags (supplementary data), so use the
+                // more restrictive attribution for the combined snapshot.
+                license_name: Some("CC BY-SA 3.0".into()),
+                license_url: Some("https://creativecommons.org/licenses/by-sa/3.0/".into()),
                 revision: None,
             },
             musicbrainz_id,
@@ -417,7 +743,36 @@ impl RemoteReleaseGroup {
             primary_type,
             secondary_types,
             first_release_date: normalize_partial_date(self.first_release_date.as_deref())?,
+            genres,
+            composers,
+            producers,
         })
+    }
+}
+
+fn normalize_genres(mut genres: Vec<RemoteGenre>) -> Result<Vec<String>, TransportError> {
+    genres.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    let mut normalized = Vec::new();
+    for genre in genres.into_iter().take(20) {
+        let Some(name) = normalize_text(&genre.name, 100)? else {
+            continue;
+        };
+        push_unique(&mut normalized, name);
+    }
+    Ok(normalized)
+}
+
+fn push_unique(values: &mut Vec<String>, value: String) {
+    if !values
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&value))
+    {
+        values.push(value);
     }
 }
 

@@ -16,12 +16,13 @@ enum PlayerNavigationFixture {
             artist: artist.name, artistId: artist.id,
             release: "Álbum de teste", releaseId: 42, trackNumber: 1, discNumber: 1,
             durationSeconds: 180, filePath: "/unused/navigation-fixture.mp3",
-            artworkId: nil, bitrate: nil, sampleRate: nil, playCount: 0, lastPlayed: nil,
+            artworkId: nil, bitrate: nil, sampleRate: nil, bitDepth: nil, playCount: 0, lastPlayed: nil,
             rating: nil, isFavorite: false, isHidden: false, suggestLess: false
         )
         let album = Release(
             id: 42, title: track.release, artist: albumArtist.name, artistId: albumArtist.id,
-            releaseDate: nil, totalTracks: 1, totalDiscs: 1, durationSeconds: 180,
+            releaseDate: nil, genres: [], composers: [], producers: [],
+            totalTracks: 1, totalDiscs: 1, durationSeconds: 180,
             artworkId: nil, isFavorite: false, isHidden: false, suggestLess: false, rating: nil
         )
         var sameTitleAlbum = album

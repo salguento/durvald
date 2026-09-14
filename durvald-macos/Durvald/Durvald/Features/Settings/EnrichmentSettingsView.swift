@@ -31,6 +31,28 @@ struct EnrichmentSettingsView: View {
                 .disabled(!enabled)
             }
 
+            Section("Biblioteca") {
+                Button {
+                    Task { await store.updateLibraryMetadata(refreshRemote: true) }
+                } label: {
+                    if store.isUpdatingLibraryMetadata {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Atualizando \(store.metadataUpdateCompleted) de \(store.metadataUpdateTotal)…")
+                        }
+                    } else {
+                        Label("Atualizar metadados da biblioteca", systemImage: "arrow.clockwise")
+                    }
+                }
+                .disabled(store.isUpdatingLibraryMetadata || store.core == nil)
+                .accessibilityIdentifier("settings.enrichment.updateLibrary")
+
+                Text("A atualização também acontece automaticamente ao abrir o Durvald e depois de uma varredura. Artistas sem identidade confirmada precisam ser vinculados antes.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 HStack {
                     Spacer()
