@@ -609,15 +609,16 @@ impl EnrichmentService {
             match profile_result {
                 Ok(outcome) => {
                     if requested_profile {
-                        results.push(ArtistRefreshSectionResult {
-                            section: ArtistRefreshSection::Profile,
-                            status: outcome.profile_status,
-                            retry_after_seconds: None,
-                            cover_progress: None,
-                        });
+                        results.push(refresh_section_result(
+                            ArtistRefreshSection::Profile,
+                            outcome.profile_status,
+                            None,
+                            None,
+                            None,
+                        ));
                     }
                     if requested_portrait {
-                        let (status, retry_after_seconds) = match outcome.commons_file {
+                        let (status, retry_after_seconds, diagnostic) = match outcome.commons_file {
                             Some(filename) => {
                                 let portrait = tokio::time::timeout_at(
                                     deadline,
@@ -631,59 +632,58 @@ impl EnrichmentService {
                                 .await
                                 .unwrap_or(Err(super::transport::TransportError::Timeout));
                                 match portrait {
-                                    Ok(status) => (status, None),
+                                    Ok(status) => (status, None, None),
                                     Err(error) => refresh_transport_error(&error),
                                 }
                             }
-                            None => (ArtistRefreshStatus::NotFound, None),
+                            None => (ArtistRefreshStatus::NotFound, None, None),
                         };
-                        results.push(ArtistRefreshSectionResult {
-                            section: ArtistRefreshSection::Portrait,
+                        results.push(refresh_section_result(
+                            ArtistRefreshSection::Portrait,
                             status,
                             retry_after_seconds,
-                            cover_progress: None,
-                        });
+                            None,
+                            diagnostic,
+                        ));
                     }
                 }
                 Err(error) => {
-                    let (status, retry) = refresh_transport_error(&error);
+                    let (status, retry, diagnostic) = refresh_transport_error(&error);
                     for section in [
                         ArtistRefreshSection::Profile,
                         ArtistRefreshSection::Portrait,
                     ] {
                         if request.sections.contains(&section) {
-                            results.push(ArtistRefreshSectionResult {
-                                section,
-                                status,
-                                retry_after_seconds: retry,
-                                cover_progress: None,
-                            });
+                            results.push(refresh_section_result(
+                                section, status, retry, None, diagnostic,
+                            ));
                         }
                     }
                 }
             }
         }
         if requested_discography {
-            let (status, retry_after_seconds) = match self
+            let (status, retry_after_seconds, diagnostic) = match self
                 .refresh_discography_once(&identity, request.force)
                 .await
             {
-                Ok(status) => (status, None),
+                Ok(status) => (status, None, None),
                 Err(error) => refresh_transport_error(&error),
             };
-            results.push(ArtistRefreshSectionResult {
-                section: ArtistRefreshSection::Discography,
+            results.push(refresh_section_result(
+                ArtistRefreshSection::Discography,
                 status,
                 retry_after_seconds,
-                cover_progress: None,
-            });
+                None,
+                diagnostic,
+            ));
         }
         if requested_covers {
-            let (status, retry_after_seconds, cover_progress) =
+            let (status, retry_after_seconds, cover_progress, diagnostic) =
                 match self.refresh_covers_once(&identity, request.force).await {
-                    Ok(outcome) => (outcome.status, None, Some(outcome.progress)),
+                    Ok(outcome) => (outcome.status, None, Some(outcome.progress), None),
                     Err(error) => {
-                        let (status, retry) = refresh_transport_error(&error);
+                        let (status, retry, diagnostic) = refresh_transport_error(&error);
                         let progress = self
                             .database({
                                 let generation = identity.generation;
@@ -695,15 +695,16 @@ impl EnrichmentService {
                             })
                             .await
                             .ok();
-                        (status, retry, progress)
+                        (status, retry, progress, diagnostic)
                     }
                 };
-            results.push(ArtistRefreshSectionResult {
-                section: ArtistRefreshSection::Covers,
+            results.push(refresh_section_result(
+                ArtistRefreshSection::Covers,
                 status,
                 retry_after_seconds,
                 cover_progress,
-            });
+                diagnostic,
+            ));
         }
         Ok(ArtistRefreshResult {
             artist_id,
@@ -1770,30 +1771,98 @@ fn refresh_result(
         identity_generation: generation,
         sections: sections
             .into_iter()
-            .map(|section| ArtistRefreshSectionResult {
-                section,
-                status,
-                retry_after_seconds,
-                cover_progress: None,
-            })
+            .map(|section| refresh_section_result(section, status, retry_after_seconds, None, None))
             .collect(),
+    }
+}
+
+fn refresh_section_result(
+    section: ArtistRefreshSection,
+    status: ArtistRefreshStatus,
+    retry_after_seconds: Option<u64>,
+    cover_progress: Option<CoverRefreshProgress>,
+    diagnostic: Option<ArtistRefreshDiagnosticCode>,
+) -> ArtistRefreshSectionResult {
+    ArtistRefreshSectionResult {
+        section,
+        status,
+        retry_after_seconds,
+        cover_progress,
+        diagnostic,
+        provider: Some(match section {
+            ArtistRefreshSection::Profile => EnrichmentProvider::Wikidata,
+            ArtistRefreshSection::Portrait => EnrichmentProvider::Commons,
+            ArtistRefreshSection::Discography => EnrichmentProvider::MusicBrainz,
+            ArtistRefreshSection::Covers => EnrichmentProvider::CoverArtArchive,
+        }),
     }
 }
 
 fn refresh_transport_error(
     error: &super::transport::TransportError,
-) -> (ArtistRefreshStatus, Option<u64>) {
+) -> (
+    ArtistRefreshStatus,
+    Option<u64>,
+    Option<ArtistRefreshDiagnosticCode>,
+) {
     use super::transport::TransportError;
+    use ArtistRefreshDiagnosticCode as Diagnostic;
     match error {
         TransportError::RateLimited {
             retry_after_seconds,
-        } => (ArtistRefreshStatus::RateLimited, Some(*retry_after_seconds)),
-        TransportError::HttpStatus { status: 404, .. } => (ArtistRefreshStatus::NotFound, None),
+        } => (
+            ArtistRefreshStatus::RateLimited,
+            Some(*retry_after_seconds),
+            None,
+        ),
+        TransportError::HttpStatus { status: 404, .. } => {
+            (ArtistRefreshStatus::NotFound, None, None)
+        }
+        TransportError::Timeout => (
+            ArtistRefreshStatus::Unavailable,
+            None,
+            Some(Diagnostic::Timeout),
+        ),
+        TransportError::Connection => (
+            ArtistRefreshStatus::Unavailable,
+            None,
+            Some(Diagnostic::ConnectionFailed),
+        ),
+        TransportError::InvalidJson | TransportError::BodyTooLarge => (
+            ArtistRefreshStatus::Unavailable,
+            None,
+            Some(Diagnostic::InvalidResponse),
+        ),
+        TransportError::InvalidImage => (
+            ArtistRefreshStatus::Unavailable,
+            None,
+            Some(Diagnostic::InvalidImage),
+        ),
+        TransportError::Storage { extended_code } => {
+            let busy = extended_code.is_some_and(|code| matches!(code & 0xff, 5 | 6));
+            (
+                ArtistRefreshStatus::Unavailable,
+                None,
+                Some(if busy {
+                    Diagnostic::DatabaseBusy
+                } else {
+                    Diagnostic::ProviderUnavailable
+                }),
+            )
+        }
         TransportError::HttpStatus {
             retry_after_seconds,
             ..
-        } => (ArtistRefreshStatus::Unavailable, *retry_after_seconds),
-        _ => (ArtistRefreshStatus::Unavailable, None),
+        } => (
+            ArtistRefreshStatus::Unavailable,
+            *retry_after_seconds,
+            Some(Diagnostic::ProviderUnavailable),
+        ),
+        _ => (
+            ArtistRefreshStatus::Unavailable,
+            None,
+            Some(Diagnostic::ProviderUnavailable),
+        ),
     }
 }
 
@@ -1927,6 +1996,27 @@ mod tests {
                 .to_string_lossy()
                 .into_owned(),
         )
+    }
+
+    #[test]
+    fn refresh_transport_errors_keep_actionable_diagnostics() {
+        use super::super::transport::TransportError;
+
+        let (status, retry, diagnostic) = refresh_transport_error(&TransportError::Storage {
+            extended_code: Some(5),
+        });
+        assert_eq!(status, ArtistRefreshStatus::Unavailable);
+        assert_eq!(retry, None);
+        assert_eq!(diagnostic, Some(ArtistRefreshDiagnosticCode::DatabaseBusy));
+
+        let (_, _, diagnostic) = refresh_transport_error(&TransportError::Timeout);
+        assert_eq!(diagnostic, Some(ArtistRefreshDiagnosticCode::Timeout));
+
+        let (_, _, diagnostic) = refresh_transport_error(&TransportError::InvalidJson);
+        assert_eq!(
+            diagnostic,
+            Some(ArtistRefreshDiagnosticCode::InvalidResponse)
+        );
     }
 
     #[tokio::test]

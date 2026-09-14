@@ -1351,24 +1351,56 @@ final class DurvaldCoreStore {
         }
     }
 
-    /// Atualiza perfil/retrato explicitamente e sempre relê o cache local ao final.
-    /// Estados esperados como identidade pendente, offline ou conteúdo ausente não
-    /// são apresentados como erro global da aplicação.
-    func refreshArtistDetails(artistId: Int64, language: String) async -> ArtistDetails? {
-        guard let core else { return nil }
+    /// Atualiza perfil/retrato e preserva tanto o diagnóstico por seção quanto
+    /// a releitura do cache local. Falha remota não apaga conteúdo publicado.
+    func refreshArtistDetailsWithResult(
+        artistId: Int64,
+        language: String,
+        force: Bool = false
+    ) async -> (details: ArtistDetails?, result: ArtistRefreshResult?) {
+        guard let core else { return (nil, nil) }
         do {
-            _ = try await core.refreshArtist(
+            let result = try await core.refreshArtist(
                 artistId: artistId,
                 request: ArtistRefreshRequest(
                     sections: [.profile, .portrait],
                     language: language,
-                    force: false
+                    force: force
                 )
             )
-            return try await core.artistDetails(artistId: artistId, language: language)
+            let details = try await core.artistDetails(artistId: artistId, language: language)
+            return (details, result)
         } catch {
             errorMessage = String(describing: error)
-            return try? await core.artistDetails(artistId: artistId, language: language)
+            return (try? await core.artistDetails(artistId: artistId, language: language), nil)
+        }
+    }
+
+    /// Compatibilidade para chamadores que só precisam do snapshot local.
+    func refreshArtistDetails(artistId: Int64, language: String) async -> ArtistDetails? {
+        await refreshArtistDetailsWithResult(artistId: artistId, language: language).details
+    }
+
+    /// Atualiza somente as seções solicitadas; usado pelos retries contextuais da UI.
+    func refreshArtistSections(
+        artistId: Int64,
+        language: String,
+        sections: [ArtistRefreshSection],
+        force: Bool = false
+    ) async -> ArtistRefreshResult? {
+        guard let core, !sections.isEmpty else { return nil }
+        do {
+            return try await core.refreshArtist(
+                artistId: artistId,
+                request: ArtistRefreshRequest(
+                    sections: sections,
+                    language: language,
+                    force: force
+                )
+            )
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
         }
     }
 

@@ -300,6 +300,18 @@ pub enum ArtistRefreshStatus {
     Superseded,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ArtistRefreshDiagnosticCode {
+    Timeout,
+    ConnectionFailed,
+    InvalidResponse,
+    InvalidImage,
+    DatabaseBusy,
+    ProviderUnavailable,
+}
+
 /// Durable cover-queue counters for the artist's active catalog snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -317,6 +329,10 @@ pub struct ArtistRefreshSectionResult {
     pub status: ArtistRefreshStatus,
     pub retry_after_seconds: Option<u64>,
     pub cover_progress: Option<CoverRefreshProgress>,
+    /// Stable machine-readable cause. UI strings remain frontend-owned.
+    pub diagnostic: Option<ArtistRefreshDiagnosticCode>,
+    /// Primary provider for the section. A profile may aggregate multiple providers.
+    pub provider: Option<EnrichmentProvider>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -8,11 +8,11 @@ import Foundation
 // might be in a separate module, or it might be compiled inline into
 // this module. This is a bit of light hackery to work with both.
 #if canImport(durvald_coreFFI)
-import durvald_coreFFI
+    import durvald_coreFFI
 #endif
 
-fileprivate extension RustBuffer {
-    // Allocate a new buffer, copying the contents of a `UInt8` array.
+private extension RustBuffer {
+    /// Allocate a new buffer, copying the contents of a `UInt8` array.
     init(bytes: [UInt8]) {
         let rbuf = bytes.withUnsafeBufferPointer { ptr in
             RustBuffer.from(ptr)
@@ -21,21 +21,21 @@ fileprivate extension RustBuffer {
     }
 
     static func empty() -> RustBuffer {
-        RustBuffer(capacity: 0, len:0, data: nil)
+        RustBuffer(capacity: 0, len: 0, data: nil)
     }
 
     static func from(_ ptr: UnsafeBufferPointer<UInt8>) -> RustBuffer {
         try! rustCall { ffi_durvald_core_rustbuffer_from_bytes(ForeignBytes(bufferPointer: ptr), $0) }
     }
 
-    // Frees the buffer in place.
-    // The buffer must not be used after this is called.
+    /// Frees the buffer in place.
+    /// The buffer must not be used after this is called.
     func deallocate() {
         try! rustCall { ffi_durvald_core_rustbuffer_free(self, $0) }
     }
 }
 
-fileprivate extension ForeignBytes {
+private extension ForeignBytes {
     init(bufferPointer: UnsafeBufferPointer<UInt8>) {
         self.init(len: Int32(bufferPointer.count), data: bufferPointer.baseAddress)
     }
@@ -48,7 +48,7 @@ fileprivate extension ForeignBytes {
 // Helper classes/extensions that don't change.
 // Someday, this will be in a library of its own.
 
-fileprivate extension Data {
+private extension Data {
     init(rustBuffer: RustBuffer) {
         // TODO: This copies the buffer. Can we read directly from a
         // Rust buffer?
@@ -70,15 +70,15 @@ fileprivate extension Data {
 //
 // Instead, the read() method and these helper functions input a tuple of data
 
-fileprivate func createReader(data: Data) -> (data: Data, offset: Data.Index) {
+private func createReader(data: Data) -> (data: Data, offset: Data.Index) {
     (data: data, offset: 0)
 }
 
-// Reads an integer at the current offset, in big-endian order, and advances
-// the offset on success. Throws if reading the integer would move the
-// offset past the end of the buffer.
-fileprivate func readInt<T: FixedWidthInteger>(_ reader: inout (data: Data, offset: Data.Index)) throws -> T {
-    let range = reader.offset..<reader.offset + MemoryLayout<T>.size
+/// Reads an integer at the current offset, in big-endian order, and advances
+/// the offset on success. Throws if reading the integer would move the
+/// offset past the end of the buffer.
+private func readInt<T: FixedWidthInteger>(_ reader: inout (data: Data, offset: Data.Index)) throws -> T {
+    let range = reader.offset ..< reader.offset + MemoryLayout<T>.size
     guard reader.data.count >= range.upperBound else {
         throw UniffiInternalError.bufferOverflow
     }
@@ -88,38 +88,38 @@ fileprivate func readInt<T: FixedWidthInteger>(_ reader: inout (data: Data, offs
         return value as! T
     }
     var value: T = 0
-    let _ = withUnsafeMutableBytes(of: &value, { reader.data.copyBytes(to: $0, from: range)})
+    let _ = withUnsafeMutableBytes(of: &value) { reader.data.copyBytes(to: $0, from: range) }
     reader.offset = range.upperBound
     return value.bigEndian
 }
 
-// Reads an arbitrary number of bytes, to be used to read
-// raw bytes, this is useful when lifting strings
-fileprivate func readBytes(_ reader: inout (data: Data, offset: Data.Index), count: Int) throws -> Array<UInt8> {
-    let range = reader.offset..<(reader.offset+count)
+/// Reads an arbitrary number of bytes, to be used to read
+/// raw bytes, this is useful when lifting strings
+private func readBytes(_ reader: inout (data: Data, offset: Data.Index), count: Int) throws -> [UInt8] {
+    let range = reader.offset ..< (reader.offset + count)
     guard reader.data.count >= range.upperBound else {
         throw UniffiInternalError.bufferOverflow
     }
     var value = [UInt8](repeating: 0, count: count)
-    value.withUnsafeMutableBufferPointer({ buffer in
+    value.withUnsafeMutableBufferPointer { buffer in
         reader.data.copyBytes(to: buffer, from: range)
-    })
+    }
     reader.offset = range.upperBound
     return value
 }
 
-// Reads a float at the current offset.
-fileprivate func readFloat(_ reader: inout (data: Data, offset: Data.Index)) throws -> Float {
-    return Float(bitPattern: try readInt(&reader))
+/// Reads a float at the current offset.
+private func readFloat(_ reader: inout (data: Data, offset: Data.Index)) throws -> Float {
+    return try Float(bitPattern: readInt(&reader))
 }
 
-// Reads a float at the current offset.
-fileprivate func readDouble(_ reader: inout (data: Data, offset: Data.Index)) throws -> Double {
-    return Double(bitPattern: try readInt(&reader))
+/// Reads a float at the current offset.
+private func readDouble(_ reader: inout (data: Data, offset: Data.Index)) throws -> Double {
+    return try Double(bitPattern: readInt(&reader))
 }
 
-// Indicates if the offset has reached the end of the buffer.
-fileprivate func hasRemaining(_ reader: (data: Data, offset: Data.Index)) -> Bool {
+/// Indicates if the offset has reached the end of the buffer.
+private func hasRemaining(_ reader: (data: Data, offset: Data.Index)) -> Bool {
     return reader.offset < reader.data.count
 }
 
@@ -127,34 +127,34 @@ fileprivate func hasRemaining(_ reader: (data: Data, offset: Data.Index)) -> Boo
 // struct, but we use standalone functions instead in order to make external
 // types work.  See the above discussion on Readers for details.
 
-fileprivate func createWriter() -> [UInt8] {
+private func createWriter() -> [UInt8] {
     return []
 }
 
-fileprivate func writeBytes<S>(_ writer: inout [UInt8], _ byteArr: S) where S: Sequence, S.Element == UInt8 {
+private func writeBytes<S: Sequence>(_ writer: inout [UInt8], _ byteArr: S) where S.Element == UInt8 {
     writer.append(contentsOf: byteArr)
 }
 
-// Writes an integer in big-endian order.
-//
-// Warning: make sure what you are trying to write
-// is in the correct type!
-fileprivate func writeInt<T: FixedWidthInteger>(_ writer: inout [UInt8], _ value: T) {
+/// Writes an integer in big-endian order.
+///
+/// Warning: make sure what you are trying to write
+/// is in the correct type!
+private func writeInt<T: FixedWidthInteger>(_ writer: inout [UInt8], _ value: T) {
     var value = value.bigEndian
     withUnsafeBytes(of: &value) { writer.append(contentsOf: $0) }
 }
 
-fileprivate func writeFloat(_ writer: inout [UInt8], _ value: Float) {
+private func writeFloat(_ writer: inout [UInt8], _ value: Float) {
     writeInt(&writer, value.bitPattern)
 }
 
-fileprivate func writeDouble(_ writer: inout [UInt8], _ value: Double) {
+private func writeDouble(_ writer: inout [UInt8], _ value: Double) {
     writeInt(&writer, value.bitPattern)
 }
 
-// Protocol for types that transfer other types across the FFI. This is
-// analogous go the Rust trait of the same name.
-fileprivate protocol FfiConverter {
+/// Protocol for types that transfer other types across the FFI. This is
+/// analogous go the Rust trait of the same name.
+private protocol FfiConverter {
     associatedtype FfiType
     associatedtype SwiftType
 
@@ -164,8 +164,8 @@ fileprivate protocol FfiConverter {
     static func write(_ value: SwiftType, into buf: inout [UInt8])
 }
 
-// Types conforming to `Primitive` pass themselves directly over the FFI.
-fileprivate protocol FfiConverterPrimitive: FfiConverter where FfiType == SwiftType { }
+/// Types conforming to `Primitive` pass themselves directly over the FFI.
+private protocol FfiConverterPrimitive: FfiConverter where FfiType == SwiftType {}
 
 extension FfiConverterPrimitive {
     public static func lift(_ value: FfiType) throws -> SwiftType {
@@ -177,9 +177,9 @@ extension FfiConverterPrimitive {
     }
 }
 
-// Types conforming to `FfiConverterRustBuffer` lift and lower into a `RustBuffer`.
-// Used for complex types where it's hard to write a custom lift/lower.
-fileprivate protocol FfiConverterRustBuffer: FfiConverter where FfiType == RustBuffer {}
+/// Types conforming to `FfiConverterRustBuffer` lift and lower into a `RustBuffer`.
+/// Used for complex types where it's hard to write a custom lift/lower.
+private protocol FfiConverterRustBuffer: FfiConverter where FfiType == RustBuffer {}
 
 extension FfiConverterRustBuffer {
     public static func lift(_ buf: RustBuffer) throws -> SwiftType {
@@ -193,14 +193,15 @@ extension FfiConverterRustBuffer {
     }
 
     public static func lower(_ value: SwiftType) -> RustBuffer {
-          var writer = createWriter()
-          write(value, into: &writer)
-          return RustBuffer(bytes: writer)
+        var writer = createWriter()
+        write(value, into: &writer)
+        return RustBuffer(bytes: writer)
     }
 }
-// An error type for FFI errors. These errors occur at the UniFFI level, not
-// the library level.
-fileprivate enum UniffiInternalError: LocalizedError {
+
+/// An error type for FFI errors. These errors occur at the UniFFI level, not
+/// the library level.
+private enum UniffiInternalError: LocalizedError {
     case bufferOverflow
     case incompleteData
     case unexpectedOptionalTag
@@ -211,7 +212,7 @@ fileprivate enum UniffiInternalError: LocalizedError {
     case unexpectedStaleHandle
     case rustPanic(_ message: String)
 
-    public var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .bufferOverflow: return "Reading the requested value would read past the end of the buffer"
         case .incompleteData: return "The buffer still has data after lifting its containing value"
@@ -226,24 +227,24 @@ fileprivate enum UniffiInternalError: LocalizedError {
     }
 }
 
-fileprivate extension NSLock {
+private extension NSLock {
     func withLock<T>(f: () throws -> T) rethrows -> T {
-        self.lock()
+        lock()
         defer { self.unlock() }
         return try f()
     }
 }
 
-fileprivate let CALL_SUCCESS: Int8 = 0
-fileprivate let CALL_ERROR: Int8 = 1
-fileprivate let CALL_UNEXPECTED_ERROR: Int8 = 2
-fileprivate let CALL_CANCELLED: Int8 = 3
+private let CALL_SUCCESS: Int8 = 0
+private let CALL_ERROR: Int8 = 1
+private let CALL_UNEXPECTED_ERROR: Int8 = 2
+private let CALL_CANCELLED: Int8 = 3
 
-fileprivate extension RustCallStatus {
+private extension RustCallStatus {
     init() {
         self.init(
             code: CALL_SUCCESS,
-            errorBuf: RustBuffer.init(
+            errorBuf: RustBuffer(
                 capacity: 0,
                 len: 0,
                 data: nil
@@ -258,7 +259,8 @@ private func rustCall<T>(_ callback: (UnsafeMutablePointer<RustCallStatus>) -> T
 
 private func rustCallWithError<T>(
     _ errorHandler: @escaping (RustBuffer) throws -> Error,
-    _ callback: (UnsafeMutablePointer<RustCallStatus>) -> T) throws -> T {
+    _ callback: (UnsafeMutablePointer<RustCallStatus>) -> T
+) throws -> T {
     try makeRustCall(callback, errorHandler: errorHandler)
 }
 
@@ -267,7 +269,7 @@ private func makeRustCall<T>(
     errorHandler: ((RustBuffer) throws -> Error)?
 ) throws -> T {
     uniffiEnsureInitialized()
-    var callStatus = RustCallStatus.init()
+    var callStatus = RustCallStatus()
     let returnedVal = callback(&callStatus)
     try uniffiCheckCallStatus(callStatus: callStatus, errorHandler: errorHandler)
     return returnedVal
@@ -278,44 +280,44 @@ private func uniffiCheckCallStatus(
     errorHandler: ((RustBuffer) throws -> Error)?
 ) throws {
     switch callStatus.code {
-        case CALL_SUCCESS:
-            return
+    case CALL_SUCCESS:
+        return
 
-        case CALL_ERROR:
-            if let errorHandler = errorHandler {
-                throw try errorHandler(callStatus.errorBuf)
-            } else {
-                callStatus.errorBuf.deallocate()
-                throw UniffiInternalError.unexpectedRustCallError
-            }
+    case CALL_ERROR:
+        if let errorHandler = errorHandler {
+            throw try errorHandler(callStatus.errorBuf)
+        } else {
+            callStatus.errorBuf.deallocate()
+            throw UniffiInternalError.unexpectedRustCallError
+        }
 
-        case CALL_UNEXPECTED_ERROR:
-            // When the rust code sees a panic, it tries to construct a RustBuffer
-            // with the message.  But if that code panics, then it just sends back
-            // an empty buffer.
-            if callStatus.errorBuf.len > 0 {
-                throw UniffiInternalError.rustPanic(try FfiConverterString.lift(callStatus.errorBuf))
-            } else {
-                callStatus.errorBuf.deallocate()
-                throw UniffiInternalError.rustPanic("Rust panic")
-            }
+    case CALL_UNEXPECTED_ERROR:
+        // When the rust code sees a panic, it tries to construct a RustBuffer
+        // with the message.  But if that code panics, then it just sends back
+        // an empty buffer.
+        if callStatus.errorBuf.len > 0 {
+            throw try UniffiInternalError.rustPanic(FfiConverterString.lift(callStatus.errorBuf))
+        } else {
+            callStatus.errorBuf.deallocate()
+            throw UniffiInternalError.rustPanic("Rust panic")
+        }
 
-        case CALL_CANCELLED:
-            fatalError("Cancellation not supported yet")
+    case CALL_CANCELLED:
+        fatalError("Cancellation not supported yet")
 
-        default:
-            throw UniffiInternalError.unexpectedRustCallStatusCode
+    default:
+        throw UniffiInternalError.unexpectedRustCallStatusCode
     }
 }
 
 private func uniffiTraitInterfaceCall<T>(
     callStatus: UnsafeMutablePointer<RustCallStatus>,
     makeCall: () throws -> T,
-    writeReturn: (T) -> ()
+    writeReturn: (T) -> Void
 ) {
     do {
         try writeReturn(makeCall())
-    } catch let error {
+    } catch {
         callStatus.pointee.code = CALL_UNEXPECTED_ERROR
         callStatus.pointee.errorBuf = FfiConverterString.lower(String(describing: error))
     }
@@ -324,7 +326,7 @@ private func uniffiTraitInterfaceCall<T>(
 private func uniffiTraitInterfaceCallWithError<T, E>(
     callStatus: UnsafeMutablePointer<RustCallStatus>,
     makeCall: () throws -> T,
-    writeReturn: (T) -> (),
+    writeReturn: (T) -> Void,
     lowerError: (E) -> RustBuffer
 ) {
     do {
@@ -337,7 +339,8 @@ private func uniffiTraitInterfaceCallWithError<T, E>(
         callStatus.pointee.errorBuf = FfiConverterString.lower(String(describing: error))
     }
 }
-fileprivate class UniffiHandleMap<T> {
+
+private class UniffiHandleMap<T> {
     private var map: [UInt64: T] = [:]
     private let lock = NSLock()
     private var currentHandle: UInt64 = 1
@@ -351,7 +354,7 @@ fileprivate class UniffiHandleMap<T> {
         }
     }
 
-     func get(handle: UInt64) throws -> T {
+    func get(handle: UInt64) throws -> T {
         try lock.withLock {
             guard let obj = map[handle] else {
                 throw UniffiInternalError.unexpectedStaleHandle
@@ -371,133 +374,129 @@ fileprivate class UniffiHandleMap<T> {
     }
 
     var count: Int {
-        get {
-            map.count
-        }
+        map.count
     }
 }
-
 
 // Public interface members begin here.
 
-
-fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
+private struct FfiConverterUInt8: FfiConverterPrimitive {
     typealias FfiType = UInt8
     typealias SwiftType = UInt8
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt8 {
         return try lift(readInt(&buf))
     }
 
-    public static func write(_ value: UInt8, into buf: inout [UInt8]) {
+    static func write(_ value: UInt8, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
 
-fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
+private struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
         return try lift(readInt(&buf))
     }
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
 
-fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
+private struct FfiConverterInt32: FfiConverterPrimitive {
     typealias FfiType = Int32
     typealias SwiftType = Int32
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int32 {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int32 {
         return try lift(readInt(&buf))
     }
 
-    public static func write(_ value: Int32, into buf: inout [UInt8]) {
+    static func write(_ value: Int32, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
 
-fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
+private struct FfiConverterUInt64: FfiConverterPrimitive {
     typealias FfiType = UInt64
     typealias SwiftType = UInt64
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt64 {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt64 {
         return try lift(readInt(&buf))
     }
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
 
-fileprivate struct FfiConverterInt64: FfiConverterPrimitive {
+private struct FfiConverterInt64: FfiConverterPrimitive {
     typealias FfiType = Int64
     typealias SwiftType = Int64
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Int64 {
         return try lift(readInt(&buf))
     }
 
-    public static func write(_ value: Int64, into buf: inout [UInt8]) {
+    static func write(_ value: Int64, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
 
-fileprivate struct FfiConverterFloat: FfiConverterPrimitive {
+private struct FfiConverterFloat: FfiConverterPrimitive {
     typealias FfiType = Float
     typealias SwiftType = Float
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Float {
         return try lift(readFloat(&buf))
     }
 
-    public static func write(_ value: Float, into buf: inout [UInt8]) {
+    static func write(_ value: Float, into buf: inout [UInt8]) {
         writeFloat(&buf, lower(value))
     }
 }
 
-fileprivate struct FfiConverterDouble: FfiConverterPrimitive {
+private struct FfiConverterDouble: FfiConverterPrimitive {
     typealias FfiType = Double
     typealias SwiftType = Double
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Double {
         return try lift(readDouble(&buf))
     }
 
-    public static func write(_ value: Double, into buf: inout [UInt8]) {
+    static func write(_ value: Double, into buf: inout [UInt8]) {
         writeDouble(&buf, lower(value))
     }
 }
 
-fileprivate struct FfiConverterBool : FfiConverter {
+private struct FfiConverterBool: FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
 
-    public static func lift(_ value: Int8) throws -> Bool {
+    static func lift(_ value: Int8) throws -> Bool {
         return value != 0
     }
 
-    public static func lower(_ value: Bool) -> Int8 {
+    static func lower(_ value: Bool) -> Int8 {
         return value ? 1 : 0
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Bool {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Bool {
         return try lift(readInt(&buf))
     }
 
-    public static func write(_ value: Bool, into buf: inout [UInt8]) {
+    static func write(_ value: Bool, into buf: inout [UInt8]) {
         writeInt(&buf, lower(value))
     }
 }
 
-fileprivate struct FfiConverterString: FfiConverter {
+private struct FfiConverterString: FfiConverter {
     typealias SwiftType = String
     typealias FfiType = RustBuffer
 
-    public static func lift(_ value: RustBuffer) throws -> String {
+    static func lift(_ value: RustBuffer) throws -> String {
         defer {
             value.deallocate()
         }
@@ -508,7 +507,7 @@ fileprivate struct FfiConverterString: FfiConverter {
         return String(bytes: bytes, encoding: String.Encoding.utf8)!
     }
 
-    public static func lower(_ value: String) -> RustBuffer {
+    static func lower(_ value: String) -> RustBuffer {
         return value.utf8CString.withUnsafeBufferPointer { ptr in
             // The swift string gives us int8_t, we want uint8_t.
             ptr.withMemoryRebound(to: UInt8.self) { ptr in
@@ -519,35 +518,32 @@ fileprivate struct FfiConverterString: FfiConverter {
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> String {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> String {
         let len: Int32 = try readInt(&buf)
-        return String(bytes: try readBytes(&buf, count: Int(len)), encoding: String.Encoding.utf8)!
+        return try String(bytes: readBytes(&buf, count: Int(len)), encoding: String.Encoding.utf8)!
     }
 
-    public static func write(_ value: String, into buf: inout [UInt8]) {
+    static func write(_ value: String, into buf: inout [UInt8]) {
         let len = Int32(value.utf8.count)
         writeInt(&buf, len)
         writeBytes(&buf, value.utf8)
     }
 }
 
-fileprivate struct FfiConverterData: FfiConverterRustBuffer {
+private struct FfiConverterData: FfiConverterRustBuffer {
     typealias SwiftType = Data
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Data {
         let len: Int32 = try readInt(&buf)
-        return Data(try readBytes(&buf, count: Int(len)))
+        return try Data(readBytes(&buf, count: Int(len)))
     }
 
-    public static func write(_ value: Data, into buf: inout [UInt8]) {
+    static func write(_ value: Data, into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         writeBytes(&buf, value)
     }
 }
-
-
-
 
 /**
  * Opaque core engine - the main entry point for all operations.
@@ -555,8 +551,7 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
  * Internally owns the database pool, audio player, secure storage,
  * and Last.fm client. All state is encapsulated here.
  */
-public protocol DurvaldCoreProtocol : AnyObject {
-
+public protocol DurvaldCoreProtocol: AnyObject {
     /**
      * Adds an existing folder to the configured library locations.
      */
@@ -570,46 +565,46 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Adds a track at a playlist position.
      */
-    func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws  -> PlaylistTrack
+    func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws -> PlaylistTrack
 
     /**
      * Gets an artist by ID.
      */
-    func artist(artistId: Int64) async throws  -> Artist
+    func artist(artistId: Int64) async throws -> Artist
 
     /**
      * Reads the local enrichment cache, even when enrichment is disabled/offline.
      * Never resolves identities or makes an HTTP request.
      */
-    func artistDetails(artistId: Int64, language: String) async throws  -> ArtistDetails
+    func artistDetails(artistId: Int64, language: String) async throws -> ArtistDetails
 
     /**
      * Reads one network-free page of the locally persisted external catalog.
      */
-    func artistDiscography(artistId: Int64, pageSize: UInt64, offset: UInt64) async throws  -> ArtistDiscographyPage
+    func artistDiscography(artistId: Int64, pageSize: UInt64, offset: UInt64) async throws -> ArtistDiscographyPage
 
-    func artistIdentity(artistId: Int64) async throws  -> ArtistIdentity
+    func artistIdentity(artistId: Int64) async throws -> ArtistIdentity
 
     /**
      * Returns releases by an artist.
      */
-    func artistReleases(artistId: Int64) async throws  -> [Release]
+    func artistReleases(artistId: Int64) async throws -> [Release]
 
     /**
      * Returns tracks by an artist.
      */
-    func artistTracks(artistId: Int64) async throws  -> [Track]
+    func artistTracks(artistId: Int64) async throws -> [Track]
 
     /**
      * Returns all artists in the library.
      */
-    func artists() async throws  -> [Artist]
+    func artists() async throws -> [Artist]
 
     /**
      * Loads persisted track or release artwork as bytes for Swift `Data`.
      * The supplied artwork identifier must resolve inside the covers directory.
      */
-    func artworkBytes(artworkId: String) async throws  -> Data?
+    func artworkBytes(artworkId: String) async throws -> Data?
 
     /**
      * Requests cancellation of the active library scan.
@@ -623,7 +618,7 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Deletes every completed-playback event and returns the number removed.
      */
-    func clearPlaybackHistory() async throws  -> UInt64
+    func clearPlaybackHistory() async throws -> UInt64
 
     /**
      * Clears every upcoming queue item while leaving the active track alone.
@@ -633,7 +628,7 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Completes Last.fm authorization after the user approved the token.
      */
-    func completeLastfmAuth(token: String) async throws  -> SessionResponse
+    func completeLastfmAuth(token: String) async throws -> SessionResponse
 
     /**
      * Persists optional enrichment preferences; does not start network work.
@@ -645,12 +640,12 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func configureLastfm(apiKey: String, apiSecret: String) async throws
 
-    func confirmArtistIdentity(artistId: Int64, musicbrainzId: String) async throws  -> ArtistIdentity
+    func confirmArtistIdentity(artistId: Int64, musicbrainzId: String) async throws -> ArtistIdentity
 
     /**
      * Creates a playlist. Artwork is optional base64 or a data URL.
      */
-    func createPlaylist(name: String, description: String, artworkBase64: String?) async throws  -> Playlist
+    func createPlaylist(name: String, description: String, artworkBase64: String?) async throws -> Playlist
 
     /**
      * Deletes a playlist and its track entries.
@@ -662,32 +657,32 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func disconnectLastfm() async throws
 
-    func enrichmentSettings() async throws  -> EnrichmentSettings
+    func enrichmentSettings() async throws -> EnrichmentSettings
 
     /**
      * Extracts metadata from an audio file (for preview/import).
      */
-    func extractMetadata(filePath: String) async throws  -> AudioMetadata
+    func extractMetadata(filePath: String) async throws -> AudioMetadata
 
     /**
      * Returns the last session state.
      */
-    func lastSession() async throws  -> LastSession
+    func lastSession() async throws -> LastSession
 
     /**
      * Starts browser-based Last.fm authorization and returns its approval URL.
      */
-    func lastfmAuthToken() async throws  -> AuthTokenResponse
+    func lastfmAuthToken() async throws -> AuthTokenResponse
 
     /**
      * Returns Last.fm connection status.
      */
-    func lastfmStatus() async throws  -> LastFmStatus
+    func lastfmStatus() async throws -> LastFmStatus
 
     /**
      * Lists configured library folders.
      */
-    func libraryPaths() async throws  -> [String]
+    func libraryPaths() async throws -> [String]
 
     /**
      * Moves an upcoming queue item to a new queue position.
@@ -697,7 +692,7 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Advances to the next queued track.
      */
-    func nextTrack() async throws  -> PlaybackSnapshot
+    func nextTrack() async throws -> PlaybackSnapshot
 
     /**
      * Pauses playback.
@@ -707,83 +702,83 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Starts playback of a track.
      */
-    func play(trackId: Int64) async throws  -> PlaybackSnapshot
+    func play(trackId: Int64) async throws -> PlaybackSnapshot
 
     /**
      * Starts the upcoming track at the given queue position.
      */
-    func playQueueItem(position: UInt64) async throws  -> PlaybackSnapshot
+    func playQueueItem(position: UInt64) async throws -> PlaybackSnapshot
 
     /**
      * Returns the current playback state.
      */
-    func playback() async  -> PlaybackSnapshot
+    func playback() async -> PlaybackSnapshot
 
     /**
      * Returns completed playback events, newest-first as stored by the core.
      */
-    func playbackHistory() async throws  -> [PlaybackHistoryItem]
+    func playbackHistory() async throws -> [PlaybackHistoryItem]
 
     /**
      * Returns a bounded page of completed playback events, newest first.
      */
-    func playbackHistoryPage(pageSize: UInt64, offset: UInt64) async throws  -> PlaybackHistoryPage
+    func playbackHistoryPage(pageSize: UInt64, offset: UInt64) async throws -> PlaybackHistoryPage
 
     /**
      * Gets one playlist by ID.
      */
-    func playlist(playlistId: Int64) async throws  -> Playlist
+    func playlist(playlistId: Int64) async throws -> Playlist
 
     /**
      * Loads a playlist's artwork blob as bytes for Swift `Data`.
      */
-    func playlistArtworkBytes(playlistId: Int64) async throws  -> Data?
+    func playlistArtworkBytes(playlistId: Int64) async throws -> Data?
 
     /**
      * Returns tracks in playlist order.
      */
-    func playlistTracks(playlistId: Int64) async throws  -> [Track]
+    func playlistTracks(playlistId: Int64) async throws -> [Track]
 
     /**
      * Returns all playlists.
      */
-    func playlists() async throws  -> [Playlist]
+    func playlists() async throws -> [Playlist]
 
     /**
      * Returns to the previously played track, when one exists.
      */
-    func previousTrack() async throws  -> PlaybackSnapshot
+    func previousTrack() async throws -> PlaybackSnapshot
 
     /**
      * Returns the current queue.
      */
-    func queue() async throws  -> [QueueItem]
+    func queue() async throws -> [QueueItem]
 
     /**
      * Explicitly refreshes the requested remote sections. Local reads remain
      * network-free and scanning/playback never call this method implicitly.
      */
-    func refreshArtist(artistId: Int64, request: ArtistRefreshRequest) async throws  -> ArtistRefreshResult
+    func refreshArtist(artistId: Int64, request: ArtistRefreshRequest) async throws -> ArtistRefreshResult
 
     /**
      * Gets a release by ID.
      */
-    func release(releaseId: Int64) async throws  -> Release
+    func release(releaseId: Int64) async throws -> Release
 
     /**
      * Gets tracks for a release.
      */
-    func releaseTracks(releaseId: Int64) async throws  -> [Track]
+    func releaseTracks(releaseId: Int64) async throws -> [Track]
 
     /**
      * Returns all releases in the library.
      */
-    func releases() async throws  -> [Release]
+    func releases() async throws -> [Release]
 
     /**
      * Returns a bounded page of releases ordered by their stable database ID.
      */
-    func releasesPage(pageSize: UInt64, offset: UInt64) async throws  -> ReleasePage
+    func releasesPage(pageSize: UInt64, offset: UInt64) async throws -> ReleasePage
 
     /**
      * Removes an upcoming queue item.
@@ -805,7 +800,7 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws
 
-    func resolveArtistCandidates(artistId: Int64) async throws  -> ArtistIdentityCandidates
+    func resolveArtistCandidates(artistId: Int64) async throws -> ArtistIdentityCandidates
 
     /**
      * Resumes playback.
@@ -820,22 +815,22 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Scans every configured library folder.
      */
-    func scanConfiguredLibrary() async throws  -> ScanResult
+    func scanConfiguredLibrary() async throws -> ScanResult
 
     /**
      * Scans the library at the given paths.
      */
-    func scanLibrary(paths: [String]) async throws  -> ScanResult
+    func scanLibrary(paths: [String]) async throws -> ScanResult
 
     /**
      * Returns phase-level progress for the current or most recent library scan.
      */
-    func scanProgress() throws  -> ScanProgress?
+    func scanProgress() throws -> ScanProgress?
 
     /**
      * Searches tracks, releases, artists, and playlists by text.
      */
-    func search(query: String) async throws  -> SearchResults
+    func search(query: String) async throws -> SearchResults
 
     /**
      * Seeks to a position in seconds.
@@ -877,12 +872,12 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Sets whether playback stops, repeats one track, or repeats the queue.
      */
-    func setRepeatMode(mode: RepeatMode) async throws  -> PlaybackSnapshot
+    func setRepeatMode(mode: RepeatMode) async throws -> PlaybackSnapshot
 
     /**
      * Enables or disables randomized selection when advancing the queue.
      */
-    func setShuffleEnabled(enabled: Bool) async throws  -> PlaybackSnapshot
+    func setShuffleEnabled(enabled: Bool) async throws -> PlaybackSnapshot
 
     /**
      * Sets whether a track is favorited.
@@ -912,7 +907,7 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Returns application settings.
      */
-    func settings() async throws  -> Settings
+    func settings() async throws -> Settings
 
     /**
      * Stops playback.
@@ -922,17 +917,17 @@ public protocol DurvaldCoreProtocol : AnyObject {
     /**
      * Gets a track by ID.
      */
-    func track(trackId: Int64) async throws  -> Track
+    func track(trackId: Int64) async throws -> Track
 
     /**
      * Returns all tracks in the library.
      */
-    func tracks() async throws  -> [Track]
+    func tracks() async throws -> [Track]
 
     /**
      * Returns a bounded page of tracks ordered by their stable database ID.
      */
-    func tracksPage(pageSize: UInt64, offset: UInt64) async throws  -> TrackPage
+    func tracksPage(pageSize: UInt64, offset: UInt64) async throws -> TrackPage
 
     /**
      * Updates a playlist's name, description, and optional artwork.
@@ -943,7 +938,6 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Updates application settings.
      */
     func updateSettings(settings: Settings) async throws
-
 }
 
 /**
@@ -953,7 +947,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
  * and Last.fm client. All state is encapsulated here.
  */
 open class DurvaldCore:
-    DurvaldCoreProtocol {
+    DurvaldCoreProtocol
+{
     fileprivate let pointer: UnsafeMutableRawPointer!
 
     /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
@@ -964,7 +959,7 @@ open class DurvaldCore:
     // TODO: We'd like this to be `private` but for Swifty reasons,
     // we can't implement `FfiConverter` without making this `required` and we can't
     // make it `required` without making it `public`.
-    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+    public required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
         self.pointer = pointer
     }
 
@@ -973,13 +968,14 @@ open class DurvaldCore:
     ///
     /// - Warning:
     ///     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
-    public init(noPointer: NoPointer) {
-        self.pointer = nil
+    public init(noPointer _: NoPointer) {
+        pointer = nil
     }
 
     public func uniffiClonePointer() -> UnsafeMutableRawPointer {
         return try! rustCall { uniffi_durvald_core_fn_clone_durvaldcore(self.pointer, $0) }
     }
+
     // No primary constructor declared for this class.
 
     deinit {
@@ -990,1596 +986,1566 @@ open class DurvaldCore:
         try! rustCall { uniffi_durvald_core_fn_free_durvaldcore(pointer, $0) }
     }
 
-
-
-
     /**
      * Adds an existing folder to the configured library locations.
      */
-open func addLibraryPath(path: String)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_add_library_path(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(path)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func addLibraryPath(path: String) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_add_library_path(
+                        self.uniffiClonePointer(),
+                        FfiConverterString.lower(path)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Adds a track to the playback queue.
      */
-open func addToQueue(trackId: Int64)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_add_to_queue(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(trackId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func addToQueue(trackId: Int64) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_add_to_queue(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(trackId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Adds a track at a playlist position.
      */
-open func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64)async throws  -> PlaylistTrack {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_add_track_to_playlist(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(playlistId),FfiConverterInt64.lower(trackId),FfiConverterUInt64.lower(position)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaylistTrack.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws -> PlaylistTrack {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_add_track_to_playlist(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(playlistId), FfiConverterInt64.lower(trackId), FfiConverterUInt64.lower(position)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaylistTrack.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Gets an artist by ID.
      */
-open func artist(artistId: Int64)async throws  -> Artist {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_artist(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeArtist.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func artist(artistId: Int64) async throws -> Artist {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_artist(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeArtist.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Reads the local enrichment cache, even when enrichment is disabled/offline.
      * Never resolves identities or makes an HTTP request.
      */
-open func artistDetails(artistId: Int64, language: String)async throws  -> ArtistDetails {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_artist_details(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId),FfiConverterString.lower(language)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeArtistDetails.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func artistDetails(artistId: Int64, language: String) async throws -> ArtistDetails {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_artist_details(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId), FfiConverterString.lower(language)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeArtistDetails.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Reads one network-free page of the locally persisted external catalog.
      */
-open func artistDiscography(artistId: Int64, pageSize: UInt64, offset: UInt64)async throws  -> ArtistDiscographyPage {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_artist_discography(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId),FfiConverterUInt64.lower(pageSize),FfiConverterUInt64.lower(offset)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeArtistDiscographyPage.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func artistDiscography(artistId: Int64, pageSize: UInt64, offset: UInt64) async throws -> ArtistDiscographyPage {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_artist_discography(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId), FfiConverterUInt64.lower(pageSize), FfiConverterUInt64.lower(offset)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeArtistDiscographyPage.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
-open func artistIdentity(artistId: Int64)async throws  -> ArtistIdentity {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_artist_identity(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeArtistIdentity.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func artistIdentity(artistId: Int64) async throws -> ArtistIdentity {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_artist_identity(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeArtistIdentity.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns releases by an artist.
      */
-open func artistReleases(artistId: Int64)async throws  -> [Release] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_artist_releases(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeRelease.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func artistReleases(artistId: Int64) async throws -> [Release] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_artist_releases(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypeRelease.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns tracks by an artist.
      */
-open func artistTracks(artistId: Int64)async throws  -> [Track] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_artist_tracks(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeTrack.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func artistTracks(artistId: Int64) async throws -> [Track] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_artist_tracks(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypeTrack.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns all artists in the library.
      */
-open func artists()async throws  -> [Artist] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_artists(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeArtist.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func artists() async throws -> [Artist] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_artists(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypeArtist.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Loads persisted track or release artwork as bytes for Swift `Data`.
      * The supplied artwork identifier must resolve inside the covers directory.
      */
-open func artworkBytes(artworkId: String)async throws  -> Data? {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_artwork_bytes(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(artworkId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterOptionData.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func artworkBytes(artworkId: String) async throws -> Data? {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_artwork_bytes(
+                        self.uniffiClonePointer(),
+                        FfiConverterString.lower(artworkId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterOptionData.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Requests cancellation of the active library scan.
      */
-open func cancelLibraryScan()throws  {try rustCallWithError(FfiConverterTypeCoreError.lift) {
-    uniffi_durvald_core_fn_method_durvaldcore_cancel_library_scan(self.uniffiClonePointer(),$0
-    )
-}
-}
+    open func cancelLibraryScan() throws {
+        try rustCallWithError(FfiConverterTypeCoreError.lift) {
+            uniffi_durvald_core_fn_method_durvaldcore_cancel_library_scan(self.uniffiClonePointer(), $0)
+        }
+    }
 
-open func clearArtistIdentity(artistId: Int64)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_clear_artist_identity(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func clearArtistIdentity(artistId: Int64) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_clear_artist_identity(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
-open func clearArtistOverride(artistId: Int64, field: ArtistProfileField, language: String)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_clear_artist_override(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId),FfiConverterTypeArtistProfileField.lower(field),FfiConverterString.lower(language)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func clearArtistOverride(artistId: Int64, field: ArtistProfileField, language: String) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_clear_artist_override(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId), FfiConverterTypeArtistProfileField.lower(field), FfiConverterString.lower(language)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Deletes every completed-playback event and returns the number removed.
      */
-open func clearPlaybackHistory()async throws  -> UInt64 {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_clear_playback_history(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_u64,
-            completeFunc: ffi_durvald_core_rust_future_complete_u64,
-            freeFunc: ffi_durvald_core_rust_future_free_u64,
-            liftFunc: FfiConverterUInt64.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func clearPlaybackHistory() async throws -> UInt64 {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_clear_playback_history(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_u64,
+                completeFunc: ffi_durvald_core_rust_future_complete_u64,
+                freeFunc: ffi_durvald_core_rust_future_free_u64,
+                liftFunc: FfiConverterUInt64.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Clears every upcoming queue item while leaving the active track alone.
      */
-open func clearQueue()async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_clear_queue(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func clearQueue() async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_clear_queue(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Completes Last.fm authorization after the user approved the token.
      */
-open func completeLastfmAuth(token: String)async throws  -> SessionResponse {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_complete_lastfm_auth(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(token)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeSessionResponse.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func completeLastfmAuth(token: String) async throws -> SessionResponse {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_complete_lastfm_auth(
+                        self.uniffiClonePointer(),
+                        FfiConverterString.lower(token)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeSessionResponse.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Persists optional enrichment preferences; does not start network work.
      */
-open func configureEnrichment(settings: EnrichmentSettings)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_configure_enrichment(
-                    self.uniffiClonePointer(),
-                    FfiConverterTypeEnrichmentSettings.lower(settings)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func configureEnrichment(settings: EnrichmentSettings) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_configure_enrichment(
+                        self.uniffiClonePointer(),
+                        FfiConverterTypeEnrichmentSettings.lower(settings)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Stores Last.fm API credentials in the secure store.
      */
-open func configureLastfm(apiKey: String, apiSecret: String)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_configure_lastfm(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(apiKey),FfiConverterString.lower(apiSecret)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func configureLastfm(apiKey: String, apiSecret: String) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_configure_lastfm(
+                        self.uniffiClonePointer(),
+                        FfiConverterString.lower(apiKey), FfiConverterString.lower(apiSecret)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
-open func confirmArtistIdentity(artistId: Int64, musicbrainzId: String)async throws  -> ArtistIdentity {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_confirm_artist_identity(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId),FfiConverterString.lower(musicbrainzId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeArtistIdentity.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func confirmArtistIdentity(artistId: Int64, musicbrainzId: String) async throws -> ArtistIdentity {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_confirm_artist_identity(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId), FfiConverterString.lower(musicbrainzId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeArtistIdentity.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Creates a playlist. Artwork is optional base64 or a data URL.
      */
-open func createPlaylist(name: String, description: String, artworkBase64: String?)async throws  -> Playlist {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_create_playlist(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(name),FfiConverterString.lower(description),FfiConverterOptionString.lower(artworkBase64)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaylist.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func createPlaylist(name: String, description: String, artworkBase64: String?) async throws -> Playlist {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_create_playlist(
+                        self.uniffiClonePointer(),
+                        FfiConverterString.lower(name), FfiConverterString.lower(description), FfiConverterOptionString.lower(artworkBase64)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaylist.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Deletes a playlist and its track entries.
      */
-open func deletePlaylist(playlistId: Int64)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_delete_playlist(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(playlistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func deletePlaylist(playlistId: Int64) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_delete_playlist(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(playlistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Removes the locally stored Last.fm session and username.
      */
-open func disconnectLastfm()async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_disconnect_lastfm(
-                    self.uniffiClonePointer()
+    open func disconnectLastfm() async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_disconnect_lastfm(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
-
-open func enrichmentSettings()async throws  -> EnrichmentSettings {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_enrichment_settings(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeEnrichmentSettings.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func enrichmentSettings() async throws -> EnrichmentSettings {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_enrichment_settings(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeEnrichmentSettings.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Extracts metadata from an audio file (for preview/import).
      */
-open func extractMetadata(filePath: String)async throws  -> AudioMetadata {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_extract_metadata(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(filePath)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeAudioMetadata.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func extractMetadata(filePath: String) async throws -> AudioMetadata {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_extract_metadata(
+                        self.uniffiClonePointer(),
+                        FfiConverterString.lower(filePath)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeAudioMetadata.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns the last session state.
      */
-open func lastSession()async throws  -> LastSession {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_last_session(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeLastSession.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func lastSession() async throws -> LastSession {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_last_session(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeLastSession.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Starts browser-based Last.fm authorization and returns its approval URL.
      */
-open func lastfmAuthToken()async throws  -> AuthTokenResponse {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_lastfm_auth_token(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeAuthTokenResponse.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func lastfmAuthToken() async throws -> AuthTokenResponse {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_lastfm_auth_token(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeAuthTokenResponse.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns Last.fm connection status.
      */
-open func lastfmStatus()async throws  -> LastFmStatus {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_lastfm_status(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeLastFmStatus.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func lastfmStatus() async throws -> LastFmStatus {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_lastfm_status(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeLastFmStatus.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Lists configured library folders.
      */
-open func libraryPaths()async throws  -> [String] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_library_paths(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceString.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func libraryPaths() async throws -> [String] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_library_paths(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceString.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Moves an upcoming queue item to a new queue position.
      */
-open func moveQueueItem(from: UInt64, to: UInt64)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_move_queue_item(
-                    self.uniffiClonePointer(),
-                    FfiConverterUInt64.lower(from),FfiConverterUInt64.lower(to)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func moveQueueItem(from: UInt64, to: UInt64) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_move_queue_item(
+                        self.uniffiClonePointer(),
+                        FfiConverterUInt64.lower(from), FfiConverterUInt64.lower(to)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Advances to the next queued track.
      */
-open func nextTrack()async throws  -> PlaybackSnapshot {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_next_track(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func nextTrack() async throws -> PlaybackSnapshot {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_next_track(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Pauses playback.
      */
-open func pause()async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_pause(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func pause() async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_pause(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Starts playback of a track.
      */
-open func play(trackId: Int64)async throws  -> PlaybackSnapshot {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_play(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(trackId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func play(trackId: Int64) async throws -> PlaybackSnapshot {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_play(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(trackId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Starts the upcoming track at the given queue position.
      */
-open func playQueueItem(position: UInt64)async throws  -> PlaybackSnapshot {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_play_queue_item(
-                    self.uniffiClonePointer(),
-                    FfiConverterUInt64.lower(position)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func playQueueItem(position: UInt64) async throws -> PlaybackSnapshot {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_play_queue_item(
+                        self.uniffiClonePointer(),
+                        FfiConverterUInt64.lower(position)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns the current playback state.
      */
-open func playback()async  -> PlaybackSnapshot {
-    return
-        try!  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_playback(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
-            errorHandler: nil
-
-        )
-}
+    open func playback() async -> PlaybackSnapshot {
+        return
+            try! await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_playback(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+                errorHandler: nil
+            )
+    }
 
     /**
      * Returns completed playback events, newest-first as stored by the core.
      */
-open func playbackHistory()async throws  -> [PlaybackHistoryItem] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_playback_history(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypePlaybackHistoryItem.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func playbackHistory() async throws -> [PlaybackHistoryItem] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_playback_history(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypePlaybackHistoryItem.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns a bounded page of completed playback events, newest first.
      */
-open func playbackHistoryPage(pageSize: UInt64, offset: UInt64)async throws  -> PlaybackHistoryPage {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_playback_history_page(
-                    self.uniffiClonePointer(),
-                    FfiConverterUInt64.lower(pageSize),FfiConverterUInt64.lower(offset)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaybackHistoryPage.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func playbackHistoryPage(pageSize: UInt64, offset: UInt64) async throws -> PlaybackHistoryPage {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_playback_history_page(
+                        self.uniffiClonePointer(),
+                        FfiConverterUInt64.lower(pageSize), FfiConverterUInt64.lower(offset)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaybackHistoryPage.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Gets one playlist by ID.
      */
-open func playlist(playlistId: Int64)async throws  -> Playlist {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_playlist(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(playlistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaylist.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func playlist(playlistId: Int64) async throws -> Playlist {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_playlist(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(playlistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaylist.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Loads a playlist's artwork blob as bytes for Swift `Data`.
      */
-open func playlistArtworkBytes(playlistId: Int64)async throws  -> Data? {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_playlist_artwork_bytes(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(playlistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterOptionData.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func playlistArtworkBytes(playlistId: Int64) async throws -> Data? {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_playlist_artwork_bytes(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(playlistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterOptionData.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns tracks in playlist order.
      */
-open func playlistTracks(playlistId: Int64)async throws  -> [Track] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_playlist_tracks(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(playlistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeTrack.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func playlistTracks(playlistId: Int64) async throws -> [Track] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_playlist_tracks(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(playlistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypeTrack.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns all playlists.
      */
-open func playlists()async throws  -> [Playlist] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_playlists(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypePlaylist.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func playlists() async throws -> [Playlist] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_playlists(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypePlaylist.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns to the previously played track, when one exists.
      */
-open func previousTrack()async throws  -> PlaybackSnapshot {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_previous_track(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func previousTrack() async throws -> PlaybackSnapshot {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_previous_track(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns the current queue.
      */
-open func queue()async throws  -> [QueueItem] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_queue(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeQueueItem.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func queue() async throws -> [QueueItem] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_queue(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypeQueueItem.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Explicitly refreshes the requested remote sections. Local reads remain
      * network-free and scanning/playback never call this method implicitly.
      */
-open func refreshArtist(artistId: Int64, request: ArtistRefreshRequest)async throws  -> ArtistRefreshResult {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_refresh_artist(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId),FfiConverterTypeArtistRefreshRequest.lower(request)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeArtistRefreshResult.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func refreshArtist(artistId: Int64, request: ArtistRefreshRequest) async throws -> ArtistRefreshResult {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_refresh_artist(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId), FfiConverterTypeArtistRefreshRequest.lower(request)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeArtistRefreshResult.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Gets a release by ID.
      */
-open func release(releaseId: Int64)async throws  -> Release {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_release(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(releaseId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeRelease.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func release(releaseId: Int64) async throws -> Release {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_release(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(releaseId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeRelease.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Gets tracks for a release.
      */
-open func releaseTracks(releaseId: Int64)async throws  -> [Track] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_release_tracks(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(releaseId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeTrack.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func releaseTracks(releaseId: Int64) async throws -> [Track] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_release_tracks(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(releaseId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypeTrack.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns all releases in the library.
      */
-open func releases()async throws  -> [Release] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_releases(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeRelease.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func releases() async throws -> [Release] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_releases(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypeRelease.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns a bounded page of releases ordered by their stable database ID.
      */
-open func releasesPage(pageSize: UInt64, offset: UInt64)async throws  -> ReleasePage {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_releases_page(
-                    self.uniffiClonePointer(),
-                    FfiConverterUInt64.lower(pageSize),FfiConverterUInt64.lower(offset)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeReleasePage.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func releasesPage(pageSize: UInt64, offset: UInt64) async throws -> ReleasePage {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_releases_page(
+                        self.uniffiClonePointer(),
+                        FfiConverterUInt64.lower(pageSize), FfiConverterUInt64.lower(offset)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeReleasePage.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Removes an upcoming queue item.
      */
-open func removeFromQueue(position: UInt64)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_remove_from_queue(
-                    self.uniffiClonePointer(),
-                    FfiConverterUInt64.lower(position)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func removeFromQueue(position: UInt64) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_remove_from_queue(
+                        self.uniffiClonePointer(),
+                        FfiConverterUInt64.lower(position)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Removes a configured library folder.
      */
-open func removeLibraryPath(path: String)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_remove_library_path(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(path)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func removeLibraryPath(path: String) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_remove_library_path(
+                        self.uniffiClonePointer(),
+                        FfiConverterString.lower(path)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Removes a single completed-playback event.
      */
-open func removePlaybackHistoryItem(historyId: Int64)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_remove_playback_history_item(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(historyId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func removePlaybackHistoryItem(historyId: Int64) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_remove_playback_history_item(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(historyId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Removes a track entry at a playlist position.
      */
-open func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: UInt64)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_remove_track_from_playlist(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(playlistId),FfiConverterInt64.lower(trackId),FfiConverterUInt64.lower(position)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_remove_track_from_playlist(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(playlistId), FfiConverterInt64.lower(trackId), FfiConverterUInt64.lower(position)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
-open func resolveArtistCandidates(artistId: Int64)async throws  -> ArtistIdentityCandidates {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_resolve_artist_candidates(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeArtistIdentityCandidates.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func resolveArtistCandidates(artistId: Int64) async throws -> ArtistIdentityCandidates {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_resolve_artist_candidates(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeArtistIdentityCandidates.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Resumes playback.
      */
-open func resume()async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_resume(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func resume() async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_resume(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Saves the current session state.
      */
-open func saveSession(session: LastSession)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_save_session(
-                    self.uniffiClonePointer(),
-                    FfiConverterTypeLastSession.lower(session)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func saveSession(session: LastSession) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_save_session(
+                        self.uniffiClonePointer(),
+                        FfiConverterTypeLastSession.lower(session)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Scans every configured library folder.
      */
-open func scanConfiguredLibrary()async throws  -> ScanResult {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_scan_configured_library(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeScanResult.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func scanConfiguredLibrary() async throws -> ScanResult {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_scan_configured_library(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeScanResult.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Scans the library at the given paths.
      */
-open func scanLibrary(paths: [String])async throws  -> ScanResult {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_scan_library(
-                    self.uniffiClonePointer(),
-                    FfiConverterSequenceString.lower(paths)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeScanResult.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func scanLibrary(paths: [String]) async throws -> ScanResult {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_scan_library(
+                        self.uniffiClonePointer(),
+                        FfiConverterSequenceString.lower(paths)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeScanResult.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns phase-level progress for the current or most recent library scan.
      */
-open func scanProgress()throws  -> ScanProgress? {
-    return try  FfiConverterOptionTypeScanProgress.lift(try rustCallWithError(FfiConverterTypeCoreError.lift) {
-    uniffi_durvald_core_fn_method_durvaldcore_scan_progress(self.uniffiClonePointer(),$0
-    )
-})
-}
+    open func scanProgress() throws -> ScanProgress? {
+        return try FfiConverterOptionTypeScanProgress.lift(rustCallWithError(FfiConverterTypeCoreError.lift) {
+            uniffi_durvald_core_fn_method_durvaldcore_scan_progress(self.uniffiClonePointer(), $0)
+        })
+    }
 
     /**
      * Searches tracks, releases, artists, and playlists by text.
      */
-open func search(query: String)async throws  -> SearchResults {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_search(
-                    self.uniffiClonePointer(),
-                    FfiConverterString.lower(query)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeSearchResults.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func search(query: String) async throws -> SearchResults {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_search(
+                        self.uniffiClonePointer(),
+                        FfiConverterString.lower(query)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeSearchResults.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Seeks to a position in seconds.
      */
-open func seek(seconds: UInt64)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_seek(
-                    self.uniffiClonePointer(),
-                    FfiConverterUInt64.lower(seconds)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func seek(seconds: UInt64) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_seek(
+                        self.uniffiClonePointer(),
+                        FfiConverterUInt64.lower(seconds)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
-open func setArtistOverride(artistId: Int64, value: ArtistFieldOverride)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_artist_override(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(artistId),FfiConverterTypeArtistFieldOverride.lower(value)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setArtistOverride(artistId: Int64, value: ArtistFieldOverride) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_artist_override(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(artistId), FfiConverterTypeArtistFieldOverride.lower(value)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets whether a playlist is favorited.
      */
-open func setPlaylistFavorite(playlistId: Int64, favorite: Bool)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_playlist_favorite(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(playlistId),FfiConverterBool.lower(favorite)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setPlaylistFavorite(playlistId: Int64, favorite: Bool) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_playlist_favorite(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(playlistId), FfiConverterBool.lower(favorite)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets whether recommendations should de-emphasize a playlist.
      */
-open func setPlaylistSuggestLess(playlistId: Int64, suggestLess: Bool)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_playlist_suggest_less(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(playlistId),FfiConverterBool.lower(suggestLess)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setPlaylistSuggestLess(playlistId: Int64, suggestLess: Bool) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_playlist_suggest_less(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(playlistId), FfiConverterBool.lower(suggestLess)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets whether a release is favorited.
      */
-open func setReleaseFavorite(releaseId: Int64, favorite: Bool)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_release_favorite(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(releaseId),FfiConverterBool.lower(favorite)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setReleaseFavorite(releaseId: Int64, favorite: Bool) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_release_favorite(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(releaseId), FfiConverterBool.lower(favorite)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets whether a release is hidden from normal library views.
      */
-open func setReleaseHidden(releaseId: Int64, hidden: Bool)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_release_hidden(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(releaseId),FfiConverterBool.lower(hidden)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setReleaseHidden(releaseId: Int64, hidden: Bool) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_release_hidden(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(releaseId), FfiConverterBool.lower(hidden)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets or clears a release rating on the 0–5 scale.
      */
-open func setReleaseRating(releaseId: Int64, rating: UInt8?)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_release_rating(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(releaseId),FfiConverterOptionUInt8.lower(rating)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setReleaseRating(releaseId: Int64, rating: UInt8?) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_release_rating(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(releaseId), FfiConverterOptionUInt8.lower(rating)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets whether recommendations should de-emphasize a release.
      */
-open func setReleaseSuggestLess(releaseId: Int64, suggestLess: Bool)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_release_suggest_less(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(releaseId),FfiConverterBool.lower(suggestLess)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setReleaseSuggestLess(releaseId: Int64, suggestLess: Bool) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_release_suggest_less(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(releaseId), FfiConverterBool.lower(suggestLess)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets whether playback stops, repeats one track, or repeats the queue.
      */
-open func setRepeatMode(mode: RepeatMode)async throws  -> PlaybackSnapshot {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_repeat_mode(
-                    self.uniffiClonePointer(),
-                    FfiConverterTypeRepeatMode.lower(mode)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setRepeatMode(mode: RepeatMode) async throws -> PlaybackSnapshot {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_repeat_mode(
+                        self.uniffiClonePointer(),
+                        FfiConverterTypeRepeatMode.lower(mode)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Enables or disables randomized selection when advancing the queue.
      */
-open func setShuffleEnabled(enabled: Bool)async throws  -> PlaybackSnapshot {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_shuffle_enabled(
-                    self.uniffiClonePointer(),
-                    FfiConverterBool.lower(enabled)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setShuffleEnabled(enabled: Bool) async throws -> PlaybackSnapshot {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_shuffle_enabled(
+                        self.uniffiClonePointer(),
+                        FfiConverterBool.lower(enabled)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets whether a track is favorited.
      */
-open func setTrackFavorite(trackId: Int64, favorite: Bool)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_track_favorite(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(trackId),FfiConverterBool.lower(favorite)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setTrackFavorite(trackId: Int64, favorite: Bool) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_track_favorite(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(trackId), FfiConverterBool.lower(favorite)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets whether a track is hidden from normal library views.
      */
-open func setTrackHidden(trackId: Int64, hidden: Bool)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_track_hidden(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(trackId),FfiConverterBool.lower(hidden)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setTrackHidden(trackId: Int64, hidden: Bool) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_track_hidden(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(trackId), FfiConverterBool.lower(hidden)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets or clears a track rating on the 0–5 scale.
      */
-open func setTrackRating(trackId: Int64, rating: UInt8?)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_track_rating(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(trackId),FfiConverterOptionUInt8.lower(rating)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setTrackRating(trackId: Int64, rating: UInt8?) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_track_rating(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(trackId), FfiConverterOptionUInt8.lower(rating)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets whether recommendations should de-emphasize a track.
      */
-open func setTrackSuggestLess(trackId: Int64, suggestLess: Bool)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_track_suggest_less(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(trackId),FfiConverterBool.lower(suggestLess)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setTrackSuggestLess(trackId: Int64, suggestLess: Bool) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_track_suggest_less(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(trackId), FfiConverterBool.lower(suggestLess)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Sets volume (0.0 - 1.0).
      */
-open func setVolume(volume: Float)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_set_volume(
-                    self.uniffiClonePointer(),
-                    FfiConverterFloat.lower(volume)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func setVolume(volume: Float) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_set_volume(
+                        self.uniffiClonePointer(),
+                        FfiConverterFloat.lower(volume)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns application settings.
      */
-open func settings()async throws  -> Settings {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_settings(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeSettings.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func settings() async throws -> Settings {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_settings(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeSettings.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Stops playback.
      */
-open func stop()async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_stop(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func stop() async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_stop(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Gets a track by ID.
      */
-open func track(trackId: Int64)async throws  -> Track {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_track(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(trackId)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeTrack.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func track(trackId: Int64) async throws -> Track {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_track(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(trackId)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeTrack.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns all tracks in the library.
      */
-open func tracks()async throws  -> [Track] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_tracks(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeTrack.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func tracks() async throws -> [Track] {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_tracks(
+                        self.uniffiClonePointer()
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterSequenceTypeTrack.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Returns a bounded page of tracks ordered by their stable database ID.
      */
-open func tracksPage(pageSize: UInt64, offset: UInt64)async throws  -> TrackPage {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_tracks_page(
-                    self.uniffiClonePointer(),
-                    FfiConverterUInt64.lower(pageSize),FfiConverterUInt64.lower(offset)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterTypeTrackPage.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func tracksPage(pageSize: UInt64, offset: UInt64) async throws -> TrackPage {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_tracks_page(
+                        self.uniffiClonePointer(),
+                        FfiConverterUInt64.lower(pageSize), FfiConverterUInt64.lower(offset)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+                completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+                freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+                liftFunc: FfiConverterTypeTrackPage.lift,
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Updates a playlist's name, description, and optional artwork.
      */
-open func updatePlaylist(playlistId: Int64, name: String, description: String, artworkBase64: String?)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_update_playlist(
-                    self.uniffiClonePointer(),
-                    FfiConverterInt64.lower(playlistId),FfiConverterString.lower(name),FfiConverterString.lower(description),FfiConverterOptionString.lower(artworkBase64)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
+    open func updatePlaylist(playlistId: Int64, name: String, description: String, artworkBase64: String?) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_update_playlist(
+                        self.uniffiClonePointer(),
+                        FfiConverterInt64.lower(playlistId), FfiConverterString.lower(name), FfiConverterString.lower(description), FfiConverterOptionString.lower(artworkBase64)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 
     /**
      * Updates application settings.
      */
-open func updateSettings(settings: Settings)async throws  {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_update_settings(
-                    self.uniffiClonePointer(),
-                    FfiConverterTypeSettings.lower(settings)
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_void,
-            completeFunc: ffi_durvald_core_rust_future_complete_void,
-            freeFunc: ffi_durvald_core_rust_future_free_void,
-            liftFunc: { $0 },
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
-
-
+    open func updateSettings(settings: Settings) async throws {
+        return
+            try await uniffiRustCallAsync(
+                rustFutureFunc: {
+                    uniffi_durvald_core_fn_method_durvaldcore_update_settings(
+                        self.uniffiClonePointer(),
+                        FfiConverterTypeSettings.lower(settings)
+                    )
+                },
+                pollFunc: ffi_durvald_core_rust_future_poll_void,
+                completeFunc: ffi_durvald_core_rust_future_complete_void,
+                freeFunc: ffi_durvald_core_rust_future_free_void,
+                liftFunc: { $0 },
+                errorHandler: FfiConverterTypeCoreError.lift
+            )
+    }
 }
 
 public struct FfiConverterTypeDurvaldCore: FfiConverter {
-
     typealias FfiType = UnsafeMutableRawPointer
     typealias SwiftType = DurvaldCore
 
@@ -2596,7 +2562,7 @@ public struct FfiConverterTypeDurvaldCore: FfiConverter {
         // The Rust code won't compile if a pointer won't fit in a UInt64.
         // We have to go via `UInt` because that's the thing that's the size of a pointer.
         let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
-        if (ptr == nil) {
+        if ptr == nil {
             throw UniffiInternalError.unexpectedNullPointer
         }
         return try lift(ptr!)
@@ -2609,9 +2575,6 @@ public struct FfiConverterTypeDurvaldCore: FfiConverter {
     }
 }
 
-
-
-
 public func FfiConverterTypeDurvaldCore_lift(_ pointer: UnsafeMutableRawPointer) throws -> DurvaldCore {
     return try FfiConverterTypeDurvaldCore.lift(pointer)
 }
@@ -2620,7 +2583,6 @@ public func FfiConverterTypeDurvaldCore_lower(_ value: DurvaldCore) -> UnsafeMut
     return FfiConverterTypeDurvaldCore.lower(value)
 }
 
-
 /**
  * Artist DTO
  */
@@ -2628,18 +2590,16 @@ public struct Artist {
     public var id: Int64
     public var name: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(id: Int64, name: String) {
         self.id = id
         self.name = name
     }
 }
 
-
-
 extension Artist: Equatable, Hashable {
-    public static func ==(lhs: Artist, rhs: Artist) -> Bool {
+    public static func == (lhs: Artist, rhs: Artist) -> Bool {
         if lhs.id != rhs.id {
             return false
         }
@@ -2655,14 +2615,13 @@ extension Artist: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtist: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Artist {
         return
             try Artist(
                 id: FfiConverterInt64.read(from: &buf),
                 name: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: Artist, into buf: inout [UInt8]) {
@@ -2671,7 +2630,6 @@ public struct FfiConverterTypeArtist: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtist_lift(_ buf: RustBuffer) throws -> Artist {
     return try FfiConverterTypeArtist.lift(buf)
 }
@@ -2679,7 +2637,6 @@ public func FfiConverterTypeArtist_lift(_ buf: RustBuffer) throws -> Artist {
 public func FfiConverterTypeArtist_lower(_ value: Artist) -> RustBuffer {
     return FfiConverterTypeArtist.lower(value)
 }
-
 
 public struct ArtistDetails {
     public var artist: Artist
@@ -2694,12 +2651,13 @@ public struct ArtistDetails {
     public var portrait: ArtistImageReference?
     public var overrides: [ArtistFieldOverride]
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(artist: Artist, identityStatus: ArtistIdentityStatus, musicbrainzId: String?, identityGeneration: UInt64, requestedLanguage: String,
-        /**
-         * Exact requested language plus "und"; language fallback arrives with providers.
-         */sources: [ArtistProfileSource], portrait: ArtistImageReference?, overrides: [ArtistFieldOverride]) {
+                /* 
+                    * Exact requested language plus "und"; language fallback arrives with providers.
+                    */ sources: [ArtistProfileSource], portrait: ArtistImageReference?, overrides: [ArtistFieldOverride])
+    {
         self.artist = artist
         self.identityStatus = identityStatus
         self.musicbrainzId = musicbrainzId
@@ -2711,10 +2669,8 @@ public struct ArtistDetails {
     }
 }
 
-
-
 extension ArtistDetails: Equatable, Hashable {
-    public static func ==(lhs: ArtistDetails, rhs: ArtistDetails) -> Bool {
+    public static func == (lhs: ArtistDetails, rhs: ArtistDetails) -> Bool {
         if lhs.artist != rhs.artist {
             return false
         }
@@ -2754,7 +2710,6 @@ extension ArtistDetails: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistDetails: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistDetails {
         return
@@ -2767,7 +2722,7 @@ public struct FfiConverterTypeArtistDetails: FfiConverterRustBuffer {
                 sources: FfiConverterSequenceTypeArtistProfileSource.read(from: &buf),
                 portrait: FfiConverterOptionTypeArtistImageReference.read(from: &buf),
                 overrides: FfiConverterSequenceTypeArtistFieldOverride.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistDetails, into buf: inout [UInt8]) {
@@ -2782,7 +2737,6 @@ public struct FfiConverterTypeArtistDetails: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistDetails_lift(_ buf: RustBuffer) throws -> ArtistDetails {
     return try FfiConverterTypeArtistDetails.lift(buf)
 }
@@ -2790,7 +2744,6 @@ public func FfiConverterTypeArtistDetails_lift(_ buf: RustBuffer) throws -> Arti
 public func FfiConverterTypeArtistDetails_lower(_ value: ArtistDetails) -> RustBuffer {
     return FfiConverterTypeArtistDetails.lower(value)
 }
-
 
 /**
  * A bounded page of the locally stored remote catalog. `next_offset` covers
@@ -2809,8 +2762,8 @@ public struct ArtistDiscographyPage {
     public var remoteTotal: UInt64?
     public var stale: Bool
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(artistId: Int64, identityGeneration: UInt64, catalogGeneration: UInt64, items: [ExternalReleaseGroup], nextOffset: UInt64?, remoteExhausted: Bool, remoteNextOffset: UInt64?, remoteTotal: UInt64?, stale: Bool) {
         self.artistId = artistId
         self.identityGeneration = identityGeneration
@@ -2824,10 +2777,8 @@ public struct ArtistDiscographyPage {
     }
 }
 
-
-
 extension ArtistDiscographyPage: Equatable, Hashable {
-    public static func ==(lhs: ArtistDiscographyPage, rhs: ArtistDiscographyPage) -> Bool {
+    public static func == (lhs: ArtistDiscographyPage, rhs: ArtistDiscographyPage) -> Bool {
         if lhs.artistId != rhs.artistId {
             return false
         }
@@ -2871,7 +2822,6 @@ extension ArtistDiscographyPage: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistDiscographyPage: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistDiscographyPage {
         return
@@ -2885,7 +2835,7 @@ public struct FfiConverterTypeArtistDiscographyPage: FfiConverterRustBuffer {
                 remoteNextOffset: FfiConverterOptionUInt64.read(from: &buf),
                 remoteTotal: FfiConverterOptionUInt64.read(from: &buf),
                 stale: FfiConverterBool.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistDiscographyPage, into buf: inout [UInt8]) {
@@ -2901,7 +2851,6 @@ public struct FfiConverterTypeArtistDiscographyPage: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistDiscographyPage_lift(_ buf: RustBuffer) throws -> ArtistDiscographyPage {
     return try FfiConverterTypeArtistDiscographyPage.lift(buf)
 }
@@ -2909,7 +2858,6 @@ public func FfiConverterTypeArtistDiscographyPage_lift(_ buf: RustBuffer) throws
 public func FfiConverterTypeArtistDiscographyPage_lower(_ value: ArtistDiscographyPage) -> RustBuffer {
     return FfiConverterTypeArtistDiscographyPage.lower(value)
 }
-
 
 /**
  * `value = None` explicitly clears the selected field. Dates use YYYY,
@@ -2920,8 +2868,8 @@ public struct ArtistFieldOverride {
     public var language: String
     public var value: String?
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(field: ArtistProfileField, language: String, value: String?) {
         self.field = field
         self.language = language
@@ -2929,10 +2877,8 @@ public struct ArtistFieldOverride {
     }
 }
 
-
-
 extension ArtistFieldOverride: Equatable, Hashable {
-    public static func ==(lhs: ArtistFieldOverride, rhs: ArtistFieldOverride) -> Bool {
+    public static func == (lhs: ArtistFieldOverride, rhs: ArtistFieldOverride) -> Bool {
         if lhs.field != rhs.field {
             return false
         }
@@ -2952,7 +2898,6 @@ extension ArtistFieldOverride: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistFieldOverride: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistFieldOverride {
         return
@@ -2960,7 +2905,7 @@ public struct FfiConverterTypeArtistFieldOverride: FfiConverterRustBuffer {
                 field: FfiConverterTypeArtistProfileField.read(from: &buf),
                 language: FfiConverterString.read(from: &buf),
                 value: FfiConverterOptionString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistFieldOverride, into buf: inout [UInt8]) {
@@ -2970,7 +2915,6 @@ public struct FfiConverterTypeArtistFieldOverride: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistFieldOverride_lift(_ buf: RustBuffer) throws -> ArtistFieldOverride {
     return try FfiConverterTypeArtistFieldOverride.lift(buf)
 }
@@ -2978,7 +2922,6 @@ public func FfiConverterTypeArtistFieldOverride_lift(_ buf: RustBuffer) throws -
 public func FfiConverterTypeArtistFieldOverride_lower(_ value: ArtistFieldOverride) -> RustBuffer {
     return FfiConverterTypeArtistFieldOverride.lower(value)
 }
-
 
 public struct ArtistIdentity {
     public var artistId: Int64
@@ -2992,12 +2935,13 @@ public struct ArtistIdentity {
     public var confirmedMusicbrainzId: String?
     public var conflictingTags: Bool
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(artistId: Int64, status: ArtistIdentityStatus, musicbrainzId: String?, generation: UInt64, origin: ArtistIdentityOrigin?,
-        /**
-         * Retained even when conflicting tags block enrichment.
-         */confirmedMusicbrainzId: String?, conflictingTags: Bool) {
+                /* 
+                    * Retained even when conflicting tags block enrichment.
+                    */ confirmedMusicbrainzId: String?, conflictingTags: Bool)
+    {
         self.artistId = artistId
         self.status = status
         self.musicbrainzId = musicbrainzId
@@ -3008,10 +2952,8 @@ public struct ArtistIdentity {
     }
 }
 
-
-
 extension ArtistIdentity: Equatable, Hashable {
-    public static func ==(lhs: ArtistIdentity, rhs: ArtistIdentity) -> Bool {
+    public static func == (lhs: ArtistIdentity, rhs: ArtistIdentity) -> Bool {
         if lhs.artistId != rhs.artistId {
             return false
         }
@@ -3047,7 +2989,6 @@ extension ArtistIdentity: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistIdentity: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentity {
         return
@@ -3059,7 +3000,7 @@ public struct FfiConverterTypeArtistIdentity: FfiConverterRustBuffer {
                 origin: FfiConverterOptionTypeArtistIdentityOrigin.read(from: &buf),
                 confirmedMusicbrainzId: FfiConverterOptionString.read(from: &buf),
                 conflictingTags: FfiConverterBool.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistIdentity, into buf: inout [UInt8]) {
@@ -3073,7 +3014,6 @@ public struct FfiConverterTypeArtistIdentity: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistIdentity_lift(_ buf: RustBuffer) throws -> ArtistIdentity {
     return try FfiConverterTypeArtistIdentity.lift(buf)
 }
@@ -3081,7 +3021,6 @@ public func FfiConverterTypeArtistIdentity_lift(_ buf: RustBuffer) throws -> Art
 public func FfiConverterTypeArtistIdentity_lower(_ value: ArtistIdentity) -> RustBuffer {
     return FfiConverterTypeArtistIdentity.lower(value)
 }
-
 
 public struct ArtistIdentityCandidate {
     public var musicbrainzId: String
@@ -3091,8 +3030,8 @@ public struct ArtistIdentityCandidate {
     public var disambiguation: String
     public var evidence: [String]
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(musicbrainzId: String, name: String, aliases: [String], entityKind: ArtistEntityKind, disambiguation: String, evidence: [String]) {
         self.musicbrainzId = musicbrainzId
         self.name = name
@@ -3103,10 +3042,8 @@ public struct ArtistIdentityCandidate {
     }
 }
 
-
-
 extension ArtistIdentityCandidate: Equatable, Hashable {
-    public static func ==(lhs: ArtistIdentityCandidate, rhs: ArtistIdentityCandidate) -> Bool {
+    public static func == (lhs: ArtistIdentityCandidate, rhs: ArtistIdentityCandidate) -> Bool {
         if lhs.musicbrainzId != rhs.musicbrainzId {
             return false
         }
@@ -3138,7 +3075,6 @@ extension ArtistIdentityCandidate: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistIdentityCandidate: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityCandidate {
         return
@@ -3149,7 +3085,7 @@ public struct FfiConverterTypeArtistIdentityCandidate: FfiConverterRustBuffer {
                 entityKind: FfiConverterTypeArtistEntityKind.read(from: &buf),
                 disambiguation: FfiConverterString.read(from: &buf),
                 evidence: FfiConverterSequenceString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistIdentityCandidate, into buf: inout [UInt8]) {
@@ -3162,7 +3098,6 @@ public struct FfiConverterTypeArtistIdentityCandidate: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistIdentityCandidate_lift(_ buf: RustBuffer) throws -> ArtistIdentityCandidate {
     return try FfiConverterTypeArtistIdentityCandidate.lift(buf)
 }
@@ -3171,7 +3106,6 @@ public func FfiConverterTypeArtistIdentityCandidate_lower(_ value: ArtistIdentit
     return FfiConverterTypeArtistIdentityCandidate.lower(value)
 }
 
-
 public struct ArtistIdentityCandidates {
     public var identity: ArtistIdentity
     public var candidates: [ArtistIdentityCandidate]
@@ -3179,8 +3113,8 @@ public struct ArtistIdentityCandidates {
     public var retryAfterSeconds: UInt64?
     public var truncated: Bool
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(identity: ArtistIdentity, candidates: [ArtistIdentityCandidate], lookupStatus: ArtistIdentityLookupStatus, retryAfterSeconds: UInt64?, truncated: Bool) {
         self.identity = identity
         self.candidates = candidates
@@ -3190,10 +3124,8 @@ public struct ArtistIdentityCandidates {
     }
 }
 
-
-
 extension ArtistIdentityCandidates: Equatable, Hashable {
-    public static func ==(lhs: ArtistIdentityCandidates, rhs: ArtistIdentityCandidates) -> Bool {
+    public static func == (lhs: ArtistIdentityCandidates, rhs: ArtistIdentityCandidates) -> Bool {
         if lhs.identity != rhs.identity {
             return false
         }
@@ -3221,7 +3153,6 @@ extension ArtistIdentityCandidates: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistIdentityCandidates: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityCandidates {
         return
@@ -3231,7 +3162,7 @@ public struct FfiConverterTypeArtistIdentityCandidates: FfiConverterRustBuffer {
                 lookupStatus: FfiConverterTypeArtistIdentityLookupStatus.read(from: &buf),
                 retryAfterSeconds: FfiConverterOptionUInt64.read(from: &buf),
                 truncated: FfiConverterBool.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistIdentityCandidates, into buf: inout [UInt8]) {
@@ -3243,7 +3174,6 @@ public struct FfiConverterTypeArtistIdentityCandidates: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistIdentityCandidates_lift(_ buf: RustBuffer) throws -> ArtistIdentityCandidates {
     return try FfiConverterTypeArtistIdentityCandidates.lift(buf)
 }
@@ -3251,7 +3181,6 @@ public func FfiConverterTypeArtistIdentityCandidates_lift(_ buf: RustBuffer) thr
 public func FfiConverterTypeArtistIdentityCandidates_lower(_ value: ArtistIdentityCandidates) -> RustBuffer {
     return FfiConverterTypeArtistIdentityCandidates.lower(value)
 }
-
 
 public struct ArtistImageReference {
     public var provider: EnrichmentProvider
@@ -3271,15 +3200,16 @@ public struct ArtistImageReference {
     public var expiresAt: Int64
     public var stale: Bool
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(provider: EnrichmentProvider,
-        /**
-         * Stable identifier supplied by the image provider.
-         */providerId: String, sourceUrl: String,
-        /**
-         * Absolute path inside the core-managed covers directory.
-         */managedPath: String, width: UInt32?, height: UInt32?, attribution: EnrichmentAttribution, fetchedAt: Int64, expiresAt: Int64, stale: Bool) {
+                /* 
+                    * Stable identifier supplied by the image provider.
+                    */ providerId: String, sourceUrl: String,
+                /* 
+                    * Absolute path inside the core-managed covers directory.
+                    */ managedPath: String, width: UInt32?, height: UInt32?, attribution: EnrichmentAttribution, fetchedAt: Int64, expiresAt: Int64, stale: Bool)
+    {
         self.provider = provider
         self.providerId = providerId
         self.sourceUrl = sourceUrl
@@ -3293,10 +3223,8 @@ public struct ArtistImageReference {
     }
 }
 
-
-
 extension ArtistImageReference: Equatable, Hashable {
-    public static func ==(lhs: ArtistImageReference, rhs: ArtistImageReference) -> Bool {
+    public static func == (lhs: ArtistImageReference, rhs: ArtistImageReference) -> Bool {
         if lhs.provider != rhs.provider {
             return false
         }
@@ -3344,7 +3272,6 @@ extension ArtistImageReference: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistImageReference: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistImageReference {
         return
@@ -3359,7 +3286,7 @@ public struct FfiConverterTypeArtistImageReference: FfiConverterRustBuffer {
                 fetchedAt: FfiConverterInt64.read(from: &buf),
                 expiresAt: FfiConverterInt64.read(from: &buf),
                 stale: FfiConverterBool.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistImageReference, into buf: inout [UInt8]) {
@@ -3376,7 +3303,6 @@ public struct FfiConverterTypeArtistImageReference: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistImageReference_lift(_ buf: RustBuffer) throws -> ArtistImageReference {
     return try FfiConverterTypeArtistImageReference.lift(buf)
 }
@@ -3384,7 +3310,6 @@ public func FfiConverterTypeArtistImageReference_lift(_ buf: RustBuffer) throws 
 public func FfiConverterTypeArtistImageReference_lower(_ value: ArtistImageReference) -> RustBuffer {
     return FfiConverterTypeArtistImageReference.lower(value)
 }
-
 
 /**
  * Absent month/day preserve the precision supplied by the source.
@@ -3394,8 +3319,8 @@ public struct ArtistPartialDate {
     public var month: UInt8?
     public var day: UInt8?
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(year: Int32, month: UInt8?, day: UInt8?) {
         self.year = year
         self.month = month
@@ -3403,10 +3328,8 @@ public struct ArtistPartialDate {
     }
 }
 
-
-
 extension ArtistPartialDate: Equatable, Hashable {
-    public static func ==(lhs: ArtistPartialDate, rhs: ArtistPartialDate) -> Bool {
+    public static func == (lhs: ArtistPartialDate, rhs: ArtistPartialDate) -> Bool {
         if lhs.year != rhs.year {
             return false
         }
@@ -3426,7 +3349,6 @@ extension ArtistPartialDate: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistPartialDate: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistPartialDate {
         return
@@ -3434,7 +3356,7 @@ public struct FfiConverterTypeArtistPartialDate: FfiConverterRustBuffer {
                 year: FfiConverterInt32.read(from: &buf),
                 month: FfiConverterOptionUInt8.read(from: &buf),
                 day: FfiConverterOptionUInt8.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistPartialDate, into buf: inout [UInt8]) {
@@ -3444,7 +3366,6 @@ public struct FfiConverterTypeArtistPartialDate: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistPartialDate_lift(_ buf: RustBuffer) throws -> ArtistPartialDate {
     return try FfiConverterTypeArtistPartialDate.lift(buf)
 }
@@ -3452,7 +3373,6 @@ public func FfiConverterTypeArtistPartialDate_lift(_ buf: RustBuffer) throws -> 
 public func FfiConverterTypeArtistPartialDate_lower(_ value: ArtistPartialDate) -> RustBuffer {
     return FfiConverterTypeArtistPartialDate.lower(value)
 }
-
 
 /**
  * A normalized source snapshot, not yet a cross-provider editorial selection.
@@ -3468,8 +3388,8 @@ public struct ArtistProfile {
     public var biography: String?
     public var attribution: EnrichmentAttribution
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(entityKind: ArtistEntityKind, birthDate: ArtistPartialDate?, birthPlace: String?, formationDate: ArtistPartialDate?, formationPlace: String?, originPlace: String?, biography: String?, attribution: EnrichmentAttribution) {
         self.entityKind = entityKind
         self.birthDate = birthDate
@@ -3482,10 +3402,8 @@ public struct ArtistProfile {
     }
 }
 
-
-
 extension ArtistProfile: Equatable, Hashable {
-    public static func ==(lhs: ArtistProfile, rhs: ArtistProfile) -> Bool {
+    public static func == (lhs: ArtistProfile, rhs: ArtistProfile) -> Bool {
         if lhs.entityKind != rhs.entityKind {
             return false
         }
@@ -3525,7 +3443,6 @@ extension ArtistProfile: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistProfile: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistProfile {
         return
@@ -3538,7 +3455,7 @@ public struct FfiConverterTypeArtistProfile: FfiConverterRustBuffer {
                 originPlace: FfiConverterOptionString.read(from: &buf),
                 biography: FfiConverterOptionString.read(from: &buf),
                 attribution: FfiConverterTypeEnrichmentAttribution.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistProfile, into buf: inout [UInt8]) {
@@ -3553,7 +3470,6 @@ public struct FfiConverterTypeArtistProfile: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistProfile_lift(_ buf: RustBuffer) throws -> ArtistProfile {
     return try FfiConverterTypeArtistProfile.lift(buf)
 }
@@ -3561,7 +3477,6 @@ public func FfiConverterTypeArtistProfile_lift(_ buf: RustBuffer) throws -> Arti
 public func FfiConverterTypeArtistProfile_lower(_ value: ArtistProfile) -> RustBuffer {
     return FfiConverterTypeArtistProfile.lower(value)
 }
-
 
 public struct ArtistProfileSource {
     public var provider: EnrichmentProvider
@@ -3574,12 +3489,13 @@ public struct ArtistProfileSource {
     public var expiresAt: Int64
     public var stale: Bool
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(provider: EnrichmentProvider, language: String, profile: ArtistProfile,
-        /**
-         * UTC Unix seconds. Expiry means eligible for refresh, not deleted.
-         */fetchedAt: Int64, expiresAt: Int64, stale: Bool) {
+                /* 
+                    * UTC Unix seconds. Expiry means eligible for refresh, not deleted.
+                    */ fetchedAt: Int64, expiresAt: Int64, stale: Bool)
+    {
         self.provider = provider
         self.language = language
         self.profile = profile
@@ -3589,10 +3505,8 @@ public struct ArtistProfileSource {
     }
 }
 
-
-
 extension ArtistProfileSource: Equatable, Hashable {
-    public static func ==(lhs: ArtistProfileSource, rhs: ArtistProfileSource) -> Bool {
+    public static func == (lhs: ArtistProfileSource, rhs: ArtistProfileSource) -> Bool {
         if lhs.provider != rhs.provider {
             return false
         }
@@ -3624,7 +3538,6 @@ extension ArtistProfileSource: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistProfileSource: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistProfileSource {
         return
@@ -3635,7 +3548,7 @@ public struct FfiConverterTypeArtistProfileSource: FfiConverterRustBuffer {
                 fetchedAt: FfiConverterInt64.read(from: &buf),
                 expiresAt: FfiConverterInt64.read(from: &buf),
                 stale: FfiConverterBool.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistProfileSource, into buf: inout [UInt8]) {
@@ -3648,7 +3561,6 @@ public struct FfiConverterTypeArtistProfileSource: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistProfileSource_lift(_ buf: RustBuffer) throws -> ArtistProfileSource {
     return try FfiConverterTypeArtistProfileSource.lift(buf)
 }
@@ -3656,7 +3568,6 @@ public func FfiConverterTypeArtistProfileSource_lift(_ buf: RustBuffer) throws -
 public func FfiConverterTypeArtistProfileSource_lower(_ value: ArtistProfileSource) -> RustBuffer {
     return FfiConverterTypeArtistProfileSource.lower(value)
 }
-
 
 public struct ArtistRefreshRequest {
     public var sections: [ArtistRefreshSection]
@@ -3667,23 +3578,22 @@ public struct ArtistRefreshRequest {
      */
     public var force: Bool
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(sections: [ArtistRefreshSection], language: String,
-        /**
-         * Revalidate expired or still-fresh cache entries. Provider cooldowns and
-         * operation deadlines continue to apply.
-         */force: Bool) {
+                /* 
+                    * Revalidate expired or still-fresh cache entries. Provider cooldowns and
+                    * operation deadlines continue to apply.
+                    */ force: Bool)
+    {
         self.sections = sections
         self.language = language
         self.force = force
     }
 }
 
-
-
 extension ArtistRefreshRequest: Equatable, Hashable {
-    public static func ==(lhs: ArtistRefreshRequest, rhs: ArtistRefreshRequest) -> Bool {
+    public static func == (lhs: ArtistRefreshRequest, rhs: ArtistRefreshRequest) -> Bool {
         if lhs.sections != rhs.sections {
             return false
         }
@@ -3703,7 +3613,6 @@ extension ArtistRefreshRequest: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistRefreshRequest: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistRefreshRequest {
         return
@@ -3711,7 +3620,7 @@ public struct FfiConverterTypeArtistRefreshRequest: FfiConverterRustBuffer {
                 sections: FfiConverterSequenceTypeArtistRefreshSection.read(from: &buf),
                 language: FfiConverterString.read(from: &buf),
                 force: FfiConverterBool.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistRefreshRequest, into buf: inout [UInt8]) {
@@ -3721,7 +3630,6 @@ public struct FfiConverterTypeArtistRefreshRequest: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistRefreshRequest_lift(_ buf: RustBuffer) throws -> ArtistRefreshRequest {
     return try FfiConverterTypeArtistRefreshRequest.lift(buf)
 }
@@ -3730,14 +3638,13 @@ public func FfiConverterTypeArtistRefreshRequest_lower(_ value: ArtistRefreshReq
     return FfiConverterTypeArtistRefreshRequest.lower(value)
 }
 
-
 public struct ArtistRefreshResult {
     public var artistId: Int64
     public var identityGeneration: UInt64
     public var sections: [ArtistRefreshSectionResult]
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(artistId: Int64, identityGeneration: UInt64, sections: [ArtistRefreshSectionResult]) {
         self.artistId = artistId
         self.identityGeneration = identityGeneration
@@ -3745,10 +3652,8 @@ public struct ArtistRefreshResult {
     }
 }
 
-
-
 extension ArtistRefreshResult: Equatable, Hashable {
-    public static func ==(lhs: ArtistRefreshResult, rhs: ArtistRefreshResult) -> Bool {
+    public static func == (lhs: ArtistRefreshResult, rhs: ArtistRefreshResult) -> Bool {
         if lhs.artistId != rhs.artistId {
             return false
         }
@@ -3768,7 +3673,6 @@ extension ArtistRefreshResult: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeArtistRefreshResult: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistRefreshResult {
         return
@@ -3776,7 +3680,7 @@ public struct FfiConverterTypeArtistRefreshResult: FfiConverterRustBuffer {
                 artistId: FfiConverterInt64.read(from: &buf),
                 identityGeneration: FfiConverterUInt64.read(from: &buf),
                 sections: FfiConverterSequenceTypeArtistRefreshSectionResult.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ArtistRefreshResult, into buf: inout [UInt8]) {
@@ -3786,7 +3690,6 @@ public struct FfiConverterTypeArtistRefreshResult: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeArtistRefreshResult_lift(_ buf: RustBuffer) throws -> ArtistRefreshResult {
     return try FfiConverterTypeArtistRefreshResult.lift(buf)
 }
@@ -3795,27 +3698,41 @@ public func FfiConverterTypeArtistRefreshResult_lower(_ value: ArtistRefreshResu
     return FfiConverterTypeArtistRefreshResult.lower(value)
 }
 
-
 public struct ArtistRefreshSectionResult {
     public var section: ArtistRefreshSection
     public var status: ArtistRefreshStatus
     public var retryAfterSeconds: UInt64?
     public var coverProgress: CoverRefreshProgress?
+    /**
+     * Stable machine-readable cause. UI strings remain frontend-owned.
+     */
+    public var diagnostic: ArtistRefreshDiagnosticCode?
+    /**
+     * Primary provider for the section. A profile may aggregate multiple providers.
+     */
+    public var provider: EnrichmentProvider?
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
-    public init(section: ArtistRefreshSection, status: ArtistRefreshStatus, retryAfterSeconds: UInt64?, coverProgress: CoverRefreshProgress?) {
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(section: ArtistRefreshSection, status: ArtistRefreshStatus, retryAfterSeconds: UInt64?, coverProgress: CoverRefreshProgress?,
+                /* 
+                    * Stable machine-readable cause. UI strings remain frontend-owned.
+                    */ diagnostic: ArtistRefreshDiagnosticCode?,
+                /* 
+                    * Primary provider for the section. A profile may aggregate multiple providers.
+                    */ provider: EnrichmentProvider?)
+    {
         self.section = section
         self.status = status
         self.retryAfterSeconds = retryAfterSeconds
         self.coverProgress = coverProgress
+        self.diagnostic = diagnostic
+        self.provider = provider
     }
 }
 
-
-
 extension ArtistRefreshSectionResult: Equatable, Hashable {
-    public static func ==(lhs: ArtistRefreshSectionResult, rhs: ArtistRefreshSectionResult) -> Bool {
+    public static func == (lhs: ArtistRefreshSectionResult, rhs: ArtistRefreshSectionResult) -> Bool {
         if lhs.section != rhs.section {
             return false
         }
@@ -3828,6 +3745,12 @@ extension ArtistRefreshSectionResult: Equatable, Hashable {
         if lhs.coverProgress != rhs.coverProgress {
             return false
         }
+        if lhs.diagnostic != rhs.diagnostic {
+            return false
+        }
+        if lhs.provider != rhs.provider {
+            return false
+        }
         return true
     }
 
@@ -3836,9 +3759,10 @@ extension ArtistRefreshSectionResult: Equatable, Hashable {
         hasher.combine(status)
         hasher.combine(retryAfterSeconds)
         hasher.combine(coverProgress)
+        hasher.combine(diagnostic)
+        hasher.combine(provider)
     }
 }
-
 
 public struct FfiConverterTypeArtistRefreshSectionResult: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistRefreshSectionResult {
@@ -3847,8 +3771,10 @@ public struct FfiConverterTypeArtistRefreshSectionResult: FfiConverterRustBuffer
                 section: FfiConverterTypeArtistRefreshSection.read(from: &buf),
                 status: FfiConverterTypeArtistRefreshStatus.read(from: &buf),
                 retryAfterSeconds: FfiConverterOptionUInt64.read(from: &buf),
-                coverProgress: FfiConverterOptionTypeCoverRefreshProgress.read(from: &buf)
-        )
+                coverProgress: FfiConverterOptionTypeCoverRefreshProgress.read(from: &buf),
+                diagnostic: FfiConverterOptionTypeArtistRefreshDiagnosticCode.read(from: &buf),
+                provider: FfiConverterOptionTypeEnrichmentProvider.read(from: &buf)
+            )
     }
 
     public static func write(_ value: ArtistRefreshSectionResult, into buf: inout [UInt8]) {
@@ -3856,9 +3782,10 @@ public struct FfiConverterTypeArtistRefreshSectionResult: FfiConverterRustBuffer
         FfiConverterTypeArtistRefreshStatus.write(value.status, into: &buf)
         FfiConverterOptionUInt64.write(value.retryAfterSeconds, into: &buf)
         FfiConverterOptionTypeCoverRefreshProgress.write(value.coverProgress, into: &buf)
+        FfiConverterOptionTypeArtistRefreshDiagnosticCode.write(value.diagnostic, into: &buf)
+        FfiConverterOptionTypeEnrichmentProvider.write(value.provider, into: &buf)
     }
 }
-
 
 public func FfiConverterTypeArtistRefreshSectionResult_lift(_ buf: RustBuffer) throws -> ArtistRefreshSectionResult {
     return try FfiConverterTypeArtistRefreshSectionResult.lift(buf)
@@ -3867,7 +3794,6 @@ public func FfiConverterTypeArtistRefreshSectionResult_lift(_ buf: RustBuffer) t
 public func FfiConverterTypeArtistRefreshSectionResult_lower(_ value: ArtistRefreshSectionResult) -> RustBuffer {
     return FfiConverterTypeArtistRefreshSectionResult.lower(value)
 }
-
 
 /**
  * Audio metadata extracted from a file
@@ -3888,8 +3814,8 @@ public struct AudioMetadata {
     public var allFields: [KeyValuePair]
     public var filePath: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(title: String?, artist: String?, release: String?, genre: String?, year: UInt32?, track: UInt32?, disc: UInt32?, durationSeconds: Double, bitrate: UInt32?, sampleRate: UInt32?, channels: UInt8?, coverArtworkId: String?, allFields: [KeyValuePair], filePath: String) {
         self.title = title
         self.artist = artist
@@ -3908,10 +3834,8 @@ public struct AudioMetadata {
     }
 }
 
-
-
 extension AudioMetadata: Equatable, Hashable {
-    public static func ==(lhs: AudioMetadata, rhs: AudioMetadata) -> Bool {
+    public static func == (lhs: AudioMetadata, rhs: AudioMetadata) -> Bool {
         if lhs.title != rhs.title {
             return false
         }
@@ -3975,7 +3899,6 @@ extension AudioMetadata: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeAudioMetadata: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AudioMetadata {
         return
@@ -3994,7 +3917,7 @@ public struct FfiConverterTypeAudioMetadata: FfiConverterRustBuffer {
                 coverArtworkId: FfiConverterOptionString.read(from: &buf),
                 allFields: FfiConverterSequenceTypeKeyValuePair.read(from: &buf),
                 filePath: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: AudioMetadata, into buf: inout [UInt8]) {
@@ -4015,7 +3938,6 @@ public struct FfiConverterTypeAudioMetadata: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeAudioMetadata_lift(_ buf: RustBuffer) throws -> AudioMetadata {
     return try FfiConverterTypeAudioMetadata.lift(buf)
 }
@@ -4024,7 +3946,6 @@ public func FfiConverterTypeAudioMetadata_lower(_ value: AudioMetadata) -> RustB
     return FfiConverterTypeAudioMetadata.lower(value)
 }
 
-
 /**
  * Last.fm auth token response
  */
@@ -4032,18 +3953,16 @@ public struct AuthTokenResponse {
     public var token: String
     public var authUrl: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(token: String, authUrl: String) {
         self.token = token
         self.authUrl = authUrl
     }
 }
 
-
-
 extension AuthTokenResponse: Equatable, Hashable {
-    public static func ==(lhs: AuthTokenResponse, rhs: AuthTokenResponse) -> Bool {
+    public static func == (lhs: AuthTokenResponse, rhs: AuthTokenResponse) -> Bool {
         if lhs.token != rhs.token {
             return false
         }
@@ -4059,14 +3978,13 @@ extension AuthTokenResponse: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeAuthTokenResponse: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AuthTokenResponse {
         return
             try AuthTokenResponse(
                 token: FfiConverterString.read(from: &buf),
                 authUrl: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: AuthTokenResponse, into buf: inout [UInt8]) {
@@ -4075,7 +3993,6 @@ public struct FfiConverterTypeAuthTokenResponse: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeAuthTokenResponse_lift(_ buf: RustBuffer) throws -> AuthTokenResponse {
     return try FfiConverterTypeAuthTokenResponse.lift(buf)
 }
@@ -4083,7 +4000,6 @@ public func FfiConverterTypeAuthTokenResponse_lift(_ buf: RustBuffer) throws -> 
 public func FfiConverterTypeAuthTokenResponse_lower(_ value: AuthTokenResponse) -> RustBuffer {
     return FfiConverterTypeAuthTokenResponse.lower(value)
 }
-
 
 /**
  * Configuration for initializing the core engine.
@@ -4106,21 +4022,22 @@ public struct CoreConfig {
      */
     public var keychainService: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(
-        /**
+        /* 
          * Path to the SQLite database file
-         */databasePath: String,
-        /**
-         * Application support directory (platform-specific)
-         */appSupportDir: String,
-        /**
-         * Directory for cover art files
-         */coversDir: String,
-        /**
-         * Keychain service name for secret storage (macOS)
-         */keychainService: String) {
+         */ databasePath: String,
+        /* 
+            * Application support directory (platform-specific)
+            */ appSupportDir: String,
+        /* 
+            * Directory for cover art files
+            */ coversDir: String,
+        /* 
+            * Keychain service name for secret storage (macOS)
+            */ keychainService: String
+    ) {
         self.databasePath = databasePath
         self.appSupportDir = appSupportDir
         self.coversDir = coversDir
@@ -4128,10 +4045,8 @@ public struct CoreConfig {
     }
 }
 
-
-
 extension CoreConfig: Equatable, Hashable {
-    public static func ==(lhs: CoreConfig, rhs: CoreConfig) -> Bool {
+    public static func == (lhs: CoreConfig, rhs: CoreConfig) -> Bool {
         if lhs.databasePath != rhs.databasePath {
             return false
         }
@@ -4155,7 +4070,6 @@ extension CoreConfig: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeCoreConfig: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreConfig {
         return
@@ -4164,7 +4078,7 @@ public struct FfiConverterTypeCoreConfig: FfiConverterRustBuffer {
                 appSupportDir: FfiConverterString.read(from: &buf),
                 coversDir: FfiConverterString.read(from: &buf),
                 keychainService: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: CoreConfig, into buf: inout [UInt8]) {
@@ -4175,7 +4089,6 @@ public struct FfiConverterTypeCoreConfig: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeCoreConfig_lift(_ buf: RustBuffer) throws -> CoreConfig {
     return try FfiConverterTypeCoreConfig.lift(buf)
 }
@@ -4183,7 +4096,6 @@ public func FfiConverterTypeCoreConfig_lift(_ buf: RustBuffer) throws -> CoreCon
 public func FfiConverterTypeCoreConfig_lower(_ value: CoreConfig) -> RustBuffer {
     return FfiConverterTypeCoreConfig.lower(value)
 }
-
 
 /**
  * Durable cover-queue counters for the artist's active catalog snapshot.
@@ -4194,8 +4106,8 @@ public struct CoverRefreshProgress {
     public var absent: UInt64
     public var temporarilyBlocked: UInt64
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(completed: UInt64, pending: UInt64, absent: UInt64, temporarilyBlocked: UInt64) {
         self.completed = completed
         self.pending = pending
@@ -4204,10 +4116,8 @@ public struct CoverRefreshProgress {
     }
 }
 
-
-
 extension CoverRefreshProgress: Equatable, Hashable {
-    public static func ==(lhs: CoverRefreshProgress, rhs: CoverRefreshProgress) -> Bool {
+    public static func == (lhs: CoverRefreshProgress, rhs: CoverRefreshProgress) -> Bool {
         if lhs.completed != rhs.completed {
             return false
         }
@@ -4231,7 +4141,6 @@ extension CoverRefreshProgress: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeCoverRefreshProgress: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoverRefreshProgress {
         return
@@ -4240,7 +4149,7 @@ public struct FfiConverterTypeCoverRefreshProgress: FfiConverterRustBuffer {
                 pending: FfiConverterUInt64.read(from: &buf),
                 absent: FfiConverterUInt64.read(from: &buf),
                 temporarilyBlocked: FfiConverterUInt64.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: CoverRefreshProgress, into buf: inout [UInt8]) {
@@ -4251,7 +4160,6 @@ public struct FfiConverterTypeCoverRefreshProgress: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeCoverRefreshProgress_lift(_ buf: RustBuffer) throws -> CoverRefreshProgress {
     return try FfiConverterTypeCoverRefreshProgress.lift(buf)
 }
@@ -4260,7 +4168,6 @@ public func FfiConverterTypeCoverRefreshProgress_lower(_ value: CoverRefreshProg
     return FfiConverterTypeCoverRefreshProgress.lower(value)
 }
 
-
 public struct EnrichmentAttribution {
     public var sourceUrl: String
     public var author: String?
@@ -4268,8 +4175,8 @@ public struct EnrichmentAttribution {
     public var licenseUrl: String?
     public var revision: String?
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(sourceUrl: String, author: String?, licenseName: String?, licenseUrl: String?, revision: String?) {
         self.sourceUrl = sourceUrl
         self.author = author
@@ -4279,10 +4186,8 @@ public struct EnrichmentAttribution {
     }
 }
 
-
-
 extension EnrichmentAttribution: Equatable, Hashable {
-    public static func ==(lhs: EnrichmentAttribution, rhs: EnrichmentAttribution) -> Bool {
+    public static func == (lhs: EnrichmentAttribution, rhs: EnrichmentAttribution) -> Bool {
         if lhs.sourceUrl != rhs.sourceUrl {
             return false
         }
@@ -4310,7 +4215,6 @@ extension EnrichmentAttribution: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeEnrichmentAttribution: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EnrichmentAttribution {
         return
@@ -4320,7 +4224,7 @@ public struct FfiConverterTypeEnrichmentAttribution: FfiConverterRustBuffer {
                 licenseName: FfiConverterOptionString.read(from: &buf),
                 licenseUrl: FfiConverterOptionString.read(from: &buf),
                 revision: FfiConverterOptionString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: EnrichmentAttribution, into buf: inout [UInt8]) {
@@ -4332,7 +4236,6 @@ public struct FfiConverterTypeEnrichmentAttribution: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeEnrichmentAttribution_lift(_ buf: RustBuffer) throws -> EnrichmentAttribution {
     return try FfiConverterTypeEnrichmentAttribution.lift(buf)
 }
@@ -4340,7 +4243,6 @@ public func FfiConverterTypeEnrichmentAttribution_lift(_ buf: RustBuffer) throws
 public func FfiConverterTypeEnrichmentAttribution_lower(_ value: EnrichmentAttribution) -> RustBuffer {
     return FfiConverterTypeEnrichmentAttribution.lower(value)
 }
-
 
 /**
  * Disabled on first launch. Offline also prevents future refresh requests.
@@ -4350,8 +4252,8 @@ public struct EnrichmentSettings {
     public var offline: Bool
     public var preferredLanguage: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(enabled: Bool, offline: Bool, preferredLanguage: String) {
         self.enabled = enabled
         self.offline = offline
@@ -4359,10 +4261,8 @@ public struct EnrichmentSettings {
     }
 }
 
-
-
 extension EnrichmentSettings: Equatable, Hashable {
-    public static func ==(lhs: EnrichmentSettings, rhs: EnrichmentSettings) -> Bool {
+    public static func == (lhs: EnrichmentSettings, rhs: EnrichmentSettings) -> Bool {
         if lhs.enabled != rhs.enabled {
             return false
         }
@@ -4382,7 +4282,6 @@ extension EnrichmentSettings: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeEnrichmentSettings: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EnrichmentSettings {
         return
@@ -4390,7 +4289,7 @@ public struct FfiConverterTypeEnrichmentSettings: FfiConverterRustBuffer {
                 enabled: FfiConverterBool.read(from: &buf),
                 offline: FfiConverterBool.read(from: &buf),
                 preferredLanguage: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: EnrichmentSettings, into buf: inout [UInt8]) {
@@ -4400,7 +4299,6 @@ public struct FfiConverterTypeEnrichmentSettings: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeEnrichmentSettings_lift(_ buf: RustBuffer) throws -> EnrichmentSettings {
     return try FfiConverterTypeEnrichmentSettings.lift(buf)
 }
@@ -4409,23 +4307,20 @@ public func FfiConverterTypeEnrichmentSettings_lower(_ value: EnrichmentSettings
     return FfiConverterTypeEnrichmentSettings.lower(value)
 }
 
-
 public struct ExternalReleaseArtwork {
     public var image: ArtistImageReference
     public var scope: ExternalArtworkScope
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(image: ArtistImageReference, scope: ExternalArtworkScope) {
         self.image = image
         self.scope = scope
     }
 }
 
-
-
 extension ExternalReleaseArtwork: Equatable, Hashable {
-    public static func ==(lhs: ExternalReleaseArtwork, rhs: ExternalReleaseArtwork) -> Bool {
+    public static func == (lhs: ExternalReleaseArtwork, rhs: ExternalReleaseArtwork) -> Bool {
         if lhs.image != rhs.image {
             return false
         }
@@ -4441,14 +4336,13 @@ extension ExternalReleaseArtwork: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeExternalReleaseArtwork: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExternalReleaseArtwork {
         return
             try ExternalReleaseArtwork(
                 image: FfiConverterTypeArtistImageReference.read(from: &buf),
                 scope: FfiConverterTypeExternalArtworkScope.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ExternalReleaseArtwork, into buf: inout [UInt8]) {
@@ -4457,7 +4351,6 @@ public struct FfiConverterTypeExternalReleaseArtwork: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeExternalReleaseArtwork_lift(_ buf: RustBuffer) throws -> ExternalReleaseArtwork {
     return try FfiConverterTypeExternalReleaseArtwork.lift(buf)
 }
@@ -4465,7 +4358,6 @@ public func FfiConverterTypeExternalReleaseArtwork_lift(_ buf: RustBuffer) throw
 public func FfiConverterTypeExternalReleaseArtwork_lower(_ value: ExternalReleaseArtwork) -> RustBuffer {
     return FfiConverterTypeExternalReleaseArtwork.lower(value)
 }
-
 
 /**
  * MusicBrainz release-group metadata remains separate from playable local
@@ -4485,13 +4377,14 @@ public struct ExternalReleaseGroup {
     public var artwork: ExternalReleaseArtwork?
     public var attribution: EnrichmentAttribution
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(musicbrainzId: String, title: String, primaryType: String?, secondaryTypes: [String], firstReleaseDate: ArtistPartialDate?, localReleaseId: Int64?,
-        /**
-         * External fallback only. `None` also means a linked local release has
-         * manual or embedded artwork with higher precedence.
-         */artwork: ExternalReleaseArtwork?, attribution: EnrichmentAttribution) {
+                /* 
+                    * External fallback only. `None` also means a linked local release has
+                    * manual or embedded artwork with higher precedence.
+                    */ artwork: ExternalReleaseArtwork?, attribution: EnrichmentAttribution)
+    {
         self.musicbrainzId = musicbrainzId
         self.title = title
         self.primaryType = primaryType
@@ -4503,10 +4396,8 @@ public struct ExternalReleaseGroup {
     }
 }
 
-
-
 extension ExternalReleaseGroup: Equatable, Hashable {
-    public static func ==(lhs: ExternalReleaseGroup, rhs: ExternalReleaseGroup) -> Bool {
+    public static func == (lhs: ExternalReleaseGroup, rhs: ExternalReleaseGroup) -> Bool {
         if lhs.musicbrainzId != rhs.musicbrainzId {
             return false
         }
@@ -4546,7 +4437,6 @@ extension ExternalReleaseGroup: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeExternalReleaseGroup: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExternalReleaseGroup {
         return
@@ -4559,7 +4449,7 @@ public struct FfiConverterTypeExternalReleaseGroup: FfiConverterRustBuffer {
                 localReleaseId: FfiConverterOptionInt64.read(from: &buf),
                 artwork: FfiConverterOptionTypeExternalReleaseArtwork.read(from: &buf),
                 attribution: FfiConverterTypeEnrichmentAttribution.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ExternalReleaseGroup, into buf: inout [UInt8]) {
@@ -4574,7 +4464,6 @@ public struct FfiConverterTypeExternalReleaseGroup: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeExternalReleaseGroup_lift(_ buf: RustBuffer) throws -> ExternalReleaseGroup {
     return try FfiConverterTypeExternalReleaseGroup.lift(buf)
 }
@@ -4583,7 +4472,6 @@ public func FfiConverterTypeExternalReleaseGroup_lower(_ value: ExternalReleaseG
     return FfiConverterTypeExternalReleaseGroup.lower(value)
 }
 
-
 /**
  * Key-value pair for metadata fields (UniFFI-friendly alternative to HashMap).
  */
@@ -4591,18 +4479,16 @@ public struct KeyValuePair {
     public var key: String
     public var value: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(key: String, value: String) {
         self.key = key
         self.value = value
     }
 }
 
-
-
 extension KeyValuePair: Equatable, Hashable {
-    public static func ==(lhs: KeyValuePair, rhs: KeyValuePair) -> Bool {
+    public static func == (lhs: KeyValuePair, rhs: KeyValuePair) -> Bool {
         if lhs.key != rhs.key {
             return false
         }
@@ -4618,14 +4504,13 @@ extension KeyValuePair: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeKeyValuePair: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> KeyValuePair {
         return
             try KeyValuePair(
                 key: FfiConverterString.read(from: &buf),
                 value: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: KeyValuePair, into buf: inout [UInt8]) {
@@ -4633,7 +4518,6 @@ public struct FfiConverterTypeKeyValuePair: FfiConverterRustBuffer {
         FfiConverterString.write(value.value, into: &buf)
     }
 }
-
 
 public func FfiConverterTypeKeyValuePair_lift(_ buf: RustBuffer) throws -> KeyValuePair {
     return try FfiConverterTypeKeyValuePair.lift(buf)
@@ -4643,7 +4527,6 @@ public func FfiConverterTypeKeyValuePair_lower(_ value: KeyValuePair) -> RustBuf
     return FfiConverterTypeKeyValuePair.lower(value)
 }
 
-
 /**
  * Last.fm connection status
  */
@@ -4651,18 +4534,16 @@ public struct LastFmStatus {
     public var connected: Bool
     public var username: String?
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(connected: Bool, username: String?) {
         self.connected = connected
         self.username = username
     }
 }
 
-
-
 extension LastFmStatus: Equatable, Hashable {
-    public static func ==(lhs: LastFmStatus, rhs: LastFmStatus) -> Bool {
+    public static func == (lhs: LastFmStatus, rhs: LastFmStatus) -> Bool {
         if lhs.connected != rhs.connected {
             return false
         }
@@ -4678,14 +4559,13 @@ extension LastFmStatus: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeLastFmStatus: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LastFmStatus {
         return
             try LastFmStatus(
                 connected: FfiConverterBool.read(from: &buf),
                 username: FfiConverterOptionString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: LastFmStatus, into buf: inout [UInt8]) {
@@ -4694,7 +4574,6 @@ public struct FfiConverterTypeLastFmStatus: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeLastFmStatus_lift(_ buf: RustBuffer) throws -> LastFmStatus {
     return try FfiConverterTypeLastFmStatus.lift(buf)
 }
@@ -4702,7 +4581,6 @@ public func FfiConverterTypeLastFmStatus_lift(_ buf: RustBuffer) throws -> LastF
 public func FfiConverterTypeLastFmStatus_lower(_ value: LastFmStatus) -> RustBuffer {
     return FfiConverterTypeLastFmStatus.lower(value)
 }
-
 
 /**
  * Last session state for resume
@@ -4718,8 +4596,8 @@ public struct LastSession {
     public var sourceContext: String
     public var updatedAt: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(currentTrackId: Int64?, progressSeconds: Double, volume: Float, shuffleEnabled: Bool, repeatMode: RepeatMode, queue: [Int64], queuePosition: UInt64, sourceContext: String, updatedAt: String) {
         self.currentTrackId = currentTrackId
         self.progressSeconds = progressSeconds
@@ -4733,10 +4611,8 @@ public struct LastSession {
     }
 }
 
-
-
 extension LastSession: Equatable, Hashable {
-    public static func ==(lhs: LastSession, rhs: LastSession) -> Bool {
+    public static func == (lhs: LastSession, rhs: LastSession) -> Bool {
         if lhs.currentTrackId != rhs.currentTrackId {
             return false
         }
@@ -4780,7 +4656,6 @@ extension LastSession: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeLastSession: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LastSession {
         return
@@ -4794,7 +4669,7 @@ public struct FfiConverterTypeLastSession: FfiConverterRustBuffer {
                 queuePosition: FfiConverterUInt64.read(from: &buf),
                 sourceContext: FfiConverterString.read(from: &buf),
                 updatedAt: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: LastSession, into buf: inout [UInt8]) {
@@ -4810,7 +4685,6 @@ public struct FfiConverterTypeLastSession: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeLastSession_lift(_ buf: RustBuffer) throws -> LastSession {
     return try FfiConverterTypeLastSession.lift(buf)
 }
@@ -4818,7 +4692,6 @@ public func FfiConverterTypeLastSession_lift(_ buf: RustBuffer) throws -> LastSe
 public func FfiConverterTypeLastSession_lower(_ value: LastSession) -> RustBuffer {
     return FfiConverterTypeLastSession.lower(value)
 }
-
 
 /**
  * One completed playback event.
@@ -4829,8 +4702,8 @@ public struct PlaybackHistoryItem {
     public var playedAt: String
     public var durationSeconds: UInt64
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(id: Int64, trackId: Int64, playedAt: String, durationSeconds: UInt64) {
         self.id = id
         self.trackId = trackId
@@ -4839,10 +4712,8 @@ public struct PlaybackHistoryItem {
     }
 }
 
-
-
 extension PlaybackHistoryItem: Equatable, Hashable {
-    public static func ==(lhs: PlaybackHistoryItem, rhs: PlaybackHistoryItem) -> Bool {
+    public static func == (lhs: PlaybackHistoryItem, rhs: PlaybackHistoryItem) -> Bool {
         if lhs.id != rhs.id {
             return false
         }
@@ -4866,7 +4737,6 @@ extension PlaybackHistoryItem: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypePlaybackHistoryItem: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaybackHistoryItem {
         return
@@ -4875,7 +4745,7 @@ public struct FfiConverterTypePlaybackHistoryItem: FfiConverterRustBuffer {
                 trackId: FfiConverterInt64.read(from: &buf),
                 playedAt: FfiConverterString.read(from: &buf),
                 durationSeconds: FfiConverterUInt64.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: PlaybackHistoryItem, into buf: inout [UInt8]) {
@@ -4886,7 +4756,6 @@ public struct FfiConverterTypePlaybackHistoryItem: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypePlaybackHistoryItem_lift(_ buf: RustBuffer) throws -> PlaybackHistoryItem {
     return try FfiConverterTypePlaybackHistoryItem.lift(buf)
 }
@@ -4895,7 +4764,6 @@ public func FfiConverterTypePlaybackHistoryItem_lower(_ value: PlaybackHistoryIt
     return FfiConverterTypePlaybackHistoryItem.lower(value)
 }
 
-
 /**
  * One bounded page of completed playback events.
  */
@@ -4903,18 +4771,16 @@ public struct PlaybackHistoryPage {
     public var items: [PlaybackHistoryItem]
     public var nextOffset: UInt64?
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(items: [PlaybackHistoryItem], nextOffset: UInt64?) {
         self.items = items
         self.nextOffset = nextOffset
     }
 }
 
-
-
 extension PlaybackHistoryPage: Equatable, Hashable {
-    public static func ==(lhs: PlaybackHistoryPage, rhs: PlaybackHistoryPage) -> Bool {
+    public static func == (lhs: PlaybackHistoryPage, rhs: PlaybackHistoryPage) -> Bool {
         if lhs.items != rhs.items {
             return false
         }
@@ -4930,14 +4796,13 @@ extension PlaybackHistoryPage: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypePlaybackHistoryPage: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaybackHistoryPage {
         return
             try PlaybackHistoryPage(
                 items: FfiConverterSequenceTypePlaybackHistoryItem.read(from: &buf),
                 nextOffset: FfiConverterOptionUInt64.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: PlaybackHistoryPage, into buf: inout [UInt8]) {
@@ -4946,7 +4811,6 @@ public struct FfiConverterTypePlaybackHistoryPage: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypePlaybackHistoryPage_lift(_ buf: RustBuffer) throws -> PlaybackHistoryPage {
     return try FfiConverterTypePlaybackHistoryPage.lift(buf)
 }
@@ -4954,7 +4818,6 @@ public func FfiConverterTypePlaybackHistoryPage_lift(_ buf: RustBuffer) throws -
 public func FfiConverterTypePlaybackHistoryPage_lower(_ value: PlaybackHistoryPage) -> RustBuffer {
     return FfiConverterTypePlaybackHistoryPage.lower(value)
 }
-
 
 /**
  * Playback state snapshot
@@ -4971,8 +4834,8 @@ public struct PlaybackSnapshot {
     public var shuffleEnabled: Bool
     public var repeatMode: RepeatMode
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(currentTrack: Track?, positionSeconds: Double, durationSeconds: Double?, volume: Float, isPlaying: Bool, isPaused: Bool, queue: [QueueItem], queuePosition: UInt64, shuffleEnabled: Bool, repeatMode: RepeatMode) {
         self.currentTrack = currentTrack
         self.positionSeconds = positionSeconds
@@ -4987,10 +4850,8 @@ public struct PlaybackSnapshot {
     }
 }
 
-
-
 extension PlaybackSnapshot: Equatable, Hashable {
-    public static func ==(lhs: PlaybackSnapshot, rhs: PlaybackSnapshot) -> Bool {
+    public static func == (lhs: PlaybackSnapshot, rhs: PlaybackSnapshot) -> Bool {
         if lhs.currentTrack != rhs.currentTrack {
             return false
         }
@@ -5038,7 +4899,6 @@ extension PlaybackSnapshot: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypePlaybackSnapshot: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaybackSnapshot {
         return
@@ -5053,7 +4913,7 @@ public struct FfiConverterTypePlaybackSnapshot: FfiConverterRustBuffer {
                 queuePosition: FfiConverterUInt64.read(from: &buf),
                 shuffleEnabled: FfiConverterBool.read(from: &buf),
                 repeatMode: FfiConverterTypeRepeatMode.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: PlaybackSnapshot, into buf: inout [UInt8]) {
@@ -5070,7 +4930,6 @@ public struct FfiConverterTypePlaybackSnapshot: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypePlaybackSnapshot_lift(_ buf: RustBuffer) throws -> PlaybackSnapshot {
     return try FfiConverterTypePlaybackSnapshot.lift(buf)
 }
@@ -5078,7 +4937,6 @@ public func FfiConverterTypePlaybackSnapshot_lift(_ buf: RustBuffer) throws -> P
 public func FfiConverterTypePlaybackSnapshot_lower(_ value: PlaybackSnapshot) -> RustBuffer {
     return FfiConverterTypePlaybackSnapshot.lower(value)
 }
-
 
 /**
  * Playlist DTO
@@ -5094,8 +4952,8 @@ public struct Playlist {
     public var createdAt: String
     public var updatedAt: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(id: Int64, name: String, description: String, artworkId: String?, isFavorite: Bool, suggestLess: Bool, trackCount: UInt64, createdAt: String, updatedAt: String) {
         self.id = id
         self.name = name
@@ -5109,10 +4967,8 @@ public struct Playlist {
     }
 }
 
-
-
 extension Playlist: Equatable, Hashable {
-    public static func ==(lhs: Playlist, rhs: Playlist) -> Bool {
+    public static func == (lhs: Playlist, rhs: Playlist) -> Bool {
         if lhs.id != rhs.id {
             return false
         }
@@ -5156,7 +5012,6 @@ extension Playlist: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypePlaylist: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Playlist {
         return
@@ -5170,7 +5025,7 @@ public struct FfiConverterTypePlaylist: FfiConverterRustBuffer {
                 trackCount: FfiConverterUInt64.read(from: &buf),
                 createdAt: FfiConverterString.read(from: &buf),
                 updatedAt: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: Playlist, into buf: inout [UInt8]) {
@@ -5186,7 +5041,6 @@ public struct FfiConverterTypePlaylist: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypePlaylist_lift(_ buf: RustBuffer) throws -> Playlist {
     return try FfiConverterTypePlaylist.lift(buf)
 }
@@ -5194,7 +5048,6 @@ public func FfiConverterTypePlaylist_lift(_ buf: RustBuffer) throws -> Playlist 
 public func FfiConverterTypePlaylist_lower(_ value: Playlist) -> RustBuffer {
     return FfiConverterTypePlaylist.lower(value)
 }
-
 
 /**
  * Playlist track entry
@@ -5205,8 +5058,8 @@ public struct PlaylistTrack {
     public var position: UInt64
     public var addedAt: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(playlistId: Int64, trackId: Int64, position: UInt64, addedAt: String) {
         self.playlistId = playlistId
         self.trackId = trackId
@@ -5215,10 +5068,8 @@ public struct PlaylistTrack {
     }
 }
 
-
-
 extension PlaylistTrack: Equatable, Hashable {
-    public static func ==(lhs: PlaylistTrack, rhs: PlaylistTrack) -> Bool {
+    public static func == (lhs: PlaylistTrack, rhs: PlaylistTrack) -> Bool {
         if lhs.playlistId != rhs.playlistId {
             return false
         }
@@ -5242,7 +5093,6 @@ extension PlaylistTrack: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypePlaylistTrack: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaylistTrack {
         return
@@ -5251,7 +5101,7 @@ public struct FfiConverterTypePlaylistTrack: FfiConverterRustBuffer {
                 trackId: FfiConverterInt64.read(from: &buf),
                 position: FfiConverterUInt64.read(from: &buf),
                 addedAt: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: PlaylistTrack, into buf: inout [UInt8]) {
@@ -5262,7 +5112,6 @@ public struct FfiConverterTypePlaylistTrack: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypePlaylistTrack_lift(_ buf: RustBuffer) throws -> PlaylistTrack {
     return try FfiConverterTypePlaylistTrack.lift(buf)
 }
@@ -5271,7 +5120,6 @@ public func FfiConverterTypePlaylistTrack_lower(_ value: PlaylistTrack) -> RustB
     return FfiConverterTypePlaylistTrack.lower(value)
 }
 
-
 /**
  * Queue item DTO
  */
@@ -5279,18 +5127,16 @@ public struct QueueItem {
     public var trackId: Int64
     public var position: UInt64
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(trackId: Int64, position: UInt64) {
         self.trackId = trackId
         self.position = position
     }
 }
 
-
-
 extension QueueItem: Equatable, Hashable {
-    public static func ==(lhs: QueueItem, rhs: QueueItem) -> Bool {
+    public static func == (lhs: QueueItem, rhs: QueueItem) -> Bool {
         if lhs.trackId != rhs.trackId {
             return false
         }
@@ -5306,14 +5152,13 @@ extension QueueItem: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeQueueItem: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QueueItem {
         return
             try QueueItem(
                 trackId: FfiConverterInt64.read(from: &buf),
                 position: FfiConverterUInt64.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: QueueItem, into buf: inout [UInt8]) {
@@ -5322,7 +5167,6 @@ public struct FfiConverterTypeQueueItem: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeQueueItem_lift(_ buf: RustBuffer) throws -> QueueItem {
     return try FfiConverterTypeQueueItem.lift(buf)
 }
@@ -5330,7 +5174,6 @@ public func FfiConverterTypeQueueItem_lift(_ buf: RustBuffer) throws -> QueueIte
 public func FfiConverterTypeQueueItem_lower(_ value: QueueItem) -> RustBuffer {
     return FfiConverterTypeQueueItem.lower(value)
 }
-
 
 /**
  * Release/album DTO
@@ -5350,8 +5193,8 @@ public struct Release {
     public var suggestLess: Bool
     public var rating: UInt8?
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(id: Int64, title: String, artist: String, artistId: Int64, releaseDate: String?, totalTracks: UInt8, totalDiscs: UInt8, durationSeconds: UInt64, artworkId: String?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool, rating: UInt8?) {
         self.id = id
         self.title = title
@@ -5369,10 +5212,8 @@ public struct Release {
     }
 }
 
-
-
 extension Release: Equatable, Hashable {
-    public static func ==(lhs: Release, rhs: Release) -> Bool {
+    public static func == (lhs: Release, rhs: Release) -> Bool {
         if lhs.id != rhs.id {
             return false
         }
@@ -5432,7 +5273,6 @@ extension Release: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeRelease: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Release {
         return
@@ -5450,7 +5290,7 @@ public struct FfiConverterTypeRelease: FfiConverterRustBuffer {
                 isHidden: FfiConverterBool.read(from: &buf),
                 suggestLess: FfiConverterBool.read(from: &buf),
                 rating: FfiConverterOptionUInt8.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: Release, into buf: inout [UInt8]) {
@@ -5470,7 +5310,6 @@ public struct FfiConverterTypeRelease: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeRelease_lift(_ buf: RustBuffer) throws -> Release {
     return try FfiConverterTypeRelease.lift(buf)
 }
@@ -5479,7 +5318,6 @@ public func FfiConverterTypeRelease_lower(_ value: Release) -> RustBuffer {
     return FfiConverterTypeRelease.lower(value)
 }
 
-
 /**
  * One bounded page of releases. `next_offset` is absent on the final page.
  */
@@ -5487,18 +5325,16 @@ public struct ReleasePage {
     public var items: [Release]
     public var nextOffset: UInt64?
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(items: [Release], nextOffset: UInt64?) {
         self.items = items
         self.nextOffset = nextOffset
     }
 }
 
-
-
 extension ReleasePage: Equatable, Hashable {
-    public static func ==(lhs: ReleasePage, rhs: ReleasePage) -> Bool {
+    public static func == (lhs: ReleasePage, rhs: ReleasePage) -> Bool {
         if lhs.items != rhs.items {
             return false
         }
@@ -5514,14 +5350,13 @@ extension ReleasePage: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeReleasePage: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReleasePage {
         return
             try ReleasePage(
                 items: FfiConverterSequenceTypeRelease.read(from: &buf),
                 nextOffset: FfiConverterOptionUInt64.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ReleasePage, into buf: inout [UInt8]) {
@@ -5530,7 +5365,6 @@ public struct FfiConverterTypeReleasePage: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeReleasePage_lift(_ buf: RustBuffer) throws -> ReleasePage {
     return try FfiConverterTypeReleasePage.lift(buf)
 }
@@ -5538,7 +5372,6 @@ public func FfiConverterTypeReleasePage_lift(_ buf: RustBuffer) throws -> Releas
 public func FfiConverterTypeReleasePage_lower(_ value: ReleasePage) -> RustBuffer {
     return FfiConverterTypeReleasePage.lower(value)
 }
-
 
 /**
  * Library scan progress
@@ -5550,8 +5383,8 @@ public struct ScanProgress {
     public var processedFiles: UInt64
     public var newTracks: UInt64
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(path: String, phase: ScanPhase, totalFiles: UInt64, processedFiles: UInt64, newTracks: UInt64) {
         self.path = path
         self.phase = phase
@@ -5561,10 +5394,8 @@ public struct ScanProgress {
     }
 }
 
-
-
 extension ScanProgress: Equatable, Hashable {
-    public static func ==(lhs: ScanProgress, rhs: ScanProgress) -> Bool {
+    public static func == (lhs: ScanProgress, rhs: ScanProgress) -> Bool {
         if lhs.path != rhs.path {
             return false
         }
@@ -5592,7 +5423,6 @@ extension ScanProgress: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeScanProgress: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanProgress {
         return
@@ -5602,7 +5432,7 @@ public struct FfiConverterTypeScanProgress: FfiConverterRustBuffer {
                 totalFiles: FfiConverterUInt64.read(from: &buf),
                 processedFiles: FfiConverterUInt64.read(from: &buf),
                 newTracks: FfiConverterUInt64.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ScanProgress, into buf: inout [UInt8]) {
@@ -5614,7 +5444,6 @@ public struct FfiConverterTypeScanProgress: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeScanProgress_lift(_ buf: RustBuffer) throws -> ScanProgress {
     return try FfiConverterTypeScanProgress.lift(buf)
 }
@@ -5622,7 +5451,6 @@ public func FfiConverterTypeScanProgress_lift(_ buf: RustBuffer) throws -> ScanP
 public func FfiConverterTypeScanProgress_lower(_ value: ScanProgress) -> RustBuffer {
     return FfiConverterTypeScanProgress.lower(value)
 }
-
 
 /**
  * Library scan result
@@ -5634,8 +5462,8 @@ public struct ScanResult {
     public var updatedTracks: UInt64
     public var errors: [String]
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(pathsScanned: UInt64, totalFilesFound: UInt64, newTracksAdded: UInt64, updatedTracks: UInt64, errors: [String]) {
         self.pathsScanned = pathsScanned
         self.totalFilesFound = totalFilesFound
@@ -5645,10 +5473,8 @@ public struct ScanResult {
     }
 }
 
-
-
 extension ScanResult: Equatable, Hashable {
-    public static func ==(lhs: ScanResult, rhs: ScanResult) -> Bool {
+    public static func == (lhs: ScanResult, rhs: ScanResult) -> Bool {
         if lhs.pathsScanned != rhs.pathsScanned {
             return false
         }
@@ -5676,7 +5502,6 @@ extension ScanResult: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeScanResult: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanResult {
         return
@@ -5686,7 +5511,7 @@ public struct FfiConverterTypeScanResult: FfiConverterRustBuffer {
                 newTracksAdded: FfiConverterUInt64.read(from: &buf),
                 updatedTracks: FfiConverterUInt64.read(from: &buf),
                 errors: FfiConverterSequenceString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: ScanResult, into buf: inout [UInt8]) {
@@ -5698,7 +5523,6 @@ public struct FfiConverterTypeScanResult: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeScanResult_lift(_ buf: RustBuffer) throws -> ScanResult {
     return try FfiConverterTypeScanResult.lift(buf)
 }
@@ -5706,7 +5530,6 @@ public func FfiConverterTypeScanResult_lift(_ buf: RustBuffer) throws -> ScanRes
 public func FfiConverterTypeScanResult_lower(_ value: ScanResult) -> RustBuffer {
     return FfiConverterTypeScanResult.lower(value)
 }
-
 
 /**
  * Search result
@@ -5717,8 +5540,8 @@ public struct SearchResults {
     public var artists: [Artist]
     public var playlists: [Playlist]
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(tracks: [Track], releases: [Release], artists: [Artist], playlists: [Playlist]) {
         self.tracks = tracks
         self.releases = releases
@@ -5727,10 +5550,8 @@ public struct SearchResults {
     }
 }
 
-
-
 extension SearchResults: Equatable, Hashable {
-    public static func ==(lhs: SearchResults, rhs: SearchResults) -> Bool {
+    public static func == (lhs: SearchResults, rhs: SearchResults) -> Bool {
         if lhs.tracks != rhs.tracks {
             return false
         }
@@ -5754,7 +5575,6 @@ extension SearchResults: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeSearchResults: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SearchResults {
         return
@@ -5763,7 +5583,7 @@ public struct FfiConverterTypeSearchResults: FfiConverterRustBuffer {
                 releases: FfiConverterSequenceTypeRelease.read(from: &buf),
                 artists: FfiConverterSequenceTypeArtist.read(from: &buf),
                 playlists: FfiConverterSequenceTypePlaylist.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: SearchResults, into buf: inout [UInt8]) {
@@ -5774,7 +5594,6 @@ public struct FfiConverterTypeSearchResults: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeSearchResults_lift(_ buf: RustBuffer) throws -> SearchResults {
     return try FfiConverterTypeSearchResults.lift(buf)
 }
@@ -5783,24 +5602,21 @@ public func FfiConverterTypeSearchResults_lower(_ value: SearchResults) -> RustB
     return FfiConverterTypeSearchResults.lower(value)
 }
 
-
 /**
  * Last.fm session response
  */
 public struct SessionResponse {
     public var username: String
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(username: String) {
         self.username = username
     }
 }
 
-
-
 extension SessionResponse: Equatable, Hashable {
-    public static func ==(lhs: SessionResponse, rhs: SessionResponse) -> Bool {
+    public static func == (lhs: SessionResponse, rhs: SessionResponse) -> Bool {
         if lhs.username != rhs.username {
             return false
         }
@@ -5812,20 +5628,18 @@ extension SessionResponse: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeSessionResponse: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SessionResponse {
         return
             try SessionResponse(
                 username: FfiConverterString.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: SessionResponse, into buf: inout [UInt8]) {
         FfiConverterString.write(value.username, into: &buf)
     }
 }
-
 
 public func FfiConverterTypeSessionResponse_lift(_ buf: RustBuffer) throws -> SessionResponse {
     return try FfiConverterTypeSessionResponse.lift(buf)
@@ -5834,7 +5648,6 @@ public func FfiConverterTypeSessionResponse_lift(_ buf: RustBuffer) throws -> Se
 public func FfiConverterTypeSessionResponse_lower(_ value: SessionResponse) -> RustBuffer {
     return FfiConverterTypeSessionResponse.lower(value)
 }
-
 
 /**
  * Application settings
@@ -5852,8 +5665,8 @@ public struct Settings {
     public var minimizeOnClose: Bool
     public var onboardingComplete: Bool
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(crossFade: Bool, crossFadeDuration: UInt32, normalizeVolume: Bool, explicitContent: Bool, autoplay: Bool, preferredAudioQuality: UInt32, preferredAudioSource: String, downloadPath: String, openOnStartup: Bool, minimizeOnClose: Bool, onboardingComplete: Bool) {
         self.crossFade = crossFade
         self.crossFadeDuration = crossFadeDuration
@@ -5869,10 +5682,8 @@ public struct Settings {
     }
 }
 
-
-
 extension Settings: Equatable, Hashable {
-    public static func ==(lhs: Settings, rhs: Settings) -> Bool {
+    public static func == (lhs: Settings, rhs: Settings) -> Bool {
         if lhs.crossFade != rhs.crossFade {
             return false
         }
@@ -5924,7 +5735,6 @@ extension Settings: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeSettings: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Settings {
         return
@@ -5940,7 +5750,7 @@ public struct FfiConverterTypeSettings: FfiConverterRustBuffer {
                 openOnStartup: FfiConverterBool.read(from: &buf),
                 minimizeOnClose: FfiConverterBool.read(from: &buf),
                 onboardingComplete: FfiConverterBool.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: Settings, into buf: inout [UInt8]) {
@@ -5958,7 +5768,6 @@ public struct FfiConverterTypeSettings: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeSettings_lift(_ buf: RustBuffer) throws -> Settings {
     return try FfiConverterTypeSettings.lift(buf)
 }
@@ -5966,7 +5775,6 @@ public func FfiConverterTypeSettings_lift(_ buf: RustBuffer) throws -> Settings 
 public func FfiConverterTypeSettings_lower(_ value: Settings) -> RustBuffer {
     return FfiConverterTypeSettings.lower(value)
 }
-
 
 /**
  * Audio track DTO
@@ -5992,8 +5800,8 @@ public struct Track {
     public var isHidden: Bool
     public var suggestLess: Bool
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(id: Int64, title: String, artist: String, artistId: Int64, release: String, releaseId: Int64, trackNumber: UInt8, discNumber: UInt8, durationSeconds: Double, filePath: String, artworkId: String?, bitrate: UInt32?, sampleRate: UInt32?, playCount: UInt64, lastPlayed: String?, rating: UInt8?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool) {
         self.id = id
         self.title = title
@@ -6017,10 +5825,8 @@ public struct Track {
     }
 }
 
-
-
 extension Track: Equatable, Hashable {
-    public static func ==(lhs: Track, rhs: Track) -> Bool {
+    public static func == (lhs: Track, rhs: Track) -> Bool {
         if lhs.id != rhs.id {
             return false
         }
@@ -6104,7 +5910,6 @@ extension Track: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Track {
         return
@@ -6128,7 +5933,7 @@ public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
                 isFavorite: FfiConverterBool.read(from: &buf),
                 isHidden: FfiConverterBool.read(from: &buf),
                 suggestLess: FfiConverterBool.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: Track, into buf: inout [UInt8]) {
@@ -6154,7 +5959,6 @@ public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
     }
 }
 
-
 public func FfiConverterTypeTrack_lift(_ buf: RustBuffer) throws -> Track {
     return try FfiConverterTypeTrack.lift(buf)
 }
@@ -6163,7 +5967,6 @@ public func FfiConverterTypeTrack_lower(_ value: Track) -> RustBuffer {
     return FfiConverterTypeTrack.lower(value)
 }
 
-
 /**
  * One bounded page of tracks. `next_offset` is absent on the final page.
  */
@@ -6171,18 +5974,16 @@ public struct TrackPage {
     public var items: [Track]
     public var nextOffset: UInt64?
 
-    // Default memberwise initializers are never public by default, so we
-    // declare one manually.
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
     public init(items: [Track], nextOffset: UInt64?) {
         self.items = items
         self.nextOffset = nextOffset
     }
 }
 
-
-
 extension TrackPage: Equatable, Hashable {
-    public static func ==(lhs: TrackPage, rhs: TrackPage) -> Bool {
+    public static func == (lhs: TrackPage, rhs: TrackPage) -> Bool {
         if lhs.items != rhs.items {
             return false
         }
@@ -6198,14 +5999,13 @@ extension TrackPage: Equatable, Hashable {
     }
 }
 
-
 public struct FfiConverterTypeTrackPage: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TrackPage {
         return
             try TrackPage(
                 items: FfiConverterSequenceTypeTrack.read(from: &buf),
                 nextOffset: FfiConverterOptionUInt64.read(from: &buf)
-        )
+            )
     }
 
     public static func write(_ value: TrackPage, into buf: inout [UInt8]) {
@@ -6213,7 +6013,6 @@ public struct FfiConverterTypeTrackPage: FfiConverterRustBuffer {
         FfiConverterOptionUInt64.write(value.nextOffset, into: &buf)
     }
 }
-
 
 public func FfiConverterTypeTrackPage_lift(_ buf: RustBuffer) throws -> TrackPage {
     return try FfiConverterTypeTrackPage.lift(buf)
@@ -6227,13 +6026,11 @@ public func FfiConverterTypeTrackPage_lower(_ value: TrackPage) -> RustBuffer {
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum ArtistEntityKind {
-
     case person
     case group
     case other
     case unknown
 }
-
 
 public struct FfiConverterTypeArtistEntityKind: FfiConverterRustBuffer {
     typealias SwiftType = ArtistEntityKind
@@ -6241,7 +6038,6 @@ public struct FfiConverterTypeArtistEntityKind: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistEntityKind {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .person
 
         case 2: return .group
@@ -6256,27 +6052,20 @@ public struct FfiConverterTypeArtistEntityKind: FfiConverterRustBuffer {
 
     public static func write(_ value: ArtistEntityKind, into buf: inout [UInt8]) {
         switch value {
-
-
         case .person:
             writeInt(&buf, Int32(1))
-
 
         case .group:
             writeInt(&buf, Int32(2))
 
-
         case .other:
             writeInt(&buf, Int32(3))
 
-
         case .unknown:
             writeInt(&buf, Int32(4))
-
         }
     }
 }
-
 
 public func FfiConverterTypeArtistEntityKind_lift(_ buf: RustBuffer) throws -> ArtistEntityKind {
     return try FfiConverterTypeArtistEntityKind.lift(buf)
@@ -6286,17 +6075,12 @@ public func FfiConverterTypeArtistEntityKind_lower(_ value: ArtistEntityKind) ->
     return FfiConverterTypeArtistEntityKind.lower(value)
 }
 
-
-
 extension ArtistEntityKind: Equatable, Hashable {}
-
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum ArtistIdentityLookupStatus {
-
     case updated
     case disabled
     case offline
@@ -6305,14 +6089,12 @@ public enum ArtistIdentityLookupStatus {
     case superseded
 }
 
-
 public struct FfiConverterTypeArtistIdentityLookupStatus: FfiConverterRustBuffer {
     typealias SwiftType = ArtistIdentityLookupStatus
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityLookupStatus {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .updated
 
         case 2: return .disabled
@@ -6331,35 +6113,26 @@ public struct FfiConverterTypeArtistIdentityLookupStatus: FfiConverterRustBuffer
 
     public static func write(_ value: ArtistIdentityLookupStatus, into buf: inout [UInt8]) {
         switch value {
-
-
         case .updated:
             writeInt(&buf, Int32(1))
-
 
         case .disabled:
             writeInt(&buf, Int32(2))
 
-
         case .offline:
             writeInt(&buf, Int32(3))
-
 
         case .unavailable:
             writeInt(&buf, Int32(4))
 
-
         case .rateLimited:
             writeInt(&buf, Int32(5))
 
-
         case .superseded:
             writeInt(&buf, Int32(6))
-
         }
     }
 }
-
 
 public func FfiConverterTypeArtistIdentityLookupStatus_lift(_ buf: RustBuffer) throws -> ArtistIdentityLookupStatus {
     return try FfiConverterTypeArtistIdentityLookupStatus.lift(buf)
@@ -6369,21 +6142,15 @@ public func FfiConverterTypeArtistIdentityLookupStatus_lower(_ value: ArtistIden
     return FfiConverterTypeArtistIdentityLookupStatus.lower(value)
 }
 
-
-
 extension ArtistIdentityLookupStatus: Equatable, Hashable {}
-
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum ArtistIdentityOrigin {
-
     case tag
     case manual
 }
-
 
 public struct FfiConverterTypeArtistIdentityOrigin: FfiConverterRustBuffer {
     typealias SwiftType = ArtistIdentityOrigin
@@ -6391,7 +6158,6 @@ public struct FfiConverterTypeArtistIdentityOrigin: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityOrigin {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .tag
 
         case 2: return .manual
@@ -6402,19 +6168,14 @@ public struct FfiConverterTypeArtistIdentityOrigin: FfiConverterRustBuffer {
 
     public static func write(_ value: ArtistIdentityOrigin, into buf: inout [UInt8]) {
         switch value {
-
-
         case .tag:
             writeInt(&buf, Int32(1))
 
-
         case .manual:
             writeInt(&buf, Int32(2))
-
         }
     }
 }
-
 
 public func FfiConverterTypeArtistIdentityOrigin_lift(_ buf: RustBuffer) throws -> ArtistIdentityOrigin {
     return try FfiConverterTypeArtistIdentityOrigin.lift(buf)
@@ -6424,23 +6185,17 @@ public func FfiConverterTypeArtistIdentityOrigin_lower(_ value: ArtistIdentityOr
     return FfiConverterTypeArtistIdentityOrigin.lower(value)
 }
 
-
-
 extension ArtistIdentityOrigin: Equatable, Hashable {}
-
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum ArtistIdentityStatus {
-
     case unresolved
     case ambiguous
     case resolved
     case notFound
 }
-
 
 public struct FfiConverterTypeArtistIdentityStatus: FfiConverterRustBuffer {
     typealias SwiftType = ArtistIdentityStatus
@@ -6448,7 +6203,6 @@ public struct FfiConverterTypeArtistIdentityStatus: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistIdentityStatus {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .unresolved
 
         case 2: return .ambiguous
@@ -6463,27 +6217,20 @@ public struct FfiConverterTypeArtistIdentityStatus: FfiConverterRustBuffer {
 
     public static func write(_ value: ArtistIdentityStatus, into buf: inout [UInt8]) {
         switch value {
-
-
         case .unresolved:
             writeInt(&buf, Int32(1))
-
 
         case .ambiguous:
             writeInt(&buf, Int32(2))
 
-
         case .resolved:
             writeInt(&buf, Int32(3))
 
-
         case .notFound:
             writeInt(&buf, Int32(4))
-
         }
     }
 }
-
 
 public func FfiConverterTypeArtistIdentityStatus_lift(_ buf: RustBuffer) throws -> ArtistIdentityStatus {
     return try FfiConverterTypeArtistIdentityStatus.lift(buf)
@@ -6493,17 +6240,12 @@ public func FfiConverterTypeArtistIdentityStatus_lower(_ value: ArtistIdentitySt
     return FfiConverterTypeArtistIdentityStatus.lower(value)
 }
 
-
-
 extension ArtistIdentityStatus: Equatable, Hashable {}
-
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum ArtistProfileField {
-
     case entityKind
     case birthDate
     case birthPlace
@@ -6513,14 +6255,12 @@ public enum ArtistProfileField {
     case biography
 }
 
-
 public struct FfiConverterTypeArtistProfileField: FfiConverterRustBuffer {
     typealias SwiftType = ArtistProfileField
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistProfileField {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .entityKind
 
         case 2: return .birthDate
@@ -6541,39 +6281,29 @@ public struct FfiConverterTypeArtistProfileField: FfiConverterRustBuffer {
 
     public static func write(_ value: ArtistProfileField, into buf: inout [UInt8]) {
         switch value {
-
-
         case .entityKind:
             writeInt(&buf, Int32(1))
-
 
         case .birthDate:
             writeInt(&buf, Int32(2))
 
-
         case .birthPlace:
             writeInt(&buf, Int32(3))
-
 
         case .formationDate:
             writeInt(&buf, Int32(4))
 
-
         case .formationPlace:
             writeInt(&buf, Int32(5))
-
 
         case .originPlace:
             writeInt(&buf, Int32(6))
 
-
         case .biography:
             writeInt(&buf, Int32(7))
-
         }
     }
 }
-
 
 public func FfiConverterTypeArtistProfileField_lift(_ buf: RustBuffer) throws -> ArtistProfileField {
     return try FfiConverterTypeArtistProfileField.lift(buf)
@@ -6583,27 +6313,88 @@ public func FfiConverterTypeArtistProfileField_lower(_ value: ArtistProfileField
     return FfiConverterTypeArtistProfileField.lower(value)
 }
 
-
-
 extension ArtistProfileField: Equatable, Hashable {}
-
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-/**
+
+public enum ArtistRefreshDiagnosticCode {
+    case timeout
+    case connectionFailed
+    case invalidResponse
+    case invalidImage
+    case databaseBusy
+    case providerUnavailable
+}
+
+public struct FfiConverterTypeArtistRefreshDiagnosticCode: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistRefreshDiagnosticCode
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistRefreshDiagnosticCode {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        case 1: return .timeout
+
+        case 2: return .connectionFailed
+
+        case 3: return .invalidResponse
+
+        case 4: return .invalidImage
+
+        case 5: return .databaseBusy
+
+        case 6: return .providerUnavailable
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ArtistRefreshDiagnosticCode, into buf: inout [UInt8]) {
+        switch value {
+        case .timeout:
+            writeInt(&buf, Int32(1))
+
+        case .connectionFailed:
+            writeInt(&buf, Int32(2))
+
+        case .invalidResponse:
+            writeInt(&buf, Int32(3))
+
+        case .invalidImage:
+            writeInt(&buf, Int32(4))
+
+        case .databaseBusy:
+            writeInt(&buf, Int32(5))
+
+        case .providerUnavailable:
+            writeInt(&buf, Int32(6))
+        }
+    }
+}
+
+public func FfiConverterTypeArtistRefreshDiagnosticCode_lift(_ buf: RustBuffer) throws -> ArtistRefreshDiagnosticCode {
+    return try FfiConverterTypeArtistRefreshDiagnosticCode.lift(buf)
+}
+
+public func FfiConverterTypeArtistRefreshDiagnosticCode_lower(_ value: ArtistRefreshDiagnosticCode) -> RustBuffer {
+    return FfiConverterTypeArtistRefreshDiagnosticCode.lower(value)
+}
+
+extension ArtistRefreshDiagnosticCode: Equatable, Hashable {}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/* 
  * Sections are explicit so later discography/video work can extend refreshes
  * without changing the semantics of the phase-3 profile request.
  */
 
 public enum ArtistRefreshSection {
-
     case profile
     case portrait
     case discography
     case covers
 }
-
 
 public struct FfiConverterTypeArtistRefreshSection: FfiConverterRustBuffer {
     typealias SwiftType = ArtistRefreshSection
@@ -6611,7 +6402,6 @@ public struct FfiConverterTypeArtistRefreshSection: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistRefreshSection {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .profile
 
         case 2: return .portrait
@@ -6626,27 +6416,20 @@ public struct FfiConverterTypeArtistRefreshSection: FfiConverterRustBuffer {
 
     public static func write(_ value: ArtistRefreshSection, into buf: inout [UInt8]) {
         switch value {
-
-
         case .profile:
             writeInt(&buf, Int32(1))
-
 
         case .portrait:
             writeInt(&buf, Int32(2))
 
-
         case .discography:
             writeInt(&buf, Int32(3))
 
-
         case .covers:
             writeInt(&buf, Int32(4))
-
         }
     }
 }
-
 
 public func FfiConverterTypeArtistRefreshSection_lift(_ buf: RustBuffer) throws -> ArtistRefreshSection {
     return try FfiConverterTypeArtistRefreshSection.lift(buf)
@@ -6656,17 +6439,12 @@ public func FfiConverterTypeArtistRefreshSection_lower(_ value: ArtistRefreshSec
     return FfiConverterTypeArtistRefreshSection.lower(value)
 }
 
-
-
 extension ArtistRefreshSection: Equatable, Hashable {}
-
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum ArtistRefreshStatus {
-
     case updated
     /**
      * Work was committed or retained, but a provider cursor or bounded batch
@@ -6683,14 +6461,12 @@ public enum ArtistRefreshStatus {
     case superseded
 }
 
-
 public struct FfiConverterTypeArtistRefreshStatus: FfiConverterRustBuffer {
     typealias SwiftType = ArtistRefreshStatus
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistRefreshStatus {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .updated
 
         case 2: return .partial
@@ -6717,51 +6493,38 @@ public struct FfiConverterTypeArtistRefreshStatus: FfiConverterRustBuffer {
 
     public static func write(_ value: ArtistRefreshStatus, into buf: inout [UInt8]) {
         switch value {
-
-
         case .updated:
             writeInt(&buf, Int32(1))
-
 
         case .partial:
             writeInt(&buf, Int32(2))
 
-
         case .unchanged:
             writeInt(&buf, Int32(3))
-
 
         case .notFound:
             writeInt(&buf, Int32(4))
 
-
         case .needsIdentity:
             writeInt(&buf, Int32(5))
-
 
         case .unavailable:
             writeInt(&buf, Int32(6))
 
-
         case .rateLimited:
             writeInt(&buf, Int32(7))
-
 
         case .disabled:
             writeInt(&buf, Int32(8))
 
-
         case .offline:
             writeInt(&buf, Int32(9))
 
-
         case .superseded:
             writeInt(&buf, Int32(10))
-
         }
     }
 }
-
 
 public func FfiConverterTypeArtistRefreshStatus_lift(_ buf: RustBuffer) throws -> ArtistRefreshStatus {
     return try FfiConverterTypeArtistRefreshStatus.lift(buf)
@@ -6771,34 +6534,19 @@ public func FfiConverterTypeArtistRefreshStatus_lower(_ value: ArtistRefreshStat
     return FfiConverterTypeArtistRefreshStatus.lower(value)
 }
 
-
-
 extension ArtistRefreshStatus: Equatable, Hashable {}
-
-
-
 
 /**
  * Stable error type for the public API.
  */
 public enum CoreError {
-
-
-
-    case InvalidInput(message: String
-    )
-    case NotFound(message: String
-    )
-    case Storage(message: String
-    )
-    case Playback(message: String
-    )
-    case Authentication(message: String
-    )
-    case Network(message: String
-    )
+    case InvalidInput(message: String)
+    case NotFound(message: String)
+    case Storage(message: String)
+    case Playback(message: String)
+    case Authentication(message: String)
+    case Network(message: String)
 }
-
 
 public struct FfiConverterTypeCoreError: FfiConverterRustBuffer {
     typealias SwiftType = CoreError
@@ -6806,83 +6554,65 @@ public struct FfiConverterTypeCoreError: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CoreError {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
-
-
-
-        case 1: return .InvalidInput(
-            message: try FfiConverterString.read(from: &buf)
+        case 1: return try .InvalidInput(
+                message: FfiConverterString.read(from: &buf)
             )
-        case 2: return .NotFound(
-            message: try FfiConverterString.read(from: &buf)
+        case 2: return try .NotFound(
+                message: FfiConverterString.read(from: &buf)
             )
-        case 3: return .Storage(
-            message: try FfiConverterString.read(from: &buf)
+        case 3: return try .Storage(
+                message: FfiConverterString.read(from: &buf)
             )
-        case 4: return .Playback(
-            message: try FfiConverterString.read(from: &buf)
+        case 4: return try .Playback(
+                message: FfiConverterString.read(from: &buf)
             )
-        case 5: return .Authentication(
-            message: try FfiConverterString.read(from: &buf)
+        case 5: return try .Authentication(
+                message: FfiConverterString.read(from: &buf)
             )
-        case 6: return .Network(
-            message: try FfiConverterString.read(from: &buf)
+        case 6: return try .Network(
+                message: FfiConverterString.read(from: &buf)
             )
-
-         default: throw UniffiInternalError.unexpectedEnumCase
+        default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: CoreError, into buf: inout [UInt8]) {
         switch value {
-
-
-
-
-
         case let .InvalidInput(message):
             writeInt(&buf, Int32(1))
             FfiConverterString.write(message, into: &buf)
-
 
         case let .NotFound(message):
             writeInt(&buf, Int32(2))
             FfiConverterString.write(message, into: &buf)
 
-
         case let .Storage(message):
             writeInt(&buf, Int32(3))
             FfiConverterString.write(message, into: &buf)
-
 
         case let .Playback(message):
             writeInt(&buf, Int32(4))
             FfiConverterString.write(message, into: &buf)
 
-
         case let .Authentication(message):
             writeInt(&buf, Int32(5))
             FfiConverterString.write(message, into: &buf)
 
-
         case let .Network(message):
             writeInt(&buf, Int32(6))
             FfiConverterString.write(message, into: &buf)
-
         }
     }
 }
 
-
 extension CoreError: Equatable, Hashable {}
 
-extension CoreError: Error { }
+extension CoreError: Error {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum EnrichmentProvider {
-
     case musicBrainz
     case wikidata
     case wikipedia
@@ -6892,14 +6622,12 @@ public enum EnrichmentProvider {
     case youTube
 }
 
-
 public struct FfiConverterTypeEnrichmentProvider: FfiConverterRustBuffer {
     typealias SwiftType = EnrichmentProvider
 
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EnrichmentProvider {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .musicBrainz
 
         case 2: return .wikidata
@@ -6920,39 +6648,29 @@ public struct FfiConverterTypeEnrichmentProvider: FfiConverterRustBuffer {
 
     public static func write(_ value: EnrichmentProvider, into buf: inout [UInt8]) {
         switch value {
-
-
         case .musicBrainz:
             writeInt(&buf, Int32(1))
-
 
         case .wikidata:
             writeInt(&buf, Int32(2))
 
-
         case .wikipedia:
             writeInt(&buf, Int32(3))
-
 
         case .commons:
             writeInt(&buf, Int32(4))
 
-
         case .coverArtArchive:
             writeInt(&buf, Int32(5))
-
 
         case .theAudioDb:
             writeInt(&buf, Int32(6))
 
-
         case .youTube:
             writeInt(&buf, Int32(7))
-
         }
     }
 }
-
 
 public func FfiConverterTypeEnrichmentProvider_lift(_ buf: RustBuffer) throws -> EnrichmentProvider {
     return try FfiConverterTypeEnrichmentProvider.lift(buf)
@@ -6962,25 +6680,19 @@ public func FfiConverterTypeEnrichmentProvider_lower(_ value: EnrichmentProvider
     return FfiConverterTypeEnrichmentProvider.lower(value)
 }
 
-
-
 extension EnrichmentProvider: Equatable, Hashable {}
-
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-/**
+/* 
  * Whether Cover Art Archive artwork represents an exact release or only its
  * broader release group. Group artwork must not be presented as edition-exact.
  */
 
 public enum ExternalArtworkScope {
-
     case exactRelease
     case releaseGroup
 }
-
 
 public struct FfiConverterTypeExternalArtworkScope: FfiConverterRustBuffer {
     typealias SwiftType = ExternalArtworkScope
@@ -6988,7 +6700,6 @@ public struct FfiConverterTypeExternalArtworkScope: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExternalArtworkScope {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .exactRelease
 
         case 2: return .releaseGroup
@@ -6999,19 +6710,14 @@ public struct FfiConverterTypeExternalArtworkScope: FfiConverterRustBuffer {
 
     public static func write(_ value: ExternalArtworkScope, into buf: inout [UInt8]) {
         switch value {
-
-
         case .exactRelease:
             writeInt(&buf, Int32(1))
 
-
         case .releaseGroup:
             writeInt(&buf, Int32(2))
-
         }
     }
 }
-
 
 public func FfiConverterTypeExternalArtworkScope_lift(_ buf: RustBuffer) throws -> ExternalArtworkScope {
     return try FfiConverterTypeExternalArtworkScope.lift(buf)
@@ -7021,25 +6727,19 @@ public func FfiConverterTypeExternalArtworkScope_lower(_ value: ExternalArtworkS
     return FfiConverterTypeExternalArtworkScope.lower(value)
 }
 
-
-
 extension ExternalArtworkScope: Equatable, Hashable {}
-
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-/**
+/* 
  * Repeat mode for playback
  */
 
 public enum RepeatMode {
-
     case none
     case one
     case all
 }
-
 
 public struct FfiConverterTypeRepeatMode: FfiConverterRustBuffer {
     typealias SwiftType = RepeatMode
@@ -7047,7 +6747,6 @@ public struct FfiConverterTypeRepeatMode: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RepeatMode {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .none
 
         case 2: return .one
@@ -7060,23 +6759,17 @@ public struct FfiConverterTypeRepeatMode: FfiConverterRustBuffer {
 
     public static func write(_ value: RepeatMode, into buf: inout [UInt8]) {
         switch value {
-
-
         case .none:
             writeInt(&buf, Int32(1))
-
 
         case .one:
             writeInt(&buf, Int32(2))
 
-
         case .all:
             writeInt(&buf, Int32(3))
-
         }
     }
 }
-
 
 public func FfiConverterTypeRepeatMode_lift(_ buf: RustBuffer) throws -> RepeatMode {
     return try FfiConverterTypeRepeatMode.lift(buf)
@@ -7086,26 +6779,20 @@ public func FfiConverterTypeRepeatMode_lower(_ value: RepeatMode) -> RustBuffer 
     return FfiConverterTypeRepeatMode.lower(value)
 }
 
-
-
 extension RepeatMode: Equatable, Hashable {}
-
-
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-/**
+/* 
  * Library scan phase
  */
 
 public enum ScanPhase {
-
     case scanning
     case extractingMetadata
     case writingDatabase
     case complete
 }
-
 
 public struct FfiConverterTypeScanPhase: FfiConverterRustBuffer {
     typealias SwiftType = ScanPhase
@@ -7113,7 +6800,6 @@ public struct FfiConverterTypeScanPhase: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ScanPhase {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
         case 1: return .scanning
 
         case 2: return .extractingMetadata
@@ -7128,27 +6814,20 @@ public struct FfiConverterTypeScanPhase: FfiConverterRustBuffer {
 
     public static func write(_ value: ScanPhase, into buf: inout [UInt8]) {
         switch value {
-
-
         case .scanning:
             writeInt(&buf, Int32(1))
-
 
         case .extractingMetadata:
             writeInt(&buf, Int32(2))
 
-
         case .writingDatabase:
             writeInt(&buf, Int32(3))
 
-
         case .complete:
             writeInt(&buf, Int32(4))
-
         }
     }
 }
-
 
 public func FfiConverterTypeScanPhase_lift(_ buf: RustBuffer) throws -> ScanPhase {
     return try FfiConverterTypeScanPhase.lift(buf)
@@ -7158,16 +6837,12 @@ public func FfiConverterTypeScanPhase_lower(_ value: ScanPhase) -> RustBuffer {
     return FfiConverterTypeScanPhase.lower(value)
 }
 
-
-
 extension ScanPhase: Equatable, Hashable {}
 
-
-
-fileprivate struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
+private struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
     typealias SwiftType = UInt8?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7176,7 +6851,7 @@ fileprivate struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
         FfiConverterUInt8.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt8.read(from: &buf)
@@ -7185,10 +6860,10 @@ fileprivate struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
     }
 }
 
-fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
+private struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
     typealias SwiftType = UInt32?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7197,7 +6872,7 @@ fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
         FfiConverterUInt32.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt32.read(from: &buf)
@@ -7206,10 +6881,10 @@ fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
     }
 }
 
-fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+private struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
     typealias SwiftType = UInt64?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7218,7 +6893,7 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt64.read(from: &buf)
@@ -7227,10 +6902,10 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
     }
 }
 
-fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
+private struct FfiConverterOptionInt64: FfiConverterRustBuffer {
     typealias SwiftType = Int64?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7239,7 +6914,7 @@ fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
         FfiConverterInt64.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterInt64.read(from: &buf)
@@ -7248,10 +6923,10 @@ fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
     }
 }
 
-fileprivate struct FfiConverterOptionDouble: FfiConverterRustBuffer {
+private struct FfiConverterOptionDouble: FfiConverterRustBuffer {
     typealias SwiftType = Double?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7260,7 +6935,7 @@ fileprivate struct FfiConverterOptionDouble: FfiConverterRustBuffer {
         FfiConverterDouble.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterDouble.read(from: &buf)
@@ -7269,10 +6944,10 @@ fileprivate struct FfiConverterOptionDouble: FfiConverterRustBuffer {
     }
 }
 
-fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
+private struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7281,7 +6956,7 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
         FfiConverterString.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterString.read(from: &buf)
@@ -7290,10 +6965,10 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     }
 }
 
-fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
+private struct FfiConverterOptionData: FfiConverterRustBuffer {
     typealias SwiftType = Data?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7302,7 +6977,7 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
         FfiConverterData.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterData.read(from: &buf)
@@ -7311,10 +6986,10 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
     }
 }
 
-fileprivate struct FfiConverterOptionTypeArtistImageReference: FfiConverterRustBuffer {
+private struct FfiConverterOptionTypeArtistImageReference: FfiConverterRustBuffer {
     typealias SwiftType = ArtistImageReference?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7323,7 +6998,7 @@ fileprivate struct FfiConverterOptionTypeArtistImageReference: FfiConverterRustB
         FfiConverterTypeArtistImageReference.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeArtistImageReference.read(from: &buf)
@@ -7332,10 +7007,10 @@ fileprivate struct FfiConverterOptionTypeArtistImageReference: FfiConverterRustB
     }
 }
 
-fileprivate struct FfiConverterOptionTypeArtistPartialDate: FfiConverterRustBuffer {
+private struct FfiConverterOptionTypeArtistPartialDate: FfiConverterRustBuffer {
     typealias SwiftType = ArtistPartialDate?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7344,7 +7019,7 @@ fileprivate struct FfiConverterOptionTypeArtistPartialDate: FfiConverterRustBuff
         FfiConverterTypeArtistPartialDate.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeArtistPartialDate.read(from: &buf)
@@ -7353,10 +7028,10 @@ fileprivate struct FfiConverterOptionTypeArtistPartialDate: FfiConverterRustBuff
     }
 }
 
-fileprivate struct FfiConverterOptionTypeCoverRefreshProgress: FfiConverterRustBuffer {
+private struct FfiConverterOptionTypeCoverRefreshProgress: FfiConverterRustBuffer {
     typealias SwiftType = CoverRefreshProgress?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7365,7 +7040,7 @@ fileprivate struct FfiConverterOptionTypeCoverRefreshProgress: FfiConverterRustB
         FfiConverterTypeCoverRefreshProgress.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeCoverRefreshProgress.read(from: &buf)
@@ -7374,10 +7049,10 @@ fileprivate struct FfiConverterOptionTypeCoverRefreshProgress: FfiConverterRustB
     }
 }
 
-fileprivate struct FfiConverterOptionTypeExternalReleaseArtwork: FfiConverterRustBuffer {
+private struct FfiConverterOptionTypeExternalReleaseArtwork: FfiConverterRustBuffer {
     typealias SwiftType = ExternalReleaseArtwork?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7386,7 +7061,7 @@ fileprivate struct FfiConverterOptionTypeExternalReleaseArtwork: FfiConverterRus
         FfiConverterTypeExternalReleaseArtwork.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeExternalReleaseArtwork.read(from: &buf)
@@ -7395,10 +7070,10 @@ fileprivate struct FfiConverterOptionTypeExternalReleaseArtwork: FfiConverterRus
     }
 }
 
-fileprivate struct FfiConverterOptionTypeScanProgress: FfiConverterRustBuffer {
+private struct FfiConverterOptionTypeScanProgress: FfiConverterRustBuffer {
     typealias SwiftType = ScanProgress?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7407,7 +7082,7 @@ fileprivate struct FfiConverterOptionTypeScanProgress: FfiConverterRustBuffer {
         FfiConverterTypeScanProgress.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeScanProgress.read(from: &buf)
@@ -7416,10 +7091,10 @@ fileprivate struct FfiConverterOptionTypeScanProgress: FfiConverterRustBuffer {
     }
 }
 
-fileprivate struct FfiConverterOptionTypeTrack: FfiConverterRustBuffer {
+private struct FfiConverterOptionTypeTrack: FfiConverterRustBuffer {
     typealias SwiftType = Track?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7428,7 +7103,7 @@ fileprivate struct FfiConverterOptionTypeTrack: FfiConverterRustBuffer {
         FfiConverterTypeTrack.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeTrack.read(from: &buf)
@@ -7437,10 +7112,10 @@ fileprivate struct FfiConverterOptionTypeTrack: FfiConverterRustBuffer {
     }
 }
 
-fileprivate struct FfiConverterOptionTypeArtistIdentityOrigin: FfiConverterRustBuffer {
+private struct FfiConverterOptionTypeArtistIdentityOrigin: FfiConverterRustBuffer {
     typealias SwiftType = ArtistIdentityOrigin?
 
-    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
         guard let value = value else {
             writeInt(&buf, Int8(0))
             return
@@ -7449,7 +7124,7 @@ fileprivate struct FfiConverterOptionTypeArtistIdentityOrigin: FfiConverterRustB
         FfiConverterTypeArtistIdentityOrigin.write(value, into: &buf)
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeArtistIdentityOrigin.read(from: &buf)
@@ -7458,10 +7133,52 @@ fileprivate struct FfiConverterOptionTypeArtistIdentityOrigin: FfiConverterRustB
     }
 }
 
-fileprivate struct FfiConverterSequenceInt64: FfiConverterRustBuffer {
+private struct FfiConverterOptionTypeArtistRefreshDiagnosticCode: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistRefreshDiagnosticCode?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeArtistRefreshDiagnosticCode.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeArtistRefreshDiagnosticCode.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+private struct FfiConverterOptionTypeEnrichmentProvider: FfiConverterRustBuffer {
+    typealias SwiftType = EnrichmentProvider?
+
+    static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeEnrichmentProvider.write(value, into: &buf)
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeEnrichmentProvider.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+private struct FfiConverterSequenceInt64: FfiConverterRustBuffer {
     typealias SwiftType = [Int64]
 
-    public static func write(_ value: [Int64], into buf: inout [UInt8]) {
+    static func write(_ value: [Int64], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7469,21 +7186,21 @@ fileprivate struct FfiConverterSequenceInt64: FfiConverterRustBuffer {
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Int64] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Int64] {
         let len: Int32 = try readInt(&buf)
         var seq = [Int64]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterInt64.read(from: &buf))
+            try seq.append(FfiConverterInt64.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+private struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
-    public static func write(_ value: [String], into buf: inout [UInt8]) {
+    static func write(_ value: [String], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7491,21 +7208,21 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
         let len: Int32 = try readInt(&buf)
         var seq = [String]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterString.read(from: &buf))
+            try seq.append(FfiConverterString.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeArtist: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeArtist: FfiConverterRustBuffer {
     typealias SwiftType = [Artist]
 
-    public static func write(_ value: [Artist], into buf: inout [UInt8]) {
+    static func write(_ value: [Artist], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7513,21 +7230,21 @@ fileprivate struct FfiConverterSequenceTypeArtist: FfiConverterRustBuffer {
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Artist] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Artist] {
         let len: Int32 = try readInt(&buf)
         var seq = [Artist]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeArtist.read(from: &buf))
+            try seq.append(FfiConverterTypeArtist.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeArtistFieldOverride: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeArtistFieldOverride: FfiConverterRustBuffer {
     typealias SwiftType = [ArtistFieldOverride]
 
-    public static func write(_ value: [ArtistFieldOverride], into buf: inout [UInt8]) {
+    static func write(_ value: [ArtistFieldOverride], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7535,21 +7252,21 @@ fileprivate struct FfiConverterSequenceTypeArtistFieldOverride: FfiConverterRust
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistFieldOverride] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistFieldOverride] {
         let len: Int32 = try readInt(&buf)
         var seq = [ArtistFieldOverride]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeArtistFieldOverride.read(from: &buf))
+            try seq.append(FfiConverterTypeArtistFieldOverride.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeArtistIdentityCandidate: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeArtistIdentityCandidate: FfiConverterRustBuffer {
     typealias SwiftType = [ArtistIdentityCandidate]
 
-    public static func write(_ value: [ArtistIdentityCandidate], into buf: inout [UInt8]) {
+    static func write(_ value: [ArtistIdentityCandidate], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7557,21 +7274,21 @@ fileprivate struct FfiConverterSequenceTypeArtistIdentityCandidate: FfiConverter
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistIdentityCandidate] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistIdentityCandidate] {
         let len: Int32 = try readInt(&buf)
         var seq = [ArtistIdentityCandidate]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeArtistIdentityCandidate.read(from: &buf))
+            try seq.append(FfiConverterTypeArtistIdentityCandidate.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeArtistProfileSource: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeArtistProfileSource: FfiConverterRustBuffer {
     typealias SwiftType = [ArtistProfileSource]
 
-    public static func write(_ value: [ArtistProfileSource], into buf: inout [UInt8]) {
+    static func write(_ value: [ArtistProfileSource], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7579,21 +7296,21 @@ fileprivate struct FfiConverterSequenceTypeArtistProfileSource: FfiConverterRust
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistProfileSource] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistProfileSource] {
         let len: Int32 = try readInt(&buf)
         var seq = [ArtistProfileSource]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeArtistProfileSource.read(from: &buf))
+            try seq.append(FfiConverterTypeArtistProfileSource.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeArtistRefreshSectionResult: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeArtistRefreshSectionResult: FfiConverterRustBuffer {
     typealias SwiftType = [ArtistRefreshSectionResult]
 
-    public static func write(_ value: [ArtistRefreshSectionResult], into buf: inout [UInt8]) {
+    static func write(_ value: [ArtistRefreshSectionResult], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7601,21 +7318,21 @@ fileprivate struct FfiConverterSequenceTypeArtistRefreshSectionResult: FfiConver
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistRefreshSectionResult] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistRefreshSectionResult] {
         let len: Int32 = try readInt(&buf)
         var seq = [ArtistRefreshSectionResult]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeArtistRefreshSectionResult.read(from: &buf))
+            try seq.append(FfiConverterTypeArtistRefreshSectionResult.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeExternalReleaseGroup: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeExternalReleaseGroup: FfiConverterRustBuffer {
     typealias SwiftType = [ExternalReleaseGroup]
 
-    public static func write(_ value: [ExternalReleaseGroup], into buf: inout [UInt8]) {
+    static func write(_ value: [ExternalReleaseGroup], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7623,21 +7340,21 @@ fileprivate struct FfiConverterSequenceTypeExternalReleaseGroup: FfiConverterRus
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ExternalReleaseGroup] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ExternalReleaseGroup] {
         let len: Int32 = try readInt(&buf)
         var seq = [ExternalReleaseGroup]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeExternalReleaseGroup.read(from: &buf))
+            try seq.append(FfiConverterTypeExternalReleaseGroup.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeKeyValuePair: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeKeyValuePair: FfiConverterRustBuffer {
     typealias SwiftType = [KeyValuePair]
 
-    public static func write(_ value: [KeyValuePair], into buf: inout [UInt8]) {
+    static func write(_ value: [KeyValuePair], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7645,21 +7362,21 @@ fileprivate struct FfiConverterSequenceTypeKeyValuePair: FfiConverterRustBuffer 
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [KeyValuePair] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [KeyValuePair] {
         let len: Int32 = try readInt(&buf)
         var seq = [KeyValuePair]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeKeyValuePair.read(from: &buf))
+            try seq.append(FfiConverterTypeKeyValuePair.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypePlaybackHistoryItem: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypePlaybackHistoryItem: FfiConverterRustBuffer {
     typealias SwiftType = [PlaybackHistoryItem]
 
-    public static func write(_ value: [PlaybackHistoryItem], into buf: inout [UInt8]) {
+    static func write(_ value: [PlaybackHistoryItem], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7667,21 +7384,21 @@ fileprivate struct FfiConverterSequenceTypePlaybackHistoryItem: FfiConverterRust
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PlaybackHistoryItem] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PlaybackHistoryItem] {
         let len: Int32 = try readInt(&buf)
         var seq = [PlaybackHistoryItem]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypePlaybackHistoryItem.read(from: &buf))
+            try seq.append(FfiConverterTypePlaybackHistoryItem.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypePlaylist: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypePlaylist: FfiConverterRustBuffer {
     typealias SwiftType = [Playlist]
 
-    public static func write(_ value: [Playlist], into buf: inout [UInt8]) {
+    static func write(_ value: [Playlist], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7689,21 +7406,21 @@ fileprivate struct FfiConverterSequenceTypePlaylist: FfiConverterRustBuffer {
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Playlist] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Playlist] {
         let len: Int32 = try readInt(&buf)
         var seq = [Playlist]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypePlaylist.read(from: &buf))
+            try seq.append(FfiConverterTypePlaylist.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeQueueItem: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeQueueItem: FfiConverterRustBuffer {
     typealias SwiftType = [QueueItem]
 
-    public static func write(_ value: [QueueItem], into buf: inout [UInt8]) {
+    static func write(_ value: [QueueItem], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7711,21 +7428,21 @@ fileprivate struct FfiConverterSequenceTypeQueueItem: FfiConverterRustBuffer {
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QueueItem] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QueueItem] {
         let len: Int32 = try readInt(&buf)
         var seq = [QueueItem]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeQueueItem.read(from: &buf))
+            try seq.append(FfiConverterTypeQueueItem.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeRelease: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeRelease: FfiConverterRustBuffer {
     typealias SwiftType = [Release]
 
-    public static func write(_ value: [Release], into buf: inout [UInt8]) {
+    static func write(_ value: [Release], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7733,21 +7450,21 @@ fileprivate struct FfiConverterSequenceTypeRelease: FfiConverterRustBuffer {
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Release] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Release] {
         let len: Int32 = try readInt(&buf)
         var seq = [Release]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeRelease.read(from: &buf))
+            try seq.append(FfiConverterTypeRelease.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeTrack: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeTrack: FfiConverterRustBuffer {
     typealias SwiftType = [Track]
 
-    public static func write(_ value: [Track], into buf: inout [UInt8]) {
+    static func write(_ value: [Track], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7755,21 +7472,21 @@ fileprivate struct FfiConverterSequenceTypeTrack: FfiConverterRustBuffer {
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Track] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Track] {
         let len: Int32 = try readInt(&buf)
         var seq = [Track]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeTrack.read(from: &buf))
+            try seq.append(FfiConverterTypeTrack.read(from: &buf))
         }
         return seq
     }
 }
 
-fileprivate struct FfiConverterSequenceTypeArtistRefreshSection: FfiConverterRustBuffer {
+private struct FfiConverterSequenceTypeArtistRefreshSection: FfiConverterRustBuffer {
     typealias SwiftType = [ArtistRefreshSection]
 
-    public static func write(_ value: [ArtistRefreshSection], into buf: inout [UInt8]) {
+    static func write(_ value: [ArtistRefreshSection], into buf: inout [UInt8]) {
         let len = Int32(value.count)
         writeInt(&buf, len)
         for item in value {
@@ -7777,26 +7494,27 @@ fileprivate struct FfiConverterSequenceTypeArtistRefreshSection: FfiConverterRus
         }
     }
 
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistRefreshSection] {
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistRefreshSection] {
         let len: Int32 = try readInt(&buf)
         var seq = [ArtistRefreshSection]()
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
-            seq.append(try FfiConverterTypeArtistRefreshSection.read(from: &buf))
+            try seq.append(FfiConverterTypeArtistRefreshSection.read(from: &buf))
         }
         return seq
     }
 }
+
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_MAYBE_READY: Int8 = 1
 
-fileprivate let uniffiContinuationHandleMap = UniffiHandleMap<UnsafeContinuation<Int8, Never>>()
+private let uniffiContinuationHandleMap = UniffiHandleMap<UnsafeContinuation<Int8, Never>>()
 
-fileprivate func uniffiRustCallAsync<F, T>(
+private func uniffiRustCallAsync<F, T>(
     rustFutureFunc: () -> UInt64,
-    pollFunc: (UInt64, @escaping UniffiRustFutureContinuationCallback, UInt64) -> (),
+    pollFunc: (UInt64, @escaping UniffiRustFutureContinuationCallback, UInt64) -> Void,
     completeFunc: (UInt64, UnsafeMutablePointer<RustCallStatus>) -> F,
-    freeFunc: (UInt64) -> (),
+    freeFunc: (UInt64) -> Void,
     liftFunc: (F) throws -> T,
     errorHandler: ((RustBuffer) throws -> Error)?
 ) async throws -> T {
@@ -7807,7 +7525,7 @@ fileprivate func uniffiRustCallAsync<F, T>(
     defer {
         freeFunc(rustFuture)
     }
-    var pollResult: Int8;
+    var pollResult: Int8
     repeat {
         pollResult = await withUnsafeContinuation {
             pollFunc(
@@ -7826,24 +7544,24 @@ fileprivate func uniffiRustCallAsync<F, T>(
     ))
 }
 
-// Callback handlers for an async calls.  These are invoked by Rust when the future is ready.  They
-// lift the return value or error and resume the suspended function.
-fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: Int8) {
+/// Callback handlers for an async calls.  These are invoked by Rust when the future is ready.  They
+/// lift the return value or error and resume the suspended function.
+private func uniffiFutureContinuationCallback(handle: UInt64, pollResult: Int8) {
     if let continuation = try? uniffiContinuationHandleMap.remove(handle: handle) {
         continuation.resume(returning: pollResult)
     } else {
         print("uniffiFutureContinuationCallback invalid handle")
     }
 }
+
 /**
  * Opens a new core engine. Exported to FFI as the factory for `DurvaldCore` handles.
  */
-public func `open`(config: CoreConfig)async throws  -> DurvaldCore {
+public func open(config: CoreConfig) async throws -> DurvaldCore {
     return
-        try  await uniffiRustCallAsync(
+        try await uniffiRustCallAsync(
             rustFutureFunc: {
-                uniffi_durvald_core_fn_func_open(FfiConverterTypeCoreConfig.lower(config)
-                )
+                uniffi_durvald_core_fn_func_open(FfiConverterTypeCoreConfig.lower(config))
             },
             pollFunc: ffi_durvald_core_rust_future_poll_pointer,
             completeFunc: ffi_durvald_core_rust_future_complete_pointer,
@@ -7858,8 +7576,9 @@ private enum InitializationResult {
     case contractVersionMismatch
     case apiChecksumMismatch
 }
-// Use a global variables to perform the versioning checks. Swift ensures that
-// the code inside is only computed once.
+
+/// Use a global variables to perform the versioning checks. Swift ensures that
+/// the code inside is only computed once.
 private var initializationResult: InitializationResult {
     // Get the bindings contract version from our ComponentInterface
     let bindings_contract_version = 26
@@ -7868,250 +7587,250 @@ private var initializationResult: InitializationResult {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_durvald_core_checksum_func_open() != 10526) {
+    if uniffi_durvald_core_checksum_func_open() != 10526 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_add_library_path() != 11312) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_add_library_path() != 11312 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_add_to_queue() != 32441) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_add_to_queue() != 32441 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_add_track_to_playlist() != 52605) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_add_track_to_playlist() != 52605 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_artist() != 38977) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_artist() != 38977 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_artist_details() != 62278) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_artist_details() != 62278 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_artist_discography() != 58744) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_artist_discography() != 58744 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_artist_identity() != 48481) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_artist_identity() != 48481 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_artist_releases() != 50984) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_artist_releases() != 50984 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_artist_tracks() != 6228) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_artist_tracks() != 6228 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_artists() != 22559) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_artists() != 22559 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_artwork_bytes() != 1558) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_artwork_bytes() != 1558 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_library_scan() != 54997) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_cancel_library_scan() != 54997 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_clear_artist_identity() != 48083) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_clear_artist_identity() != 48083 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_clear_artist_override() != 27040) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_clear_artist_override() != 27040 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_clear_playback_history() != 33583) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_clear_playback_history() != 33583 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_clear_queue() != 47448) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_clear_queue() != 47448 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_complete_lastfm_auth() != 29854) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_complete_lastfm_auth() != 29854 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_configure_enrichment() != 59093) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_configure_enrichment() != 59093 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_configure_lastfm() != 5984) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_configure_lastfm() != 5984 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_confirm_artist_identity() != 8791) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_confirm_artist_identity() != 8791 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_create_playlist() != 63354) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_create_playlist() != 63354 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_delete_playlist() != 36449) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_delete_playlist() != 36449 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_disconnect_lastfm() != 41366) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_disconnect_lastfm() != 41366 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_enrichment_settings() != 18001) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_enrichment_settings() != 18001 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_extract_metadata() != 44986) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_extract_metadata() != 44986 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_last_session() != 31866) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_last_session() != 31866 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_lastfm_auth_token() != 1700) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_lastfm_auth_token() != 1700 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_lastfm_status() != 18846) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_lastfm_status() != 18846 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_library_paths() != 25229) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_library_paths() != 25229 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_move_queue_item() != 36793) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_move_queue_item() != 36793 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_next_track() != 60242) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_next_track() != 60242 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_pause() != 19873) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_pause() != 19873 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_play() != 16881) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_play() != 16881 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_play_queue_item() != 38649) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_play_queue_item() != 38649 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_playback() != 9980) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_playback() != 9980 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_playback_history() != 15249) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_playback_history() != 15249 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_playback_history_page() != 62173) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_playback_history_page() != 62173 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_playlist() != 36705) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_playlist() != 36705 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_playlist_artwork_bytes() != 28543) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_playlist_artwork_bytes() != 28543 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_playlist_tracks() != 57127) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_playlist_tracks() != 57127 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_playlists() != 53150) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_playlists() != 53150 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_previous_track() != 936) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_previous_track() != 936 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_queue() != 43054) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_queue() != 43054 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_refresh_artist() != 43879) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_refresh_artist() != 43879 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_release() != 18366) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_release() != 18366 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_release_tracks() != 5208) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_release_tracks() != 5208 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_releases() != 1645) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_releases() != 1645 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_releases_page() != 33341) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_releases_page() != 33341 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_remove_from_queue() != 55549) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_remove_from_queue() != 55549 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_remove_library_path() != 56205) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_remove_library_path() != 56205 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_remove_playback_history_item() != 48922) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_remove_playback_history_item() != 48922 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_remove_track_from_playlist() != 13917) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_remove_track_from_playlist() != 13917 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_resolve_artist_candidates() != 28873) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_resolve_artist_candidates() != 28873 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_resume() != 18016) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_resume() != 18016 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_save_session() != 12984) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_save_session() != 12984 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_scan_configured_library() != 25181) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_scan_configured_library() != 25181 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_scan_library() != 39380) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_scan_library() != 39380 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_scan_progress() != 26848) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_scan_progress() != 26848 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_search() != 59398) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_search() != 59398 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_seek() != 47295) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_seek() != 47295 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_artist_override() != 53712) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_artist_override() != 53712 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_playlist_favorite() != 22949) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_playlist_favorite() != 22949 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_playlist_suggest_less() != 6889) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_playlist_suggest_less() != 6889 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_release_favorite() != 46455) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_release_favorite() != 46455 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_release_hidden() != 40461) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_release_hidden() != 40461 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_release_rating() != 44119) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_release_rating() != 44119 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_release_suggest_less() != 7166) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_release_suggest_less() != 7166 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_repeat_mode() != 65491) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_repeat_mode() != 65491 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_shuffle_enabled() != 63667) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_shuffle_enabled() != 63667 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_favorite() != 16132) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_track_favorite() != 16132 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_hidden() != 64338) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_track_hidden() != 64338 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_rating() != 12497) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_track_rating() != 12497 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_suggest_less() != 3162) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_track_suggest_less() != 3162 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_volume() != 25591) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_set_volume() != 25591 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_settings() != 922) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_settings() != 922 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_stop() != 19367) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_stop() != 19367 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_track() != 44215) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_track() != 44215 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_tracks() != 21683) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_tracks() != 21683 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_tracks_page() != 23995) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_tracks_page() != 23995 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_update_playlist() != 8366) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_update_playlist() != 8366 {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_update_settings() != 48218) {
+    if uniffi_durvald_core_checksum_method_durvaldcore_update_settings() != 48218 {
         return InitializationResult.apiChecksumMismatch
     }
 
