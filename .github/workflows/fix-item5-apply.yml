@@ -1,0 +1,36 @@
+name: Fix item 5 apply workflow
+
+on:
+  push:
+    branches: [codex/item-5-section-diagnostics]
+    paths:
+      - .github/workflows/fix-item5-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/item-5-section-diagnostics
+      - name: Update validation step
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/apply-item5-section-diagnostics.yml')
+          text = path.read_text()
+          old = '          cargo fmt --all -- --check\n'
+          new = '          cargo fmt --all\n          cargo fmt --all -- --check\n'
+          if old not in text:
+              raise SystemExit('cargo fmt check command not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          rm .github/workflows/fix-item5-apply.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/apply-item5-section-diagnostics.yml .github/workflows/fix-item5-apply.yml
+          git commit -m "Fix item 5 patch formatting validation"
+          git push origin HEAD:codex/item-5-section-diagnostics

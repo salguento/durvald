@@ -1,0 +1,71 @@
+name: Diagnose item 5 macOS tests
+
+on:
+  push:
+    branches: [codex/item-5-section-diagnostics]
+    paths:
+      - .github/workflows/diagnose-item5-macos.yml
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/item-5-section-diagnostics
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Apply source patch
+        shell: python
+        run: |
+          from pathlib import Path
+          workflow = Path('.github/workflows/apply-item5-section-diagnostics.yml').read_text()
+          start_marker = '      - name: Apply source patch\n        shell: python\n        run: |\n'
+          end_marker = '\n      - name: Format and test Rust\n'
+          body = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          body = '\n'.join(line[10:] if line.startswith('          ') else line for line in body.splitlines())
+          exec(compile(body, 'item5_patch.py', 'exec'), {'__name__': '__main__'})
+
+      - name: Format Rust
+        run: cargo fmt --manifest-path durvald-core/Cargo.toml --all
+
+      - name: Generate Swift bindings
+        run: ./durvald-core/scripts/generate-swift-bindings.sh
+
+      - name: Test macOS client and capture log
+        id: tests
+        shell: bash
+        run: |
+          set +e
+          cd durvald-macos/Durvald
+          xcodebuild -project Durvald.xcodeproj -scheme Durvald -destination 'platform=macOS' test 2>&1 | tee /tmp/item5-xcodebuild-test.log
+          status=${PIPESTATUS[0]}
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Persist test diagnostics
+        if: steps.tests.outputs.status != '0'
+        shell: bash
+        run: |
+          {
+            echo '=== ERROR LINES ==='
+            grep -nE 'error:|fatal error:|TEST FAILED|Test Suite.*failed|XCTAssert|failed:' /tmp/item5-xcodebuild-test.log || true
+            echo
+            echo '=== LAST 300 LINES ==='
+            tail -n 300 /tmp/item5-xcodebuild-test.log
+          } > item5-xcodebuild-test-errors.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add item5-xcodebuild-test-errors.txt
+          git commit -m "chore: capture item 5 macOS test failure"
+          git push origin HEAD:codex/item-5-section-diagnostics
+          exit 1
+
+      - name: Mark test success
+        if: steps.tests.outputs.status == '0'
+        run: echo "macOS tests passed"
