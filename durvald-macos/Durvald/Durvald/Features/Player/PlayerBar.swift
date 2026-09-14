@@ -121,6 +121,7 @@ struct PlayerBar: View {
                 PlayerMetadataLink(
                     title: track.title,
                     destinationLabel: album.map { "Abrir álbum \($0.title)" },
+                    isAnimating: store.playback?.isPlaying == true,
                     action: { if let album { onSelectAlbum(album) } }
                 )
                 .font(.caption.weight(.medium))
@@ -151,6 +152,7 @@ struct PlayerBar: View {
                 PlayerMetadataLink(
                     title: "Nada tocando",
                     destinationLabel: nil,
+                    isAnimating: false,
                     action: {}
                 )
                 .font(.caption.weight(.medium))
@@ -160,6 +162,7 @@ struct PlayerBar: View {
             PlayerMetadataLink(
                 title: track?.artist ?? "",
                 destinationLabel: artist.map { "Abrir artista \($0.name)" },
+                isAnimating: store.playback?.isPlaying == true,
                 action: { if let artist { onSelectArtist(artist) } }
             )
             .font(.caption2)
@@ -654,6 +657,7 @@ private struct PlayerBarSlider: View {
 private struct PlayerMetadataLink: View {
     let title: String
     let destinationLabel: String?
+    let isAnimating: Bool
     let action: () -> Void
 
     @State private var isHovered = false
@@ -662,7 +666,11 @@ private struct PlayerMetadataLink: View {
     var body: some View {
         if let destinationLabel {
             Button(action: action) {
-                PlayerMarqueeText(text: title, underlined: isHovered || isFocused)
+                PlayerMarqueeText(
+                    text: title,
+                    underlined: isHovered || isFocused,
+                    isAnimating: isAnimating
+                )
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -673,7 +681,7 @@ private struct PlayerMetadataLink: View {
             .accessibilityHint(destinationLabel)
             .accessibilityAddTraits(.isLink)
         } else {
-            PlayerMarqueeText(text: title)
+            PlayerMarqueeText(text: title, isAnimating: isAnimating)
         }
     }
 }

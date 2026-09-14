@@ -4,6 +4,7 @@ import SwiftUI
 struct PlayerMarqueeText: View {
     let text: String
     var underlined = false
+    var isAnimating = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -18,13 +19,14 @@ struct PlayerMarqueeText: View {
 
     private var shouldScroll: Bool {
         textWidth - availableWidth > 1 && availableWidth > 0
-            && !reduceMotion && scenePhase == .active
+            && isAnimating && !reduceMotion && scenePhase == .active
     }
 
     private struct AnimationKey: Equatable {
         let text: String
         let textWidth: CGFloat
         let availableWidth: CGFloat
+        let isAnimating: Bool
         let reduceMotion: Bool
         let isActive: Bool
     }
@@ -43,7 +45,7 @@ struct PlayerMarqueeText: View {
                         .truncationMode(.tail)
                         .underline(underlined)
                 } else {
-                    TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !shouldScroll || pausedAt != nil)) { context in
+                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !shouldScroll || pausedAt != nil)) { context in
                         HStack(spacing: copySpacing) {
                             movingText
                                 .onGeometryChange(for: CGFloat.self) { geometry in
@@ -94,6 +96,7 @@ struct PlayerMarqueeText: View {
                 text: text,
                 textWidth: textWidth,
                 availableWidth: availableWidth,
+                isAnimating: isAnimating,
                 reduceMotion: reduceMotion,
                 isActive: scenePhase == .active
             ), initial: true) { _, _ in

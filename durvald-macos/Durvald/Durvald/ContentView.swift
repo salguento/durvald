@@ -1,5 +1,17 @@
 import SwiftUI
 
+private final class LibraryScrollOffsetStore {
+    private var offsets: [Int: CGFloat] = [:]
+
+    func offset(for entryID: Int) -> CGFloat {
+        offsets[entryID] ?? 0
+    }
+
+    func setOffset(_ offset: CGFloat, for entryID: Int) {
+        offsets[entryID] = offset
+    }
+}
+
 struct ContentView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.appearsActive) private var appearsActive
@@ -7,7 +19,10 @@ struct ContentView: View {
     @State private var shell = ContentShellState()
     @State private var windowLayout = WindowSplitLayoutCoordinator()
     @State private var playlistCreation = PlaylistCreationCoordinator()
-    @State private var pageScrollOffsets: [Int: CGFloat] = [:]
+    // Scroll geometry can change on every rendered frame. Keeping these values
+    // in a reference store avoids invalidating the entire content column while
+    // still preserving an independent position for every navigation entry.
+    @State private var pageScrollOffsets = LibraryScrollOffsetStore()
 
     private enum Layout {
         static let contentViewMinimumWidth: CGFloat = 360
@@ -330,8 +345,8 @@ struct ContentView: View {
     private var currentPageScrollOffset: Binding<CGFloat> {
         let entryID = shell.navigationHistory.currentEntryID
         return Binding(
-            get: { pageScrollOffsets[entryID] ?? 0 },
-            set: { pageScrollOffsets[entryID] = $0 }
+            get: { pageScrollOffsets.offset(for: entryID) },
+            set: { pageScrollOffsets.setOffset($0, for: entryID) }
         )
     }
 

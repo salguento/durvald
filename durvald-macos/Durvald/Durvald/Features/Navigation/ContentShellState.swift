@@ -35,11 +35,18 @@ private struct LibraryScrollPositionModifier: ViewModifier {
             } action: { _, geometry in
                 if isRestoring {
                     guard isContentReady else { return }
-                    guard abs(geometry.offset - savedOffset.wrappedValue) <= 0.5 else { return }
+                    guard abs(geometry.offset - savedOffset.wrappedValue) <= 0.5 else {
+                        var transaction = Transaction(animation: nil)
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            position.scrollTo(y: savedOffset.wrappedValue)
+                        }
+                        return
+                    }
                     withAnimation(.easeOut(duration: 0.12)) {
                         isRestoring = false
                     }
-                } else if isUserDriven(scrollPhase) {
+                } else {
                     savedOffset.wrappedValue = geometry.offset
                 }
             }
