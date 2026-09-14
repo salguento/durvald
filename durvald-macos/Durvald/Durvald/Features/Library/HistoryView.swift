@@ -25,6 +25,7 @@ struct HistoryView: View {
                 await store.loadMoreHistory(ifNeededAfter: item.id)
             }
         }
+        .preservesLibraryScrollPosition()
         .task {
             while !Task.isCancelled {
                 await store.refreshHistory()

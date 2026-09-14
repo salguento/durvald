@@ -59,6 +59,7 @@ struct PlaylistView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .preservesLibraryScrollPosition(isContentReady: !isLoading)
         .task(id: playlist.id) {
             isLoading = true
             tracks = await store.tracks(forPlaylistID: playlist.id)

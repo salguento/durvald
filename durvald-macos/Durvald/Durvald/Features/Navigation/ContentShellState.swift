@@ -1,5 +1,87 @@
 import SwiftUI
 
+private struct LibraryScrollOffsetKey: EnvironmentKey {
+    static let defaultValue = Binding.constant(CGFloat.zero)
+}
+
+extension EnvironmentValues {
+    var libraryScrollOffset: Binding<CGFloat> {
+        get { self[LibraryScrollOffsetKey.self] }
+        set { self[LibraryScrollOffsetKey.self] = newValue }
+    }
+}
+
+private struct LibraryScrollPositionModifier: ViewModifier {
+    @Environment(\.libraryScrollOffset) private var savedOffset
+
+    let isContentReady: Bool
+
+    @State private var position = ScrollPosition()
+    @State private var isRestoring = true
+    @State private var scrollPhase: ScrollPhase = .idle
+
+    private struct GeometrySnapshot: Equatable {
+        let offset: CGFloat
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($position)
+            .opacity(isRestoring && savedOffset.wrappedValue > 0 ? 0 : 1)
+            .onScrollGeometryChange(for: GeometrySnapshot.self) { geometry in
+                GeometrySnapshot(
+                    offset: max(0, geometry.visibleRect.minY)
+                )
+            } action: { _, geometry in
+                if isRestoring {
+                    guard isContentReady else { return }
+                    guard abs(geometry.offset - savedOffset.wrappedValue) <= 0.5 else { return }
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        isRestoring = false
+                    }
+                } else if isUserDriven(scrollPhase) {
+                    savedOffset.wrappedValue = geometry.offset
+                }
+            }
+            .onScrollPhaseChange { oldPhase, newPhase, context in
+                scrollPhase = newPhase
+                guard !isRestoring,
+                      newPhase == .idle,
+                      isUserDriven(oldPhase) else { return }
+                savedOffset.wrappedValue = max(0, context.geometry.visibleRect.minY)
+            }
+            .task(id: isContentReady) {
+                guard isContentReady else {
+                    isRestoring = true
+                    return
+                }
+
+                isRestoring = true
+                await Task.yield()
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    position.scrollTo(y: savedOffset.wrappedValue)
+                }
+            }
+    }
+
+    private func isUserDriven(_ phase: ScrollPhase) -> Bool {
+        switch phase {
+        case .tracking, .interacting, .decelerating, .animating:
+            true
+        case .idle:
+            false
+        }
+    }
+}
+
+extension View {
+    func preservesLibraryScrollPosition(isContentReady: Bool = true) -> some View {
+        modifier(LibraryScrollPositionModifier(isContentReady: isContentReady))
+    }
+}
+
 struct ContentShellState {
     var navigationHistory = LibraryNavigationHistory()
     var sidebarSection: SidebarSection = .navigation

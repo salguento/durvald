@@ -56,6 +56,7 @@ struct HomeView: View {
             }
             .padding(24)
         }
+        .preservesLibraryScrollPosition()
         .accessibilityIdentifier("home.page")
     }
 }

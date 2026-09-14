@@ -7,6 +7,7 @@ struct ContentView: View {
     @State private var shell = ContentShellState()
     @State private var windowLayout = WindowSplitLayoutCoordinator()
     @State private var playlistCreation = PlaylistCreationCoordinator()
+    @State private var pageScrollOffsets: [Int: CGFloat] = [:]
 
     private enum Layout {
         static let contentViewMinimumWidth: CGFloat = 360
@@ -142,6 +143,8 @@ struct ContentView: View {
 
     private var contentColumn: some View {
         detail
+            .environment(\.libraryScrollOffset, currentPageScrollOffset)
+            .id(shell.navigationHistory.currentEntryID)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
@@ -322,6 +325,14 @@ struct ContentView: View {
     private var selectedPlaylistID: Int64? {
         guard case .playlist(let playlist) = shell.navigationHistory.currentRoute else { return nil }
         return playlist.id
+    }
+
+    private var currentPageScrollOffset: Binding<CGFloat> {
+        let entryID = shell.navigationHistory.currentEntryID
+        return Binding(
+            get: { pageScrollOffsets[entryID] ?? 0 },
+            set: { pageScrollOffsets[entryID] = $0 }
+        )
     }
 
     private func requestSearchFocus() {

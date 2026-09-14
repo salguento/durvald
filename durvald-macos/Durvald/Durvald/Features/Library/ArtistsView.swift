@@ -25,5 +25,6 @@ struct ArtistsView: View {
             .accessibilityLabel("Abrir artista \(artist.name)")
             .accessibilityIdentifier("artist.\(artist.id)")
         }
+        .preservesLibraryScrollPosition()
     }
 }

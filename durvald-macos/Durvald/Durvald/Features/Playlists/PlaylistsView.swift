@@ -19,5 +19,6 @@ struct PlaylistsView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .preservesLibraryScrollPosition()
     }
 }

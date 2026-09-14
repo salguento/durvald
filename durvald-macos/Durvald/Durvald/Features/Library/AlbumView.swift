@@ -83,6 +83,7 @@ struct AlbumView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .preservesLibraryScrollPosition(isContentReady: !isLoading)
         .task(id: detailID) {
             isLoading = true
             if let album {
@@ -281,7 +282,7 @@ struct AlbumView: View {
             ContentUnavailableView.search(text: trackSearchText)
                 .frame(maxWidth: .infinity)
         } else {
-            LazyVStack(spacing: 0) {
+            VStack(spacing: 0) {
                 ForEach(visibleTracks, id: \.id) { track in
                     trackRow(track)
 

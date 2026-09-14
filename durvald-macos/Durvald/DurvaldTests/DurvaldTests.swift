@@ -390,21 +390,21 @@ final class LibraryNavigationHistoryTests: XCTestCase {
 
 final class AlbumGridLayoutTests: XCTestCase {
     func testColumnCountChangesOnlyAtWholeCardThresholds() {
-        XCTAssertEqual(AlbumGridLayout.columnCount(for: 379), 1)
-        XCTAssertEqual(AlbumGridLayout.columnCount(for: 380), 2)
-        XCTAssertEqual(AlbumGridLayout.columnCount(for: 551), 2)
-        XCTAssertEqual(AlbumGridLayout.columnCount(for: 552), 3)
+        XCTAssertEqual(AlbumGridLayout.columnCount(for: 447), 1)
+        XCTAssertEqual(AlbumGridLayout.columnCount(for: 448), 2)
+        XCTAssertEqual(AlbumGridLayout.columnCount(for: 655), 2)
+        XCTAssertEqual(AlbumGridLayout.columnCount(for: 656), 3)
     }
 
-    func testColumnsRemainFixedAt160Points() {
+    func testColumnsUseConfiguredFixedCardWidth() {
         let columns = AlbumGridLayout.columns(for: 900)
 
         XCTAssertEqual(
             columns.count,
             AlbumGridLayout.columnCount(for: 900)
         )
-        XCTAssertEqual(AlbumGridLayout.cardWidth, 160)
-        XCTAssertEqual(AlbumGridLayout.spacing, 12)
+        XCTAssertEqual(AlbumGridLayout.cardWidth, 192)
+        XCTAssertEqual(AlbumGridLayout.spacing, 16)
     }
 }
 

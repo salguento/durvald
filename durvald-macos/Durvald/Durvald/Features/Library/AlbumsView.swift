@@ -8,8 +8,8 @@
 import SwiftUI
 
 enum AlbumGridLayout {
-    static let cardWidth: CGFloat = 160
-    static let spacing: CGFloat = 12
+    static let cardWidth: CGFloat = 192
+    static let spacing: CGFloat = 16
     static let horizontalPadding: CGFloat = 24
 
     static func columnCount(for availableWidth: CGFloat) -> Int {
@@ -34,6 +34,15 @@ enum AlbumGridLayout {
             count: columnCount(for: availableWidth)
         )
     }
+}
+
+enum AlbumListingTypography {
+    static let title = Font.system(
+        size: NSFont.preferredFont(forTextStyle: .subheadline).pointSize + 1
+    )
+    static let secondary = Font.system(
+        size: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 1
+    )
 }
 
 struct AlbumsView: View {
@@ -64,6 +73,7 @@ struct AlbumsView: View {
                 .padding(.horizontal, AlbumGridLayout.horizontalPadding)
                 .padding(.vertical, 24)
             }
+            .preservesLibraryScrollPosition()
         }
     }
 }
@@ -91,19 +101,19 @@ struct AlbumCard: View {
             Button {
                 onSelectAlbum(release)
             } label: {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
                     ArtworkView(
                         artworkID: release.artworkId ?? fallbackArtworkID,
                         size: AlbumGridLayout.cardWidth
                     )
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 0) {
                         Text(release.title)
-                            .font(.headline)
+                            .font(AlbumListingTypography.title)
                             .lineLimit(1)
 
                         Text(subtitle ?? release.artist)
-                            .font(.caption)
+                            .font(AlbumListingTypography.secondary)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }

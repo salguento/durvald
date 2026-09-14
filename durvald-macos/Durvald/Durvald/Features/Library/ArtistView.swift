@@ -20,6 +20,7 @@ struct ArtistView: View {
     }
 
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(\.libraryScrollOffset) private var savedScrollOffset
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("followedArtistIDs") private var followedArtistIDs = ""
@@ -49,6 +50,7 @@ struct ArtistView: View {
     @State private var trackOrder: TrackOrder = .album
     @FocusState private var isTrackSearchFocused: Bool
     @State private var isLoading = true
+    @State private var currentScrollOffset: CGFloat = 0
     @ScaledMetric(relativeTo: .largeTitle) private var artistNameFontSize =
         NSFont.preferredFont(forTextStyle: .largeTitle).pointSize * 1.275
 
@@ -104,6 +106,12 @@ struct ArtistView: View {
                 }
                 .frame(minHeight: geometry.size.height, alignment: .top)
             }
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                max(0, geometry.visibleRect.minY)
+            } action: { _, offset in
+                currentScrollOffset = offset
+            }
+            .preservesLibraryScrollPosition(isContentReady: !isLoading)
         }
         .ignoresSafeArea(.container, edges: [.top, .bottom])
         .task(id: artist.id) {
@@ -590,7 +598,7 @@ struct ArtistView: View {
                     ForEach(albums, id: \.id) { album in
                         AlbumCard(
                             release: album,
-                            onSelectAlbum: onSelectAlbum,
+                            onSelectAlbum: selectAlbum,
                             subtitle: releaseYear(for: album),
                             fallbackArtworkID: externalFallbackArtworkID(for: album)
                         )
@@ -641,7 +649,7 @@ struct ArtistView: View {
                             ExternalReleaseCard(
                                 release: release,
                                 subtitle: externalReleaseSubtitle(release),
-                                onSelectRelease: onSelectExternalRelease
+                                onSelectRelease: selectExternalRelease
                             )
                         }
                     }
@@ -947,27 +955,30 @@ struct ArtistView: View {
 
                     if let latestRelease {
                         Button {
-                            onSelectAlbum(latestRelease)
+                            selectAlbum(latestRelease)
                         } label: {
-                            HStack(alignment: .center, spacing: 16) {
+                            HStack(alignment: .center, spacing: 15) {
                                 ArtworkView(
                                     artworkID: latestRelease.artworkId
                                         ?? externalFallbackArtworkID(for: latestRelease),
-                                    size: min(140, columnWidth * 0.4)
+                                    size: 160
                                 )
 
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(latestRelease.title)
-                                        .font(.headline)
-                                        .lineLimit(2)
-                                    Text(latestRelease.artist)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        Text(latestRelease.title)
+                                            .font(AlbumListingTypography.title)
+                                            .lineLimit(2)
+                                        Text(latestRelease.artist)
+                                            .font(AlbumListingTypography.secondary)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
                                     Text(releaseYear(for: latestRelease))
-                                        .font(.caption)
+                                        .font(AlbumListingTypography.secondary)
                                         .foregroundStyle(.secondary)
                                     Text("\(latestRelease.totalTracks) músicas")
-                                        .font(.caption)
+                                        .font(AlbumListingTypography.secondary)
                                         .foregroundStyle(.secondary)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -989,25 +1000,27 @@ struct ArtistView: View {
                         .accessibilityAddTraits(.isHeader)
 
                     ScrollView(.horizontal) {
-                        LazyHStack(alignment: .top, spacing: 16) {
+                        LazyHStack(alignment: .top, spacing: 20) {
                             ForEach(essentialAlbums, id: \.id) { album in
                                 Button {
-                                    onSelectAlbum(album)
+                                    selectAlbum(album)
                                 } label: {
-                                    VStack(alignment: .leading, spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 7) {
                                         ArtworkView(
                                             artworkID: album.artworkId
                                                 ?? externalFallbackArtworkID(for: album),
-                                            size: 144
+                                            size: 160
                                         )
-                                        Text(album.title)
-                                            .font(.headline)
-                                            .lineLimit(2)
-                                        Text(releaseYear(for: album))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                        VStack(alignment: .leading, spacing: 0) {
+                                            Text(album.title)
+                                                .font(AlbumListingTypography.title)
+                                                .lineLimit(2)
+                                            Text(releaseYear(for: album))
+                                                .font(AlbumListingTypography.secondary)
+                                                .foregroundStyle(.secondary)
+                                        }
                                     }
-                                    .frame(width: 144, alignment: .leading)
+                                    .frame(width: 160, alignment: .leading)
                                     .contentShape(.rect)
                                 }
                                 .buttonStyle(.plain)
@@ -1315,7 +1328,7 @@ struct ArtistView: View {
                     LazyHStack(alignment: .top, spacing: 20) {
                         ForEach(similarArtists, id: \.id) { similar in
                             Button {
-                                onSelectArtist?(similar)
+                                selectArtist(similar)
                             } label: {
                                 VStack(spacing: 10) {
                                     similarArtistAvatar(for: similar)
@@ -1345,6 +1358,7 @@ struct ArtistView: View {
         .background {
             Rectangle()
                 .fill(.quaternary)
+                .backgroundExtensionEffect()
                 .ignoresSafeArea(.container, edges: .bottom)
                 .padding(.bottom, -1000)
         }
@@ -1469,6 +1483,25 @@ struct ArtistView: View {
             $0.artist.localizedCaseInsensitiveCompare(similar.name) == .orderedSame
         })?.artworkId
     }
+
+    private func selectAlbum(_ album: Release) {
+        preserveCurrentScrollOffset()
+        onSelectAlbum(album)
+    }
+
+    private func selectExternalRelease(_ release: ExternalReleaseGroup) {
+        preserveCurrentScrollOffset()
+        onSelectExternalRelease(release)
+    }
+
+    private func selectArtist(_ artist: Artist) {
+        preserveCurrentScrollOffset()
+        onSelectArtist?(artist)
+    }
+
+    private func preserveCurrentScrollOffset() {
+        savedScrollOffset.wrappedValue = currentScrollOffset
+    }
 }
 
 private struct ExternalReleaseCard: View {
@@ -1481,7 +1514,7 @@ private struct ExternalReleaseCard: View {
             Button {
                 onSelectRelease(release)
             } label: {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 7) {
                     ZStack(alignment: .topTrailing) {
                         ArtworkView(
                             artworkID: release.artwork?.image.managedPath,
@@ -1497,12 +1530,12 @@ private struct ExternalReleaseCard: View {
                             .padding(7)
                     }
 
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 0) {
                         Text(release.title)
-                            .font(.headline)
+                            .font(AlbumListingTypography.title)
                             .lineLimit(1)
                         Text(subtitle)
-                            .font(.caption)
+                            .font(AlbumListingTypography.secondary)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }

@@ -16,15 +16,25 @@ enum LibraryRoute: Equatable {
 }
 
 struct LibraryNavigationHistory {
-    private var entries: [LibraryRoute] = [.section(.home)]
+    private struct Entry {
+        let id: Int
+        var route: LibraryRoute
+    }
+
+    private var entries: [Entry] = [Entry(id: 0, route: .section(.home))]
     private var currentIndex = 0
+    private var nextEntryID = 1
 
     var current: LibraryDestination {
         currentRoute.destination
     }
 
     var currentRoute: LibraryRoute {
-        entries[currentIndex]
+        entries[currentIndex].route
+    }
+
+    var currentEntryID: Int {
+        entries[currentIndex].id
     }
 
     var canGoBack: Bool {
@@ -47,12 +57,13 @@ struct LibraryNavigationHistory {
             entries.removeSubrange(firstForwardIndex...)
         }
 
-        entries.append(route)
+        entries.append(Entry(id: nextEntryID, route: route))
+        nextEntryID += 1
         currentIndex = entries.count - 1
     }
 
     mutating func replaceCurrent(with route: LibraryRoute) {
-        entries[currentIndex] = route
+        entries[currentIndex].route = route
     }
 
     mutating func goBack() {

@@ -60,6 +60,7 @@ struct MusicLibraryView: View {
                 }
             }
         }
+        .preservesLibraryScrollPosition()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             LibraryStatusFooter(
                 allTracks: store.tracks,

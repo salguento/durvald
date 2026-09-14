@@ -64,6 +64,10 @@ struct LibrarySearchView: View {
             }
         }
         .listStyle(.inset)
+        .preservesLibraryScrollPosition(
+            isContentReady: normalizedSearchText.isEmpty
+                || (searchResults != nil && committedQuery == normalizedSearchText)
+        )
     }
 
     @ViewBuilder
@@ -79,17 +83,18 @@ struct LibrarySearchView: View {
         if !results.releases.isEmpty {
             Section("Álbuns") {
                 ForEach(results.releases, id: \.id) { release in
-                    HStack(spacing: 10) {
+                    HStack(spacing: 9) {
                         ArtworkView(
                             artworkID: release.artworkId,
                             size: 42
                         )
 
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 0) {
                             Text(release.title)
+                                .font(AlbumListingTypography.title)
                                 .lineLimit(1)
                             Text(release.artist)
-                                .font(.caption)
+                                .font(AlbumListingTypography.secondary)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }

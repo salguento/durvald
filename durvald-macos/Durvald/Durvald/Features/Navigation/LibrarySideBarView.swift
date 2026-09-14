@@ -168,13 +168,13 @@ struct LibrarySidebarView: View {
                             Button {
                                 onSelectAlbum(album)
                             } label: {
-                                VStack(alignment: .leading, spacing: 5) {
+                                VStack(alignment: .leading, spacing: 4) {
                                     ArtworkView(
                                         artworkID: album.artworkId,
                                         size: artworkSize
                                     )
 
-                                    VStack(alignment: .leading, spacing: 1) {
+                                    VStack(alignment: .leading, spacing: 0) {
                                         Text(album.title)
                                             .font(.caption)
                                             .lineLimit(1)
