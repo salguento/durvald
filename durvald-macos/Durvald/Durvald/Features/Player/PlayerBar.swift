@@ -133,7 +133,9 @@ struct PlayerBar: View {
                         track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
                         systemImage: track.isFavorite ? "star.slash" : "star"
                         ) {
-                        store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+                        Task {
+                            await store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+                        }
                         },
                         TrackMenuAction("Abrir álbum", systemImage: "square.stack",
                                         isEnabled: album != nil) {
@@ -186,7 +188,9 @@ struct PlayerBar: View {
         return HStack(spacing: 8) {
             Button {
                 if let track {
-                    store.setTrackFavorite(trackID: track.id, favorite: !isFavorite)
+                    Task {
+                        await store.setTrackFavorite(trackID: track.id, favorite: !isFavorite)
+                    }
                 }
             } label: {
                 Image(systemName: isFavorite ? "star.fill" : "star")
@@ -207,7 +211,9 @@ struct PlayerBar: View {
                             track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
                             systemImage: track.isFavorite ? "star.slash" : "star"
                         ) {
-                            store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+                            Task {
+                                await store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+                            }
                         }
                         Button("Adicionar à fila", systemImage: "text.badge.plus") {
                             Task { await store.addToQueue(trackID: track.id) }

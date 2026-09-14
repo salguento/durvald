@@ -36,6 +36,10 @@ awk '
 ' "$output_dir/durvald_core.swift" > "$temporary_binding"
 mv "$temporary_binding" "$output_dir/durvald_core.swift"
 
+# UniFFI emits trailing spaces when swiftformat is unavailable (as on CI).
+# Normalize them so regeneration produces a reviewable, clean diff.
+perl -pi -e 's/[ \t]+$//' "$output_dir/durvald_core.swift" "$output_dir/durvald_coreFFI.h"
+
 # The Xcode app source directory is file-system synchronized, so copy the
 # generated wrapper there after applying the compatibility patch. The C header
 # and module map remain in Generated/arm64 and are imported via the bridging

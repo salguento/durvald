@@ -2807,11 +2807,18 @@ public struct ArtistDiscographyPage {
     public var remoteExhausted: Bool
     public var remoteNextOffset: UInt64?
     public var remoteTotal: UInt64?
+    /**
+     * UTC Unix seconds for the last successfully published or revalidated catalog.
+     */
+    public var lastSuccessAt: Int64?
     public var stale: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(artistId: Int64, identityGeneration: UInt64, catalogGeneration: UInt64, items: [ExternalReleaseGroup], nextOffset: UInt64?, remoteExhausted: Bool, remoteNextOffset: UInt64?, remoteTotal: UInt64?, stale: Bool) {
+    public init(artistId: Int64, identityGeneration: UInt64, catalogGeneration: UInt64, items: [ExternalReleaseGroup], nextOffset: UInt64?, remoteExhausted: Bool, remoteNextOffset: UInt64?, remoteTotal: UInt64?,
+        /**
+         * UTC Unix seconds for the last successfully published or revalidated catalog.
+         */lastSuccessAt: Int64?, stale: Bool) {
         self.artistId = artistId
         self.identityGeneration = identityGeneration
         self.catalogGeneration = catalogGeneration
@@ -2820,6 +2827,7 @@ public struct ArtistDiscographyPage {
         self.remoteExhausted = remoteExhausted
         self.remoteNextOffset = remoteNextOffset
         self.remoteTotal = remoteTotal
+        self.lastSuccessAt = lastSuccessAt
         self.stale = stale
     }
 }
@@ -2852,6 +2860,9 @@ extension ArtistDiscographyPage: Equatable, Hashable {
         if lhs.remoteTotal != rhs.remoteTotal {
             return false
         }
+        if lhs.lastSuccessAt != rhs.lastSuccessAt {
+            return false
+        }
         if lhs.stale != rhs.stale {
             return false
         }
@@ -2867,6 +2878,7 @@ extension ArtistDiscographyPage: Equatable, Hashable {
         hasher.combine(remoteExhausted)
         hasher.combine(remoteNextOffset)
         hasher.combine(remoteTotal)
+        hasher.combine(lastSuccessAt)
         hasher.combine(stale)
     }
 }
@@ -2884,6 +2896,7 @@ public struct FfiConverterTypeArtistDiscographyPage: FfiConverterRustBuffer {
                 remoteExhausted: FfiConverterBool.read(from: &buf),
                 remoteNextOffset: FfiConverterOptionUInt64.read(from: &buf),
                 remoteTotal: FfiConverterOptionUInt64.read(from: &buf),
+                lastSuccessAt: FfiConverterOptionInt64.read(from: &buf),
                 stale: FfiConverterBool.read(from: &buf)
         )
     }
@@ -2897,6 +2910,7 @@ public struct FfiConverterTypeArtistDiscographyPage: FfiConverterRustBuffer {
         FfiConverterBool.write(value.remoteExhausted, into: &buf)
         FfiConverterOptionUInt64.write(value.remoteNextOffset, into: &buf)
         FfiConverterOptionUInt64.write(value.remoteTotal, into: &buf)
+        FfiConverterOptionInt64.write(value.lastSuccessAt, into: &buf)
         FfiConverterBool.write(value.stale, into: &buf)
     }
 }
@@ -3801,14 +3815,18 @@ public struct ArtistRefreshSectionResult {
     public var status: ArtistRefreshStatus
     public var retryAfterSeconds: UInt64?
     public var coverProgress: CoverRefreshProgress?
+    public var diagnostic: ArtistRefreshDiagnosticCode?
+    public var provider: EnrichmentProvider?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(section: ArtistRefreshSection, status: ArtistRefreshStatus, retryAfterSeconds: UInt64?, coverProgress: CoverRefreshProgress?) {
+    public init(section: ArtistRefreshSection, status: ArtistRefreshStatus, retryAfterSeconds: UInt64?, coverProgress: CoverRefreshProgress?, diagnostic: ArtistRefreshDiagnosticCode?, provider: EnrichmentProvider?) {
         self.section = section
         self.status = status
         self.retryAfterSeconds = retryAfterSeconds
         self.coverProgress = coverProgress
+        self.diagnostic = diagnostic
+        self.provider = provider
     }
 }
 
@@ -3828,6 +3846,12 @@ extension ArtistRefreshSectionResult: Equatable, Hashable {
         if lhs.coverProgress != rhs.coverProgress {
             return false
         }
+        if lhs.diagnostic != rhs.diagnostic {
+            return false
+        }
+        if lhs.provider != rhs.provider {
+            return false
+        }
         return true
     }
 
@@ -3836,6 +3860,8 @@ extension ArtistRefreshSectionResult: Equatable, Hashable {
         hasher.combine(status)
         hasher.combine(retryAfterSeconds)
         hasher.combine(coverProgress)
+        hasher.combine(diagnostic)
+        hasher.combine(provider)
     }
 }
 
@@ -3847,7 +3873,9 @@ public struct FfiConverterTypeArtistRefreshSectionResult: FfiConverterRustBuffer
                 section: FfiConverterTypeArtistRefreshSection.read(from: &buf),
                 status: FfiConverterTypeArtistRefreshStatus.read(from: &buf),
                 retryAfterSeconds: FfiConverterOptionUInt64.read(from: &buf),
-                coverProgress: FfiConverterOptionTypeCoverRefreshProgress.read(from: &buf)
+                coverProgress: FfiConverterOptionTypeCoverRefreshProgress.read(from: &buf),
+                diagnostic: FfiConverterOptionTypeArtistRefreshDiagnosticCode.read(from: &buf),
+                provider: FfiConverterOptionTypeEnrichmentProvider.read(from: &buf)
         )
     }
 
@@ -3856,6 +3884,8 @@ public struct FfiConverterTypeArtistRefreshSectionResult: FfiConverterRustBuffer
         FfiConverterTypeArtistRefreshStatus.write(value.status, into: &buf)
         FfiConverterOptionUInt64.write(value.retryAfterSeconds, into: &buf)
         FfiConverterOptionTypeCoverRefreshProgress.write(value.coverProgress, into: &buf)
+        FfiConverterOptionTypeArtistRefreshDiagnosticCode.write(value.diagnostic, into: &buf)
+        FfiConverterOptionTypeEnrichmentProvider.write(value.provider, into: &buf)
     }
 }
 
@@ -6592,6 +6622,93 @@ extension ArtistProfileField: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * Stable diagnostic causes for clients. Human-readable messages remain owned
+ * by each frontend so they can be localized without changing the FFI contract.
+ */
+
+public enum ArtistRefreshDiagnosticCode {
+
+    case timeout
+    case connectionFailed
+    case invalidResponse
+    case invalidImage
+    case databaseBusy
+    case providerUnavailable
+}
+
+
+public struct FfiConverterTypeArtistRefreshDiagnosticCode: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistRefreshDiagnosticCode
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistRefreshDiagnosticCode {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .timeout
+
+        case 2: return .connectionFailed
+
+        case 3: return .invalidResponse
+
+        case 4: return .invalidImage
+
+        case 5: return .databaseBusy
+
+        case 6: return .providerUnavailable
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ArtistRefreshDiagnosticCode, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .timeout:
+            writeInt(&buf, Int32(1))
+
+
+        case .connectionFailed:
+            writeInt(&buf, Int32(2))
+
+
+        case .invalidResponse:
+            writeInt(&buf, Int32(3))
+
+
+        case .invalidImage:
+            writeInt(&buf, Int32(4))
+
+
+        case .databaseBusy:
+            writeInt(&buf, Int32(5))
+
+
+        case .providerUnavailable:
+            writeInt(&buf, Int32(6))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeArtistRefreshDiagnosticCode_lift(_ buf: RustBuffer) throws -> ArtistRefreshDiagnosticCode {
+    return try FfiConverterTypeArtistRefreshDiagnosticCode.lift(buf)
+}
+
+public func FfiConverterTypeArtistRefreshDiagnosticCode_lower(_ value: ArtistRefreshDiagnosticCode) -> RustBuffer {
+    return FfiConverterTypeArtistRefreshDiagnosticCode.lower(value)
+}
+
+
+
+extension ArtistRefreshDiagnosticCode: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * Sections are explicit so later discography/video work can extend refreshes
  * without changing the semantics of the phase-3 profile request.
  */
@@ -7453,6 +7570,48 @@ fileprivate struct FfiConverterOptionTypeArtistIdentityOrigin: FfiConverterRustB
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeArtistIdentityOrigin.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+fileprivate struct FfiConverterOptionTypeArtistRefreshDiagnosticCode: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistRefreshDiagnosticCode?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeArtistRefreshDiagnosticCode.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeArtistRefreshDiagnosticCode.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+fileprivate struct FfiConverterOptionTypeEnrichmentProvider: FfiConverterRustBuffer {
+    typealias SwiftType = EnrichmentProvider?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeEnrichmentProvider.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeEnrichmentProvider.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

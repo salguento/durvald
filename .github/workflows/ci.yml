@@ -104,8 +104,8 @@ jobs:
         run: cargo test --package durvald-core
         working-directory: durvald-core
 
-  swift-bindings:
-    name: Swift Bindings Smoke Test
+  macos-client:
+    name: macOS Client
     runs-on: macos-latest
     needs: rust-core-macos
     steps:
@@ -125,44 +125,29 @@ jobs:
             durvald-core/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       
-      - name: Build UniFFI bindings
+      - name: Generate UniFFI Swift bindings
+        run: ./durvald-core/scripts/generate-swift-bindings.sh
+
+      - name: Build macOS client
         run: |
-          cd durvald-core
-          cargo build --features uniffi --release
-      
-      - name: Verify generated Swift bindings exist
+          xcodebuild \
+            -project durvald-macos/Durvald/Durvald.xcodeproj \
+            -scheme Durvald \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DurvaldDerivedData" \
+            build
+
+      - name: Run macOS unit tests
         run: |
-          find durvald-core/target -name "*.swift" -o -name "*DurvaldCore*" | head -20
-          test -f durvald-core/target/release/durvaldFFI.modulemap || echo "modulemap not found yet - OK for smoke test"
-      
-      - name: Test Swift package can reference bindings
-        run: |
-          cat > /tmp/Package.swift << 'EOF'
-          // swift-tools-version: 5.9
-          import PackageDescription
-          
-          let package = Package(
-              name: "DurvaldSwiftTest",
-              platforms: [.iOS(.v16), .macOS(.v13)],
-              products: [
-                  .library(name: "DurvaldSwiftTest", targets: ["DurvaldSwiftTest"])
-              ],
-              targets: [
-                  .target(
-                      name: "DurvaldSwiftTest",
-                      dependencies: ["DurvaldCoreFFI"],
-                      path: "Sources"
-                  ),
-                  .binaryTarget(
-                      name: "DurvaldCoreFFI",
-                      path: "${{ github.workspace }}/durvald-core/target/release/durvald_core.xcframework"
-                  )
-              ]
-          )
-          EOF
-          echo "Swift Package.swift template created for reference"
-          # Note: Full xcframework generation requires additional steps
-          # This validates the bindings compile with Swift syntax
+          xcodebuild \
+            -project durvald-macos/Durvald/Durvald.xcodeproj \
+            -scheme Durvald \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/DurvaldDerivedData" \
+            -only-testing:DurvaldTests \
+            test
 
   docs:
     name: Documentation

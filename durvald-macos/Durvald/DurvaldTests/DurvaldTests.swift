@@ -12,7 +12,7 @@ final class DurvaldCoreStoreTests: XCTestCase {
         let store = DurvaldCoreStore(core: fake, playback: snapshot, tracks: [Fixtures.track])
 
         for favorite in [true, false] {
-            store.setTrackFavorite(trackID: Fixtures.track.id, favorite: favorite)
+            await store.setTrackFavorite(trackID: Fixtures.track.id, favorite: favorite)
             XCTAssertEqual(store.playback?.currentTrack?.isFavorite, favorite)
             XCTAssertEqual(store.tracks.first?.isFavorite, favorite)
             await store.refreshPlayback()
@@ -23,13 +23,13 @@ final class DurvaldCoreStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testFailedFavoritePreservesCurrentState() {
+    func testFailedFavoritePreservesCurrentState() async {
         let snapshot = Fixtures.playingSnapshot
         let fake = FakeDurvaldCore(snapshot: snapshot)
         fake.favoriteError = NSError(domain: "FavoriteTest", code: 1)
         let store = DurvaldCoreStore(core: fake, playback: snapshot, tracks: [Fixtures.track])
 
-        store.setTrackFavorite(trackID: Fixtures.track.id, favorite: true)
+        await store.setTrackFavorite(trackID: Fixtures.track.id, favorite: true)
 
         XCTAssertEqual(store.playback?.currentTrack?.isFavorite, false)
         XCTAssertEqual(store.tracks.first?.isFavorite, false)
@@ -617,7 +617,7 @@ private final class ArtworkTestCore: DurvaldCore {
         fatalError("ArtworkTestCore does not use the Rust backend")
     }
 
-    override func artworkBytes(artworkId: String) throws -> Data? {
+    override func artworkBytes(artworkId: String) async throws -> Data? {
         lock.withLock {
             reads += 1
             usedMainThread = usedMainThread || Thread.isMainThread

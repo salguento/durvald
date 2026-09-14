@@ -2131,7 +2131,8 @@ pub fn read_discography(
     let state = tx
         .query_row(
             "SELECT active_generation, active_remote_next_offset,
-                    active_remote_exhausted, active_expires_at, active_remote_total
+                    active_remote_exhausted, active_expires_at, active_remote_total,
+                    active_fetched_at
              FROM artist_discography_state
              WHERE artist_id = ?1 AND identity_generation = ?2",
             params![
@@ -2145,13 +2146,20 @@ pub fn read_discography(
                     row.get::<_, bool>(2)?,
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
                 ))
             },
         )
         .optional()
         .map_err(storage)?;
-    let Some((catalog_generation, remote_next_offset, remote_exhausted, expires_at, remote_total)) =
-        state
+    let Some((
+        catalog_generation,
+        remote_next_offset,
+        remote_exhausted,
+        expires_at,
+        remote_total,
+        last_success_at,
+    )) = state
     else {
         tx.commit().map_err(storage)?;
         return Ok(ArtistDiscographyPage {
@@ -2163,6 +2171,7 @@ pub fn read_discography(
             remote_exhausted: false,
             remote_next_offset: Some(0),
             remote_total: None,
+            last_success_at: None,
             stale: true,
         });
     };
@@ -2177,6 +2186,7 @@ pub fn read_discography(
             remote_exhausted: false,
             remote_next_offset: Some(0),
             remote_total: None,
+            last_success_at: None,
             stale: true,
         });
     }
@@ -2288,6 +2298,7 @@ pub fn read_discography(
             .map(u64::try_from)
             .transpose()
             .map_err(storage)?,
+        last_success_at,
         stale: expires_at.is_none_or(|expires_at| now >= expires_at),
     };
     drop(rows);

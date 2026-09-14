@@ -35,7 +35,7 @@ final class FakeDurvaldCore: DurvaldCore {
         return snapshot
     }
 
-    override func setTrackFavorite(trackId: Int64, favorite: Bool) throws {
+    override func setTrackFavorite(trackId: Int64, favorite: Bool) async throws {
         if let favoriteError { throw favoriteError }
         favoriteChanges.append(favorite)
         if snapshot.currentTrack?.id == trackId {
@@ -55,7 +55,7 @@ final class FakeDurvaldCore: DurvaldCore {
         snapshot.isPlaying = true
     }
 
-    override func releaseTracks(releaseId: Int64) throws -> [Track] {
+    override func releaseTracks(releaseId: Int64) async throws -> [Track] {
         releaseTrackResults
     }
 

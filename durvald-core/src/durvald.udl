@@ -153,6 +153,9 @@ typedef extern ArtistRefreshRequest;
 [Rust="enum"]
 typedef extern ArtistRefreshStatus;
 
+[Rust="enum"]
+typedef extern ArtistRefreshDiagnosticCode;
+
 [Rust="record"]
 typedef extern CoverRefreshProgress;
 

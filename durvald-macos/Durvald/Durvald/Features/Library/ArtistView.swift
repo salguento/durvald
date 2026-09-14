@@ -80,6 +80,8 @@ struct ArtistView: View {
 
                         identityCallout
 
+                        enrichmentDiagnostics
+
                         artistHighlights(width: geometry.size.width)
 
                         discographySections(width: geometry.size.width)
@@ -458,7 +460,7 @@ struct ArtistView: View {
         isRefreshingCatalog = true
         defer { isRefreshingCatalog = false }
 
-        async let refreshedDetails = store.refreshArtistDetails(
+        async let refreshedDetails = store.refreshArtistDetailsWithResult(
             artistId: artist.id,
             language: enrichmentLanguage
         )
@@ -466,11 +468,14 @@ struct ArtistView: View {
             artistId: artist.id,
             language: enrichmentLanguage
         )
-        let (newDetails, catalogResult) = await (refreshedDetails, refreshedCatalog)
-        if let newDetails {
+        let (detailsRefresh, catalogResult) = await (refreshedDetails, refreshedCatalog)
+        if let newDetails = detailsRefresh.details {
             details = newDetails
         }
-        catalogRefreshResults = catalogResult?.sections ?? []
+        catalogRefreshResults = mergeRefreshResults(
+            detailsRefresh.result?.sections ?? [],
+            catalogResult?.sections ?? []
+        )
         if catalogResult != nil,
            let refreshedPage = await store.artistDiscography(artistId: artist.id) {
             applyDiscographyPage(refreshedPage, reset: true)
@@ -623,7 +628,7 @@ struct ArtistView: View {
                 }
 
                 if onlineOnlyReleases.isEmpty {
-                    Text(catalogStatusMessage ?? "Nenhum lançamento exclusivamente online no cache local.")
+                    Text("Nenhum lançamento exclusivamente online no cache local.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
@@ -640,12 +645,6 @@ struct ArtistView: View {
                             )
                         }
                     }
-                }
-
-                if let catalogStatusMessage, !onlineOnlyReleases.isEmpty {
-                    Text(catalogStatusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
 
                 if let progress = coverQueueProgress {
@@ -715,20 +714,161 @@ struct ArtistView: View {
             .coverProgress
     }
 
-    private var catalogStatusMessage: String? {
-        let statuses = catalogRefreshResults.map(\.status)
-        if statuses.contains(.rateLimited) {
-            let retry = catalogRefreshResults.compactMap(\.retryAfterSeconds).max()
-            return retry.map { "Limite do provedor atingido. Tente novamente em \($0) segundos." }
-                ?? "Limite do provedor atingido. Tente novamente mais tarde."
+    @ViewBuilder
+    private var enrichmentDiagnostics: some View {
+        if !catalogRefreshResults.isEmpty || isRefreshingCatalog {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Atualização de metadados")
+                        .font(.headline)
+                    Spacer()
+                    if isRefreshingCatalog {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Atualizando metadados")
+                    }
+                }
+
+                ForEach(ArtistEnrichmentDiagnostics.orderedSections, id: \.self) { section in
+                    if let result = catalogRefreshResults.first(where: { $0.section == section }) {
+                        enrichmentDiagnosticRow(result)
+                    }
+                }
+            }
+            .padding(14)
+            .background(.quaternary, in: .rect(cornerRadius: 12))
+            .accessibilityIdentifier("artist.enrichment.diagnostics")
         }
-        if statuses.contains(.offline) { return "Modo offline: exibindo o cache local." }
-        if statuses.contains(.disabled) { return "Enriquecimento remoto desativado nos Ajustes." }
-        if statuses.contains(.needsIdentity) { return "Confirme a identidade MusicBrainz do artista para carregar a discografia." }
-        if statuses.contains(.unavailable) { return "Não foi possível atualizar agora; o cache local foi preservado." }
-        if statuses.contains(.superseded) { return "A identidade do artista mudou; os dados anteriores foram descartados." }
-        if statuses.contains(.partial) { return "Há mais páginas ou capas disponíveis para continuar." }
-        return nil
+    }
+
+    private func enrichmentDiagnosticRow(_ result: ArtistRefreshSectionResult) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: diagnosticIcon(result.status))
+                .foregroundStyle(diagnosticColor(result.status))
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(ArtistEnrichmentDiagnostics.title(for: result.section))
+                    .font(.subheadline.weight(.semibold))
+                Text(ArtistEnrichmentDiagnostics.message(
+                    for: result,
+                    hasCachedContent: hasCachedContent(for: result.section)
+                ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+                if let lastSuccess = lastSuccess(for: result.section) {
+                    Text("Último sucesso: \(lastSuccess.formatted(date: .abbreviated, time: .shortened))")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                if result.section == .covers, let progress = result.coverProgress {
+                    Text("\(progress.completed) concluídas · \(progress.pending) pendentes · \(progress.absent) ausentes · \(progress.temporarilyBlocked) bloqueadas")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            if ArtistEnrichmentDiagnostics.isRetryable(result) {
+                Button("Tentar novamente") {
+                    Task { await retryEnrichmentSection(result.section) }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isRefreshingCatalog)
+                .accessibilityIdentifier("artist.enrichment.retry.\(String(describing: result.section))")
+            }
+        }
+    }
+
+    private func diagnosticIcon(_ status: ArtistRefreshStatus) -> String {
+        switch status {
+        case .updated, .unchanged: "checkmark.circle.fill"
+        case .partial: "clock.arrow.circlepath"
+        case .notFound: "minus.circle"
+        case .needsIdentity: "person.crop.circle.badge.questionmark"
+        case .rateLimited: "hourglass.circle"
+        case .disabled, .offline: "icloud.slash"
+        case .superseded: "arrow.trianglehead.2.clockwise.rotate.90"
+        case .unavailable: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func diagnosticColor(_ status: ArtistRefreshStatus) -> Color {
+        switch status {
+        case .updated, .unchanged: .green
+        case .unavailable, .rateLimited: .orange
+        default: .secondary
+        }
+    }
+
+    private func hasCachedContent(for section: ArtistRefreshSection) -> Bool {
+        switch section {
+        case .profile:
+            return !(details?.sources.isEmpty ?? true)
+        case .portrait:
+            return details?.portrait != nil
+        case .discography:
+            return discographyPage?.catalogGeneration ?? 0 > 0 || !discographyItems.isEmpty
+        case .covers:
+            return discographyItems.contains { $0.artwork != nil }
+        }
+    }
+
+    private func lastSuccess(for section: ArtistRefreshSection) -> Date? {
+        let timestamp: Int64?
+        switch section {
+        case .profile:
+            timestamp = details?.sources.map(\.fetchedAt).max()
+        case .portrait:
+            timestamp = details?.portrait?.fetchedAt
+        case .discography:
+            timestamp = discographyPage?.lastSuccessAt
+        case .covers:
+            timestamp = discographyItems.compactMap { $0.artwork?.image.fetchedAt }.max()
+        }
+        return timestamp.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+    }
+
+    private func mergeRefreshResults(_ groups: [ArtistRefreshSectionResult]...) -> [ArtistRefreshSectionResult] {
+        var merged: [ArtistRefreshSectionResult] = []
+        for result in groups.flatMap({ $0 }) {
+            if let index = merged.firstIndex(where: { $0.section == result.section }) {
+                merged[index] = result
+            } else {
+                merged.append(result)
+            }
+        }
+        return merged
+    }
+
+    private func mergeRefreshResults(_ incoming: [ArtistRefreshSectionResult]) {
+        catalogRefreshResults = mergeRefreshResults(catalogRefreshResults, incoming)
+    }
+
+    private func retryEnrichmentSection(_ section: ArtistRefreshSection) async {
+        guard !isRefreshingCatalog else { return }
+        isRefreshingCatalog = true
+        defer { isRefreshingCatalog = false }
+
+        guard let result = await store.refreshArtistSections(
+            artistId: artist.id,
+            language: enrichmentLanguage,
+            sections: [section]
+        ) else { return }
+
+        mergeRefreshResults(result.sections)
+        switch section {
+        case .profile, .portrait:
+            details = await store.artistDetails(artistId: artist.id, language: enrichmentLanguage)
+        case .discography, .covers:
+            if let page = await store.artistDiscography(artistId: artist.id) {
+                applyDiscographyPage(page, reset: true)
+            }
+        }
     }
 
     private func applyDiscographyPage(_ page: ArtistDiscographyPage, reset: Bool) {
@@ -758,7 +898,9 @@ struct ArtistView: View {
             artistId: artist.id,
             language: enrichmentLanguage
         )
-        catalogRefreshResults = result?.sections ?? []
+        if let result {
+            mergeRefreshResults(result.sections)
+        }
         if result != nil, let page = await store.artistDiscography(artistId: artist.id) {
             applyDiscographyPage(page, reset: true)
         }

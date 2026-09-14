@@ -58,7 +58,12 @@ final class ArtworkRepository {
 
         let sendableCore = SendableCore(value: core)
         let task = Task { @MainActor () throws -> NSImage? in
-            let bytes = try await sendableCore.value.artworkBytes(artworkId: artworkID)
+            // UniFFI exposes file reads as async methods. Starting the call from
+            // the main-actor task would still execute synchronous test doubles
+            // (and potentially pre-suspension FFI work) on the UI thread.
+            let bytes = try await Task.detached(priority: .userInitiated) {
+                try await sendableCore.value.artworkBytes(artworkId: artworkID)
+            }.value
             let thumbnail: CGImage? = try await withCheckedThrowingContinuation { continuation in
                 decodingQueue.async {
                     let thumbnail: CGImage? = autoreleasepool {

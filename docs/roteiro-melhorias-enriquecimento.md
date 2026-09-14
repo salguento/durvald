@@ -54,6 +54,8 @@ Referências: [MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API) e [
 
 ### 5. Exibir diagnóstico por seção no cliente
 
+**Status: concluído em 13/09/2026.** O contrato UniFFI identifica seção, provedor e causa estável; o cliente macOS apresenta perfil, retrato, discografia e capas separadamente, informa o último sucesso a partir do cache persistido, mantém os contadores da fila de capas e oferece retry somente para a seção acionável que falhou.
+
 - Substituir o aviso genérico por resultados separados para perfil, retrato, discografia e capas.
 - Informar o último sucesso e as quantidades concluídas e pendentes.
 - Apresentar mensagens específicas, como “banco ocupado; nova tentativa agendada” ou “Cover Art Archive indisponível”.

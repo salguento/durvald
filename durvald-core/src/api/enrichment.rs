@@ -167,6 +167,8 @@ pub struct ArtistDiscographyPage {
     pub remote_exhausted: bool,
     pub remote_next_offset: Option<u64>,
     pub remote_total: Option<u64>,
+    /// UTC Unix seconds for the last successfully published or revalidated catalog.
+    pub last_success_at: Option<i64>,
     pub stale: bool,
 }
 
@@ -300,6 +302,20 @@ pub enum ArtistRefreshStatus {
     Superseded,
 }
 
+/// Stable diagnostic causes for clients. Human-readable messages remain owned
+/// by each frontend so they can be localized without changing the FFI contract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ArtistRefreshDiagnosticCode {
+    Timeout,
+    ConnectionFailed,
+    InvalidResponse,
+    InvalidImage,
+    DatabaseBusy,
+    ProviderUnavailable,
+}
+
 /// Durable cover-queue counters for the artist's active catalog snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -317,6 +333,8 @@ pub struct ArtistRefreshSectionResult {
     pub status: ArtistRefreshStatus,
     pub retry_after_seconds: Option<u64>,
     pub cover_progress: Option<CoverRefreshProgress>,
+    pub diagnostic: Option<ArtistRefreshDiagnosticCode>,
+    pub provider: Option<EnrichmentProvider>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
