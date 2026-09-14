@@ -1,4 +1,4 @@
-name: Diagnose item 5 macOS build
+name: Diagnose item 5 macOS tests
 
 on:
   push:
@@ -37,28 +37,35 @@ jobs:
       - name: Generate Swift bindings
         run: ./durvald-core/scripts/generate-swift-bindings.sh
 
-      - name: Build macOS client and capture log
-        id: build
+      - name: Test macOS client and capture log
+        id: tests
         shell: bash
         run: |
           set +e
           cd durvald-macos/Durvald
-          xcodebuild -project Durvald.xcodeproj -scheme Durvald -configuration Debug -destination 'platform=macOS' build 2>&1 | tee /tmp/item5-xcodebuild.log
+          xcodebuild -project Durvald.xcodeproj -scheme Durvald -destination 'platform=macOS' test 2>&1 | tee /tmp/item5-xcodebuild-test.log
           status=${PIPESTATUS[0]}
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit 0
 
-      - name: Persist build log on failure
-        if: steps.build.outputs.status != '0'
+      - name: Persist test diagnostics
+        if: steps.tests.outputs.status != '0'
+        shell: bash
         run: |
-          cp /tmp/item5-xcodebuild.log item5-xcodebuild.log
+          {
+            echo '=== ERROR LINES ==='
+            grep -nE 'error:|fatal error:|TEST FAILED|Test Suite.*failed|XCTAssert|failed:' /tmp/item5-xcodebuild-test.log || true
+            echo
+            echo '=== LAST 300 LINES ==='
+            tail -n 300 /tmp/item5-xcodebuild-test.log
+          } > item5-xcodebuild-test-errors.txt
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add item5-xcodebuild.log
-          git commit -m "chore: capture item 5 macOS build failure"
+          git add item5-xcodebuild-test-errors.txt
+          git commit -m "chore: capture item 5 macOS test failure"
           git push origin HEAD:codex/item-5-section-diagnostics
           exit 1
 
-      - name: Mark build success
-        if: steps.build.outputs.status == '0'
-        run: echo "macOS build passed"
+      - name: Mark test success
+        if: steps.tests.outputs.status == '0'
+        run: echo "macOS tests passed"
