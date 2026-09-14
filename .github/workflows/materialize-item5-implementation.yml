@@ -37,8 +37,11 @@ jobs:
       - name: Generate Swift bindings
         run: ./durvald-core/scripts/generate-swift-bindings.sh
 
-      - name: Check patch cleanliness
-        run: git diff --check
+      - name: Check hand-edited patch cleanliness
+        run: |
+          git diff --check -- \
+            ':(exclude)durvald-macos/Durvald/Durvald/durvald_core.swift' \
+            ':(exclude)durvald-macos/Durvald/Generated/**'
 
       - name: Commit implementation
         shell: bash
