@@ -306,7 +306,7 @@ struct ContentView: View {
     }
 
     private var sidebarToolbarButtons: some View {
-        HStack(spacing: shell.columnVisibility == .detailOnly ? 4 : 6) {
+        HStack(spacing: 4) {
             sidebarToggleButton
             addPlaylistButton
         }

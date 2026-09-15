@@ -81,7 +81,7 @@ struct ArtistView: View {
                                           ? "checkmark.seal.fill"
                                           : "person.crop.circle.badge.questionmark")
                                         .font(.title2)
-                                        .foregroundStyle(identity.status == .resolved ? Color.blue : Color.white)
+                                        .foregroundStyle(identity.status == .resolved ? Color.accentColor : Color.white)
                                         .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
                                 }
                                 .buttonStyle(.plain)
@@ -197,7 +197,7 @@ struct ArtistView: View {
                           ? "checkmark.seal.fill"
                           : "person.crop.circle.badge.questionmark")
                         .font(.title2)
-                        .foregroundStyle(identity.status == .resolved ? Color.blue : Color.accentColor)
+                        .foregroundStyle(Color.accentColor)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(identityCalloutTitle(for: identity))
@@ -313,7 +313,7 @@ struct ArtistView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Label("Identidade confirmada", systemImage: "checkmark.seal.fill")
                             .font(.headline)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Color.accentColor)
                         Text(musicbrainzID)
                             .font(.caption.monospaced())
                             .textSelection(.enabled)

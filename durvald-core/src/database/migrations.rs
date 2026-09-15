@@ -358,7 +358,7 @@ CREATE TABLE IF NOT EXISTS local_release_metadata (
 );
 CREATE INDEX idx_local_release_metadata_identity
     ON local_release_metadata(artist_id, identity_generation);
-CREATE TABLE local_release_metadata_attempts (
+CREATE TABLE IF NOT EXISTS local_release_metadata_attempts (
     release_id INTEGER PRIMARY KEY REFERENCES releases(release_id) ON DELETE CASCADE,
     artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
     identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
@@ -375,6 +375,59 @@ BEGIN
     DELETE FROM local_release_external_ids
     WHERE origin = 'catalog_exact'
       AND release_id IN (SELECT release_id FROM releases WHERE artist_id = NEW.artist_id);
+END;
+"#;
+
+// Identity depends on the set of distinct MusicBrainz IDs and on whether any
+// evidence is uncertain, not on how many tracks repeat the same evidence.
+// The original row-level triggers advanced the generation for every repeated
+// tag added or removed, which could hide an artist's otherwise valid cached
+// profile, discography, and artwork after a metadata rescan.
+const AGGREGATE_IDENTITY_INVALIDATION: &str = r#"
+DROP TRIGGER invalidate_inserted_artist_tag;
+DROP TRIGGER invalidate_deleted_artist_tag;
+
+CREATE TRIGGER invalidate_inserted_artist_tag AFTER INSERT ON artist_tag_evidence
+WHEN NOT EXISTS (
+        SELECT 1 FROM artist_tag_evidence
+        WHERE artist_id = NEW.artist_id
+          AND musicbrainz_id = NEW.musicbrainz_id
+          AND NOT (song_id = NEW.song_id AND role = NEW.role)
+    )
+    OR (
+        NEW.uncertain = 1
+        AND NOT EXISTS (
+            SELECT 1 FROM artist_tag_evidence
+            WHERE artist_id = NEW.artist_id
+              AND uncertain = 1
+              AND NOT (song_id = NEW.song_id AND role = NEW.role
+                       AND musicbrainz_id = NEW.musicbrainz_id)
+        )
+    )
+BEGIN
+    INSERT OR IGNORE INTO artist_enrichment_state(artist_id) VALUES (NEW.artist_id);
+    UPDATE artist_enrichment_state SET generation = generation + 1,
+        identity_status = 'unresolved', musicbrainz_id = NULL, identity_origin = NULL
+        WHERE artist_id = NEW.artist_id;
+END;
+
+CREATE TRIGGER invalidate_deleted_artist_tag AFTER DELETE ON artist_tag_evidence
+WHEN NOT EXISTS (
+        SELECT 1 FROM artist_tag_evidence
+        WHERE artist_id = OLD.artist_id
+          AND musicbrainz_id = OLD.musicbrainz_id
+    )
+    OR (
+        OLD.uncertain = 1
+        AND NOT EXISTS (
+            SELECT 1 FROM artist_tag_evidence
+            WHERE artist_id = OLD.artist_id AND uncertain = 1
+        )
+    )
+BEGIN
+    UPDATE artist_enrichment_state SET generation = generation + 1,
+        identity_status = 'unresolved', musicbrainz_id = NULL, identity_origin = NULL
+        WHERE artist_id = OLD.artist_id;
 END;
 "#;
 
@@ -395,6 +448,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
             (12, PROVIDER_FAILURE_CACHE),
             (13, LOCAL_RELEASE_METADATA),
+            (14, AGGREGATE_IDENTITY_INVALIDATION),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -465,7 +519,94 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            12
+            14
+        );
+    }
+
+    #[test]
+    fn repeated_tag_evidence_does_not_invalidate_artist_identity() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        crate::database::operations::create_tables(&conn).unwrap();
+        migrate_enrichment(&mut conn).unwrap();
+        conn.execute(
+            "INSERT INTO artists (artist_id, name) VALUES (1, 'Artist')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO releases (release_id, title, artist_id, artist_name)
+             VALUES (1, 'Album', 1, 'Artist')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO songs
+             (song_id, title, artist_id, artist_name, release_id, release_title,
+              track_number, disc_number, duration, file_path)
+             VALUES
+             (1, 'One', 1, 'Artist', 1, 'Album', 1, 1, 180, '/one'),
+             (2, 'Two', 1, 'Artist', 1, 'Album', 2, 1, 180, '/two')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO artist_enrichment_state
+             (artist_id, generation, identity_status, musicbrainz_id)
+             VALUES (1, 7, 'resolved', '11111111-1111-4111-8111-111111111111')",
+            [],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO artist_tag_evidence
+             (song_id, artist_id, role, musicbrainz_id, uncertain)
+             VALUES (1, 1, 'track_artist', '11111111-1111-4111-8111-111111111111', 0)",
+            [],
+        )
+        .unwrap();
+        let first_generation: i64 = conn
+            .query_row(
+                "SELECT generation FROM artist_enrichment_state WHERE artist_id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        conn.execute(
+            "INSERT INTO artist_tag_evidence
+             (song_id, artist_id, role, musicbrainz_id, uncertain)
+             VALUES (2, 1, 'track_artist', '11111111-1111-4111-8111-111111111111', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM artist_tag_evidence WHERE song_id = 2", [])
+            .unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT generation FROM artist_enrichment_state WHERE artist_id = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            first_generation
+        );
+
+        conn.execute(
+            "INSERT INTO artist_tag_evidence
+             (song_id, artist_id, role, musicbrainz_id, uncertain)
+             VALUES (2, 1, 'track_artist', '22222222-2222-4222-8222-222222222222', 0)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT generation FROM artist_enrichment_state WHERE artist_id = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            first_generation + 1
         );
     }
 
@@ -490,8 +631,10 @@ mod tests {
                     (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
                     (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
                     (12, PROVIDER_FAILURE_CACHE),
+                    (13, LOCAL_RELEASE_METADATA),
+                    (14, AGGREGATE_IDENTITY_INVALIDATION),
                     (
-                        13,
+                        15,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -504,7 +647,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            12
+            14
         );
     }
 
