@@ -7324,6 +7324,7 @@ public enum EnrichmentProvider {
     case coverArtArchive
     case theAudioDb
     case youTube
+    case lastFm
 }
 
 
@@ -7347,6 +7348,8 @@ public struct FfiConverterTypeEnrichmentProvider: FfiConverterRustBuffer {
         case 6: return .theAudioDb
 
         case 7: return .youTube
+
+        case 8: return .lastFm
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -7382,6 +7385,10 @@ public struct FfiConverterTypeEnrichmentProvider: FfiConverterRustBuffer {
 
         case .youTube:
             writeInt(&buf, Int32(7))
+
+
+        case .lastFm:
+            writeInt(&buf, Int32(8))
 
         }
     }

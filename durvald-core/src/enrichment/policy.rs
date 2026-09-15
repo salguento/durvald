@@ -51,6 +51,7 @@ impl EnrichmentProvider {
             Self::Wikipedia => "wikipedia",
             Self::Commons => "commons",
             Self::CoverArtArchive => "cover_art_archive",
+            Self::LastFm => "last_fm",
             Self::TheAudioDb => "the_audio_db",
             Self::YouTube => "you_tube",
         }
@@ -77,6 +78,7 @@ mod tests {
 
     #[test]
     fn language_keys_are_normalized_and_bounded() {
+        assert_eq!(EnrichmentProvider::LastFm.as_str(), "last_fm");
         assert_eq!(normalize_language(" pt-BR ").unwrap(), "pt-br");
         for invalid in ["", "p", "pt_BR", "en/../../", "en--us", "éé", "en-"] {
             assert!(normalize_language(invalid).is_err(), "{invalid}");

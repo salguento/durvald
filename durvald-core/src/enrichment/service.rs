@@ -95,6 +95,8 @@ pub struct EnrichmentService {
             >,
         >,
     >,
+    #[allow(dead_code)] // First consumed by the profile/portrait phase.
+    lastfm: Arc<super::providers::lastfm::LastFm>,
     pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
     /// Enrichment snapshots are published in short, serialized database jobs.
     /// Network and filesystem work always happens before this gate is taken.
@@ -109,6 +111,7 @@ impl EnrichmentService {
     pub fn new(
         pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
         covers_dir: String,
+        lastfm: Arc<crate::lastfm::LastFmClient>,
     ) -> Self {
         Self {
             pool,
@@ -117,6 +120,7 @@ impl EnrichmentService {
             wikidata: Arc::new(std::sync::OnceLock::new()),
             commons: Arc::new(std::sync::OnceLock::new()),
             cover_art_archive: Arc::new(std::sync::OnceLock::new()),
+            lastfm: Arc::new(super::providers::lastfm::LastFm::new(lastfm)),
             flights: Arc::default(),
             refresh_flights: Arc::default(),
             write_coordinator: Arc::default(),
@@ -2260,6 +2264,23 @@ mod tests {
     use std::io::Cursor;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+    fn test_lastfm_client() -> Arc<crate::lastfm::LastFmClient> {
+        let directory = std::env::temp_dir().join(format!(
+            "durvald-enrichment-lastfm-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store =
+            crate::secure_store::SecureStore::new(directory, "durvald-enrichment-test".to_string())
+                .unwrap();
+        Arc::new(
+            crate::lastfm::LastFmClient::new(Arc::new(tokio::sync::Mutex::new(store))).unwrap(),
+        )
+    }
+
     fn service() -> EnrichmentService {
         let manager = r2d2_sqlite::SqliteConnectionManager::memory().with_init(|conn| {
             conn.execute_batch("PRAGMA foreign_keys = ON")?;
@@ -2278,6 +2299,7 @@ mod tests {
                 .join("durvald-enrichment-service-tests")
                 .to_string_lossy()
                 .into_owned(),
+            test_lastfm_client(),
         )
     }
 
@@ -2358,6 +2380,7 @@ mod tests {
         let service = EnrichmentService::new(
             Arc::new(r2d2::Pool::builder().max_size(1).build(manager).unwrap()),
             std::env::temp_dir().to_string_lossy().into_owned(),
+            test_lastfm_client(),
         );
         let write_tx =
             rusqlite::Transaction::new_unchecked(&writer, rusqlite::TransactionBehavior::Immediate)

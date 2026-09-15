@@ -724,19 +724,22 @@ impl DurvaldCore {
         })?;
 
         // Initialize Last.fm client (clones the secure store)
-        let lastfm = LastFmClient::new(Arc::new(tokio::sync::Mutex::new(secure_store.clone())))
-            .map_err(lastfm_error)?;
+        let lastfm = Arc::new(
+            LastFmClient::new(Arc::new(tokio::sync::Mutex::new(secure_store.clone())))
+                .map_err(lastfm_error)?,
+        );
 
         let db_pool = Arc::new(pool);
         let core = Self {
             enrichment: crate::enrichment::service::EnrichmentService::new(
                 db_pool.clone(),
                 config.covers_dir.clone(),
+                lastfm.clone(),
             ),
             db_pool,
             audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
             playback_transition: tokio::sync::Mutex::new(()),
-            lastfm: Arc::new(lastfm),
+            lastfm,
             covers_dir: config.covers_dir.clone(),
             scan_in_progress: Arc::new(AtomicBool::new(false)),
             scan_cancel_requested: Arc::new(AtomicBool::new(false)),

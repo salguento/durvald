@@ -146,6 +146,9 @@ fn gate_index(provider: EnrichmentProvider) -> usize {
         | EnrichmentProvider::Wikipedia
         | EnrichmentProvider::Commons => 1,
         EnrichmentProvider::CoverArtArchive => 2,
+        EnrichmentProvider::LastFm => {
+            unreachable!("Last.fm must use the shared LastFmClient")
+        }
         EnrichmentProvider::TheAudioDb => 3,
         EnrichmentProvider::YouTube => 4,
     }
@@ -256,6 +259,7 @@ impl EnrichmentHttpClient {
             }
             EnrichmentProvider::Commons => "https://commons.wikimedia.org/".to_string(),
             EnrichmentProvider::CoverArtArchive => "https://coverartarchive.org/".to_string(),
+            EnrichmentProvider::LastFm => return Err(TransportError::Configuration),
             EnrichmentProvider::TheAudioDb => "https://www.theaudiodb.com/".to_string(),
             EnrichmentProvider::YouTube => "https://www.googleapis.com/".to_string(),
         };
@@ -1169,6 +1173,18 @@ pub(crate) mod tests {
         .unwrap();
         assert!(Arc::ptr_eq(&first.gate, &second.gate));
         assert_eq!(first.gate.interval, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn lastfm_cannot_create_a_second_enrichment_http_client() {
+        assert!(matches!(
+            EnrichmentHttpClient::new(
+                EnrichmentProvider::LastFm,
+                None,
+                "DurvaldTest/1.0 (tests@example.test)",
+            ),
+            Err(TransportError::Configuration)
+        ));
     }
 
     #[tokio::test(start_paused = true)]

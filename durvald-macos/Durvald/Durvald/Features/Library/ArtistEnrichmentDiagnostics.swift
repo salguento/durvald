@@ -87,6 +87,7 @@ enum ArtistEnrichmentDiagnostics {
         case .wikipedia: "Wikipedia indisponível."
         case .commons: "Wikimedia Commons indisponível."
         case .coverArtArchive: "Cover Art Archive indisponível."
+        case .lastFm: "Last.fm indisponível."
         case .theAudioDb: "TheAudioDB indisponível."
         case .youTube: "YouTube indisponível."
         case nil: "O provedor está indisponível."

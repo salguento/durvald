@@ -14,6 +14,7 @@ pub enum EnrichmentProvider {
     CoverArtArchive,
     TheAudioDb,
     YouTube,
+    LastFm,
 }
 
 /// Disabled on first launch. Offline also prevents future refresh requests.

@@ -1,5 +1,6 @@
 pub mod commons;
 pub mod cover_art_archive;
+pub mod lastfm;
 pub mod musicbrainz;
 pub mod wikidata;
 pub mod wikipedia;

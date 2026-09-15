@@ -1,8 +1,9 @@
 //! Last.fm integration module
 
+use crate::enrichment::models::CacheValidators;
 use crate::secure_store::{SecureStore, SecureStoreError};
 use md5::{Digest, Md5};
-use reqwest::Client;
+use reqwest::{Client, StatusCode, header};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::{
@@ -28,6 +29,13 @@ pub enum LastFmError {
     ResponseTooLarge { limit_bytes: usize },
     #[error("Last.fm API error {code}: {message}")]
     Api { code: i64, message: String },
+    #[error("Last.fm metadata network request failed")]
+    MetadataNetwork,
+    #[error("Last.fm metadata request returned HTTP {status}")]
+    HttpStatus {
+        status: u16,
+        retry_after: Option<String>,
+    },
     #[error("Time error: {0}")]
     Time(String),
     #[error("Not connected")]
@@ -43,6 +51,13 @@ const LASTFM_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const LASTFM_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const LASTFM_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_LASTFM_RESPONSE_BYTES: usize = 1024 * 1024;
+const LASTFM_USER_AGENT: &str = concat!(
+    "Durvald/",
+    env!("CARGO_PKG_VERSION"),
+    " (desktop music player; Last.fm integration)"
+);
+#[allow(dead_code)] // Metadata consumers are introduced in the next phase.
+const MAX_LASTFM_HEADER_BYTES: usize = 1024;
 
 type ProtectedSecret = Arc<Zeroizing<String>>;
 
@@ -52,11 +67,65 @@ fn protected_secret(secret: String) -> ProtectedSecret {
 
 fn configured_http_client() -> LastFmResult<Client> {
     Client::builder()
+        .user_agent(LASTFM_USER_AGENT)
         .connect_timeout(LASTFM_CONNECT_TIMEOUT)
         .read_timeout(LASTFM_READ_TIMEOUT)
         .timeout(LASTFM_REQUEST_TIMEOUT)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(LastFmError::Network)
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[allow(dead_code)] // Staged transport contract for enrichment providers.
+pub(crate) struct LastFmResponseHeaders {
+    pub validators: CacheValidators,
+    pub cache_control: Option<String>,
+    pub expires: Option<String>,
+    pub retry_after: Option<String>,
+}
+
+#[derive(Debug)]
+#[allow(dead_code)] // Staged transport contract for enrichment providers.
+pub(crate) enum LastFmMetadataResponse {
+    Modified {
+        body: Value,
+        headers: LastFmResponseHeaders,
+    },
+    NotModified {
+        headers: LastFmResponseHeaders,
+    },
+}
+
+#[allow(dead_code)] // Used by the staged metadata transport.
+fn bounded_header(headers: &header::HeaderMap, name: header::HeaderName) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| value.len() <= MAX_LASTFM_HEADER_BYTES)
+        .map(str::to_owned)
+}
+
+#[allow(dead_code)] // Used by the staged metadata transport.
+fn metadata_response_headers(headers: &header::HeaderMap) -> LastFmResponseHeaders {
+    LastFmResponseHeaders {
+        validators: CacheValidators {
+            etag: bounded_header(headers, header::ETAG),
+            last_modified: bounded_header(headers, header::LAST_MODIFIED),
+        },
+        cache_control: bounded_header(headers, header::CACHE_CONTROL),
+        expires: bounded_header(headers, header::EXPIRES),
+        retry_after: bounded_header(headers, header::RETRY_AFTER),
+    }
+}
+
+#[allow(dead_code)] // Used by the staged metadata transport.
+fn valid_metadata_component(value: &str, allow_dot: bool) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || (allow_dot && byte == b'.'))
 }
 
 fn append_response_chunk(body: &mut Vec<u8>, chunk: &[u8]) -> LastFmResult<()> {
@@ -89,6 +158,35 @@ async fn bounded_json_response(mut response: reqwest::Response) -> LastFmResult<
     // memory.
     let mut body = Zeroizing::new(Vec::with_capacity(capacity));
     while let Some(chunk) = response.chunk().await? {
+        append_response_chunk(&mut body, &chunk)?;
+    }
+    Ok(serde_json::from_slice(&body)?)
+}
+
+/// Metadata requests carry the API key in their URL, so reqwest errors from
+/// body streaming must be redacted rather than retaining the request URL.
+async fn bounded_metadata_json_response(mut response: reqwest::Response) -> LastFmResult<Value> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_LASTFM_RESPONSE_BYTES as u64)
+    {
+        return Err(LastFmError::ResponseTooLarge {
+            limit_bytes: MAX_LASTFM_RESPONSE_BYTES,
+        });
+    }
+
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or(0)
+        .min(MAX_LASTFM_RESPONSE_BYTES);
+    let mut body = Zeroizing::new(Vec::with_capacity(capacity));
+    loop {
+        let chunk = response
+            .chunk()
+            .await
+            .map_err(|_| LastFmError::MetadataNetwork)?;
+        let Some(chunk) = chunk else { break };
         append_response_chunk(&mut body, &chunk)?;
     }
     Ok(serde_json::from_slice(&body)?)
@@ -196,6 +294,7 @@ struct TestCredentials {
 struct TestTransport {
     response: Value,
     forms: std::sync::Mutex<Vec<Vec<(String, String)>>>,
+    metadata_queries: std::sync::Mutex<Vec<Vec<(String, String)>>>,
 }
 
 impl LastFmClient {
@@ -219,6 +318,7 @@ impl LastFmClient {
         let transport = Arc::new(TestTransport {
             response,
             forms: std::sync::Mutex::new(Vec::new()),
+            metadata_queries: std::sync::Mutex::new(Vec::new()),
         });
         let client = Self {
             secure_store,
@@ -252,6 +352,86 @@ impl LastFmClient {
             .send()
             .await?;
         bounded_json_response(response).await
+    }
+
+    /// Performs a public Last.fm metadata request using only the API key.
+    /// Session keys and the API secret never enter the query string.
+    #[allow(dead_code)] // Called by artist metadata adapters in the next phase.
+    pub(crate) async fn get_metadata_json(
+        &self,
+        method: &str,
+        parameters: &[(&str, &str)],
+        validators: &CacheValidators,
+    ) -> LastFmResult<LastFmMetadataResponse> {
+        if !valid_metadata_component(method, true)
+            || parameters.iter().any(|(key, value)| {
+                !valid_metadata_component(key, false)
+                    || matches!(*key, "method" | "api_key" | "format")
+                    || value.len() > 4096
+            })
+        {
+            return Err(LastFmError::Custom(
+                "Invalid Last.fm metadata request".to_string(),
+            ));
+        }
+
+        enforce_rate_limit().await?;
+        let api_key = self.get_api_key().await?;
+        let mut query = Vec::with_capacity(parameters.len() + 3);
+        query.push(("method".to_string(), method.to_string()));
+        query.push(("api_key".to_string(), api_key));
+        query.push(("format".to_string(), "json".to_string()));
+        query.extend(
+            parameters
+                .iter()
+                .map(|(key, value)| ((*key).to_string(), (*value).to_string())),
+        );
+
+        #[cfg(test)]
+        if let Some(transport) = &self.test_transport {
+            transport.metadata_queries.lock().unwrap().push(query);
+            require_api_success(&transport.response)?;
+            return Ok(LastFmMetadataResponse::Modified {
+                body: transport.response.clone(),
+                headers: LastFmResponseHeaders::default(),
+            });
+        }
+
+        let mut request = self.client.get(LASTFM_API_ENDPOINT).query(&query);
+        if let Some(etag) = &validators.etag {
+            request = request.header(header::IF_NONE_MATCH, etag);
+        }
+        if let Some(last_modified) = &validators.last_modified {
+            request = request.header(header::IF_MODIFIED_SINCE, last_modified);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|_| LastFmError::MetadataNetwork)?;
+        let status = response.status();
+        let mut received = metadata_response_headers(response.headers());
+        if status == StatusCode::NOT_MODIFIED
+            && (validators.etag.is_some() || validators.last_modified.is_some())
+        {
+            received.validators.etag = received.validators.etag.or_else(|| validators.etag.clone());
+            received.validators.last_modified = received
+                .validators
+                .last_modified
+                .or_else(|| validators.last_modified.clone());
+            return Ok(LastFmMetadataResponse::NotModified { headers: received });
+        }
+        if !status.is_success() {
+            return Err(LastFmError::HttpStatus {
+                status: status.as_u16(),
+                retry_after: received.retry_after,
+            });
+        }
+        let body = bounded_metadata_json_response(response).await?;
+        require_api_success(&body)?;
+        Ok(LastFmMetadataResponse::Modified {
+            body,
+            headers: received,
+        })
     }
 
     async fn get_api_secret(&self) -> LastFmResult<ProtectedSecret> {
@@ -723,6 +903,133 @@ mod tests {
                 if limit_bytes == MAX_LASTFM_RESPONSE_BYTES
         ));
         assert_eq!(body.len(), MAX_LASTFM_RESPONSE_BYTES);
+    }
+
+    #[test]
+    fn metadata_headers_are_bounded_and_preserved() {
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            header::ETAG,
+            header::HeaderValue::from_static("\"artist-v1\""),
+        );
+        headers.insert(
+            header::LAST_MODIFIED,
+            header::HeaderValue::from_static("Mon, 15 Sep 2026 12:00:00 GMT"),
+        );
+        headers.insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("public, max-age=3600"),
+        );
+        headers.insert(
+            header::EXPIRES,
+            header::HeaderValue::from_static("Mon, 15 Sep 2026 13:00:00 GMT"),
+        );
+        headers.insert(header::RETRY_AFTER, header::HeaderValue::from_static("120"));
+
+        let parsed = metadata_response_headers(&headers);
+        assert_eq!(parsed.validators.etag.as_deref(), Some("\"artist-v1\""));
+        assert_eq!(
+            parsed.validators.last_modified.as_deref(),
+            Some("Mon, 15 Sep 2026 12:00:00 GMT")
+        );
+        assert_eq!(
+            parsed.cache_control.as_deref(),
+            Some("public, max-age=3600")
+        );
+        assert_eq!(
+            parsed.expires.as_deref(),
+            Some("Mon, 15 Sep 2026 13:00:00 GMT")
+        );
+        assert_eq!(parsed.retry_after.as_deref(), Some("120"));
+    }
+
+    #[tokio::test]
+    async fn public_metadata_uses_the_shared_client_without_session_credentials() {
+        LAST_REQUEST_MS.store(0, Ordering::SeqCst);
+        let directory = std::env::temp_dir().join(format!(
+            "durvald-lastfm-metadata-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = SecureStore::new(directory.clone(), "durvald-test".to_string()).unwrap();
+        let (client, transport) = LastFmClient::with_test_transport(
+            Arc::new(Mutex::new(store)),
+            serde_json::json!({"artist": {"name": "Wendy Carlos"}}),
+        )
+        .expect("build test client");
+        let client = Arc::new(client);
+        let adapter = crate::enrichment::providers::lastfm::LastFm::new(client.clone());
+        assert!(adapter.shares_client(&client));
+
+        let response = adapter
+            .metadata_json(
+                "artist.getInfo",
+                &[("mbid", "some-mbid"), ("lang", "pt")],
+                &CacheValidators::default(),
+            )
+            .await
+            .expect("read public metadata");
+        match response {
+            LastFmMetadataResponse::Modified { body, headers } => {
+                assert_eq!(body["artist"]["name"], "Wendy Carlos");
+                assert_eq!(headers, LastFmResponseHeaders::default());
+            }
+            LastFmMetadataResponse::NotModified { .. } => {
+                panic!("unconditional test request returned not modified")
+            }
+        }
+
+        let queries = transport.metadata_queries.lock().unwrap();
+        assert_eq!(queries.len(), 1);
+        let query = &queries[0];
+        assert!(query.contains(&("method".to_string(), "artist.getInfo".to_string())));
+        assert!(query.contains(&("api_key".to_string(), "test-api-key".to_string())));
+        assert!(query.contains(&("format".to_string(), "json".to_string())));
+        assert!(query.contains(&("mbid".to_string(), "some-mbid".to_string())));
+        assert!(
+            !query
+                .iter()
+                .any(|(key, _)| matches!(key.as_str(), "sk" | "api_sig"))
+        );
+        drop(queries);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn metadata_method_and_reserved_parameters_are_rejected() {
+        assert!(valid_metadata_component("artist.getInfo", true));
+        assert!(!valid_metadata_component("artist/getInfo", true));
+        assert!(!valid_metadata_component("", true));
+        assert!(LASTFM_USER_AGENT.starts_with("Durvald/"));
+        assert!(LASTFM_USER_AGENT.contains("Last.fm integration"));
+
+        let directory = std::env::temp_dir().join(format!(
+            "durvald-lastfm-invalid-metadata-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = SecureStore::new(directory.clone(), "durvald-test".to_string()).unwrap();
+        let (client, transport) =
+            LastFmClient::with_test_transport(Arc::new(Mutex::new(store)), serde_json::json!({}))
+                .expect("build test client");
+        assert!(matches!(
+            client
+                .get_metadata_json(
+                    "artist.getInfo",
+                    &[("api_key", "override")],
+                    &CacheValidators::default(),
+                )
+                .await,
+            Err(LastFmError::Custom(_))
+        ));
+        assert!(transport.metadata_queries.lock().unwrap().is_empty());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[tokio::test]
