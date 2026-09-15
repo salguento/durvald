@@ -63,6 +63,16 @@ pub struct ReleaseGroupSnapshot {
 }
 
 #[derive(Debug, Clone)]
+pub struct ExternalReleaseDetailsSnapshot {
+    pub artist_id: i64,
+    pub identity_generation: u64,
+    pub details: crate::api::ExternalReleaseDetails,
+    pub fetched_at: i64,
+    pub expires_at: i64,
+    pub validators: CacheValidators,
+}
+
+#[derive(Debug, Clone)]
 pub struct LocalReleaseTrackContext {
     pub title: String,
     pub disc_number: u8,

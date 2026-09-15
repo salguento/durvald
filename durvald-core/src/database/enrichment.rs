@@ -6,8 +6,9 @@ use crate::enrichment::models::{
     AssetSnapshot, CacheValidators, CachedProviderFailure, DiscographyBuildState,
     DiscographyPageSnapshot, DiscographyRefreshState, ExternalArtworkNegativeSnapshot,
     ExternalArtworkRefreshPlan, ExternalArtworkRefreshTarget, ExternalArtworkSnapshot,
-    ExternalArtworkStoreOutcome, LocalReleaseMatchContext, LocalReleaseTrackContext,
-    MatchedReleaseMetadata, ProfileSnapshot, ProviderFailureSnapshot, ReleaseGroupSnapshot,
+    ExternalArtworkStoreOutcome, ExternalReleaseDetailsSnapshot, LocalReleaseMatchContext,
+    LocalReleaseTrackContext, MatchedReleaseMetadata, ProfileSnapshot, ProviderFailureSnapshot,
+    ReleaseGroupSnapshot,
 };
 use crate::enrichment::policy::{MAX_JSON_BYTES, normalize_language, normalized_settings};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -2674,6 +2675,133 @@ pub fn release_group_snapshot(
         .transpose()
 }
 
+pub fn external_release_details(
+    conn: &Connection,
+    artist_id: i64,
+    release_group_mbid: &str,
+) -> CoreResult<Option<ExternalReleaseDetailsSnapshot>> {
+    if artist_id < 0 {
+        return Err(invalid("Artist ID must be non-negative"));
+    }
+    conn.query_row(
+        "SELECT d.identity_generation, d.payload, d.fetched_at, d.expires_at,
+                d.etag, d.last_modified
+         FROM external_release_details d
+         JOIN artist_enrichment_state s
+           ON s.artist_id = d.artist_id AND s.generation = d.identity_generation
+         JOIN artist_discography_state ds
+           ON ds.artist_id = d.artist_id AND ds.identity_generation = d.identity_generation
+         JOIN external_artist_release_groups ar
+           ON ar.artist_id = d.artist_id
+          AND ar.identity_generation = d.identity_generation
+          AND ar.catalog_generation = ds.active_generation
+          AND ar.release_group_mbid = d.release_group_mbid
+         WHERE d.artist_id = ?1 AND d.release_group_mbid = ?2
+           AND s.identity_status = 'resolved'",
+        params![artist_id, release_group_mbid],
+        |row| {
+            let generation = row.get::<_, i64>(0)?;
+            let payload = row.get::<_, String>(1)?;
+            Ok((
+                generation,
+                payload,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        },
+    )
+    .optional()
+    .map_err(storage)?
+    .map(
+        |(generation, payload, fetched_at, expires_at, etag, last_modified)| {
+            Ok(ExternalReleaseDetailsSnapshot {
+                artist_id,
+                identity_generation: u64::try_from(generation).map_err(storage)?,
+                details: serde_json::from_str(&payload).map_err(storage)?,
+                fetched_at,
+                expires_at,
+                validators: CacheValidators {
+                    etag,
+                    last_modified,
+                },
+            })
+        },
+    )
+    .transpose()
+}
+
+/// Stores details only while the release group still belongs to the current
+/// published catalog. A generation race discards the network response.
+pub fn store_external_release_details(
+    conn: &Connection,
+    snapshot: &ExternalReleaseDetailsSnapshot,
+) -> CoreResult<bool> {
+    if snapshot.artist_id < 0 || snapshot.expires_at < snapshot.fetched_at {
+        return Err(invalid("Invalid external release details snapshot"));
+    }
+    let generation = i64::try_from(snapshot.identity_generation).map_err(storage)?;
+    let payload = serde_json::to_string(&snapshot.details).map_err(storage)?;
+    if payload.len() > MAX_JSON_BYTES {
+        return Err(invalid(
+            "External release details payload exceeds size limit",
+        ));
+    }
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let current: bool = tx
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM artist_enrichment_state s
+                JOIN artist_discography_state ds USING (artist_id)
+                JOIN external_artist_release_groups ar
+                  ON ar.artist_id = s.artist_id
+                 AND ar.identity_generation = s.generation
+                 AND ar.catalog_generation = ds.active_generation
+                 AND ar.release_group_mbid = ?3
+                WHERE s.artist_id = ?1 AND s.generation = ?2
+                  AND s.identity_status = 'resolved'
+            )",
+            params![
+                snapshot.artist_id,
+                generation,
+                snapshot.details.release_group_mbid
+            ],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !current {
+        return Ok(false);
+    }
+    tx.execute(
+        "INSERT INTO external_release_details
+         (artist_id, release_group_mbid, identity_generation, payload_version,
+          payload, fetched_at, expires_at, etag, last_modified)
+         VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT (artist_id, release_group_mbid) DO UPDATE SET
+           identity_generation = excluded.identity_generation,
+           payload_version = excluded.payload_version,
+           payload = excluded.payload, fetched_at = excluded.fetched_at,
+           expires_at = excluded.expires_at, etag = excluded.etag,
+           last_modified = excluded.last_modified
+         WHERE external_release_details.identity_generation != excluded.identity_generation
+            OR external_release_details.fetched_at <= excluded.fetched_at",
+        params![
+            snapshot.artist_id,
+            snapshot.details.release_group_mbid,
+            generation,
+            payload,
+            snapshot.fetched_at,
+            snapshot.expires_at,
+            snapshot.validators.etag,
+            snapshot.validators.last_modified,
+        ],
+    )
+    .map_err(storage)?;
+    tx.commit().map_err(storage)?;
+    Ok(true)
+}
+
 pub fn set_override(
     conn: &Connection,
     artist_id: i64,
@@ -2934,6 +3062,90 @@ mod tests {
             expires_at: 200,
             validators: CacheValidators::default(),
         }
+    }
+
+    #[test]
+    fn external_release_details_are_offline_readable_and_identity_scoped() {
+        let conn = database();
+        let group_id = "11111111-1111-4111-8111-111111111111";
+        let generation = begin_discography_snapshot(&conn, 7, 0).unwrap().unwrap();
+        conn.execute(
+            "UPDATE artist_enrichment_state
+             SET identity_status = 'resolved',
+                 musicbrainz_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+             WHERE artist_id = 7",
+            [],
+        )
+        .unwrap();
+        store_discography_page(
+            &conn,
+            &discography_page(
+                generation,
+                0,
+                vec![release_group(group_id, "Album", 2001)],
+                None,
+            ),
+        )
+        .unwrap();
+        let details = ExternalReleaseDetails {
+            release_group_mbid: group_id.into(),
+            release_mbid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".into(),
+            title: "Album".into(),
+            artist: "An artist".into(),
+            release_date: Some(ArtistPartialDate {
+                year: 2001,
+                month: None,
+                day: None,
+            }),
+            genres: vec!["Electronic".into()],
+            composers: vec![],
+            producers: vec![],
+            total_discs: 1,
+            duration_seconds: 62,
+            tracks: vec![ExternalReleaseTrack {
+                disc_number: 1,
+                track_number: 1,
+                title: "Track".into(),
+                artist: "An artist".into(),
+                duration_seconds: Some(62),
+            }],
+            attribution: release_group(group_id, "Album", 2001).attribution,
+        };
+        let snapshot = ExternalReleaseDetailsSnapshot {
+            artist_id: 7,
+            identity_generation: 0,
+            details: details.clone(),
+            fetched_at: 100,
+            expires_at: 200,
+            validators: CacheValidators {
+                etag: Some("\"details-v1\"".into()),
+                last_modified: None,
+            },
+        };
+        assert!(store_external_release_details(&conn, &snapshot).unwrap());
+        let cached = external_release_details(&conn, 7, group_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(cached.details, details);
+        assert_eq!(cached.validators.etag.as_deref(), Some("\"details-v1\""));
+
+        conn.execute(
+            "UPDATE artist_enrichment_state SET generation = generation + 1 WHERE artist_id = 7",
+            [],
+        )
+        .unwrap();
+        assert!(
+            external_release_details(&conn, 7, group_id)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM external_release_details", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            0
+        );
     }
 
     fn external_artwork(

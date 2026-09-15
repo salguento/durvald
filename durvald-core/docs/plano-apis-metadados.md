@@ -153,13 +153,15 @@ Usar URLs-base fixas e query builder; escapar também a sintaxe de busca do prov
 
 Rate limits usam relógio monotônico e estado compartilhado por provedor; Wikimedia deve ter também orçamento agregado entre seus hosts. Respeitar `Retry-After`, aplicar backoff com jitter e no máximo duas novas tentativas para GET em erros transitórios. Não repetir autenticação inválida, 404 ou erro de parse automaticamente. Cooldown de um provedor não paralisa os outros.
 
-Defaults de cache propostos, subordinados aos termos e cabeçalhos de cada fonte: perfil/biografia 30 dias, discografia 7 dias, ausência confirmada 24 horas. Uma falha de rede não vira ausência nem apaga cache bom. Usar ETag/Last-Modified quando suportados. TTL vencido significa elegibilidade para revalidação, não exclusão automática; armazenar separadamente qualquer prazo obrigatório de remoção.
+Defaults de cache propostos, subordinados aos termos e cabeçalhos de cada fonte: perfil/biografia 30 dias, discografia 7 dias, detalhes de edição e tracklist MusicBrainz 30 dias, ausência confirmada 24 horas. Uma falha de rede não vira ausência nem apaga cache bom. Usar ETag/Last-Modified quando suportados. TTL vencido significa elegibilidade para revalidação, não exclusão automática; armazenar separadamente qualquer prazo obrigatório de remoção.
 
 Prioridade inicial: override manual; Wikidata para fatos; Wikipedia para biografia; Commons para retrato; TheAudioDB como fallback opcional. Um snapshot novo da fonte deve refletir campos removidos, mas só após resposta completa e válida. Não deixar um campo antigo sobreviver eternamente por usar apenas merges aditivos.
 
 Imagens ficam dentro de `covers_dir`, preservando o contrato de caminhos absolutos gerenciados e validação de symlinks. Usar temporário e rename atômico, deduplicar por conteúdo e coletar apenas assets remotos sem referências. A limpeza nunca remove capas locais ainda usadas.
 
 Para discografia, atualizar páginas numa geração de snapshot; só remover relações antigas quando todas as páginas dessa geração concluírem. Paginação interrompida não é evidência de que discos desapareceram.
+
+Detalhes de uma edição MusicBrainz são carregados sob demanda, normalizados e persistidos integralmente em SQLite, incluindo título, crédito artístico, data, gêneros, créditos, discos, faixas e durações. Uma leitura fresca não inicia HTTP; uma leitura vencida usa validação condicional e continua servindo o último snapshot se a rede falhar. O modo offline sempre aceita o snapshot armazenado, mesmo vencido. O payload bruto do provedor não é conservado: persistir apenas o modelo normalizado reduz acoplamento ao formato externo e mantém os limites de dados do core. Esses registros são vinculados à geração da identidade e ao catálogo publicado, sendo descartados quando a identidade do artista muda.
 
 ## 9. Configuração, credenciais e operação
 

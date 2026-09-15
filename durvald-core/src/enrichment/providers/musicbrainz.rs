@@ -392,7 +392,8 @@ impl MusicBrainz {
     pub async fn external_release_details(
         &self,
         group: &ReleaseGroupSnapshot,
-    ) -> Result<ExternalReleaseDetails, TransportError> {
+        validators: &CacheValidators,
+    ) -> Result<ProviderResponse<ExternalReleaseDetails>, TransportError> {
         let release_group_mbid =
             normalize_mbid(&group.musicbrainz_id).ok_or(TransportError::InvalidRequest)?;
         let response = self
@@ -408,11 +409,14 @@ impl MusicBrainz {
                     ),
                     ("limit", "100"),
                 ],
-                &CacheValidators::default(),
+                validators,
             )
             .await?;
-        let JsonResponse::Modified { body, .. } = response else {
-            return Err(TransportError::InvalidJson);
+        let (body, validators) = match response {
+            JsonResponse::Modified { body, validators } => (body, validators),
+            JsonResponse::NotModified { validators } => {
+                return Ok(ProviderResponse::NotModified { validators });
+            }
         };
         if body.offset != 0 || body.releases.is_empty() {
             return Err(TransportError::InvalidJson);
@@ -442,11 +446,12 @@ impl MusicBrainz {
             };
             rank(left).cmp(&rank(right))
         });
-        releases
+        let value = releases
             .into_iter()
             .next()
             .ok_or(TransportError::InvalidJson)?
-            .into_external_details(group)
+            .into_external_details(group)?;
+        Ok(ProviderResponse::Modified { value, validators })
     }
 
     async fn discography_with_limits(
@@ -1314,10 +1319,13 @@ mod tests {
                 revision: None,
             },
         };
-        let details = MusicBrainz { http }
-            .external_release_details(&group)
+        let ProviderResponse::Modified { value: details, .. } = MusicBrainz { http }
+            .external_release_details(&group, &CacheValidators::default())
             .await
-            .unwrap();
+            .unwrap()
+        else {
+            panic!("unconditional details request returned 304")
+        };
         assert_eq!(details.release_mbid, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
         assert_eq!(details.artist, "Artist");
         assert_eq!(details.genres, vec!["Electronic"]);

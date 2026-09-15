@@ -431,6 +431,32 @@ BEGIN
 END;
 "#;
 
+// Full MusicBrainz edition details are cached separately from playable local
+// tracks. This keeps online-only releases available without repeated requests.
+const EXTERNAL_RELEASE_DETAILS_CACHE: &str = r#"
+CREATE TABLE external_release_details (
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    release_group_mbid TEXT NOT NULL REFERENCES external_release_groups(musicbrainz_id) ON DELETE CASCADE,
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    payload_version INTEGER NOT NULL DEFAULT 1,
+    payload TEXT NOT NULL CHECK (json_valid(payload)),
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL CHECK (expires_at >= fetched_at),
+    etag TEXT,
+    last_modified TEXT,
+    PRIMARY KEY (artist_id, release_group_mbid)
+);
+CREATE INDEX idx_external_release_details_expiry
+    ON external_release_details(artist_id, identity_generation, expires_at);
+CREATE TRIGGER invalidate_external_release_details_identity
+AFTER UPDATE OF generation ON artist_enrichment_state
+WHEN NEW.generation != OLD.generation
+BEGIN
+    DELETE FROM external_release_details
+    WHERE artist_id = NEW.artist_id AND identity_generation != NEW.generation;
+END;
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -449,6 +475,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (12, PROVIDER_FAILURE_CACHE),
             (13, LOCAL_RELEASE_METADATA),
             (14, AGGREGATE_IDENTITY_INVALIDATION),
+            (15, EXTERNAL_RELEASE_DETAILS_CACHE),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -519,7 +546,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            14
+            15
         );
     }
 
@@ -634,7 +661,7 @@ mod tests {
                     (13, LOCAL_RELEASE_METADATA),
                     (14, AGGREGATE_IDENTITY_INVALIDATION),
                     (
-                        15,
+                        16,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -647,7 +674,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            14
+            15
         );
     }
 

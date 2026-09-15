@@ -484,7 +484,8 @@ impl EnrichmentService {
         artist_id: i64,
         release_group_mbid: String,
     ) -> CoreResult<ExternalReleaseDetails> {
-        use super::transport::TransportError;
+        use super::models::{CacheValidators, ExternalReleaseDetailsSnapshot, ProviderResponse};
+        use super::policy::EXTERNAL_RELEASE_DETAILS_TTL;
         use crate::enrichment::identity::normalize_mbid;
 
         if artist_id < 0 {
@@ -505,13 +506,32 @@ impl EnrichmentService {
             .ok_or_else(|| CoreError::NotFound {
                 message: "Online release is not part of the current artist catalog".into(),
             })?;
+        let identity = self.artist_identity(artist_id).await?;
+        let cached = self
+            .database({
+                let release_group_mbid = release_group_mbid.clone();
+                move |conn| {
+                    enrichment::external_release_details(conn, artist_id, &release_group_mbid)
+                }
+            })
+            .await?;
+        let now = chrono::Utc::now().timestamp();
+        if let Some(cached) = cached.as_ref().filter(|cached| now < cached.expires_at) {
+            return Ok(cached.details.clone());
+        }
         let settings = self.settings().await?;
         if !settings.enabled {
+            if let Some(cached) = cached {
+                return Ok(cached.details);
+            }
             return Err(CoreError::Network {
                 message: "Online metadata is disabled".into(),
             });
         }
         if settings.offline {
+            if let Some(cached) = cached {
+                return Ok(cached.details);
+            }
             return Err(CoreError::Network {
                 message: "Online metadata is in offline mode".into(),
             });
@@ -523,15 +543,60 @@ impl EnrichmentService {
             .map_err(|error| CoreError::Network {
                 message: error.to_string(),
             })?;
-        tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            musicbrainz.external_release_details(&group),
-        )
-        .await
-        .unwrap_or(Err(TransportError::Timeout))
-        .map_err(|error| CoreError::Network {
-            message: error.to_string(),
-        })
+        let validators = cached
+            .as_ref()
+            .map(|cached| cached.validators.clone())
+            .unwrap_or_else(CacheValidators::default);
+        let resource_key = provider_resource_key(&[&release_group_mbid]);
+        let response = self
+            .provider_request(
+                artist_id,
+                identity.generation,
+                EnrichmentProvider::MusicBrainz,
+                "external_release_details",
+                resource_key,
+                false,
+                musicbrainz.external_release_details(&group, &validators),
+            )
+            .await;
+        let (details, validators) = match response {
+            Ok(ProviderResponse::Modified { value, validators }) => (value, validators),
+            Ok(ProviderResponse::NotModified { validators }) => {
+                let Some(cached) = cached.as_ref() else {
+                    return Err(CoreError::Network {
+                        message: "MusicBrainz returned an invalid cache response".into(),
+                    });
+                };
+                (cached.details.clone(), validators)
+            }
+            Err(error) => {
+                if let Some(cached) = cached {
+                    return Ok(cached.details);
+                }
+                return Err(CoreError::Network {
+                    message: error.to_string(),
+                });
+            }
+        };
+        let snapshot = ExternalReleaseDetailsSnapshot {
+            artist_id,
+            identity_generation: identity.generation,
+            details: details.clone(),
+            fetched_at: now,
+            expires_at: now.saturating_add(EXTERNAL_RELEASE_DETAILS_TTL.as_secs() as i64),
+            validators,
+        };
+        let stored = self
+            .write_database_idempotent("external_release_details.store", move |conn| {
+                enrichment::store_external_release_details(conn, &snapshot)
+            })
+            .await?;
+        if !stored {
+            return Err(CoreError::NotFound {
+                message: "Artist identity changed while loading online release".into(),
+            });
+        }
+        Ok(details)
     }
 
     /// Applies unambiguous release-group metadata already present in the local
@@ -2481,6 +2546,90 @@ mod tests {
             ArtistIdentityLookupStatus::Offline
         );
         assert!(service.musicbrainz.get().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn external_release_details_are_reused_from_disk_while_offline() {
+        let service = service();
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: false,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        service
+            .confirm_artist_identity(1, Some("11111111-1111-4111-8111-111111111111".into()))
+            .await
+            .unwrap();
+        let group_id = "22222222-2222-4222-8222-222222222222";
+        let (http, mock) = client(vec![
+            response(
+                200,
+                &[],
+                &[&format!(
+                    r#"{{"release-group-count":1,"release-group-offset":0,"release-groups":[{{"id":"{group_id}","title":"Album","primary-type":"Album","secondary-types":[],"first-release-date":"2001"}}]}}"#
+                )],
+                None,
+            ),
+            response(
+                200,
+                &[("etag", "\"details-v1\"")],
+                &[
+                    r#"{"release-count":1,"release-offset":0,"releases":[{"id":"33333333-3333-4333-8333-333333333333","title":"Album","date":"2001","artist-credit":[{"name":"Same Name","artist":{"id":"11111111-1111-4111-8111-111111111111","name":"Same Name"}}],"media":[{"position":1,"tracks":[{"position":1,"title":"Track","length":60000,"recording":{"title":"Track","length":60000,"relations":[]}}]}]}]}"#,
+                ],
+                None,
+            ),
+        ]);
+        service
+            .musicbrainz
+            .set(Ok(MusicBrainz { http }))
+            .ok()
+            .unwrap();
+        service
+            .refresh_artist(
+                1,
+                ArtistRefreshRequest {
+                    sections: vec![ArtistRefreshSection::Discography],
+                    language: "pt".into(),
+                    force: true,
+                },
+            )
+            .await
+            .unwrap();
+        let online = service
+            .external_release_details(1, group_id.into())
+            .await
+            .unwrap();
+        assert_eq!(online.tracks.len(), 1);
+        service
+            .database(|conn| {
+                conn.execute(
+                    "UPDATE external_release_details SET expires_at = fetched_at",
+                    [],
+                )
+                .map(|_| ())
+                .map_err(|error| CoreError::Storage {
+                    message: error.to_string(),
+                })
+            })
+            .await
+            .unwrap();
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: true,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        let offline = service
+            .external_release_details(1, group_id.into())
+            .await
+            .unwrap();
+        assert_eq!(offline, online);
+        assert_eq!(mock.calls(), 2);
     }
 
     #[tokio::test(start_paused = true)]
