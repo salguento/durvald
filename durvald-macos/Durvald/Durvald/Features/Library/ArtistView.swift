@@ -1061,27 +1061,31 @@ struct ArtistView: View {
         let layout = isStacked
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 28))
             : AnyLayout(HStackLayout(alignment: .top, spacing: 24))
-        let topTracks = Array(visibleTracks.prefix(10))
+        let externalRanking = popularTracks?.items.isEmpty == false ? popularTracks?.items : nil
+        let localRanking = mostPlayedLocalTracks
 
         return layout {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Mais ouvidas")
+                Text(externalRanking == nil ? "Mais ouvidas nesta biblioteca" : "Mais populares")
                     .font(.title2.bold())
                     .accessibilityAddTraits(.isHeader)
 
-                if !isLoading && topTracks.isEmpty {
-                    if trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text("Nenhuma música disponível")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ContentUnavailableView.search(text: trackSearchText)
-                    }
+                if !isLoading && externalRanking == nil && localRanking.isEmpty {
+                    Text("Nenhuma música disponível")
+                        .foregroundStyle(.secondary)
                 }
 
                 LazyVStack(spacing: 0) {
-                    ForEach(topTracks, id: \.id) { track in
-                        trackRow(track)
-                        if track.id != topTracks.last?.id { Divider() }
+                    if let externalRanking {
+                        ForEach(externalRanking, id: \.rank) { item in
+                            popularTrackRow(item)
+                            if item.rank != externalRanking.last?.rank { Divider() }
+                        }
+                    } else {
+                        ForEach(localRanking, id: \.id) { track in
+                            trackRow(track)
+                            if track.id != localRanking.last?.id { Divider() }
+                        }
                     }
                 }
             }
@@ -1382,6 +1386,15 @@ struct ArtistView: View {
         return visibleTracks
     }
 
+    private var mostPlayedLocalTracks: [Track] {
+        Array(tracks.sorted {
+            if $0.playCount != $1.playCount { return $0.playCount > $1.playCount }
+            let titleOrder = $0.title.localizedStandardCompare($1.title)
+            if titleOrder != .orderedSame { return titleOrder == .orderedAscending }
+            return $0.id < $1.id
+        }.prefix(10))
+    }
+
     private func releaseYear(for album: Release) -> String {
         guard let date = album.releaseDate?.trimmingCharacters(in: .whitespacesAndNewlines),
               date.count >= 4,
@@ -1423,6 +1436,42 @@ struct ArtistView: View {
             Task { await store.play(trackID: track.id) }
         }
         .accessibilityIdentifier("artist.track.\(track.id)")
+    }
+
+    @ViewBuilder
+    private func popularTrackRow(_ item: ArtistPopularTrack) -> some View {
+        if let localTrackID = item.localTrackId,
+           let localTrack = tracks.first(where: { $0.id == localTrackID }) {
+            trackRow(localTrack)
+        } else {
+            HStack(spacing: 12) {
+                ArtworkView(artworkID: nil, size: 36)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    if let url = URL(string: item.lastfmUrl) {
+                        Link(item.title, destination: url)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(item.title)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("\(item.listeners.formatted()) ouvintes · não disponível na biblioteca")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text("#\(item.rank)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 8)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(item.title), posição \(item.rank), não disponível na biblioteca")
+            .accessibilityIdentifier("artist.popular.external.\(item.rank)")
+        }
     }
 
     private func artistFooter(width: CGFloat) -> some View {

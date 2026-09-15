@@ -2839,10 +2839,11 @@ pub fn popular_tracks_snapshot(
             if version != 1 || payload.len() > MAX_JSON_BYTES {
                 return Err(storage("Unsupported popular tracks payload"));
             }
+            let items: Vec<ArtistPopularTrack> = serde_json::from_str(&payload).map_err(storage)?;
             Ok(PopularTracksSnapshot {
                 artist_id,
                 identity_generation: u64::try_from(generation).map_err(storage)?,
-                items: serde_json::from_str(&payload).map_err(storage)?,
+                items: match_popular_tracks_to_library(conn, artist_id, &items)?,
                 fetched_at,
                 expires_at,
                 validators: CacheValidators {
@@ -2875,7 +2876,8 @@ pub fn store_popular_tracks(
         }
     }
     let generation = i64::try_from(snapshot.identity_generation).map_err(storage)?;
-    let payload = serde_json::to_string(&snapshot.items).map_err(storage)?;
+    let matched_items = match_popular_tracks_to_library(conn, snapshot.artist_id, &snapshot.items)?;
+    let payload = serde_json::to_string(&matched_items).map_err(storage)?;
     if payload.len() > MAX_JSON_BYTES {
         return Err(invalid("Popular tracks payload exceeds size limit"));
     }
@@ -2911,6 +2913,146 @@ pub fn store_popular_tracks(
         )
         .map_err(storage)?;
     Ok(changed == 1)
+}
+
+#[derive(Debug)]
+struct LocalPopularTrackCandidate {
+    song_id: i64,
+    title_key: String,
+    relaxed_title_key: String,
+    recording_ids: std::collections::BTreeSet<String>,
+}
+
+/// Resolves an informational Last.fm ranking only against tracks that belong
+/// to the already-confirmed local artist. Ambiguous matches deliberately stay
+/// external: a false positive would make an unrelated file playable.
+fn match_popular_tracks_to_library(
+    conn: &Connection,
+    artist_id: i64,
+    items: &[ArtistPopularTrack],
+) -> CoreResult<Vec<ArtistPopularTrack>> {
+    let mut statement = conn
+        .prepare(
+            "SELECT DISTINCT s.song_id, s.title, t.payload
+             FROM songs s
+             JOIN song_artists sa ON sa.song_id = s.song_id
+             LEFT JOIN song_musicbrainz_tags t ON t.song_id = s.song_id
+             WHERE sa.artist_id = ?1
+             ORDER BY s.song_id",
+        )
+        .map_err(storage)?;
+    let candidates = statement
+        .query_map([artist_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .map_err(storage)?
+        .map(|row| {
+            let (song_id, title, payload) = row.map_err(storage)?;
+            let recording_ids = payload
+                .and_then(|payload| {
+                    serde_json::from_str::<crate::metadata::MusicBrainzTags>(&payload).ok()
+                })
+                .map(|tags| {
+                    tags.recordings
+                        .into_iter()
+                        .filter_map(|id| crate::enrichment::identity::normalize_mbid(&id))
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(LocalPopularTrackCandidate {
+                song_id,
+                title_key: popular_track_title_key(&title, false),
+                relaxed_title_key: popular_track_title_key(&title, true),
+                recording_ids,
+            })
+        })
+        .collect::<CoreResult<Vec<_>>>()?;
+
+    items
+        .iter()
+        .map(|item| {
+            let mut matched = item.clone();
+            matched.local_track_id = unique_popular_track_match(item, &candidates);
+            Ok(matched)
+        })
+        .collect()
+}
+
+fn unique_popular_track_match(
+    item: &ArtistPopularTrack,
+    candidates: &[LocalPopularTrackCandidate],
+) -> Option<i64> {
+    if let Some(recording_id) = item
+        .musicbrainz_id
+        .as_deref()
+        .and_then(crate::enrichment::identity::normalize_mbid)
+    {
+        let recording_matches: Vec<_> = candidates
+            .iter()
+            .filter(|candidate| candidate.recording_ids.contains(&recording_id))
+            .collect();
+        match recording_matches.as_slice() {
+            [candidate] => return Some(candidate.song_id),
+            [] => {}
+            matches => {
+                let title_key = popular_track_title_key(&item.title, false);
+                return unique_candidate_id(
+                    matches
+                        .iter()
+                        .copied()
+                        .filter(|candidate| candidate.title_key == title_key),
+                );
+            }
+        }
+    }
+
+    let title_key = popular_track_title_key(&item.title, false);
+    let exact: Vec<_> = candidates
+        .iter()
+        .filter(|candidate| candidate.title_key == title_key)
+        .collect();
+    match exact.as_slice() {
+        [candidate] => return Some(candidate.song_id),
+        [] => {}
+        _ => return None,
+    }
+
+    let relaxed_title_key = popular_track_title_key(&item.title, true);
+    if relaxed_title_key.is_empty() {
+        return None;
+    }
+    unique_candidate_id(
+        candidates
+            .iter()
+            .filter(|candidate| candidate.relaxed_title_key == relaxed_title_key),
+    )
+}
+
+fn unique_candidate_id<'a>(
+    candidates: impl Iterator<Item = &'a LocalPopularTrackCandidate>,
+) -> Option<i64> {
+    let mut candidates = candidates.map(|candidate| candidate.song_id);
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
+}
+
+fn popular_track_title_key(title: &str, remove_punctuation: bool) -> String {
+    let normalized = title
+        .trim()
+        .chars()
+        .flat_map(char::to_lowercase)
+        .filter(|character| {
+            !remove_punctuation || character.is_alphanumeric() || character.is_whitespace()
+        });
+    normalized
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn touch_popular_tracks(
@@ -3777,6 +3919,95 @@ mod tests {
             .unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn popular_tracks_match_only_unique_local_tracks_for_the_confirmed_artist() {
+        let conn = database();
+        crate::database::identity::read(&conn, 7).unwrap();
+        conn.execute(
+            "UPDATE artist_enrichment_state
+             SET identity_status = 'resolved',
+                 musicbrainz_id = '11111111-1111-4111-8111-111111111111'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO releases
+             (release_id, title, artist_id, artist_name, duration)
+             VALUES (10, 'Local album', 7, 'An artist', 600)",
+            [],
+        )
+        .unwrap();
+        for (song_id, title) in [
+            (100, "Exact Title"),
+            (101, "Don't Stop"),
+            (102, "Ambiguous"),
+            (103, "Ambiguous"),
+            (104, "Recording Match"),
+        ] {
+            conn.execute(
+                "INSERT INTO songs
+                 (song_id, title, artwork, artist_id, artist_name, release_id,
+                  release_title, track_number, disc_number, duration, file_path)
+                 VALUES (?1, ?2, '', 7, 'An artist', 10, 'Local album', 1, 1, 120, ?3)",
+                params![song_id, title, format!("/music/{song_id}.flac")],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO song_artists (song_id, artist_id, position) VALUES (?1, 7, 0)",
+                [song_id],
+            )
+            .unwrap();
+        }
+        let recording_id = "22222222-2222-4222-8222-222222222222";
+        let tags = crate::metadata::MusicBrainzTags {
+            recordings: vec![recording_id.into()],
+            ..Default::default()
+        };
+        conn.execute(
+            "INSERT INTO song_musicbrainz_tags (song_id, payload) VALUES (104, ?1)",
+            [serde_json::to_string(&tags).unwrap()],
+        )
+        .unwrap();
+        let items = vec![
+            popular_track(1, "exact title", None),
+            popular_track(2, "Dont Stop", None),
+            popular_track(3, "Ambiguous", None),
+            popular_track(4, "Different provider title", Some(recording_id)),
+            popular_track(5, "Exact Title (Radio Edit)", None),
+        ];
+        let snapshot = PopularTracksSnapshot {
+            artist_id: 7,
+            identity_generation: 0,
+            items,
+            fetched_at: 100,
+            expires_at: 200,
+            validators: CacheValidators::default(),
+        };
+
+        assert!(store_popular_tracks(&conn, &snapshot).unwrap());
+        let stored = popular_tracks_snapshot(&conn, 7).unwrap().unwrap();
+        assert_eq!(
+            stored
+                .items
+                .iter()
+                .map(|item| item.local_track_id)
+                .collect::<Vec<_>>(),
+            vec![Some(100), Some(101), None, Some(104), None]
+        );
+    }
+
+    fn popular_track(rank: u32, title: &str, musicbrainz_id: Option<&str>) -> ArtistPopularTrack {
+        ArtistPopularTrack {
+            rank,
+            title: title.into(),
+            musicbrainz_id: musicbrainz_id.map(str::to_owned),
+            play_count: 42,
+            listeners: 21,
+            lastfm_url: "https://www.last.fm/music/artist/_/track".into(),
+            local_track_id: None,
+        }
     }
 
     #[test]
