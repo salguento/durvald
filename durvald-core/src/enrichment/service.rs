@@ -479,6 +479,61 @@ impl EnrichmentService {
         .await
     }
 
+    pub async fn external_release_details(
+        &self,
+        artist_id: i64,
+        release_group_mbid: String,
+    ) -> CoreResult<ExternalReleaseDetails> {
+        use super::transport::TransportError;
+        use crate::enrichment::identity::normalize_mbid;
+
+        if artist_id < 0 {
+            return Err(CoreError::InvalidInput {
+                message: "Artist ID must be non-negative".into(),
+            });
+        }
+        let release_group_mbid =
+            normalize_mbid(&release_group_mbid).ok_or_else(|| CoreError::InvalidInput {
+                message: "Invalid MusicBrainz release-group ID".into(),
+            })?;
+        let group = self
+            .database({
+                let release_group_mbid = release_group_mbid.clone();
+                move |conn| enrichment::release_group_snapshot(conn, artist_id, &release_group_mbid)
+            })
+            .await?
+            .ok_or_else(|| CoreError::NotFound {
+                message: "Online release is not part of the current artist catalog".into(),
+            })?;
+        let settings = self.settings().await?;
+        if !settings.enabled {
+            return Err(CoreError::Network {
+                message: "Online metadata is disabled".into(),
+            });
+        }
+        if settings.offline {
+            return Err(CoreError::Network {
+                message: "Online metadata is in offline mode".into(),
+            });
+        }
+        let musicbrainz = self
+            .musicbrainz
+            .get_or_init(super::providers::musicbrainz::MusicBrainz::new)
+            .as_ref()
+            .map_err(|error| CoreError::Network {
+                message: error.to_string(),
+            })?;
+        tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            musicbrainz.external_release_details(&group),
+        )
+        .await
+        .unwrap_or(Err(TransportError::Timeout))
+        .map_err(|error| CoreError::Network {
+            message: error.to_string(),
+        })
+    }
+
     /// Applies unambiguous release-group metadata already present in the local
     /// MusicBrainz catalog. This operation is network-free and remains useful
     /// while enrichment is offline.

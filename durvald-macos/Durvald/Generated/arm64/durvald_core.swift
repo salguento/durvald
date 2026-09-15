@@ -665,6 +665,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func enrichmentSettings() async throws  -> EnrichmentSettings
 
     /**
+     * Loads track and edition metadata for one online-only MusicBrainz item.
+     */
+    func externalReleaseDetails(artistId: Int64, releaseGroupMbid: String) async throws  -> ExternalReleaseDetails
+
+    /**
      * Extracts metadata from an audio file (for preview/import).
      */
     func extractMetadata(filePath: String) async throws  -> AudioMetadata
@@ -1451,6 +1456,26 @@ open func enrichmentSettings()async throws  -> EnrichmentSettings {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeEnrichmentSettings.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Loads track and edition metadata for one online-only MusicBrainz item.
+     */
+open func externalReleaseDetails(artistId: Int64, releaseGroupMbid: String)async throws  -> ExternalReleaseDetails {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_external_release_details(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(artistId),FfiConverterString.lower(releaseGroupMbid)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeExternalReleaseDetails.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -4533,6 +4558,147 @@ public func FfiConverterTypeExternalReleaseArtwork_lower(_ value: ExternalReleas
 
 
 /**
+ * On-demand details for an online-only release group. The selected edition is
+ * informational and its tracks deliberately remain separate from local audio.
+ */
+public struct ExternalReleaseDetails {
+    public var releaseGroupMbid: String
+    public var releaseMbid: String
+    public var title: String
+    public var artist: String
+    public var releaseDate: ArtistPartialDate?
+    public var genres: [String]
+    public var composers: [String]
+    public var producers: [String]
+    public var totalDiscs: UInt32
+    public var durationSeconds: UInt64
+    public var tracks: [ExternalReleaseTrack]
+    public var attribution: EnrichmentAttribution
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(releaseGroupMbid: String, releaseMbid: String, title: String, artist: String, releaseDate: ArtistPartialDate?, genres: [String], composers: [String], producers: [String], totalDiscs: UInt32, durationSeconds: UInt64, tracks: [ExternalReleaseTrack], attribution: EnrichmentAttribution) {
+        self.releaseGroupMbid = releaseGroupMbid
+        self.releaseMbid = releaseMbid
+        self.title = title
+        self.artist = artist
+        self.releaseDate = releaseDate
+        self.genres = genres
+        self.composers = composers
+        self.producers = producers
+        self.totalDiscs = totalDiscs
+        self.durationSeconds = durationSeconds
+        self.tracks = tracks
+        self.attribution = attribution
+    }
+}
+
+
+
+extension ExternalReleaseDetails: Equatable, Hashable {
+    public static func ==(lhs: ExternalReleaseDetails, rhs: ExternalReleaseDetails) -> Bool {
+        if lhs.releaseGroupMbid != rhs.releaseGroupMbid {
+            return false
+        }
+        if lhs.releaseMbid != rhs.releaseMbid {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.releaseDate != rhs.releaseDate {
+            return false
+        }
+        if lhs.genres != rhs.genres {
+            return false
+        }
+        if lhs.composers != rhs.composers {
+            return false
+        }
+        if lhs.producers != rhs.producers {
+            return false
+        }
+        if lhs.totalDiscs != rhs.totalDiscs {
+            return false
+        }
+        if lhs.durationSeconds != rhs.durationSeconds {
+            return false
+        }
+        if lhs.tracks != rhs.tracks {
+            return false
+        }
+        if lhs.attribution != rhs.attribution {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(releaseGroupMbid)
+        hasher.combine(releaseMbid)
+        hasher.combine(title)
+        hasher.combine(artist)
+        hasher.combine(releaseDate)
+        hasher.combine(genres)
+        hasher.combine(composers)
+        hasher.combine(producers)
+        hasher.combine(totalDiscs)
+        hasher.combine(durationSeconds)
+        hasher.combine(tracks)
+        hasher.combine(attribution)
+    }
+}
+
+
+public struct FfiConverterTypeExternalReleaseDetails: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExternalReleaseDetails {
+        return
+            try ExternalReleaseDetails(
+                releaseGroupMbid: FfiConverterString.read(from: &buf),
+                releaseMbid: FfiConverterString.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                artist: FfiConverterString.read(from: &buf),
+                releaseDate: FfiConverterOptionTypeArtistPartialDate.read(from: &buf),
+                genres: FfiConverterSequenceString.read(from: &buf),
+                composers: FfiConverterSequenceString.read(from: &buf),
+                producers: FfiConverterSequenceString.read(from: &buf),
+                totalDiscs: FfiConverterUInt32.read(from: &buf),
+                durationSeconds: FfiConverterUInt64.read(from: &buf),
+                tracks: FfiConverterSequenceTypeExternalReleaseTrack.read(from: &buf),
+                attribution: FfiConverterTypeEnrichmentAttribution.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ExternalReleaseDetails, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.releaseGroupMbid, into: &buf)
+        FfiConverterString.write(value.releaseMbid, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artist, into: &buf)
+        FfiConverterOptionTypeArtistPartialDate.write(value.releaseDate, into: &buf)
+        FfiConverterSequenceString.write(value.genres, into: &buf)
+        FfiConverterSequenceString.write(value.composers, into: &buf)
+        FfiConverterSequenceString.write(value.producers, into: &buf)
+        FfiConverterUInt32.write(value.totalDiscs, into: &buf)
+        FfiConverterUInt64.write(value.durationSeconds, into: &buf)
+        FfiConverterSequenceTypeExternalReleaseTrack.write(value.tracks, into: &buf)
+        FfiConverterTypeEnrichmentAttribution.write(value.attribution, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeExternalReleaseDetails_lift(_ buf: RustBuffer) throws -> ExternalReleaseDetails {
+    return try FfiConverterTypeExternalReleaseDetails.lift(buf)
+}
+
+public func FfiConverterTypeExternalReleaseDetails_lower(_ value: ExternalReleaseDetails) -> RustBuffer {
+    return FfiConverterTypeExternalReleaseDetails.lower(value)
+}
+
+
+/**
  * MusicBrainz release-group metadata remains separate from playable local
  * releases. `local_release_id` is present only after an identifier-based link.
  */
@@ -4646,6 +4812,90 @@ public func FfiConverterTypeExternalReleaseGroup_lift(_ buf: RustBuffer) throws 
 
 public func FfiConverterTypeExternalReleaseGroup_lower(_ value: ExternalReleaseGroup) -> RustBuffer {
     return FfiConverterTypeExternalReleaseGroup.lower(value)
+}
+
+
+/**
+ * One non-playable track obtained from a MusicBrainz release edition.
+ */
+public struct ExternalReleaseTrack {
+    public var discNumber: UInt32
+    public var trackNumber: UInt32
+    public var title: String
+    public var artist: String
+    public var durationSeconds: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(discNumber: UInt32, trackNumber: UInt32, title: String, artist: String, durationSeconds: UInt64?) {
+        self.discNumber = discNumber
+        self.trackNumber = trackNumber
+        self.title = title
+        self.artist = artist
+        self.durationSeconds = durationSeconds
+    }
+}
+
+
+
+extension ExternalReleaseTrack: Equatable, Hashable {
+    public static func ==(lhs: ExternalReleaseTrack, rhs: ExternalReleaseTrack) -> Bool {
+        if lhs.discNumber != rhs.discNumber {
+            return false
+        }
+        if lhs.trackNumber != rhs.trackNumber {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.durationSeconds != rhs.durationSeconds {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(discNumber)
+        hasher.combine(trackNumber)
+        hasher.combine(title)
+        hasher.combine(artist)
+        hasher.combine(durationSeconds)
+    }
+}
+
+
+public struct FfiConverterTypeExternalReleaseTrack: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExternalReleaseTrack {
+        return
+            try ExternalReleaseTrack(
+                discNumber: FfiConverterUInt32.read(from: &buf),
+                trackNumber: FfiConverterUInt32.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                artist: FfiConverterString.read(from: &buf),
+                durationSeconds: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ExternalReleaseTrack, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.discNumber, into: &buf)
+        FfiConverterUInt32.write(value.trackNumber, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artist, into: &buf)
+        FfiConverterOptionUInt64.write(value.durationSeconds, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeExternalReleaseTrack_lift(_ buf: RustBuffer) throws -> ExternalReleaseTrack {
+    return try FfiConverterTypeExternalReleaseTrack.lift(buf)
+}
+
+public func FfiConverterTypeExternalReleaseTrack_lower(_ value: ExternalReleaseTrack) -> RustBuffer {
+    return FfiConverterTypeExternalReleaseTrack.lower(value)
 }
 
 
@@ -7860,6 +8110,28 @@ fileprivate struct FfiConverterSequenceTypeExternalReleaseGroup: FfiConverterRus
     }
 }
 
+fileprivate struct FfiConverterSequenceTypeExternalReleaseTrack: FfiConverterRustBuffer {
+    typealias SwiftType = [ExternalReleaseTrack]
+
+    public static func write(_ value: [ExternalReleaseTrack], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeExternalReleaseTrack.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ExternalReleaseTrack] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ExternalReleaseTrack]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeExternalReleaseTrack.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 fileprivate struct FfiConverterSequenceTypeKeyValuePair: FfiConverterRustBuffer {
     typealias SwiftType = [KeyValuePair]
 
@@ -8167,6 +8439,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_enrichment_settings() != 18001) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_external_release_details() != 880) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_extract_metadata() != 44986) {

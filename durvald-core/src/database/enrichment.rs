@@ -2639,6 +2639,41 @@ pub fn read_discography(
     Ok(result)
 }
 
+/// Returns a release group only when it belongs to the artist's currently
+/// published identity/catalog generation.
+pub fn release_group_snapshot(
+    conn: &Connection,
+    artist_id: i64,
+    release_group_mbid: &str,
+) -> CoreResult<Option<ReleaseGroupSnapshot>> {
+    if artist_id < 0 {
+        return Err(invalid("Artist ID must be non-negative"));
+    }
+    let identity = crate::database::identity::read_persisted_inner(conn, artist_id)?;
+    let payload = conn
+        .query_row(
+            "SELECT ar.snapshot_payload
+             FROM external_artist_release_groups ar
+             JOIN artist_discography_state d
+               ON d.artist_id = ar.artist_id
+              AND d.identity_generation = ar.identity_generation
+              AND d.active_generation = ar.catalog_generation
+             WHERE ar.artist_id = ?1 AND ar.identity_generation = ?2
+               AND ar.release_group_mbid = ?3",
+            params![
+                artist_id,
+                i64::try_from(identity.generation).map_err(storage)?,
+                release_group_mbid
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    payload
+        .map(|payload| serde_json::from_str(&payload).map_err(storage))
+        .transpose()
+}
+
 pub fn set_override(
     conn: &Connection,
     artist_id: i64,

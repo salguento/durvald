@@ -70,6 +70,12 @@ typedef extern ExternalReleaseArtwork;
 typedef extern ExternalReleaseGroup;
 
 [Rust="record"]
+typedef extern ExternalReleaseTrack;
+
+[Rust="record"]
+typedef extern ExternalReleaseDetails;
+
+[Rust="record"]
 typedef extern ArtistDiscographyPage;
 
 [Rust="enum"]

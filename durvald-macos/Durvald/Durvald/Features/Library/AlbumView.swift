@@ -27,6 +27,7 @@ struct AlbumView: View {
     let onSelectArtist: (Artist) -> Void
 
     @State private var tracks: [Track] = []
+    @State private var externalDetails: ExternalReleaseDetails?
     @State private var refreshedAlbum: Release?
     @State private var isLoading = true
     @State private var trackSearchText = ""
@@ -61,11 +62,16 @@ struct AlbumView: View {
     }
 
     private var title: String {
-        album?.title ?? externalRelease?.title ?? "Álbum"
+        album?.title ?? externalDetails?.title ?? externalRelease?.title ?? "Álbum"
     }
 
     private var artistName: String {
-        album?.artist ?? externalArtist?.name ?? ""
+        if let album { return album.artist }
+        if let artist = externalDetails?.artist.trimmingCharacters(in: .whitespacesAndNewlines),
+           !artist.isEmpty {
+            return artist
+        }
+        return externalArtist?.name ?? ""
     }
 
     private var artworkID: String? {
@@ -90,8 +96,15 @@ struct AlbumView: View {
         .task(id: detailID) {
             isLoading = true
             refreshedAlbum = nil
+            externalDetails = nil
             if let album {
                 tracks = await store.tracks(forReleaseID: album.id)
+            } else if let externalRelease, let externalArtist {
+                tracks = []
+                externalDetails = await store.externalReleaseDetails(
+                    artistId: externalArtist.id,
+                    releaseGroupMbid: externalRelease.musicbrainzId
+                )
             } else {
                 tracks = []
             }
@@ -141,9 +154,7 @@ struct AlbumView: View {
                     }
 
                     if let externalRelease {
-                        Text(externalReleaseSubtitle(externalRelease))
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
+                        externalReleaseMetadata(externalRelease)
                             .padding(.top, 8)
 
                         Text("Este lançamento está disponível somente na discografia online.")
@@ -158,7 +169,10 @@ struct AlbumView: View {
             if let album, let currentAlbum {
                 localAlbumControls(album: album, currentAlbum: currentAlbum)
             } else if let externalRelease,
-                      let source = URL(string: externalRelease.attribution.sourceUrl) {
+                      let source = URL(
+                        string: externalDetails?.attribution.sourceUrl
+                            ?? externalRelease.attribution.sourceUrl
+                      ) {
                 Link("Ver no MusicBrainz", destination: source)
                     .accessibilityIdentifier("album.external.musicbrainz")
             }
@@ -381,13 +395,35 @@ struct AlbumView: View {
         return String(format: "%.1f kHz", locale: Locale(identifier: "en_US_POSIX"), Double(sampleRate) / 1_000)
     }
 
-    private func externalReleaseSubtitle(_ release: ExternalReleaseGroup) -> String {
-        let kind = release.primaryType ?? "Lançamento"
-        guard let date = release.firstReleaseDate else { return kind }
-        var components = [String(date.year)]
-        if let month = date.month { components.append(String(format: "%02d", month)) }
-        if let day = date.day { components.append(String(format: "%02d", day)) }
-        return "\(kind) · \(components.joined(separator: "-"))"
+    @ViewBuilder
+    private func externalReleaseMetadata(_ release: ExternalReleaseGroup) -> some View {
+        let metadata = externalReleaseMetadataText(release)
+        Text(metadata)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .help(metadata)
+            .textSelection(.enabled)
+            .accessibilityIdentifier("album.metadata")
+    }
+
+    private func externalReleaseMetadataText(_ release: ExternalReleaseGroup) -> String {
+        let genre = externalDetails?.genres
+            .lazy
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty })
+            ?? release.primaryType
+            ?? "Gênero desconhecido"
+        let date = externalDetails?.releaseDate ?? release.firstReleaseDate
+        let year = date.map { String($0.year) } ?? "Ano desconhecido"
+        let count = externalDetails?.tracks.count ?? 0
+        let trackLabel = count == 1 ? "1 faixa" : "\(count) faixas"
+        let duration = externalDetails.map {
+            $0.durationSeconds > 0
+                ? albumDurationText($0.durationSeconds)
+                : "Duração indisponível"
+        } ?? "Duração indisponível"
+        return [genre, year, trackLabel, duration, "MusicBrainz"].joined(separator: " • ")
     }
 
     @ViewBuilder
@@ -395,11 +431,21 @@ struct AlbumView: View {
         if isLoading {
             ProgressView("Carregando faixas…")
                 .frame(maxWidth: .infinity, alignment: .center)
+        } else if let externalDetails, !externalDetails.tracks.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(Array(externalDetails.tracks.enumerated()), id: \.offset) { index, track in
+                    externalTrackRow(track, totalDiscs: externalDetails.totalDiscs)
+
+                    if index < externalDetails.tracks.count - 1 {
+                        Divider()
+                    }
+                }
+            }
         } else if externalRelease != nil {
             ContentUnavailableView(
                 "Faixas não disponíveis",
                 systemImage: "music.note.list",
-                description: Text("O catálogo online contém os dados do lançamento, mas não oferece faixas para reprodução.")
+                description: Text("Não foi possível carregar a listagem informativa do MusicBrainz.")
             )
             .frame(maxWidth: .infinity)
         } else if tracks.isEmpty {
@@ -492,6 +538,40 @@ struct AlbumView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("album.track.\(track.id)")
+    }
+
+    private func externalTrackRow(_ track: ExternalReleaseTrack, totalDiscs: UInt32) -> some View {
+        HStack(spacing: 12) {
+            Text(totalDiscs > 1
+                 ? "\(track.discNumber).\(track.trackNumber)"
+                 : "\(track.trackNumber)")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .frame(width: 32, alignment: .trailing)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(track.title)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if !track.artist.isEmpty && track.artist != artistName {
+                    Text(track.artist)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text(track.durationSeconds.map { durationText(Double($0)) } ?? "—")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .padding(.vertical, 9)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("album.externalTrack.\(track.discNumber).\(track.trackNumber)")
     }
 
     private func trackNumber(for track: Track) -> String {

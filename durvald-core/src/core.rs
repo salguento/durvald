@@ -1225,6 +1225,18 @@ impl DurvaldCore {
             .await
     }
 
+    /// Loads track and edition metadata for one online-only MusicBrainz item.
+    pub async fn external_release_details(
+        &self,
+        artist_id: i64,
+        release_group_mbid: String,
+    ) -> CoreResult<ExternalReleaseDetails> {
+        non_negative_id(artist_id, "Artist ID")?;
+        self.enrichment
+            .external_release_details(artist_id, release_group_mbid)
+            .await
+    }
+
     pub async fn artist_identity(&self, artist_id: i64) -> CoreResult<ArtistIdentity> {
         self.enrichment.artist_identity(artist_id).await
     }

@@ -1346,6 +1346,24 @@ final class DurvaldCoreStore {
         }
     }
 
+    /// Busca, sob demanda, uma edição representativa e sua lista informativa
+    /// de faixas. Nenhuma faixa externa é adicionada à biblioteca ou à fila.
+    func externalReleaseDetails(
+        artistId: Int64,
+        releaseGroupMbid: String
+    ) async -> ExternalReleaseDetails? {
+        guard let core else { return nil }
+        do {
+            return try await core.externalReleaseDetails(
+                artistId: artistId,
+                releaseGroupMbid: releaseGroupMbid
+            )
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
     /// Solicita um lote limitado de discografia e capas. O chamador relê o
     /// snapshot local depois; falhas de rede não removem dados já publicados.
     func refreshArtistCatalog(

@@ -152,6 +152,36 @@ pub struct ExternalReleaseGroup {
     pub attribution: EnrichmentAttribution,
 }
 
+/// One non-playable track obtained from a MusicBrainz release edition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ExternalReleaseTrack {
+    pub disc_number: u32,
+    pub track_number: u32,
+    pub title: String,
+    pub artist: String,
+    pub duration_seconds: Option<u64>,
+}
+
+/// On-demand details for an online-only release group. The selected edition is
+/// informational and its tracks deliberately remain separate from local audio.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ExternalReleaseDetails {
+    pub release_group_mbid: String,
+    pub release_mbid: String,
+    pub title: String,
+    pub artist: String,
+    pub release_date: Option<ArtistPartialDate>,
+    pub genres: Vec<String>,
+    pub composers: Vec<String>,
+    pub producers: Vec<String>,
+    pub total_discs: u32,
+    pub duration_seconds: u64,
+    pub tracks: Vec<ExternalReleaseTrack>,
+    pub attribution: EnrichmentAttribution,
+}
+
 /// A bounded page of the locally stored remote catalog. `next_offset` covers
 /// stored rows; `remote_exhausted`, `remote_next_offset` and `remote_total`
 /// describe provider pagination, so reaching the local end never implies the

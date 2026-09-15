@@ -125,6 +125,8 @@ struct RemoteRelease {
 struct RemoteArtistCredit {
     name: Option<String>,
     artist: RemoteCreditArtist,
+    #[serde(default)]
+    joinphrase: String,
 }
 
 #[derive(Deserialize)]
@@ -146,6 +148,8 @@ struct RemoteTrack {
     title: String,
     length: Option<u64>,
     recording: Option<RemoteRecording>,
+    #[serde(default, rename = "artist-credit")]
+    artist_credit: Vec<RemoteArtistCredit>,
 }
 
 #[derive(Deserialize)]
@@ -385,6 +389,66 @@ impl MusicBrainz {
             .metadata(local, release_group_mbid, identity_generation, fetched_at)
     }
 
+    pub async fn external_release_details(
+        &self,
+        group: &ReleaseGroupSnapshot,
+    ) -> Result<ExternalReleaseDetails, TransportError> {
+        let release_group_mbid =
+            normalize_mbid(&group.musicbrainz_id).ok_or(TransportError::InvalidRequest)?;
+        let response = self
+            .http
+            .get_json::<RemoteReleasesPage>(
+                "ws/2/release/",
+                &[
+                    ("release-group", &release_group_mbid),
+                    ("fmt", "json"),
+                    (
+                        "inc",
+                        "recordings+artist-credits+media+genres+artist-rels+recording-level-rels+work-rels+work-level-rels",
+                    ),
+                    ("limit", "100"),
+                ],
+                &CacheValidators::default(),
+            )
+            .await?;
+        let JsonResponse::Modified { body, .. } = response else {
+            return Err(TransportError::InvalidJson);
+        };
+        if body.offset != 0 || body.releases.is_empty() {
+            return Err(TransportError::InvalidJson);
+        }
+        let group_date = group.first_release_date.as_ref().map(partial_date_text);
+        let mut releases = body.releases;
+        releases.sort_by(|left, right| {
+            let rank = |release: &RemoteRelease| {
+                let track_count = release
+                    .media
+                    .iter()
+                    .map(|medium| medium.tracks.len())
+                    .sum::<usize>();
+                (
+                    normalized_match_text(&release.title) != normalized_match_text(&group.title),
+                    track_count == 0,
+                    !group_date.as_deref().is_some_and(|date| {
+                        release
+                            .date
+                            .as_deref()
+                            .is_some_and(|value| value.starts_with(date))
+                    }),
+                    release.date.clone().unwrap_or_else(|| "9999".into()),
+                    std::cmp::Reverse(track_count),
+                    release.id.clone(),
+                )
+            };
+            rank(left).cmp(&rank(right))
+        });
+        releases
+            .into_iter()
+            .next()
+            .ok_or(TransportError::InvalidJson)?
+            .into_external_details(group)
+    }
+
     async fn discography_with_limits(
         &self,
         mbid: &str,
@@ -531,6 +595,80 @@ impl MusicBrainz {
 }
 
 impl RemoteRelease {
+    fn into_external_details(
+        self,
+        group: &ReleaseGroupSnapshot,
+    ) -> Result<ExternalReleaseDetails, TransportError> {
+        let release_mbid = normalize_mbid(&self.id).ok_or(TransportError::InvalidJson)?;
+        let artist = display_artist_credit(&self.artist_credit)?;
+        let release_date = normalize_partial_date(self.date.as_deref())?;
+        let mut composers = Vec::new();
+        let mut producers = Vec::new();
+        collect_artist_relations(&self.relations, &mut composers, &mut producers)?;
+        let mut tracks = Vec::new();
+        for medium in &self.media {
+            for track in &medium.tracks {
+                let recording = track.recording.as_ref();
+                if let Some(recording) = recording {
+                    collect_recording_relations(recording, &mut composers, &mut producers)?;
+                }
+                let title = recording.map_or(track.title.as_str(), |value| value.title.as_str());
+                let title =
+                    normalize_text(title, MAX_JSON_BYTES)?.ok_or(TransportError::InvalidJson)?;
+                let track_artist = display_artist_credit(&track.artist_credit)?;
+                tracks.push(ExternalReleaseTrack {
+                    disc_number: medium.position,
+                    track_number: track.position,
+                    title,
+                    artist: if track_artist.is_empty() {
+                        artist.clone()
+                    } else {
+                        track_artist
+                    },
+                    duration_seconds: track
+                        .length
+                        .or_else(|| recording.and_then(|value| value.length))
+                        .map(|milliseconds| milliseconds.div_ceil(1_000)),
+                });
+            }
+        }
+        tracks.sort_by_key(|track| (track.disc_number, track.track_number));
+        let total_discs = tracks
+            .iter()
+            .map(|track| track.disc_number)
+            .max()
+            .unwrap_or(0);
+        let duration_seconds = tracks
+            .iter()
+            .filter_map(|track| track.duration_seconds)
+            .sum();
+        let genres = normalize_genres(self.genres)?;
+        Ok(ExternalReleaseDetails {
+            release_group_mbid: group.musicbrainz_id.clone(),
+            release_mbid: release_mbid.clone(),
+            title: group.title.clone(),
+            artist,
+            release_date: release_date.or_else(|| group.first_release_date.clone()),
+            genres: if genres.is_empty() {
+                group.genres.clone()
+            } else {
+                genres
+            },
+            composers,
+            producers,
+            total_discs,
+            duration_seconds,
+            tracks,
+            attribution: EnrichmentAttribution {
+                source_url: format!("https://musicbrainz.org/release/{release_mbid}"),
+                author: Some("MusicBrainz contributors".into()),
+                license_name: Some("CC0 1.0".into()),
+                license_url: Some("https://creativecommons.org/publicdomain/zero/1.0/".into()),
+                revision: None,
+            },
+        })
+    }
+
     fn matches(&self, local: &LocalReleaseMatchContext) -> bool {
         if normalized_match_text(&self.title) != normalized_match_text(&local.title)
             || !self.artist_credit.iter().any(|credit| {
@@ -633,6 +771,27 @@ impl RemoteRelease {
             source_url: format!("https://musicbrainz.org/release/{}", self.id),
             fetched_at,
         }))
+    }
+}
+
+fn display_artist_credit(credits: &[RemoteArtistCredit]) -> Result<String, TransportError> {
+    let mut result = String::new();
+    for credit in credits {
+        let name = credit.name.as_deref().unwrap_or(&credit.artist.name);
+        let Some(name) = normalize_text(name, 500)? else {
+            continue;
+        };
+        result.push_str(&name);
+        result.push_str(&credit.joinphrase);
+    }
+    Ok(result.trim().to_owned())
+}
+
+fn partial_date_text(date: &ArtistPartialDate) -> String {
+    match (date.month, date.day) {
+        (Some(month), Some(day)) => format!("{:04}-{month:02}-{day:02}", date.year),
+        (Some(month), None) => format!("{:04}-{month:02}", date.year),
+        _ => format!("{:04}", date.year),
     }
 }
 
@@ -1119,5 +1278,52 @@ mod tests {
             ).await,
             Ok(ProviderResponse::NotModified { validators: received }) if received == validators
         ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn external_details_choose_a_tracklisted_edition_and_normalize_credits() {
+        let (http, mock) = client(vec![response(
+            200,
+            &[],
+            &[r#"{
+                "release-count":2,"release-offset":0,"releases":[
+                    {"id":"AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA","title":"Album","date":"2001","artist-credit":[{"name":"Artist","artist":{"id":"11111111-1111-4111-8111-111111111111","name":"Artist"}}],"media":[]},
+                    {"id":"BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB","title":"Album","date":"2001-02-03","artist-credit":[{"name":"Artist","artist":{"id":"11111111-1111-4111-8111-111111111111","name":"Artist"}}],"genres":[{"name":"Electronic","count":5}],"media":[{"position":1,"tracks":[{"position":1,"title":"Track One","length":61001,"artist-credit":[{"name":"Guest","artist":{"id":"22222222-2222-4222-8222-222222222222","name":"Guest"}}],"recording":{"title":"Track One","length":61001,"relations":[]}}]}]}
+                ]
+            }"#],
+            None,
+        )]);
+        let group = ReleaseGroupSnapshot {
+            musicbrainz_id: "33333333-3333-4333-8333-333333333333".into(),
+            title: "Album".into(),
+            primary_type: Some("Album".into()),
+            secondary_types: vec![],
+            first_release_date: Some(ArtistPartialDate {
+                year: 2001,
+                month: None,
+                day: None,
+            }),
+            genres: vec![],
+            composers: vec![],
+            producers: vec![],
+            attribution: EnrichmentAttribution {
+                source_url: String::new(),
+                author: None,
+                license_name: None,
+                license_url: None,
+                revision: None,
+            },
+        };
+        let details = MusicBrainz { http }
+            .external_release_details(&group)
+            .await
+            .unwrap();
+        assert_eq!(details.release_mbid, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+        assert_eq!(details.artist, "Artist");
+        assert_eq!(details.genres, vec!["Electronic"]);
+        assert_eq!(details.duration_seconds, 62);
+        assert_eq!(details.tracks[0].artist, "Guest");
+        assert_eq!(details.tracks[0].duration_seconds, Some(62));
+        assert_eq!(mock.calls(), 1);
     }
 }

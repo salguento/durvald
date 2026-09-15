@@ -9,6 +9,9 @@ import SwiftUI
 
 struct HistoryView: View {
     @Environment(DurvaldCoreStore.self) private var store
+    private static let playbackTimestamp = Date.ISO8601FormatStyle(
+        includingFractionalSeconds: true
+    )
 
     var body: some View {
         List(store.history, id: \.id) { item in
@@ -17,7 +20,7 @@ struct HistoryView: View {
             VStack(alignment: .leading) {
                 Text(track?.title ?? "Música #\(item.trackId)")
                     .activeTrackTitle(trackID: item.trackId)
-                Text(item.playedAt)
+                Text(formattedPlaybackDate(item.playedAt))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -32,5 +35,12 @@ struct HistoryView: View {
                 try? await Task.sleep(for: .seconds(1))
             }
         }
+    }
+
+    private func formattedPlaybackDate(_ timestamp: String) -> String {
+        guard let date = try? Self.playbackTimestamp.parse(timestamp) else {
+            return timestamp
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 }
