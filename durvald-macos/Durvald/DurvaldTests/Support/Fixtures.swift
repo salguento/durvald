@@ -4,7 +4,8 @@ enum Fixtures {
     static var release: Release {
         Release(
             id: 1, title: "Álbum", artist: "Artista", artistId: 1,
-            releaseDate: nil, totalTracks: 1, totalDiscs: 1, durationSeconds: 180,
+            releaseDate: nil, genres: [], composers: [], producers: [],
+            totalTracks: 1, totalDiscs: 1, durationSeconds: 180,
             artworkId: nil, isFavorite: false, isHidden: false, suggestLess: false, rating: nil
         )
     }
@@ -32,6 +33,7 @@ enum Fixtures {
             artworkId: nil,
             bitrate: nil,
             sampleRate: nil,
+            bitDepth: nil,
             playCount: 0,
             lastPlayed: nil,
             rating: nil,

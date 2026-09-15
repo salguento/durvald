@@ -2754,13 +2754,11 @@ mod tests {
             wikidata::Wikidata,
         },
         transport::{
-            EnrichmentHttpClient, tests::client, tests::client_for, tests::response,
-            tests::response_bytes,
+            tests::client, tests::client_for, tests::response, tests::response_bytes,
         },
     };
     use super::*;
     use std::io::Cursor;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     fn test_lastfm_client() -> Arc<crate::lastfm::LastFmClient> {
         let directory = std::env::temp_dir().join(format!(
@@ -2993,35 +2991,22 @@ mod tests {
         let _ = std::fs::remove_file(path.with_extension("sqlite-shm"));
     }
 
-    /// Real loopback HTTP plus SQLite: gates hold no database connection, and
-    /// subscribers can cancel independently while a manual correction wins.
+    /// Delayed in-memory HTTP plus SQLite: gates hold no database connection,
+    /// and subscribers can cancel independently while a manual correction wins.
     #[tokio::test]
     async fn shared_http_releases_database_and_discards_response_after_confirmation() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}/", listener.local_addr().unwrap());
-        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut request = vec![0; 8192];
-            let count = socket.read(&mut request).await.unwrap();
-            let request = String::from_utf8_lossy(&request[..count]);
-            assert!(request.starts_with("GET /ws/2/artist/"));
-            assert!(request.contains("query=artist%3A%22Same+Name%22"));
-            started_tx.send(()).unwrap();
-            release_rx.await.unwrap();
-            let body = include_str!("../../tests/fixtures/musicbrainz-homonyms.json");
-            socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
-        });
-        let service = service();
-        assert!(
-            service
-                .musicbrainz
-                .set(Ok(MusicBrainz {
-                    http: EnrichmentHttpClient::local_test_client(&base)
-                }))
-                .is_ok()
+        let mut delayed = response(
+            200,
+            &[],
+            &[include_str!(
+                "../../tests/fixtures/musicbrainz-homonyms.json"
+            )],
+            None,
         );
+        delayed.delay = std::time::Duration::from_secs(1);
+        let (http, mock) = client(vec![delayed]);
+        let service = service();
+        assert!(service.musicbrainz.set(Ok(MusicBrainz { http })).is_ok());
         service
             .configure(EnrichmentSettings {
                 enabled: true,
@@ -3032,7 +3017,14 @@ mod tests {
             .unwrap();
         let first_service = service.clone();
         let first = tokio::spawn(async move { first_service.resolve_artist_candidates(1).await });
-        started_rx.await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while mock.calls() == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(mock.urls()[0].contains("query=artist%3A%22Same+Name%22"));
         let second_service = service.clone();
         let second = tokio::spawn(async move { second_service.resolve_artist_candidates(1).await });
         // Wait until the second subscriber has joined the same flight.
@@ -3062,12 +3054,10 @@ mod tests {
         .await
         .unwrap()
         .unwrap();
-        release_tx.send(()).unwrap();
         let result = second.await.unwrap().unwrap();
         assert_eq!(result.identity, confirmed);
         assert_eq!(result.lookup_status, ArtistIdentityLookupStatus::Superseded);
         assert!(result.candidates.is_empty());
-        server.await.unwrap();
     }
 
     #[tokio::test]

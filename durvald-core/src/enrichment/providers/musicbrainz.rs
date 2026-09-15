@@ -1181,7 +1181,14 @@ mod tests {
                 day: None
             })
         );
-        assert_eq!(first.attribution.license_name.as_deref(), Some("CC0 1.0"));
+        assert_eq!(
+            first.attribution.license_name.as_deref(),
+            Some("CC BY-SA 3.0")
+        );
+        assert_eq!(
+            first.attribution.license_url.as_deref(),
+            Some("https://creativecommons.org/licenses/by-sa/3.0/")
+        );
         assert!(mock.urls()[0].contains("limit=100"));
         assert!(mock.urls()[0].contains("offset=0"));
         assert!(mock.urls()[1].contains("offset=2"));

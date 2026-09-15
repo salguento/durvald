@@ -2936,8 +2936,9 @@ mod tests {
 
     #[test]
     fn metadata_persistence_reports_added_and_updated_tracks() {
-        let conn = Connection::open_in_memory().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
         create_tables(&conn).unwrap();
+        crate::database::migrations::migrate_enrichment(&mut conn).unwrap();
         let track = metadata("Artist", "Album", 2024);
 
         assert!(persist_metadata(&conn, vec![track.clone()], vec![]).is_err());
@@ -3249,8 +3250,9 @@ mod tests {
 
     #[test]
     fn search_is_bounded_pageable_and_tracks_content_changes() {
-        let conn = Connection::open_in_memory().unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
         create_tables(&conn).unwrap();
+        crate::database::migrations::migrate_enrichment(&mut conn).unwrap();
         for artist_id in 1..=105 {
             conn.execute(
                 "INSERT INTO artists (artist_id, name) VALUES (?1, ?2)",

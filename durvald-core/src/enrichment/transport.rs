@@ -230,17 +230,6 @@ fn network_error(error: reqwest::Error) -> TransportError {
 }
 
 impl EnrichmentHttpClient {
-    #[cfg(test)]
-    pub(crate) fn local_test_client(base: &str) -> Self {
-        Self::build(
-            Url::parse(base).unwrap(),
-            Arc::new(ProviderGate::new(Duration::ZERO)),
-            TransportPolicy::default(),
-            "DurvaldTest/1.0 (local fixture)",
-        )
-        .unwrap()
-    }
-
     /// `wikipedia_edition` must be a resolved edition, not an arbitrary user locale.
     /// A meaningful User-Agent (application/version and contact) comes from the adapter.
     pub fn new(
