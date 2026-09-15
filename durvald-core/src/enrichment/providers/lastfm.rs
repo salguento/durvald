@@ -1,6 +1,6 @@
 //! Last.fm artist metadata adapter over the application's shared client.
 
-use crate::api::{ArtistEntityKind, ArtistProfile, EnrichmentAttribution};
+use crate::api::{ArtistEntityKind, ArtistPopularTrack, ArtistProfile, EnrichmentAttribution};
 use crate::enrichment::models::{CacheValidators, ProviderResponse};
 use crate::enrichment::transport::TransportError;
 #[cfg(test)]
@@ -33,6 +33,28 @@ pub struct LastFmPortrait {
 #[derive(Debug, Deserialize)]
 struct ArtistInfoResponse {
     artist: RemoteArtist,
+}
+
+#[derive(Debug, Deserialize)]
+struct TopTracksResponse {
+    toptracks: RemoteTopTracks,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteTopTracks {
+    track: Vec<RemoteTopTrack>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteTopTrack {
+    name: String,
+    #[serde(default)]
+    mbid: String,
+    url: String,
+    #[serde(default, deserialize_with = "deserialize_u64")]
+    playcount: u64,
+    #[serde(default, deserialize_with = "deserialize_u64")]
+    listeners: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +136,43 @@ impl LastFm {
         }
     }
 
+    pub async fn top_tracks(
+        &self,
+        mbid: &str,
+        validators: &CacheValidators,
+    ) -> Result<ProviderResponse<(Vec<ArtistPopularTrack>, i64)>, TransportError> {
+        let mbid = crate::enrichment::identity::normalize_mbid(mbid)
+            .ok_or(TransportError::InvalidRequest)?;
+        let response = self
+            .client
+            .get_metadata_json(
+                "artist.getTopTracks",
+                &[("mbid", &mbid), ("limit", "10"), ("autocorrect", "0")],
+                validators,
+            )
+            .await
+            .map_err(map_error)?;
+        match response {
+            LastFmMetadataResponse::NotModified { headers } => Ok(ProviderResponse::NotModified {
+                validators: headers.validators,
+            }),
+            LastFmMetadataResponse::Modified { body, headers } => {
+                let remote: TopTracksResponse =
+                    serde_json::from_value(body).map_err(|_| TransportError::InvalidJson)?;
+                let tracks = normalize_top_tracks(remote.toptracks.track)?;
+                let expires_at = cache_expiry(
+                    &headers,
+                    chrono::Utc::now().timestamp(),
+                    crate::enrichment::policy::POPULAR_TRACKS_TTL,
+                );
+                Ok(ProviderResponse::Modified {
+                    value: (tracks, expires_at),
+                    validators: headers.validators,
+                })
+            }
+        }
+    }
+
     pub async fn download(&self, url: &str) -> Result<Vec<u8>, TransportError> {
         self.client
             .download_metadata_image(url)
@@ -124,6 +183,11 @@ impl LastFm {
     #[cfg(test)]
     pub(crate) fn shares_client(&self, client: &Arc<LastFmClient>) -> bool {
         Arc::ptr_eq(&self.client, client)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metadata_query_count(&self) -> usize {
+        self.client.metadata_query_count()
     }
 }
 
@@ -176,7 +240,11 @@ fn normalize_artist_info(
     Ok(LastFmArtistInfo {
         profile,
         portrait,
-        expires_at: cache_expiry(&headers, chrono::Utc::now().timestamp()),
+        expires_at: cache_expiry(
+            &headers,
+            chrono::Utc::now().timestamp(),
+            crate::enrichment::policy::PROFILE_TTL,
+        ),
     })
 }
 
@@ -213,6 +281,77 @@ fn normalize_biography(bio: &RemoteBio) -> Option<String> {
     (!text.is_empty() && text.len() <= 100_000).then_some(text)
 }
 
+fn normalize_top_tracks(
+    tracks: Vec<RemoteTopTrack>,
+) -> Result<Vec<ArtistPopularTrack>, TransportError> {
+    tracks
+        .into_iter()
+        .take(10)
+        .enumerate()
+        .map(|(index, track)| {
+            let title = track.title_or_name();
+            if title.is_empty() || title.len() > 500 {
+                return Err(TransportError::InvalidJson);
+            }
+            let lastfm_url = normalize_lastfm_url(&track.url).ok_or(TransportError::InvalidJson)?;
+            let musicbrainz_id = if track.mbid.trim().is_empty() {
+                None
+            } else {
+                Some(
+                    crate::enrichment::identity::normalize_mbid(&track.mbid)
+                        .ok_or(TransportError::InvalidJson)?,
+                )
+            };
+            Ok(ArtistPopularTrack {
+                rank: index as u32 + 1,
+                title: title.to_owned(),
+                musicbrainz_id,
+                play_count: track.playcount,
+                listeners: track.listeners,
+                lastfm_url,
+                local_track_id: None,
+            })
+        })
+        .collect()
+}
+
+impl RemoteTopTrack {
+    fn title_or_name(&self) -> &str {
+        self.name.trim()
+    }
+}
+
+fn normalize_lastfm_url(value: &str) -> Option<String> {
+    let mut url = reqwest::Url::parse(value.trim()).ok()?;
+    if !matches!(url.host_str()?, "www.last.fm" | "last.fm")
+        || !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+    {
+        return None;
+    }
+    url.set_scheme("https").ok()?;
+    Some(url.to_string())
+}
+
+fn deserialize_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Number {
+        Integer(u64),
+        Text(String),
+    }
+    match Option::<Number>::deserialize(deserializer)? {
+        None => Ok(0),
+        Some(Number::Integer(value)) => Ok(value),
+        Some(Number::Text(value)) => value.trim().parse().map_err(serde::de::Error::custom),
+    }
+}
+
 fn strip_html(value: &str) -> String {
     let mut result = String::with_capacity(value.len());
     let mut in_tag = false;
@@ -244,7 +383,7 @@ fn image_rank(size: &str) -> u8 {
     }
 }
 
-fn cache_expiry(headers: &LastFmResponseHeaders, now: i64) -> i64 {
+fn cache_expiry(headers: &LastFmResponseHeaders, now: i64, fallback: std::time::Duration) -> i64 {
     const MAX_CACHE_SECONDS: i64 = 90 * 24 * 60 * 60;
     let max_age = headers.cache_control.as_deref().and_then(|value| {
         value.split(',').find_map(|directive| {
@@ -261,7 +400,7 @@ fn cache_expiry(headers: &LastFmResponseHeaders, now: i64) -> i64 {
     });
     let seconds = max_age
         .or(expires)
-        .unwrap_or(crate::enrichment::policy::PROFILE_TTL.as_secs() as i64)
+        .unwrap_or(fallback.as_secs() as i64)
         .clamp(0, MAX_CACHE_SECONDS);
     now.saturating_add(seconds)
 }
@@ -393,6 +532,49 @@ mod tests {
                 message: "key".into()
             }),
             TransportError::Configuration
+        );
+    }
+
+    #[test]
+    fn top_tracks_normalize_string_counts_empty_mbids_and_limit() {
+        let remote: TopTracksResponse = serde_json::from_value(serde_json::json!({
+            "toptracks": {
+                "track": (0..12).map(|index| serde_json::json!({
+                    "name": format!("Track {index}"),
+                    "mbid": if index == 0 { "11111111-1111-4111-8111-111111111111" } else { "" },
+                    "url": format!("http://www.last.fm/music/Artist/_/Track+{index}"),
+                    "playcount": format!("{}", 100 - index),
+                    "listeners": 50 - index
+                })).collect::<Vec<_>>()
+            }
+        }))
+        .unwrap();
+        let tracks = normalize_top_tracks(remote.toptracks.track).unwrap();
+        assert_eq!(tracks.len(), 10);
+        assert_eq!(tracks[0].rank, 1);
+        assert_eq!(tracks[0].play_count, 100);
+        assert_eq!(tracks[0].listeners, 50);
+        assert!(tracks[0].musicbrainz_id.is_some());
+        assert!(tracks[1].musicbrainz_id.is_none());
+        assert!(
+            tracks
+                .iter()
+                .all(|track| track.lastfm_url.starts_with("https://"))
+        );
+        assert!(tracks.iter().all(|track| track.local_track_id.is_none()));
+    }
+
+    #[test]
+    fn malformed_top_tracks_payload_is_rejected() {
+        assert!(
+            serde_json::from_value::<TopTracksResponse>(serde_json::json!({
+                "toptracks": {"track": [{
+                    "name": "Track",
+                    "url": "https://www.last.fm/music/Artist/_/Track",
+                    "playcount": "not-a-number"
+                }]}
+            }))
+            .is_err()
         );
     }
 }

@@ -457,6 +457,32 @@ BEGIN
 END;
 "#;
 
+// Last.fm popularity is an ordered atomic representation. Keeping one JSON
+// payload avoids exposing a partially replaced ranking during refresh.
+const ARTIST_POPULAR_TRACKS: &str = r#"
+CREATE TABLE artist_popular_tracks (
+    artist_id INTEGER NOT NULL REFERENCES artist_enrichment_state(artist_id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    identity_generation INTEGER NOT NULL CHECK (identity_generation >= 0),
+    payload_version INTEGER NOT NULL DEFAULT 1,
+    payload TEXT NOT NULL CHECK (json_valid(payload)),
+    fetched_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL CHECK (expires_at >= fetched_at),
+    etag TEXT,
+    last_modified TEXT,
+    PRIMARY KEY (artist_id, provider)
+);
+CREATE INDEX idx_artist_popular_tracks_expiry
+    ON artist_popular_tracks(provider, expires_at);
+CREATE TRIGGER invalidate_artist_popular_tracks_identity
+AFTER UPDATE OF generation ON artist_enrichment_state
+WHEN NEW.generation != OLD.generation
+BEGIN
+    DELETE FROM artist_popular_tracks
+    WHERE artist_id = NEW.artist_id AND identity_generation != NEW.generation;
+END;
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -476,6 +502,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (13, LOCAL_RELEASE_METADATA),
             (14, AGGREGATE_IDENTITY_INVALIDATION),
             (15, EXTERNAL_RELEASE_DETAILS_CACHE),
+            (16, ARTIST_POPULAR_TRACKS),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -546,7 +573,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            15
+            16
         );
     }
 
@@ -661,7 +688,7 @@ mod tests {
                     (13, LOCAL_RELEASE_METADATA),
                     (14, AGGREGATE_IDENTITY_INVALIDATION),
                     (
-                        16,
+                        17,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -674,7 +701,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            15
+            16
         );
     }
 

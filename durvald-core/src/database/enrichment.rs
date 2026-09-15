@@ -7,8 +7,8 @@ use crate::enrichment::models::{
     DiscographyPageSnapshot, DiscographyRefreshState, ExternalArtworkNegativeSnapshot,
     ExternalArtworkRefreshPlan, ExternalArtworkRefreshTarget, ExternalArtworkSnapshot,
     ExternalArtworkStoreOutcome, ExternalReleaseDetailsSnapshot, LocalReleaseMatchContext,
-    LocalReleaseTrackContext, MatchedReleaseMetadata, ProfileSnapshot, ProviderFailureSnapshot,
-    ReleaseGroupSnapshot,
+    LocalReleaseTrackContext, MatchedReleaseMetadata, PopularTracksSnapshot, ProfileSnapshot,
+    ProviderFailureSnapshot, ReleaseGroupSnapshot,
 };
 use crate::enrichment::policy::{MAX_JSON_BYTES, normalize_language, normalized_settings};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -2804,6 +2804,149 @@ pub fn store_external_release_details(
     Ok(true)
 }
 
+pub fn popular_tracks_snapshot(
+    conn: &Connection,
+    artist_id: i64,
+) -> CoreResult<Option<PopularTracksSnapshot>> {
+    if artist_id < 0 {
+        return Err(invalid("Artist ID must be non-negative"));
+    }
+    conn.query_row(
+        "SELECT p.identity_generation, p.payload_version, p.payload, p.fetched_at,
+                p.expires_at, p.etag, p.last_modified
+         FROM artist_popular_tracks p
+         JOIN artist_enrichment_state s
+           ON s.artist_id = p.artist_id AND s.generation = p.identity_generation
+         WHERE p.artist_id = ?1 AND p.provider = 'last_fm'
+           AND s.identity_status = 'resolved'",
+        [artist_id],
+        |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+            ))
+        },
+    )
+    .optional()
+    .map_err(storage)?
+    .map(
+        |(generation, version, payload, fetched_at, expires_at, etag, last_modified)| {
+            if version != 1 || payload.len() > MAX_JSON_BYTES {
+                return Err(storage("Unsupported popular tracks payload"));
+            }
+            Ok(PopularTracksSnapshot {
+                artist_id,
+                identity_generation: u64::try_from(generation).map_err(storage)?,
+                items: serde_json::from_str(&payload).map_err(storage)?,
+                fetched_at,
+                expires_at,
+                validators: CacheValidators {
+                    etag,
+                    last_modified,
+                },
+            })
+        },
+    )
+    .transpose()
+}
+
+pub fn store_popular_tracks(
+    conn: &Connection,
+    snapshot: &PopularTracksSnapshot,
+) -> CoreResult<bool> {
+    if snapshot.artist_id < 0
+        || snapshot.expires_at < snapshot.fetched_at
+        || snapshot.items.len() > 10
+    {
+        return Err(invalid("Invalid popular tracks snapshot"));
+    }
+    for (index, item) in snapshot.items.iter().enumerate() {
+        if item.rank != index as u32 + 1
+            || item.title.trim().is_empty()
+            || item.title.len() > 500
+            || item.local_track_id.is_some_and(|id| id < 0)
+        {
+            return Err(invalid("Invalid popular track"));
+        }
+    }
+    let generation = i64::try_from(snapshot.identity_generation).map_err(storage)?;
+    let payload = serde_json::to_string(&snapshot.items).map_err(storage)?;
+    if payload.len() > MAX_JSON_BYTES {
+        return Err(invalid("Popular tracks payload exceeds size limit"));
+    }
+    let changed = conn
+        .execute(
+            "INSERT INTO artist_popular_tracks
+             (artist_id, provider, identity_generation, payload_version, payload,
+              fetched_at, expires_at, etag, last_modified)
+             SELECT ?1, 'last_fm', ?2, 1, ?3, ?4, ?5, ?6, ?7
+             WHERE EXISTS (
+                 SELECT 1 FROM artist_enrichment_state
+                 WHERE artist_id = ?1 AND generation = ?2 AND identity_status = 'resolved'
+             )
+             ON CONFLICT (artist_id, provider) DO UPDATE SET
+               identity_generation = excluded.identity_generation,
+               payload_version = excluded.payload_version,
+               payload = excluded.payload,
+               fetched_at = excluded.fetched_at,
+               expires_at = excluded.expires_at,
+               etag = excluded.etag,
+               last_modified = excluded.last_modified
+             WHERE artist_popular_tracks.identity_generation != excluded.identity_generation
+                OR artist_popular_tracks.fetched_at <= excluded.fetched_at",
+            params![
+                snapshot.artist_id,
+                generation,
+                payload,
+                snapshot.fetched_at,
+                snapshot.expires_at,
+                snapshot.validators.etag,
+                snapshot.validators.last_modified,
+            ],
+        )
+        .map_err(storage)?;
+    Ok(changed == 1)
+}
+
+pub fn touch_popular_tracks(
+    conn: &Connection,
+    artist_id: i64,
+    identity_generation: u64,
+    fetched_at: i64,
+    expires_at: i64,
+    validators: &CacheValidators,
+) -> CoreResult<bool> {
+    if artist_id < 0 || expires_at < fetched_at {
+        return Err(invalid("Invalid popular tracks expiry"));
+    }
+    let generation = i64::try_from(identity_generation).map_err(storage)?;
+    let changed = conn
+        .execute(
+            "UPDATE artist_popular_tracks
+             SET fetched_at = ?3, expires_at = ?4, etag = ?5, last_modified = ?6
+             WHERE artist_id = ?1 AND provider = 'last_fm' AND identity_generation = ?2
+               AND EXISTS (
+                 SELECT 1 FROM artist_enrichment_state
+                 WHERE artist_id = ?1 AND generation = ?2 AND identity_status = 'resolved'
+               )",
+            params![
+                artist_id,
+                generation,
+                fetched_at,
+                expires_at,
+                validators.etag,
+                validators.last_modified,
+            ],
+        )
+        .map_err(storage)?;
+    Ok(changed == 1)
+}
+
 pub fn set_override(
     conn: &Connection,
     artist_id: i64,
@@ -3574,6 +3717,64 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_assets", [], |row| row
                 .get::<_, i64>(0))
                 .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn popular_tracks_are_atomic_generation_scoped_snapshots() {
+        let conn = database();
+        crate::database::identity::read(&conn, 7).unwrap();
+        conn.execute(
+            "UPDATE artist_enrichment_state
+             SET identity_status = 'resolved',
+                 musicbrainz_id = '11111111-1111-4111-8111-111111111111'",
+            [],
+        )
+        .unwrap();
+        let snapshot = PopularTracksSnapshot {
+            artist_id: 7,
+            identity_generation: 0,
+            items: vec![ArtistPopularTrack {
+                rank: 1,
+                title: "Clockwork Orange".into(),
+                musicbrainz_id: None,
+                play_count: 42,
+                listeners: 21,
+                lastfm_url: "https://www.last.fm/music/Wendy+Carlos/_/Clockwork+Orange".into(),
+                local_track_id: None,
+            }],
+            fetched_at: 100,
+            expires_at: 200,
+            validators: CacheValidators {
+                etag: Some("ranking-v1".into()),
+                last_modified: None,
+            },
+        };
+        assert!(store_popular_tracks(&conn, &snapshot).unwrap());
+        assert_eq!(
+            popular_tracks_snapshot(&conn, 7).unwrap().unwrap().items,
+            snapshot.items
+        );
+
+        let mut stale_generation = snapshot.clone();
+        stale_generation.identity_generation = 1;
+        stale_generation.fetched_at = 101;
+        assert!(!store_popular_tracks(&conn, &stale_generation).unwrap());
+        assert_eq!(
+            popular_tracks_snapshot(&conn, 7).unwrap().unwrap().items,
+            snapshot.items
+        );
+
+        conn.execute("UPDATE artist_enrichment_state SET generation = 1", [])
+            .unwrap();
+        assert!(popular_tracks_snapshot(&conn, 7).unwrap().is_none());
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM artist_popular_tracks", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .unwrap(),
             0
         );
     }

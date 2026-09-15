@@ -1,4 +1,6 @@
-use crate::api::{ArtistPartialDate, ArtistProfile, EnrichmentAttribution, EnrichmentProvider};
+use crate::api::{
+    ArtistPartialDate, ArtistPopularTrack, ArtistProfile, EnrichmentAttribution, EnrichmentProvider,
+};
 
 /// Conditional-request metadata stays internal to Rust.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -67,6 +69,16 @@ pub struct ExternalReleaseDetailsSnapshot {
     pub artist_id: i64,
     pub identity_generation: u64,
     pub details: crate::api::ExternalReleaseDetails,
+    pub fetched_at: i64,
+    pub expires_at: i64,
+    pub validators: CacheValidators,
+}
+
+#[derive(Debug, Clone)]
+pub struct PopularTracksSnapshot {
+    pub artist_id: i64,
+    pub identity_generation: u64,
+    pub items: Vec<ArtistPopularTrack>,
     pub fetched_at: i64,
     pub expires_at: i64,
     pub validators: CacheValidators,

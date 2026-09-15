@@ -1346,6 +1346,18 @@ final class DurvaldCoreStore {
         }
     }
 
+    /// Lê exclusivamente o ranking Last.fm persistido pelo core. Abrir a tela
+    /// do artista nunca dispara uma consulta ao provedor.
+    func artistPopularTracks(artistId: Int64) async -> ArtistPopularTracks? {
+        guard let core else { return nil }
+        do {
+            return try await core.artistPopularTracks(artistId: artistId)
+        } catch {
+            errorMessage = String(describing: error)
+            return nil
+        }
+    }
+
     /// Busca, sob demanda, uma edição representativa e sua lista informativa
     /// de faixas. Nenhuma faixa externa é adicionada à biblioteca ou à fila.
     func externalReleaseDetails(

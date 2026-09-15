@@ -482,6 +482,32 @@ impl EnrichmentService {
         .await
     }
 
+    /// Reads only the current SQLite snapshot. This method never starts a
+    /// provider request and deliberately returns stale data while offline.
+    pub async fn artist_popular_tracks(
+        &self,
+        artist_id: i64,
+    ) -> CoreResult<Option<ArtistPopularTracks>> {
+        if artist_id < 0 {
+            return Err(CoreError::InvalidInput {
+                message: "Artist ID must be non-negative".into(),
+            });
+        }
+        let now = chrono::Utc::now().timestamp();
+        self.database(move |conn| enrichment::popular_tracks_snapshot(conn, artist_id))
+            .await
+            .map(|snapshot| {
+                snapshot.map(|snapshot| ArtistPopularTracks {
+                    artist_id: snapshot.artist_id,
+                    identity_generation: snapshot.identity_generation,
+                    items: snapshot.items,
+                    fetched_at: snapshot.fetched_at,
+                    expires_at: snapshot.expires_at,
+                    stale: now >= snapshot.expires_at,
+                })
+            })
+    }
+
     pub async fn external_release_details(
         &self,
         artist_id: i64,
@@ -684,11 +710,18 @@ impl EnrichmentService {
                     .contains(&ArtistRefreshSection::Discography),
             ) << 2)
             | (u8::from(request.sections.contains(&ArtistRefreshSection::Covers)) << 3);
+        let sections = sections
+            | (u8::from(
+                request
+                    .sections
+                    .contains(&ArtistRefreshSection::PopularTracks),
+            ) << 4);
         request.sections = [
             ArtistRefreshSection::Profile,
             ArtistRefreshSection::Portrait,
             ArtistRefreshSection::Discography,
             ArtistRefreshSection::Covers,
+            ArtistRefreshSection::PopularTracks,
         ]
         .into_iter()
         .filter(|section| request.sections.contains(section))
@@ -793,6 +826,9 @@ impl EnrichmentService {
             .sections
             .contains(&ArtistRefreshSection::Discography);
         let requested_covers = request.sections.contains(&ArtistRefreshSection::Covers);
+        let requested_popular_tracks = request
+            .sections
+            .contains(&ArtistRefreshSection::PopularTracks);
         let mut results = Vec::new();
         if requested_profile || requested_portrait {
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
@@ -907,11 +943,115 @@ impl EnrichmentService {
                 diagnostic,
             ));
         }
+        if requested_popular_tracks {
+            let (status, retry_after_seconds, diagnostic) = match self
+                .refresh_popular_tracks_once(&identity, request.force)
+                .await
+            {
+                Ok(status) => (status, None, None),
+                Err(error) => refresh_transport_error(&error),
+            };
+            results.push(refresh_section_result(
+                ArtistRefreshSection::PopularTracks,
+                status,
+                retry_after_seconds,
+                None,
+                diagnostic,
+            ));
+        }
         Ok(ArtistRefreshResult {
             artist_id,
             identity_generation: identity.generation,
             sections: results,
         })
+    }
+
+    async fn refresh_popular_tracks_once(
+        &self,
+        identity: &ArtistIdentity,
+        force: bool,
+    ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
+        use super::models::{PopularTracksSnapshot, ProviderResponse};
+        use super::policy::POPULAR_TRACKS_TTL;
+        use super::transport::TransportError;
+
+        let artist_id = identity.artist_id;
+        let generation = identity.generation;
+        let mbid = identity
+            .musicbrainz_id
+            .as_deref()
+            .ok_or(TransportError::InvalidRequest)?;
+        let cached = self
+            .database(move |conn| enrichment::popular_tracks_snapshot(conn, artist_id))
+            .await
+            .map_err(storage_transport)?;
+        let now = chrono::Utc::now().timestamp();
+        if !force && cached.as_ref().is_some_and(|value| now < value.expires_at) {
+            return Ok(ArtistRefreshStatus::Unchanged);
+        }
+        let validators = cached
+            .as_ref()
+            .map(|value| value.validators.clone())
+            .unwrap_or_default();
+        let resource_key = provider_resource_key(&[mbid]);
+        let response = self
+            .provider_request(
+                artist_id,
+                generation,
+                EnrichmentProvider::LastFm,
+                "popular_tracks",
+                resource_key,
+                force,
+                self.lastfm.top_tracks(mbid, &validators),
+            )
+            .await?;
+        match response {
+            ProviderResponse::NotModified { validators } => {
+                let expires_at = now.saturating_add(POPULAR_TRACKS_TTL.as_secs() as i64);
+                let stored = self
+                    .write_database_idempotent("lastfm.popular_tracks.touch", move |conn| {
+                        enrichment::touch_popular_tracks(
+                            conn,
+                            artist_id,
+                            generation,
+                            now,
+                            expires_at,
+                            &validators,
+                        )
+                    })
+                    .await
+                    .map_err(storage_transport)?;
+                Ok(if stored {
+                    ArtistRefreshStatus::Unchanged
+                } else {
+                    ArtistRefreshStatus::Superseded
+                })
+            }
+            ProviderResponse::Modified {
+                value: (items, expires_at),
+                validators,
+            } => {
+                let snapshot = PopularTracksSnapshot {
+                    artist_id,
+                    identity_generation: generation,
+                    items,
+                    fetched_at: now,
+                    expires_at,
+                    validators,
+                };
+                let stored = self
+                    .write_database_idempotent("lastfm.popular_tracks.store", move |conn| {
+                        enrichment::store_popular_tracks(conn, &snapshot)
+                    })
+                    .await
+                    .map_err(storage_transport)?;
+                Ok(if stored {
+                    ArtistRefreshStatus::Updated
+                } else {
+                    ArtistRefreshStatus::Superseded
+                })
+            }
+        }
     }
 
     /// Writes only to a hidden generation while pagination is incomplete. The
@@ -2365,6 +2505,7 @@ fn refresh_section_result(
             ArtistRefreshSection::Portrait => EnrichmentProvider::Commons,
             ArtistRefreshSection::Discography => EnrichmentProvider::MusicBrainz,
             ArtistRefreshSection::Covers => EnrichmentProvider::CoverArtArchive,
+            ArtistRefreshSection::PopularTracks => EnrichmentProvider::LastFm,
         }),
     }
 }
@@ -3227,6 +3368,88 @@ mod tests {
             Some("Last.fm community")
         );
         assert!(std::path::Path::new(&portrait.managed_path).is_file());
+    }
+
+    #[tokio::test]
+    async fn popular_tracks_are_cached_read_locally_and_survive_offline_mode() {
+        let lastfm = test_lastfm_metadata_client(
+            serde_json::json!({
+                "toptracks": {"track": [
+                    {
+                        "name": "Track One",
+                        "mbid": "22222222-2222-4222-8222-222222222222",
+                        "url": "https://www.last.fm/music/Same+Name/_/Track+One",
+                        "playcount": "120",
+                        "listeners": "80"
+                    },
+                    {
+                        "name": "Track Two",
+                        "mbid": "",
+                        "url": "https://www.last.fm/music/Same+Name/_/Track+Two",
+                        "playcount": "90",
+                        "listeners": "60"
+                    }
+                ]}
+            }),
+            None,
+        );
+        let service = service_with_lastfm(lastfm);
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: false,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        service
+            .confirm_artist_identity(1, Some("11111111-1111-4111-8111-111111111111".into()))
+            .await
+            .unwrap();
+        let request = ArtistRefreshRequest {
+            sections: vec![ArtistRefreshSection::PopularTracks],
+            language: "pt".into(),
+            force: false,
+        };
+        let first = service.refresh_artist(1, request.clone()).await.unwrap();
+        assert_eq!(first.sections[0].status, ArtistRefreshStatus::Updated);
+        assert_eq!(first.sections[0].provider, Some(EnrichmentProvider::LastFm));
+        assert_eq!(service.lastfm.metadata_query_count(), 1);
+
+        let cached = service.artist_popular_tracks(1).await.unwrap().unwrap();
+        assert_eq!(cached.items.len(), 2);
+        assert_eq!(cached.items[0].title, "Track One");
+        assert_eq!(cached.items[0].play_count, 120);
+        assert!(!cached.stale);
+
+        let second = service.refresh_artist(1, request).await.unwrap();
+        assert_eq!(second.sections[0].status, ArtistRefreshStatus::Unchanged);
+        assert_eq!(service.lastfm.metadata_query_count(), 1);
+
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: true,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        service
+            .database(|conn| {
+                conn.execute(
+                    "UPDATE artist_popular_tracks SET expires_at = fetched_at",
+                    [],
+                )
+                .map(|_| ())
+                .map_err(|error| CoreError::Storage {
+                    message: error.to_string(),
+                })
+            })
+            .await
+            .unwrap();
+        let offline = service.artist_popular_tracks(1).await.unwrap().unwrap();
+        assert_eq!(offline.items, cached.items);
+        assert!(offline.stale);
     }
 
     #[tokio::test(start_paused = true)]

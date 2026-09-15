@@ -37,6 +37,7 @@ struct ArtistView: View {
     @State private var identityCandidates: ArtistIdentityCandidates?
     @State private var discographyItems: [ExternalReleaseGroup] = []
     @State private var discographyPage: ArtistDiscographyPage?
+    @State private var popularTracks: ArtistPopularTracks?
     @State private var catalogRefreshResults: [ArtistRefreshSectionResult] = []
     @State private var isRefreshingCatalog = false
     @State private var isLoadingMoreDiscography = false
@@ -150,6 +151,7 @@ struct ArtistView: View {
             selectedCandidateID = nil
             discographyItems = []
             discographyPage = nil
+            popularTracks = nil
             catalogRefreshResults = []
             async let loadedTracks = store.tracks(forArtistID: artist.id)
             async let loadedAlbums = store.releases(forArtistID: artist.id)
@@ -159,12 +161,14 @@ struct ArtistView: View {
                 language: enrichmentLanguage
             )
             async let loadedDiscography = store.artistDiscography(artistId: artist.id)
-            let (resolvedTracks, resolvedAlbums, resolvedIdentity, resolvedDetails, resolvedDiscography) = await (
+            async let loadedPopularTracks = store.artistPopularTracks(artistId: artist.id)
+            let (resolvedTracks, resolvedAlbums, resolvedIdentity, resolvedDetails, resolvedDiscography, resolvedPopularTracks) = await (
                 loadedTracks,
                 loadedAlbums,
                 loadedIdentity,
                 loadedDetails,
-                loadedDiscography
+                loadedDiscography,
+                loadedPopularTracks
             )
             tracks = resolvedTracks.sorted {
                 if $0.release != $1.release {
@@ -178,6 +182,7 @@ struct ArtistView: View {
                 $0.title.localizedStandardCompare($1.title) == .orderedAscending
             }
             identity = resolvedIdentity
+            popularTracks = resolvedPopularTracks
             details = resolvedDetails
             if let resolvedDiscography {
                 applyDiscographyPage(resolvedDiscography, reset: true)
@@ -949,6 +954,8 @@ struct ArtistView: View {
             return discographyPage?.catalogGeneration ?? 0 > 0 || !discographyItems.isEmpty
         case .covers:
             return discographyItems.contains { $0.artwork != nil }
+        case .popularTracks:
+            return popularTracks != nil
         }
     }
 
@@ -963,6 +970,8 @@ struct ArtistView: View {
             timestamp = discographyPage?.lastSuccessAt
         case .covers:
             timestamp = discographyItems.compactMap { $0.artwork?.image.fetchedAt }.max()
+        case .popularTracks:
+            timestamp = popularTracks?.fetchedAt
         }
         return timestamp.map { Date(timeIntervalSince1970: TimeInterval($0)) }
     }
@@ -1002,6 +1011,8 @@ struct ArtistView: View {
             if let page = await store.artistDiscography(artistId: artist.id) {
                 applyDiscographyPage(page, reset: true)
             }
+        case .popularTracks:
+            popularTracks = await store.artistPopularTracks(artistId: artist.id)
         }
     }
 

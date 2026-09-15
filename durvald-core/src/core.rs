@@ -1228,6 +1228,15 @@ impl DurvaldCore {
             .await
     }
 
+    /// Reads the locally persisted Last.fm ranking without performing network I/O.
+    pub async fn artist_popular_tracks(
+        &self,
+        artist_id: i64,
+    ) -> CoreResult<Option<ArtistPopularTracks>> {
+        non_negative_id(artist_id, "Artist ID")?;
+        self.enrichment.artist_popular_tracks(artist_id).await
+    }
+
     /// Loads track and edition metadata for one online-only MusicBrainz item.
     pub async fn external_release_details(
         &self,

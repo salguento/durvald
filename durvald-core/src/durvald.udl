@@ -78,6 +78,12 @@ typedef extern ExternalReleaseDetails;
 [Rust="record"]
 typedef extern ArtistDiscographyPage;
 
+[Rust="record"]
+typedef extern ArtistPopularTrack;
+
+[Rust="record"]
+typedef extern ArtistPopularTracks;
+
 [Rust="enum"]
 typedef extern ArtistProfileField;
 

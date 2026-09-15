@@ -401,6 +401,14 @@ impl LastFmClient {
         Ok(client)
     }
 
+    #[cfg(test)]
+    pub(crate) fn metadata_query_count(&self) -> usize {
+        self.test_transport
+            .as_ref()
+            .map(|transport| transport.metadata_queries.lock().unwrap().len())
+            .unwrap_or_default()
+    }
+
     async fn post_form(&self, form: &[(&str, &str)]) -> LastFmResult<Value> {
         #[cfg(test)]
         if let Some(transport) = &self.test_transport {

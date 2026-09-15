@@ -203,6 +203,32 @@ pub struct ArtistDiscographyPage {
     pub stale: bool,
 }
 
+/// One informational Last.fm ranking entry. It is not playable until a later
+/// conservative matching phase supplies `local_track_id`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistPopularTrack {
+    pub rank: u32,
+    pub title: String,
+    pub musicbrainz_id: Option<String>,
+    pub play_count: u64,
+    pub listeners: u64,
+    pub lastfm_url: String,
+    pub local_track_id: Option<i64>,
+}
+
+/// Atomic, offline-readable ranking snapshot for one resolved artist identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistPopularTracks {
+    pub artist_id: i64,
+    pub identity_generation: u64,
+    pub items: Vec<ArtistPopularTrack>,
+    pub fetched_at: i64,
+    pub expires_at: i64,
+    pub stale: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -303,6 +329,7 @@ pub enum ArtistRefreshSection {
     Portrait,
     Discography,
     Covers,
+    PopularTracks,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

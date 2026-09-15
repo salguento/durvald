@@ -591,6 +591,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func artistIdentity(artistId: Int64) async throws  -> ArtistIdentity
 
     /**
+     * Reads the locally persisted Last.fm ranking without performing network I/O.
+     */
+    func artistPopularTracks(artistId: Int64) async throws  -> ArtistPopularTracks?
+
+    /**
      * Returns releases by an artist.
      */
     func artistReleases(artistId: Int64) async throws  -> [Release]
@@ -1138,6 +1143,26 @@ open func artistIdentity(artistId: Int64)async throws  -> ArtistIdentity {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeArtistIdentity.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Reads the locally persisted Last.fm ranking without performing network I/O.
+     */
+open func artistPopularTracks(artistId: Int64)async throws  -> ArtistPopularTracks? {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_artist_popular_tracks(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(artistId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeArtistPopularTracks.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -3517,6 +3542,199 @@ public func FfiConverterTypeArtistPartialDate_lift(_ buf: RustBuffer) throws -> 
 
 public func FfiConverterTypeArtistPartialDate_lower(_ value: ArtistPartialDate) -> RustBuffer {
     return FfiConverterTypeArtistPartialDate.lower(value)
+}
+
+
+/**
+ * One informational Last.fm ranking entry. It is not playable until a later
+ * conservative matching phase supplies `local_track_id`.
+ */
+public struct ArtistPopularTrack {
+    public var rank: UInt32
+    public var title: String
+    public var musicbrainzId: String?
+    public var playCount: UInt64
+    public var listeners: UInt64
+    public var lastfmUrl: String
+    public var localTrackId: Int64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(rank: UInt32, title: String, musicbrainzId: String?, playCount: UInt64, listeners: UInt64, lastfmUrl: String, localTrackId: Int64?) {
+        self.rank = rank
+        self.title = title
+        self.musicbrainzId = musicbrainzId
+        self.playCount = playCount
+        self.listeners = listeners
+        self.lastfmUrl = lastfmUrl
+        self.localTrackId = localTrackId
+    }
+}
+
+
+
+extension ArtistPopularTrack: Equatable, Hashable {
+    public static func ==(lhs: ArtistPopularTrack, rhs: ArtistPopularTrack) -> Bool {
+        if lhs.rank != rhs.rank {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.musicbrainzId != rhs.musicbrainzId {
+            return false
+        }
+        if lhs.playCount != rhs.playCount {
+            return false
+        }
+        if lhs.listeners != rhs.listeners {
+            return false
+        }
+        if lhs.lastfmUrl != rhs.lastfmUrl {
+            return false
+        }
+        if lhs.localTrackId != rhs.localTrackId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(rank)
+        hasher.combine(title)
+        hasher.combine(musicbrainzId)
+        hasher.combine(playCount)
+        hasher.combine(listeners)
+        hasher.combine(lastfmUrl)
+        hasher.combine(localTrackId)
+    }
+}
+
+
+public struct FfiConverterTypeArtistPopularTrack: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistPopularTrack {
+        return
+            try ArtistPopularTrack(
+                rank: FfiConverterUInt32.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                musicbrainzId: FfiConverterOptionString.read(from: &buf),
+                playCount: FfiConverterUInt64.read(from: &buf),
+                listeners: FfiConverterUInt64.read(from: &buf),
+                lastfmUrl: FfiConverterString.read(from: &buf),
+                localTrackId: FfiConverterOptionInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistPopularTrack, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.rank, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.musicbrainzId, into: &buf)
+        FfiConverterUInt64.write(value.playCount, into: &buf)
+        FfiConverterUInt64.write(value.listeners, into: &buf)
+        FfiConverterString.write(value.lastfmUrl, into: &buf)
+        FfiConverterOptionInt64.write(value.localTrackId, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistPopularTrack_lift(_ buf: RustBuffer) throws -> ArtistPopularTrack {
+    return try FfiConverterTypeArtistPopularTrack.lift(buf)
+}
+
+public func FfiConverterTypeArtistPopularTrack_lower(_ value: ArtistPopularTrack) -> RustBuffer {
+    return FfiConverterTypeArtistPopularTrack.lower(value)
+}
+
+
+/**
+ * Atomic, offline-readable ranking snapshot for one resolved artist identity.
+ */
+public struct ArtistPopularTracks {
+    public var artistId: Int64
+    public var identityGeneration: UInt64
+    public var items: [ArtistPopularTrack]
+    public var fetchedAt: Int64
+    public var expiresAt: Int64
+    public var stale: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(artistId: Int64, identityGeneration: UInt64, items: [ArtistPopularTrack], fetchedAt: Int64, expiresAt: Int64, stale: Bool) {
+        self.artistId = artistId
+        self.identityGeneration = identityGeneration
+        self.items = items
+        self.fetchedAt = fetchedAt
+        self.expiresAt = expiresAt
+        self.stale = stale
+    }
+}
+
+
+
+extension ArtistPopularTracks: Equatable, Hashable {
+    public static func ==(lhs: ArtistPopularTracks, rhs: ArtistPopularTracks) -> Bool {
+        if lhs.artistId != rhs.artistId {
+            return false
+        }
+        if lhs.identityGeneration != rhs.identityGeneration {
+            return false
+        }
+        if lhs.items != rhs.items {
+            return false
+        }
+        if lhs.fetchedAt != rhs.fetchedAt {
+            return false
+        }
+        if lhs.expiresAt != rhs.expiresAt {
+            return false
+        }
+        if lhs.stale != rhs.stale {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(artistId)
+        hasher.combine(identityGeneration)
+        hasher.combine(items)
+        hasher.combine(fetchedAt)
+        hasher.combine(expiresAt)
+        hasher.combine(stale)
+    }
+}
+
+
+public struct FfiConverterTypeArtistPopularTracks: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistPopularTracks {
+        return
+            try ArtistPopularTracks(
+                artistId: FfiConverterInt64.read(from: &buf),
+                identityGeneration: FfiConverterUInt64.read(from: &buf),
+                items: FfiConverterSequenceTypeArtistPopularTrack.read(from: &buf),
+                fetchedAt: FfiConverterInt64.read(from: &buf),
+                expiresAt: FfiConverterInt64.read(from: &buf),
+                stale: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ArtistPopularTracks, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.artistId, into: &buf)
+        FfiConverterUInt64.write(value.identityGeneration, into: &buf)
+        FfiConverterSequenceTypeArtistPopularTrack.write(value.items, into: &buf)
+        FfiConverterInt64.write(value.fetchedAt, into: &buf)
+        FfiConverterInt64.write(value.expiresAt, into: &buf)
+        FfiConverterBool.write(value.stale, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeArtistPopularTracks_lift(_ buf: RustBuffer) throws -> ArtistPopularTracks {
+    return try FfiConverterTypeArtistPopularTracks.lift(buf)
+}
+
+public func FfiConverterTypeArtistPopularTracks_lower(_ value: ArtistPopularTracks) -> RustBuffer {
+    return FfiConverterTypeArtistPopularTracks.lower(value)
 }
 
 
@@ -7036,6 +7254,7 @@ public enum ArtistRefreshSection {
     case portrait
     case discography
     case covers
+    case popularTracks
 }
 
 
@@ -7053,6 +7272,8 @@ public struct FfiConverterTypeArtistRefreshSection: FfiConverterRustBuffer {
         case 3: return .discography
 
         case 4: return .covers
+
+        case 5: return .popularTracks
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -7076,6 +7297,10 @@ public struct FfiConverterTypeArtistRefreshSection: FfiConverterRustBuffer {
 
         case .covers:
             writeInt(&buf, Int32(4))
+
+
+        case .popularTracks:
+            writeInt(&buf, Int32(5))
 
         }
     }
@@ -7794,6 +8019,27 @@ fileprivate struct FfiConverterOptionTypeArtistPartialDate: FfiConverterRustBuff
     }
 }
 
+fileprivate struct FfiConverterOptionTypeArtistPopularTracks: FfiConverterRustBuffer {
+    typealias SwiftType = ArtistPopularTracks?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeArtistPopularTracks.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeArtistPopularTracks.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionTypeCoverRefreshProgress: FfiConverterRustBuffer {
     typealias SwiftType = CoverRefreshProgress?
 
@@ -8046,6 +8292,28 @@ fileprivate struct FfiConverterSequenceTypeArtistIdentityCandidate: FfiConverter
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeArtistIdentityCandidate.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeArtistPopularTrack: FfiConverterRustBuffer {
+    typealias SwiftType = [ArtistPopularTrack]
+
+    public static func write(_ value: [ArtistPopularTrack], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeArtistPopularTrack.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ArtistPopularTrack] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ArtistPopularTrack]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeArtistPopularTrack.read(from: &buf))
         }
         return seq
     }
@@ -8395,6 +8663,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_artist_identity() != 48481) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_artist_popular_tracks() != 45841) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_artist_releases() != 50984) {
