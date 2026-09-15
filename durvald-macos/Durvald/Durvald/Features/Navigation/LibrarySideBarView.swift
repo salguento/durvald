@@ -297,9 +297,6 @@ struct LibrarySidebarView: View {
 }
 
 private struct SidebarNavigationButton: View {
-    @Environment(\.appearsActive) private var appearsActive
-    @Environment(\.colorScheme) private var colorScheme
-
     let item: LibraryDestination
     @Binding var selection: LibraryDestination?
     let accessibilityIdentifier: String
@@ -307,20 +304,8 @@ private struct SidebarNavigationButton: View {
 
     private var isSelected: Bool { allowsSelectionHighlight && selection == item }
 
-    private var foreground: Color {
-        guard isSelected else {
-            return item == .search ? .secondary : .primary
-        }
-        // Dim the user's accent in inactive windows without replacing its hue.
-        return Color.accentColor.opacity(appearsActive ? 1 : 0.63)
-    }
-
-    private var selectionBackgroundOpacity: Double {
-        if colorScheme == .dark {
-            return appearsActive ? 0.08 : 0.10
-        }
-
-        return appearsActive ? 0.10 : 0.06
+    private var textForeground: Color {
+        item == .search && !isSelected ? .secondary : .primary
     }
 
     var body: some View {
@@ -331,15 +316,16 @@ private struct SidebarNavigationButton: View {
                 Image(systemName: item.icon)
                     .font(.system(size: 16, weight: .regular))
                     .symbolRenderingMode(.monochrome)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 20)
 
                 Text(item.title)
-                    .font(.body)
+                    .font(.body.weight(isSelected ? .semibold : .regular))
+                    .foregroundStyle(textForeground)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(foreground)
             .padding(.horizontal, 8)
             .frame(
                 maxWidth: .infinity,
@@ -354,15 +340,14 @@ private struct SidebarNavigationButton: View {
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    // A semantic neutral lets the material retain the user's theme tint.
-                    .fill(Color.primary.opacity(selectionBackgroundOpacity))
+                    .fill(Color(nsColor: .labelColor).opacity(0.12))
             }
         }
         .help(item.title)
         .accessibilityLabel(item.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(accessibilityIdentifier)
-        .animation(.easeOut(duration: 0.15), value: appearsActive)
+        .animation(.easeOut(duration: 0.15), value: isSelected)
     }
 }
 
@@ -427,22 +412,13 @@ private struct SidebarPlaylistButton: View {
 private struct SidebarSectionPicker: View {
     @Binding var selection: SidebarSection
     @Environment(\.appearsActive) private var appearsActive
-    @Environment(\.self) private var environment
 
     private var selectedForeground: Color {
-        guard appearsActive else { return .secondary }
-
-        let accent = Color.accentColor.resolve(in: environment)
-        let color = NSColor(
-            srgbRed: CGFloat(accent.red),
-            green: CGFloat(accent.green),
-            blue: CGFloat(accent.blue),
-            alpha: CGFloat(accent.opacity)
+        Color(
+            nsColor: appearsActive
+                ? .labelColor
+                : .secondaryLabelColor
         )
-        // Match yellow by hue, including its light and dark appearance variants.
-        let isYellow = (0.12...0.20).contains(color.hueComponent)
-            && color.saturationComponent > 0.35
-        return isYellow ? .black : .white
     }
 
     var body: some View {
@@ -500,18 +476,7 @@ private struct SidebarSectionPicker: View {
                     .background {
                         if item == selection {
                             Capsule()
-                                .fill(
-                                    appearsActive
-                                        ? Color.accentColor
-                                        : Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
-                                )
-                                .shadow(
-                                    color: appearsActive
-                                        ? Color.accentColor.opacity(0.20)
-                                        : .clear,
-                                    radius: 1,
-                                    y: 1
-                                )
+                                .fill(Color(nsColor: .labelColor).opacity(0.12))
                         }
                     }
                 }

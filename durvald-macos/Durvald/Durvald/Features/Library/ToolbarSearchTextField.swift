@@ -25,7 +25,7 @@ struct ToolbarSearchTextField: NSViewRepresentable {
         textField.cell?.isScrollable = true
         textField.lineBreakMode = .byClipping
         textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textField.placeholderString = "Músicas, álbuns, artistas e playlists"
+        textField.placeholderString = "Biblioteca"
         textField.setAccessibilityElement(true)
         textField.setAccessibilityRole(.textField)
         textField.setAccessibilityLabel("Pesquisar na biblioteca")
