@@ -100,6 +100,18 @@ struct ArtistView: View {
                         .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
                         .padding(24)
                     }
+                    .overlay(alignment: .bottomTrailing) {
+                        if let portrait = details?.portrait,
+                           let sourceURL = URL(string: portrait.attribution.sourceUrl) {
+                            Link("Foto: \(portraitSourceName(portrait.provider))", destination: sourceURL)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.black.opacity(0.55), in: Capsule())
+                                .padding(24)
+                        }
+                    }
                     .accessibilityIdentifier("artist.header.\(artist.id)")
 
                     VStack(alignment: .leading, spacing: 24) {
@@ -1420,7 +1432,7 @@ struct ArtistView: View {
                         if biographyOverride == nil,
                            let biographySource,
                            let sourceURL = URL(string: biographySource.profile.attribution.sourceUrl) {
-                            Link("Fonte: Wikipedia", destination: sourceURL)
+                            Link("Fonte: \(biographySourceName)", destination: sourceURL)
                                 .font(.caption)
                         }
                     } else {
@@ -1490,6 +1502,15 @@ struct ArtistView: View {
 
     private var biographySource: ArtistProfileSource? {
         details?.sources.first { $0.provider == .wikipedia && $0.profile.biography != nil }
+            ?? details?.sources.first { $0.provider == .lastFm && $0.profile.biography != nil }
+    }
+
+    private var biographySourceName: String {
+        biographySource?.provider == .lastFm ? "Last.fm" : "Wikipedia"
+    }
+
+    private func portraitSourceName(_ provider: EnrichmentProvider) -> String {
+        provider == .lastFm ? "Last.fm" : "Wikimedia Commons"
     }
 
     private var biographyOverride: ArtistFieldOverride? {

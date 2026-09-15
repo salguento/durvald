@@ -256,8 +256,10 @@ pub fn read_artist_details(
             "SELECT provider, provider_id, source_url, managed_path, width, height,
                     attribution, fetched_at, expires_at
              FROM enrichment_assets
-             WHERE artist_id = ?1 AND generation = ?2 AND provider = 'commons'
-               AND catalog_key = ''",
+             WHERE artist_id = ?1 AND generation = ?2
+               AND provider IN ('last_fm', 'commons') AND catalog_key = ''
+             ORDER BY CASE provider WHEN 'last_fm' THEN 0 ELSE 1 END
+             LIMIT 1",
             params![artist_id, row.3],
             |asset| {
                 let attribution: String = asset.get(6)?;
@@ -3532,6 +3534,29 @@ mod tests {
         assert_eq!(portrait.managed_path, "/managed/covers/hash.jpg");
         assert_eq!(portrait.attribution, asset.attribution);
         assert!(portrait.stale);
+
+        let lastfm_asset = AssetSnapshot {
+            provider: EnrichmentProvider::LastFm,
+            provider_id: "lastfm-portrait".into(),
+            source_url: "https://www.last.fm/music/Artist".into(),
+            managed_path: "/managed/covers/lastfm.jpg".into(),
+            attribution: EnrichmentAttribution {
+                source_url: "https://www.last.fm/music/Artist".into(),
+                author: Some("Last.fm community".into()),
+                license_name: None,
+                license_url: None,
+                revision: None,
+            },
+            ..asset.clone()
+        };
+        assert!(store_asset(&conn, &lastfm_asset).unwrap());
+        let preferred = read_artist_details(&conn, 7, "pt", 200)
+            .unwrap()
+            .portrait
+            .unwrap();
+        assert_eq!(preferred.provider, EnrichmentProvider::LastFm);
+        assert_eq!(preferred.managed_path, "/managed/covers/lastfm.jpg");
+
         conn.execute("UPDATE artist_enrichment_state SET generation = 1", [])
             .unwrap();
         assert!(
@@ -3543,7 +3568,7 @@ mod tests {
         assert!(!store_asset(&conn, &asset).unwrap());
         assert_eq!(
             collect_stale_asset_paths(&conn).unwrap(),
-            vec!["/managed/covers/hash.jpg"]
+            vec!["/managed/covers/hash.jpg", "/managed/covers/lastfm.jpg"]
         );
         assert_eq!(
             conn.query_row("SELECT COUNT(*) FROM enrichment_assets", [], |row| row

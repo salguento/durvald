@@ -97,6 +97,22 @@ pub(crate) enum LastFmMetadataResponse {
     },
 }
 
+const LASTFM_IMAGE_HOSTS: &[&str] = &[
+    "lastfm.freetls.fastly.net",
+    "userserve-ak.last.fm",
+    "lastfm-img2.akamaized.net",
+];
+
+fn valid_lastfm_image_url(url: &reqwest::Url) -> bool {
+    url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
+        && url
+            .host_str()
+            .is_some_and(|host| LASTFM_IMAGE_HOSTS.contains(&host))
+}
+
 #[allow(dead_code)] // Used by the staged metadata transport.
 fn bounded_header(headers: &header::HeaderMap, name: header::HeaderName) -> Option<String> {
     headers
@@ -190,6 +206,37 @@ async fn bounded_metadata_json_response(mut response: reqwest::Response) -> Last
         append_response_chunk(&mut body, &chunk)?;
     }
     Ok(serde_json::from_slice(&body)?)
+}
+
+async fn bounded_metadata_image_response(mut response: reqwest::Response) -> LastFmResult<Vec<u8>> {
+    let limit = crate::metadata::MAX_ARTWORK_BYTES;
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return Err(LastFmError::ResponseTooLarge { limit_bytes: limit });
+    }
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .and_then(|length| usize::try_from(length).ok())
+            .unwrap_or_default()
+            .min(limit),
+    );
+    loop {
+        let chunk = response
+            .chunk()
+            .await
+            .map_err(|_| LastFmError::MetadataNetwork)?;
+        let Some(chunk) = chunk else { break };
+        if body.len().saturating_add(chunk.len()) > limit {
+            return Err(LastFmError::ResponseTooLarge { limit_bytes: limit });
+        }
+        body.extend_from_slice(&chunk);
+    }
+    crate::metadata::validate_artwork_bytes(&body)
+        .map_err(|_| LastFmError::Custom("Invalid Last.fm image".into()))?;
+    Ok(body)
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -295,6 +342,7 @@ struct TestTransport {
     response: Value,
     forms: std::sync::Mutex<Vec<Vec<(String, String)>>>,
     metadata_queries: std::sync::Mutex<Vec<Vec<(String, String)>>>,
+    image_bytes: Option<Vec<u8>>,
 }
 
 impl LastFmClient {
@@ -319,6 +367,7 @@ impl LastFmClient {
             response,
             forms: std::sync::Mutex::new(Vec::new()),
             metadata_queries: std::sync::Mutex::new(Vec::new()),
+            image_bytes: None,
         });
         let client = Self {
             secure_store,
@@ -332,6 +381,24 @@ impl LastFmClient {
             test_transport: Some(transport.clone()),
         };
         Ok((client, transport))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_test_metadata_transport(
+        secure_store: Arc<Mutex<SecureStore>>,
+        response: Value,
+        image_bytes: Option<Vec<u8>>,
+    ) -> LastFmResult<Self> {
+        let (mut client, _) = Self::with_test_transport(secure_store, response)?;
+        client.test_transport = client.test_transport.take().map(|transport| {
+            Arc::new(TestTransport {
+                response: transport.response.clone(),
+                forms: std::sync::Mutex::new(Vec::new()),
+                metadata_queries: std::sync::Mutex::new(Vec::new()),
+                image_bytes,
+            })
+        });
+        Ok(client)
     }
 
     async fn post_form(&self, form: &[(&str, &str)]) -> LastFmResult<Value> {
@@ -432,6 +499,76 @@ impl LastFmClient {
             body,
             headers: received,
         })
+    }
+
+    /// Downloads public Last.fm artwork without forwarding credentials.
+    pub(crate) async fn download_metadata_image(&self, url: &str) -> LastFmResult<Vec<u8>> {
+        let mut url = reqwest::Url::parse(url)
+            .map_err(|_| LastFmError::Custom("Invalid Last.fm image URL".into()))?;
+        if !valid_lastfm_image_url(&url) {
+            return Err(LastFmError::Custom("Invalid Last.fm image URL".into()));
+        }
+
+        enforce_rate_limit().await?;
+        #[cfg(test)]
+        if let Some(transport) = &self.test_transport {
+            return transport.image_bytes.clone().ok_or_else(|| {
+                LastFmError::Custom("Last.fm image unavailable in test transport".into())
+            });
+        }
+
+        for redirect in 0..=3 {
+            let response = self
+                .client
+                .get(url.clone())
+                .header(header::ACCEPT, "image/jpeg,image/png")
+                .send()
+                .await
+                .map_err(|_| LastFmError::MetadataNetwork)?;
+            if response.status().is_redirection() {
+                if redirect == 3 {
+                    return Err(LastFmError::HttpStatus {
+                        status: response.status().as_u16(),
+                        retry_after: None,
+                    });
+                }
+                let location = response
+                    .headers()
+                    .get(header::LOCATION)
+                    .and_then(|value| value.to_str().ok())
+                    .ok_or_else(|| LastFmError::Custom("Invalid Last.fm image redirect".into()))?;
+                url = url
+                    .join(location)
+                    .map_err(|_| LastFmError::Custom("Invalid Last.fm image redirect".into()))?;
+                if !valid_lastfm_image_url(&url) {
+                    return Err(LastFmError::Custom(
+                        "Untrusted Last.fm image redirect".into(),
+                    ));
+                }
+                continue;
+            }
+            let status = response.status();
+            let retry_after = bounded_header(response.headers(), header::RETRY_AFTER);
+            if !status.is_success() {
+                return Err(LastFmError::HttpStatus {
+                    status: status.as_u16(),
+                    retry_after,
+                });
+            }
+            if response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .map(|value| value.split(';').next().unwrap_or_default().trim())
+                .is_some_and(|mime| !matches!(mime, "image/jpeg" | "image/png"))
+            {
+                return Err(LastFmError::Custom(
+                    "Invalid Last.fm image MIME type".into(),
+                ));
+            }
+            return bounded_metadata_image_response(response).await;
+        }
+        unreachable!()
     }
 
     async fn get_api_secret(&self) -> LastFmResult<ProtectedSecret> {

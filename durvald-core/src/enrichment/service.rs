@@ -95,7 +95,6 @@ pub struct EnrichmentService {
             >,
         >,
     >,
-    #[allow(dead_code)] // First consumed by the profile/portrait phase.
     lastfm: Arc<super::providers::lastfm::LastFm>,
     pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
     /// Enrichment snapshots are published in short, serialized database jobs.
@@ -764,12 +763,21 @@ impl EnrichmentService {
             ));
         }
         let cached = self.artist_details(artist_id, language.clone()).await?;
+        let has_fresh_wikidata = cached
+            .sources
+            .iter()
+            .any(|source| source.provider == EnrichmentProvider::Wikidata && !source.stale);
+        let has_fresh_biography = cached.sources.iter().any(|source| {
+            matches!(
+                source.provider,
+                EnrichmentProvider::Wikipedia | EnrichmentProvider::LastFm
+            ) && source.profile.biography.is_some()
+                && !source.stale
+        });
         if !request.force
             && request.sections == [ArtistRefreshSection::Profile]
-            && cached
-                .sources
-                .iter()
-                .any(|source| source.provider == EnrichmentProvider::Wikidata && !source.stale)
+            && has_fresh_wikidata
+            && has_fresh_biography
         {
             return Ok(refresh_result(
                 artist_id,
@@ -788,66 +796,71 @@ impl EnrichmentService {
         let mut results = Vec::new();
         if requested_profile || requested_portrait {
             let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-            let profile_result = tokio::time::timeout_at(
-                deadline,
-                self.refresh_profile_once(&identity, &language, request.force),
-            )
-            .await
-            .unwrap_or(Err(super::transport::TransportError::Timeout));
-            match profile_result {
-                Ok(outcome) => {
-                    if requested_profile {
-                        results.push(refresh_section_result(
-                            ArtistRefreshSection::Profile,
-                            outcome.profile_status,
-                            None,
-                            None,
-                            None,
-                        ));
-                    }
-                    if requested_portrait {
-                        let (status, retry_after_seconds, diagnostic) = match outcome.commons_file {
-                            Some(filename) => {
-                                let portrait = tokio::time::timeout_at(
-                                    deadline,
-                                    self.refresh_portrait_once(
-                                        identity.artist_id,
-                                        identity.generation,
-                                        &filename,
-                                        request.force,
-                                    ),
-                                )
-                                .await
-                                .unwrap_or(Err(super::transport::TransportError::Timeout));
-                                match portrait {
-                                    Ok(status) => (status, None, None),
-                                    Err(error) => refresh_transport_error(&error),
-                                }
+            let (lastfm, wikimedia) = tokio::join!(
+                tokio::time::timeout_at(
+                    deadline,
+                    self.refresh_lastfm_once(
+                        &identity,
+                        &language,
+                        requested_profile,
+                        requested_portrait,
+                        request.force,
+                    ),
+                ),
+                tokio::time::timeout_at(
+                    deadline,
+                    self.refresh_wikimedia_profile_once(&identity, &language, request.force),
+                )
+            );
+            let lastfm = lastfm.unwrap_or_else(|_| {
+                LastFmRefreshOutcome::timed_out(requested_profile, requested_portrait)
+            });
+            let wikimedia = wikimedia.unwrap_or(Err(super::transport::TransportError::Timeout));
+
+            if requested_profile {
+                let attempt = select_profile_attempt(
+                    wikimedia.as_ref().map(|outcome| outcome.profile_status),
+                    lastfm.profile.as_ref(),
+                );
+                results.push(refresh_section_result_for_provider(
+                    ArtistRefreshSection::Profile,
+                    attempt,
+                ));
+            }
+            if requested_portrait {
+                let mut attempt = lastfm
+                    .portrait
+                    .as_ref()
+                    .map(|result| section_attempt(result, EnrichmentProvider::LastFm))
+                    .unwrap_or_else(|| SectionAttempt::not_found(EnrichmentProvider::LastFm));
+                if !attempt.has_content() {
+                    if let Ok(outcome) = &wikimedia {
+                        if let Some(filename) = &outcome.commons_file {
+                            let commons = tokio::time::timeout_at(
+                                deadline,
+                                self.refresh_portrait_once(
+                                    identity.artist_id,
+                                    identity.generation,
+                                    filename,
+                                    request.force,
+                                ),
+                            )
+                            .await
+                            .unwrap_or(Err(super::transport::TransportError::Timeout));
+                            let commons_attempt =
+                                section_attempt(&commons, EnrichmentProvider::Commons);
+                            if commons_attempt.has_content()
+                                || attempt.status == ArtistRefreshStatus::NotFound
+                            {
+                                attempt = commons_attempt;
                             }
-                            None => (ArtistRefreshStatus::NotFound, None, None),
-                        };
-                        results.push(refresh_section_result(
-                            ArtistRefreshSection::Portrait,
-                            status,
-                            retry_after_seconds,
-                            None,
-                            diagnostic,
-                        ));
-                    }
-                }
-                Err(error) => {
-                    let (status, retry, diagnostic) = refresh_transport_error(&error);
-                    for section in [
-                        ArtistRefreshSection::Profile,
-                        ArtistRefreshSection::Portrait,
-                    ] {
-                        if request.sections.contains(&section) {
-                            results.push(refresh_section_result(
-                                section, status, retry, None, diagnostic,
-                            ));
                         }
                     }
                 }
+                results.push(refresh_section_result_for_provider(
+                    ArtistRefreshSection::Portrait,
+                    attempt,
+                ));
             }
         }
         if requested_discography {
@@ -1533,7 +1546,225 @@ impl EnrichmentService {
         Ok(())
     }
 
-    async fn refresh_profile_once(
+    async fn refresh_lastfm_once(
+        &self,
+        identity: &ArtistIdentity,
+        language: &str,
+        requested_profile: bool,
+        requested_portrait: bool,
+        force: bool,
+    ) -> LastFmRefreshOutcome {
+        use super::models::{ProfileSnapshot, ProviderResponse};
+        use super::transport::TransportError;
+        let artist_id = identity.artist_id;
+        let generation = identity.generation;
+        let Some(mbid) = identity.musicbrainz_id.as_deref() else {
+            return LastFmRefreshOutcome::failed(
+                requested_profile,
+                requested_portrait,
+                TransportError::InvalidRequest,
+            );
+        };
+        let lookup_language = language.to_owned();
+        let validators = match self
+            .database(move |conn| {
+                enrichment::profile_validators(
+                    conn,
+                    artist_id,
+                    EnrichmentProvider::LastFm,
+                    &lookup_language,
+                )
+            })
+            .await
+        {
+            Ok(value) => value.unwrap_or_default(),
+            Err(error) => {
+                return LastFmRefreshOutcome::failed(
+                    requested_profile,
+                    requested_portrait,
+                    storage_transport(error),
+                );
+            }
+        };
+        let resource_key = provider_resource_key(&[mbid, language]);
+        let response = match self
+            .provider_request(
+                artist_id,
+                generation,
+                EnrichmentProvider::LastFm,
+                "artist_info",
+                resource_key,
+                force,
+                self.lastfm.artist_info(mbid, language, &validators),
+            )
+            .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                return LastFmRefreshOutcome::failed(requested_profile, requested_portrait, error);
+            }
+        };
+
+        match response {
+            ProviderResponse::NotModified { validators } => {
+                let now = chrono::Utc::now().timestamp();
+                let expires_at = now.saturating_add(super::policy::PROFILE_TTL.as_secs() as i64);
+                let profile = if requested_profile {
+                    let stored_language = language.to_owned();
+                    match self
+                        .write_database_idempotent("lastfm.profile.touch", move |conn| {
+                            enrichment::touch_profile(
+                                conn,
+                                artist_id,
+                                generation,
+                                EnrichmentProvider::LastFm,
+                                &stored_language,
+                                now,
+                                expires_at,
+                                &validators,
+                            )
+                        })
+                        .await
+                    {
+                        Ok(true) => Some(Ok(ArtistRefreshStatus::Unchanged)),
+                        Ok(false) => Some(Ok(ArtistRefreshStatus::NotFound)),
+                        Err(error) => Some(Err(storage_transport(error))),
+                    }
+                } else {
+                    None
+                };
+                let portrait = if requested_portrait {
+                    match self
+                        .database(move |conn| {
+                            enrichment::asset_path(conn, artist_id, EnrichmentProvider::LastFm)
+                        })
+                        .await
+                    {
+                        Ok(Some(_)) => Some(Ok(ArtistRefreshStatus::Unchanged)),
+                        Ok(None) => Some(Ok(ArtistRefreshStatus::NotFound)),
+                        Err(error) => Some(Err(storage_transport(error))),
+                    }
+                } else {
+                    None
+                };
+                LastFmRefreshOutcome { profile, portrait }
+            }
+            ProviderResponse::Modified { value, validators } => {
+                let profile = match value.profile {
+                    Some(profile) => {
+                        let snapshot = ProfileSnapshot {
+                            artist_id,
+                            identity_generation: generation,
+                            provider: EnrichmentProvider::LastFm,
+                            language: language.to_owned(),
+                            profile,
+                            fetched_at: chrono::Utc::now().timestamp(),
+                            expires_at: value.expires_at,
+                            validators,
+                        };
+                        match self
+                            .write_database_idempotent("lastfm.profile.store", move |conn| {
+                                enrichment::store_profile(conn, &snapshot)
+                            })
+                            .await
+                        {
+                            Ok(true) => Some(Ok(ArtistRefreshStatus::Updated)),
+                            Ok(false) => Some(Ok(ArtistRefreshStatus::Superseded)),
+                            Err(error) => Some(Err(storage_transport(error))),
+                        }
+                    }
+                    None if requested_profile => Some(Ok(ArtistRefreshStatus::NotFound)),
+                    None => None,
+                };
+                let portrait = if requested_portrait {
+                    match value.portrait {
+                        Some(portrait) => Some(
+                            self.store_lastfm_portrait(
+                                artist_id,
+                                generation,
+                                portrait,
+                                value.expires_at,
+                                force,
+                            )
+                            .await,
+                        ),
+                        None => Some(Ok(ArtistRefreshStatus::NotFound)),
+                    }
+                } else {
+                    None
+                };
+                LastFmRefreshOutcome { profile, portrait }
+            }
+        }
+    }
+
+    async fn store_lastfm_portrait(
+        &self,
+        artist_id: i64,
+        generation: u64,
+        portrait: super::providers::lastfm::LastFmPortrait,
+        expires_at: i64,
+        force: bool,
+    ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
+        use super::models::AssetSnapshot;
+        use super::transport::TransportError;
+        let resource_key = provider_resource_key(&[&portrait.provider_id]);
+        let bytes = self
+            .provider_request(
+                artist_id,
+                generation,
+                EnrichmentProvider::LastFm,
+                "portrait_image",
+                resource_key,
+                force,
+                self.lastfm.download(&portrait.download_url),
+            )
+            .await?;
+        let covers_dir = self.covers_dir.clone();
+        let managed_path =
+            tokio::task::spawn_blocking(move || crate::artwork::write_managed(&covers_dir, &bytes))
+                .await
+                .map_err(|_| TransportError::Network)?
+                .map_err(|_| TransportError::InvalidImage)?;
+        let previous_path = self
+            .database(move |conn| {
+                enrichment::asset_path(conn, artist_id, EnrichmentProvider::LastFm)
+            })
+            .await
+            .map_err(storage_transport)?;
+        let snapshot = AssetSnapshot {
+            artist_id,
+            identity_generation: generation,
+            provider: EnrichmentProvider::LastFm,
+            provider_id: portrait.provider_id,
+            source_url: portrait.source_url,
+            managed_path: managed_path.to_string_lossy().into_owned(),
+            width: None,
+            height: None,
+            attribution: portrait.attribution,
+            fetched_at: chrono::Utc::now().timestamp(),
+            expires_at,
+        };
+        let stored = self
+            .write_database_idempotent("lastfm.portrait.store", move |conn| {
+                enrichment::store_asset(conn, &snapshot)
+            })
+            .await
+            .map_err(storage_transport)?;
+        if stored {
+            if let Some(path) =
+                previous_path.filter(|path| path != managed_path.to_string_lossy().as_ref())
+            {
+                self.remove_unreferenced_managed_path(path.into()).await?;
+            }
+            Ok(ArtistRefreshStatus::Updated)
+        } else {
+            self.remove_unreferenced_managed_path(managed_path).await?;
+            Ok(ArtistRefreshStatus::Superseded)
+        }
+    }
+
+    async fn refresh_wikimedia_profile_once(
         &self,
         identity: &ArtistIdentity,
         language: &str,
@@ -2041,6 +2272,59 @@ struct ProfileRefreshOutcome {
     commons_file: Option<String>,
 }
 
+struct LastFmRefreshOutcome {
+    profile: Option<Result<ArtistRefreshStatus, super::transport::TransportError>>,
+    portrait: Option<Result<ArtistRefreshStatus, super::transport::TransportError>>,
+}
+
+impl LastFmRefreshOutcome {
+    fn failed(
+        requested_profile: bool,
+        requested_portrait: bool,
+        error: super::transport::TransportError,
+    ) -> Self {
+        Self {
+            profile: requested_profile.then(|| Err(error.clone())),
+            portrait: requested_portrait.then_some(Err(error)),
+        }
+    }
+
+    fn timed_out(requested_profile: bool, requested_portrait: bool) -> Self {
+        Self::failed(
+            requested_profile,
+            requested_portrait,
+            super::transport::TransportError::Timeout,
+        )
+    }
+}
+
+struct SectionAttempt {
+    status: ArtistRefreshStatus,
+    retry_after_seconds: Option<u64>,
+    diagnostic: Option<ArtistRefreshDiagnosticCode>,
+    provider: EnrichmentProvider,
+}
+
+impl SectionAttempt {
+    fn not_found(provider: EnrichmentProvider) -> Self {
+        Self {
+            status: ArtistRefreshStatus::NotFound,
+            retry_after_seconds: None,
+            diagnostic: None,
+            provider,
+        }
+    }
+
+    fn has_content(&self) -> bool {
+        matches!(
+            self.status,
+            ArtistRefreshStatus::Updated
+                | ArtistRefreshStatus::Unchanged
+                | ArtistRefreshStatus::Superseded
+        )
+    }
+}
+
 struct CoverRefreshOutcome {
     status: ArtistRefreshStatus,
     progress: CoverRefreshProgress,
@@ -2082,6 +2366,79 @@ fn refresh_section_result(
             ArtistRefreshSection::Discography => EnrichmentProvider::MusicBrainz,
             ArtistRefreshSection::Covers => EnrichmentProvider::CoverArtArchive,
         }),
+    }
+}
+
+fn section_attempt(
+    result: &Result<ArtistRefreshStatus, super::transport::TransportError>,
+    provider: EnrichmentProvider,
+) -> SectionAttempt {
+    match result {
+        Ok(status) => SectionAttempt {
+            status: *status,
+            retry_after_seconds: None,
+            diagnostic: None,
+            provider,
+        },
+        Err(error) => {
+            let (status, retry_after_seconds, diagnostic) = refresh_transport_error(error);
+            SectionAttempt {
+                status,
+                retry_after_seconds,
+                diagnostic,
+                provider,
+            }
+        }
+    }
+}
+
+fn select_profile_attempt(
+    wikimedia: Result<ArtistRefreshStatus, &super::transport::TransportError>,
+    lastfm: Option<&Result<ArtistRefreshStatus, super::transport::TransportError>>,
+) -> SectionAttempt {
+    let wikimedia = match wikimedia {
+        Ok(status) => SectionAttempt {
+            status,
+            retry_after_seconds: None,
+            diagnostic: None,
+            provider: EnrichmentProvider::Wikidata,
+        },
+        Err(error) => {
+            let (status, retry_after_seconds, diagnostic) = refresh_transport_error(error);
+            SectionAttempt {
+                status,
+                retry_after_seconds,
+                diagnostic,
+                provider: EnrichmentProvider::Wikidata,
+            }
+        }
+    };
+    let Some(lastfm) = lastfm else {
+        return wikimedia;
+    };
+    let lastfm = section_attempt(lastfm, EnrichmentProvider::LastFm);
+
+    match wikimedia.status {
+        ArtistRefreshStatus::Updated | ArtistRefreshStatus::Superseded => wikimedia,
+        ArtistRefreshStatus::Unchanged if lastfm.status == ArtistRefreshStatus::Updated => lastfm,
+        ArtistRefreshStatus::Unchanged => wikimedia,
+        ArtistRefreshStatus::NotFound => lastfm,
+        _ if lastfm.has_content() => lastfm,
+        _ => wikimedia,
+    }
+}
+
+fn refresh_section_result_for_provider(
+    section: ArtistRefreshSection,
+    attempt: SectionAttempt,
+) -> ArtistRefreshSectionResult {
+    ArtistRefreshSectionResult {
+        section,
+        status: attempt.status,
+        retry_after_seconds: attempt.retry_after_seconds,
+        cover_progress: None,
+        diagnostic: attempt.diagnostic,
+        provider: Some(attempt.provider),
     }
 }
 
@@ -2281,7 +2638,38 @@ mod tests {
         )
     }
 
+    fn test_lastfm_metadata_client(
+        response: serde_json::Value,
+        image_bytes: Option<Vec<u8>>,
+    ) -> Arc<crate::lastfm::LastFmClient> {
+        let directory = std::env::temp_dir().join(format!(
+            "durvald-enrichment-lastfm-metadata-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = crate::secure_store::SecureStore::new(
+            directory,
+            "durvald-enrichment-metadata-test".to_string(),
+        )
+        .unwrap();
+        Arc::new(
+            crate::lastfm::LastFmClient::with_test_metadata_transport(
+                Arc::new(tokio::sync::Mutex::new(store)),
+                response,
+                image_bytes,
+            )
+            .unwrap(),
+        )
+    }
+
     fn service() -> EnrichmentService {
+        service_with_lastfm(test_lastfm_client())
+    }
+
+    fn service_with_lastfm(lastfm: Arc<crate::lastfm::LastFmClient>) -> EnrichmentService {
         let manager = r2d2_sqlite::SqliteConnectionManager::memory().with_init(|conn| {
             conn.execute_batch("PRAGMA foreign_keys = ON")?;
             crate::database::operations::create_tables(conn)
@@ -2299,7 +2687,7 @@ mod tests {
                 .join("durvald-enrichment-service-tests")
                 .to_string_lossy()
                 .into_owned(),
-            test_lastfm_client(),
+            lastfm,
         )
     }
 
@@ -2655,9 +3043,21 @@ mod tests {
         assert_eq!(mock.calls(), 2);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn profile_and_portrait_flow_persists_an_offline_generation_scoped_view() {
-        let service = service();
+        let service = service_with_lastfm(test_lastfm_metadata_client(
+            serde_json::json!({
+                "artist": {
+                    "name": "Same Name",
+                    "url": "https://www.last.fm/music/Same+Name",
+                    "image": [{
+                        "#text": "https://lastfm.freetls.fastly.net/i/u/300/invalid.png",
+                        "size": "extralarge"
+                    }]
+                }
+            }),
+            Some(b"not an image".to_vec()),
+        ));
         service
             .configure(EnrichmentSettings {
                 enabled: true,
@@ -2741,9 +3141,92 @@ mod tests {
             })
         );
         let portrait = details.portrait.unwrap();
+        assert_eq!(portrait.provider, EnrichmentProvider::Commons);
         assert_eq!(portrait.provider_id, "Portrait.png");
         assert!(std::path::Path::new(&portrait.managed_path).is_file());
         assert_eq!(portrait.attribution.author.as_deref(), Some("Photographer"));
+    }
+
+    #[tokio::test]
+    async fn lastfm_supplies_biography_and_primary_portrait_without_a_wikidata_id() {
+        let mut png = Vec::new();
+        image::DynamicImage::new_rgb8(2, 2)
+            .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let lastfm = test_lastfm_metadata_client(
+            serde_json::json!({
+                "artist": {
+                    "name": "Same Name",
+                    "url": "https://www.last.fm/music/Same+Name",
+                    "image": [{
+                        "#text": "https://lastfm.freetls.fastly.net/i/u/300/portrait.png",
+                        "size": "extralarge"
+                    }],
+                    "bio": {"content": "Last.fm biography"}
+                }
+            }),
+            Some(png),
+        );
+        let service = service_with_lastfm(lastfm);
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: false,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        service
+            .confirm_artist_identity(1, Some("11111111-1111-4111-8111-111111111111".into()))
+            .await
+            .unwrap();
+        let (musicbrainz, _) = client(vec![response(200, &[], &[r#"{"relations":[]}"#], None)]);
+        service
+            .musicbrainz
+            .set(Ok(MusicBrainz { http: musicbrainz }))
+            .ok()
+            .unwrap();
+
+        let result = service
+            .refresh_artist(
+                1,
+                ArtistRefreshRequest {
+                    sections: vec![
+                        ArtistRefreshSection::Profile,
+                        ArtistRefreshSection::Portrait,
+                    ],
+                    language: "pt".into(),
+                    force: true,
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            result.sections.iter().all(|section| {
+                section.status == ArtistRefreshStatus::Updated
+                    && section.provider == Some(EnrichmentProvider::LastFm)
+            }),
+            "{result:?}"
+        );
+
+        let details = service.artist_details(1, "pt".into()).await.unwrap();
+        let profile = details
+            .sources
+            .iter()
+            .find(|source| source.provider == EnrichmentProvider::LastFm)
+            .unwrap();
+        assert_eq!(
+            profile.profile.biography.as_deref(),
+            Some("Last.fm biography")
+        );
+        assert!(profile.profile.birth_date.is_none());
+        let portrait = details.portrait.unwrap();
+        assert_eq!(portrait.provider, EnrichmentProvider::LastFm);
+        assert_eq!(
+            portrait.attribution.author.as_deref(),
+            Some("Last.fm community")
+        );
+        assert!(std::path::Path::new(&portrait.managed_path).is_file());
     }
 
     #[tokio::test(start_paused = true)]
