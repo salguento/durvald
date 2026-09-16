@@ -38,6 +38,7 @@ struct ArtistView: View {
     @State private var discographyItems: [ExternalReleaseGroup] = []
     @State private var discographyPage: ArtistDiscographyPage?
     @State private var popularTracks: ArtistPopularTracks?
+    @State private var similarArtistArtworkIDs: [Int64: String] = [:]
     @State private var catalogRefreshResults: [ArtistRefreshSectionResult] = []
     @State private var isRefreshingCatalog = false
     @State private var isLoadingMoreDiscography = false
@@ -154,6 +155,7 @@ struct ArtistView: View {
             discographyItems = []
             discographyPage = nil
             popularTracks = nil
+            similarArtistArtworkIDs = [:]
             catalogRefreshResults = []
             async let loadedTracks = store.tracks(forArtistID: artist.id)
             async let loadedAlbums = store.releases(forArtistID: artist.id)
@@ -195,6 +197,7 @@ struct ArtistView: View {
                     $0.title.localizedStandardCompare($1.title) == .orderedAscending
                 }
             }
+            await loadSimilarArtistArtworkIDs()
         }
         .sheet(isPresented: $isIdentityPickerPresented) {
             identityPicker
@@ -207,7 +210,10 @@ struct ArtistView: View {
         }
         .onChange(of: store.isUpdatingLibraryMetadata) { wasUpdating, isUpdating in
             guard wasUpdating, !isUpdating else { return }
-            Task { await reloadCachedEnrichment() }
+            Task {
+                await reloadCachedEnrichment()
+                await loadSimilarArtistArtworkIDs()
+            }
         }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
     }
@@ -1675,11 +1681,16 @@ struct ArtistView: View {
     }
 
     private func similarArtistAvatar(for similar: Artist) -> some View {
-        let artID = artworkID(for: similar)
+        let artID = similarArtistArtworkIDs[similar.id]
         return Group {
             if let artID {
-                ArtworkView(artworkID: artID, size: 104, showsBorder: false)
-                    .scaledToFill()
+                ArtworkView(
+                    artworkID: artID,
+                    size: 104,
+                    aspectRatio: 1,
+                    alignment: .center,
+                    showsBorder: false
+                )
             } else {
                 ZStack {
                     Circle()
@@ -1698,10 +1709,35 @@ struct ArtistView: View {
         }
     }
 
-    private func artworkID(for similar: Artist) -> String? {
-        store.releases.first(where: {
-            $0.artist.localizedCaseInsensitiveCompare(similar.name) == .orderedSame
-        })?.artworkId
+    @MainActor
+    private func loadSimilarArtistArtworkIDs() async {
+        var resolved: [Int64: String] = [:]
+        for similar in similarArtists where similar.id >= 0 {
+            async let loadedDetails = store.artistDetails(
+                artistId: similar.id,
+                language: enrichmentLanguage
+            )
+            async let loadedReleases = store.releases(forArtistID: similar.id)
+            async let loadedDiscography = store.artistDiscography(artistId: similar.id)
+            let (details, releases, discography) = await (
+                loadedDetails,
+                loadedReleases,
+                loadedDiscography
+            )
+            let orderedReleases = releases.sorted {
+                $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+            let artworkID = ArtistPresentationPolicy.portraitArtworkID(
+                portrait: details?.portrait,
+                localArtworkIDs: orderedReleases.map(\.artworkId)
+                    + (discography?.items ?? []).map { $0.artwork?.image.managedPath }
+            )
+            if let artworkID {
+                resolved[similar.id] = artworkID
+            }
+        }
+        guard !Task.isCancelled else { return }
+        similarArtistArtworkIDs = resolved
     }
 
     private func selectAlbum(_ album: Release) {
