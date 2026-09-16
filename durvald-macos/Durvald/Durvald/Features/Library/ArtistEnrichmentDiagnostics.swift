@@ -31,6 +31,8 @@ enum ArtistEnrichmentDiagnostics {
         let cacheSuffix = hasCachedContent ? " O conteúdo do cache local foi preservado." : ""
 
         switch result.diagnostic {
+        case .providerNotConfigured:
+            return providerNotConfiguredMessage(result.provider) + cacheSuffix
         case .databaseBusy:
             return "Banco ocupado; nova tentativa pode ser feita agora." + cacheSuffix
         case .timeout:
@@ -93,6 +95,20 @@ enum ArtistEnrichmentDiagnostics {
         case .theAudioDb: "TheAudioDB indisponível."
         case .youTube: "YouTube indisponível."
         case nil: "O provedor está indisponível."
+        }
+    }
+
+    private static func providerNotConfiguredMessage(_ provider: EnrichmentProvider?) -> String {
+        switch provider {
+        case .lastFm: "Configure a chave da API do Last.fm nos Ajustes."
+        case .musicBrainz: "Configure o MusicBrainz para continuar."
+        case .wikidata: "Configure o Wikidata para continuar."
+        case .wikipedia: "Configure a Wikipedia para continuar."
+        case .commons: "Configure o Wikimedia Commons para continuar."
+        case .coverArtArchive: "Configure o Cover Art Archive para continuar."
+        case .theAudioDb: "Configure o TheAudioDB para continuar."
+        case .youTube: "Configure o YouTube para continuar."
+        case nil: "Configure o provedor nos Ajustes para continuar."
         }
     }
 }

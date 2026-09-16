@@ -8,10 +8,11 @@ struct LastFmSettingsView: View {
         Form {
             if viewModel.status?.connected == true {
                 Text("Conectado como \(viewModel.status?.username ?? "usuário")")
-                Button("Desconectar") {
+                Button("Encerrar integração") {
                     guard let core = store.core else { return }
                     Task { await viewModel.disconnect(using: core) }
                 }
+                .help("Remove a conta, as credenciais e o cache local do Last.fm")
                 .accessibilityIdentifier("settings.lastfm.disconnect")
             } else {
                 TextField("API key", text: $viewModel.apiKey)

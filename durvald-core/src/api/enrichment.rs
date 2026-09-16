@@ -366,6 +366,7 @@ pub enum ArtistRefreshStatus {
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum ArtistRefreshDiagnosticCode {
+    ProviderNotConfigured,
     Timeout,
     ConnectionFailed,
     InvalidResponse,

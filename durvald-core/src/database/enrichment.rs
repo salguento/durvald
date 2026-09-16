@@ -1073,6 +1073,136 @@ pub fn collect_stale_asset_paths(conn: &Connection) -> CoreResult<Vec<String>> {
     Ok(orphaned)
 }
 
+/// Removes every snapshot and cached failure owned by one provider. Managed
+/// image paths are returned only when no local or remote row still references
+/// them, so the caller can safely remove the corresponding files.
+pub fn clear_provider_data(
+    conn: &Connection,
+    provider: EnrichmentProvider,
+) -> CoreResult<Vec<String>> {
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let provider = provider.as_str();
+    let paths = provider_asset_paths(&tx, provider, None)?;
+    for statement in [
+        "DELETE FROM artist_profile_sources WHERE provider = ?1",
+        "DELETE FROM enrichment_assets WHERE provider = ?1",
+        "DELETE FROM artist_popular_tracks WHERE provider = ?1",
+        "DELETE FROM enrichment_provider_failures WHERE provider = ?1",
+        "DELETE FROM artist_external_ids WHERE provider = ?1",
+    ] {
+        tx.execute(statement, [provider]).map_err(storage)?;
+    }
+    let orphaned = unreferenced_paths(&tx, paths)?;
+    tx.commit().map_err(storage)?;
+    Ok(orphaned)
+}
+
+/// Bounds provider snapshots by artist recency while retaining expired data
+/// for offline use. Failures alone do not keep an artist in the retained set.
+pub fn prune_provider_snapshots(
+    conn: &Connection,
+    provider: EnrichmentProvider,
+    retained_artists: usize,
+) -> CoreResult<Vec<String>> {
+    if retained_artists == 0 {
+        return Err(invalid("Provider retention must keep at least one artist"));
+    }
+    let retained_artists = i64::try_from(retained_artists).map_err(storage)?;
+    let tx = conn.unchecked_transaction().map_err(storage)?;
+    let provider_name = provider.as_str();
+    let artist_ids = {
+        let mut statement = tx
+            .prepare(
+                "SELECT artist_id
+                 FROM (
+                     SELECT artist_id, fetched_at FROM artist_profile_sources WHERE provider = ?1
+                     UNION ALL
+                     SELECT artist_id, fetched_at FROM enrichment_assets WHERE provider = ?1
+                     UNION ALL
+                     SELECT artist_id, fetched_at FROM artist_popular_tracks WHERE provider = ?1
+                 )
+                 GROUP BY artist_id
+                 ORDER BY MAX(fetched_at) DESC, artist_id DESC
+                 LIMIT -1 OFFSET ?2",
+            )
+            .map_err(storage)?;
+        statement
+            .query_map(params![provider_name, retained_artists], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map_err(storage)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage)?
+    };
+    let paths = provider_asset_paths(&tx, provider_name, Some(&artist_ids))?;
+    for artist_id in artist_ids {
+        for statement in [
+            "DELETE FROM artist_profile_sources WHERE provider = ?1 AND artist_id = ?2",
+            "DELETE FROM enrichment_assets WHERE provider = ?1 AND artist_id = ?2",
+            "DELETE FROM artist_popular_tracks WHERE provider = ?1 AND artist_id = ?2",
+            "DELETE FROM enrichment_provider_failures WHERE provider = ?1 AND artist_id = ?2",
+            "DELETE FROM artist_external_ids WHERE provider = ?1 AND artist_id = ?2",
+        ] {
+            tx.execute(statement, params![provider_name, artist_id])
+                .map_err(storage)?;
+        }
+    }
+    let orphaned = unreferenced_paths(&tx, paths)?;
+    tx.commit().map_err(storage)?;
+    Ok(orphaned)
+}
+
+pub fn clear_provider_failures(conn: &Connection, provider: EnrichmentProvider) -> CoreResult<()> {
+    conn.execute(
+        "DELETE FROM enrichment_provider_failures WHERE provider = ?1",
+        [provider.as_str()],
+    )
+    .map_err(storage)?;
+    Ok(())
+}
+
+fn provider_asset_paths(
+    conn: &Connection,
+    provider: &str,
+    artist_ids: Option<&[i64]>,
+) -> CoreResult<Vec<String>> {
+    let mut statement = conn
+        .prepare(
+            "SELECT DISTINCT managed_path FROM enrichment_assets
+             WHERE provider = ?1 AND (?2 IS NULL OR artist_id = ?2)",
+        )
+        .map_err(storage)?;
+    match artist_ids {
+        None => statement
+            .query_map(params![provider, Option::<i64>::None], |row| row.get(0))
+            .map_err(storage)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(storage),
+        Some(artist_ids) => {
+            let mut paths = std::collections::BTreeSet::new();
+            for artist_id in artist_ids {
+                let rows = statement
+                    .query_map(params![provider, artist_id], |row| row.get::<_, String>(0))
+                    .map_err(storage)?;
+                for path in rows {
+                    paths.insert(path.map_err(storage)?);
+                }
+            }
+            Ok(paths.into_iter().collect())
+        }
+    }
+}
+
+fn unreferenced_paths(conn: &Connection, paths: Vec<String>) -> CoreResult<Vec<String>> {
+    let mut orphaned = Vec::new();
+    for path in paths {
+        if !path_is_referenced(conn, &path)? {
+            orphaned.push(path);
+        }
+    }
+    Ok(orphaned)
+}
+
 /// Selects only missing or expired cover fallbacks from the visible catalog.
 /// Exact local editions prefer their exact asset, then a release-group asset.
 pub fn external_artwork_refresh_plan(
@@ -3996,6 +4126,122 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![Some(100), Some(101), None, Some(104), None]
         );
+    }
+
+    #[test]
+    fn clearing_lastfm_data_preserves_other_providers_and_reports_only_orphans() {
+        let conn = database();
+        crate::database::identity::read(&conn, 7).unwrap();
+        let attribution = serde_json::to_string(&EnrichmentAttribution {
+            source_url: "https://example.test/source".into(),
+            author: None,
+            license_name: None,
+            license_url: None,
+            revision: None,
+        })
+        .unwrap();
+        for (provider, path) in [
+            ("last_fm", "/managed/lastfm.jpg"),
+            ("commons", "/managed/commons.jpg"),
+        ] {
+            conn.execute(
+                "INSERT INTO enrichment_assets
+                 (artist_id, provider, catalog_key, provider_id, generation,
+                  source_url, managed_path, attribution, fetched_at, expires_at)
+                 VALUES (7, ?1, '', ?1, 0, 'https://example.test', ?2, ?3, 100, 200)",
+                params![provider, path, attribution],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO artist_profile_sources
+             (artist_id, provider, language, generation, payload_version, payload,
+              fetched_at, expires_at)
+             VALUES (7, 'last_fm', 'pt', 0, 1, '{}', 100, 200),
+                    (7, 'wikipedia', 'pt', 0, 1, '{}', 100, 200)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO artist_popular_tracks
+             (artist_id, provider, identity_generation, payload_version, payload,
+              fetched_at, expires_at)
+             VALUES (7, 'last_fm', 0, 1, '[]', 100, 200)",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(
+            clear_provider_data(&conn, EnrichmentProvider::LastFm).unwrap(),
+            vec!["/managed/lastfm.jpg"]
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM enrichment_assets WHERE provider = 'commons'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artist_profile_sources WHERE provider = 'wikipedia'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artist_popular_tracks WHERE provider = 'last_fm'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn lastfm_retention_prunes_the_oldest_artist_snapshot() {
+        let conn = database();
+        for artist_id in [7, 8, 9] {
+            if artist_id != 7 {
+                conn.execute(
+                    "INSERT INTO artists (artist_id, name) VALUES (?1, ?2)",
+                    params![artist_id, format!("Artist {artist_id}")],
+                )
+                .unwrap();
+            }
+            crate::database::identity::read(&conn, artist_id).unwrap();
+            conn.execute(
+                "INSERT INTO artist_popular_tracks
+                 (artist_id, provider, identity_generation, payload_version, payload,
+                  fetched_at, expires_at)
+                 VALUES (?1, 'last_fm', 0, 1, '[]', ?2, 999)",
+                params![artist_id, artist_id * 10],
+            )
+            .unwrap();
+        }
+
+        assert!(
+            prune_provider_snapshots(&conn, EnrichmentProvider::LastFm, 2)
+                .unwrap()
+                .is_empty()
+        );
+        let retained: Vec<i64> = conn
+            .prepare(
+                "SELECT artist_id FROM artist_popular_tracks
+                 WHERE provider = 'last_fm' ORDER BY artist_id",
+            )
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(retained, vec![8, 9]);
     }
 
     fn popular_track(rank: u32, title: &str, musicbrainz_id: Option<&str>) -> ArtistPopularTrack {

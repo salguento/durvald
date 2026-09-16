@@ -18,6 +18,8 @@ use tokio::time::{Instant, sleep, sleep_until, timeout};
 /// No error stores a request URL, response body or reqwest error containing keys.
 #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
 pub enum TransportError {
+    #[error("Enrichment provider is not configured")]
+    NotConfigured,
     #[error("Invalid enrichment HTTP configuration")]
     Configuration,
     #[error("Invalid enrichment request")]

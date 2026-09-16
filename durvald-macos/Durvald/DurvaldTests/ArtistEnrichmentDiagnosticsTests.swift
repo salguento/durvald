@@ -35,6 +35,22 @@ final class ArtistEnrichmentDiagnosticsTests: XCTestCase {
         )
     }
 
+    func testMissingLastFmConfigurationHasAnActionableMessage() {
+        let result = ArtistRefreshSectionResult(
+            section: .popularTracks,
+            status: .unavailable,
+            retryAfterSeconds: nil,
+            coverProgress: nil,
+            diagnostic: .providerNotConfigured,
+            provider: .lastFm
+        )
+
+        XCTAssertEqual(
+            ArtistEnrichmentDiagnostics.message(for: result, hasCachedContent: true),
+            "Configure a chave da API do Last.fm nos Ajustes. O conteúdo do cache local foi preservado."
+        )
+    }
+
     func testOnlyActionableStatusesAreRetryable() {
         let make: (ArtistRefreshStatus) -> ArtistRefreshSectionResult = { status in
             ArtistRefreshSectionResult(

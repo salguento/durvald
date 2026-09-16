@@ -11,6 +11,11 @@ pub const DISCOGRAPHY_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 pub const EXTERNAL_RELEASE_DETAILS_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub const NOT_FOUND_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 pub const PERMANENT_FAILURE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+pub const TRANSIENT_PROVIDER_FAILURE_TTL: Duration = Duration::from_secs(15 * 60);
+/// Retain complete Last.fm snapshots for the most recently refreshed artists.
+/// Expired entries remain available offline until this bounded LRU-style cap
+/// is exceeded.
+pub const LASTFM_RETAINED_ARTISTS: usize = 512;
 pub const COVER_NOT_FOUND_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 pub const COVER_INVALID_IMAGE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 pub const COVER_TRANSIENT_FAILURE_TTL: Duration = Duration::from_secs(15 * 60);

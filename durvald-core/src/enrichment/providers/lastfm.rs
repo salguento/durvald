@@ -418,9 +418,18 @@ fn map_error(error: LastFmError) -> TransportError {
             status: 404,
             retry_after_seconds: None,
         },
-        LastFmError::Api { code: 10 | 26, .. } | LastFmError::SecureStore(_) => {
-            TransportError::Configuration
+        LastFmError::Api { code: 10 | 26, .. } => TransportError::NotConfigured,
+        LastFmError::SecureStore(crate::secure_store::SecureStoreError::Keyring(
+            keyring::Error::NoEntry,
+        )) => TransportError::NotConfigured,
+        LastFmError::SecureStore(crate::secure_store::SecureStoreError::Custom(message))
+            if message == "Not found"
+                || message == "API key not configured"
+                || message == "API key not found" =>
+        {
+            TransportError::NotConfigured
         }
+        LastFmError::SecureStore(_) => TransportError::Configuration,
         LastFmError::Api { .. } => TransportError::InvalidRequest,
         LastFmError::HttpStatus {
             status,
@@ -436,7 +445,7 @@ fn map_error(error: LastFmError) -> TransportError {
             retry_after_seconds: 60,
         },
         LastFmError::Time(_) => TransportError::Network,
-        LastFmError::NotConnected => TransportError::Configuration,
+        LastFmError::NotConnected => TransportError::NotConfigured,
         LastFmError::Custom(_) => TransportError::InvalidRequest,
     }
 }
@@ -519,20 +528,24 @@ mod tests {
             }),
             TransportError::RateLimited { .. }
         ));
-        assert!(matches!(
-            map_error(LastFmError::Api {
-                code: 16,
-                message: "temp".into()
-            }),
-            TransportError::HttpStatus { status: 503, .. }
-        ));
-        assert_eq!(
-            map_error(LastFmError::Api {
-                code: 10,
-                message: "key".into()
-            }),
-            TransportError::Configuration
-        );
+        for code in [11, 16] {
+            assert!(matches!(
+                map_error(LastFmError::Api {
+                    code,
+                    message: "temporary".into()
+                }),
+                TransportError::HttpStatus { status: 503, .. }
+            ));
+        }
+        for code in [10, 26] {
+            assert_eq!(
+                map_error(LastFmError::Api {
+                    code,
+                    message: "configuration".into()
+                }),
+                TransportError::NotConfigured
+            );
+        }
     }
 
     #[test]

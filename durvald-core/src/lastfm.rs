@@ -636,6 +636,7 @@ impl LastFmClient {
         Ok(session_key)
     }
 
+    #[cfg(test)]
     async fn clear_cached_session_key(&self) {
         self.secret_cache.lock().await.session_key.take();
     }
@@ -961,11 +962,19 @@ impl LastFmClient {
 
     pub async fn disconnect_lastfm(&self) -> LastFmResult<()> {
         let store = self.secure_store.lock().await;
-        let _ = store.delete_secret("session_key");
+        store
+            .delete_secret("session_key")
+            .map_err(LastFmError::SecureStore)?;
+        store
+            .delete_secret("api_secret")
+            .map_err(LastFmError::SecureStore)?;
+        store.delete("api_key").map_err(LastFmError::SecureStore)?;
         store.delete("username").map_err(LastFmError::SecureStore)?;
         store.save_data().map_err(LastFmError::SecureStore)?;
         drop(store);
-        self.clear_cached_session_key().await;
+        let mut cache = self.secret_cache.lock().await;
+        cache.api_secret.take();
+        cache.session_key.take();
         Ok(())
     }
 

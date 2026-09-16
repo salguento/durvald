@@ -268,7 +268,7 @@ impl EnrichmentService {
                 Ok(value)
             }
             Err(error) => {
-                if let Some(ttl) = permanent_failure_ttl(&error) {
+                if let Some(ttl) = provider_failure_ttl(&error) {
                     let snapshot = ProviderFailureSnapshot {
                         artist_id,
                         identity_generation,
@@ -959,6 +959,11 @@ impl EnrichmentService {
                 diagnostic,
             ));
         }
+        self.prune_provider_snapshots(
+            EnrichmentProvider::LastFm,
+            super::policy::LASTFM_RETAINED_ARTISTS,
+        )
+        .await?;
         Ok(ArtistRefreshResult {
             artist_id,
             identity_generation: identity.generation,
@@ -2390,6 +2395,39 @@ impl EnrichmentService {
                 enrichment::collect_stale_asset_paths,
             )
             .await?;
+        self.remove_managed_paths(paths).await
+    }
+
+    pub async fn clear_provider_data(&self, provider: EnrichmentProvider) -> CoreResult<()> {
+        let paths = self
+            .write_database_idempotent("provider.clear", move |conn| {
+                enrichment::clear_provider_data(conn, provider)
+            })
+            .await?;
+        self.remove_managed_paths(paths).await
+    }
+
+    pub async fn clear_provider_failures(&self, provider: EnrichmentProvider) -> CoreResult<()> {
+        self.write_database_idempotent("provider.clear_failures", move |conn| {
+            enrichment::clear_provider_failures(conn, provider)
+        })
+        .await
+    }
+
+    async fn prune_provider_snapshots(
+        &self,
+        provider: EnrichmentProvider,
+        retained_artists: usize,
+    ) -> CoreResult<()> {
+        let paths = self
+            .write_database_idempotent("provider.prune", move |conn| {
+                enrichment::prune_provider_snapshots(conn, provider, retained_artists)
+            })
+            .await?;
+        self.remove_managed_paths(paths).await
+    }
+
+    async fn remove_managed_paths(&self, paths: Vec<String>) -> CoreResult<()> {
         if paths.is_empty() {
             return Ok(());
         }
@@ -2593,6 +2631,11 @@ fn refresh_transport_error(
     use super::transport::TransportError;
     use ArtistRefreshDiagnosticCode as Diagnostic;
     match error {
+        TransportError::NotConfigured => (
+            ArtistRefreshStatus::Unavailable,
+            None,
+            Some(Diagnostic::ProviderNotConfigured),
+        ),
         TransportError::RateLimited {
             retry_after_seconds,
         } => (
@@ -2666,17 +2709,37 @@ fn provider_resource_key(parts: &[&str]) -> String {
     format!("{:x}", digest.finalize())
 }
 
-fn permanent_failure_ttl(error: &super::transport::TransportError) -> Option<std::time::Duration> {
-    use super::policy::{NOT_FOUND_TTL, PERMANENT_FAILURE_TTL};
+fn provider_failure_ttl(error: &super::transport::TransportError) -> Option<std::time::Duration> {
+    use super::policy::{NOT_FOUND_TTL, PERMANENT_FAILURE_TTL, TRANSIENT_PROVIDER_FAILURE_TTL};
     use super::transport::TransportError;
     match error {
         TransportError::HttpStatus { status: 404, .. } => Some(NOT_FOUND_TTL),
+        TransportError::RateLimited {
+            retry_after_seconds,
+        } => Some(
+            TRANSIENT_PROVIDER_FAILURE_TTL
+                .max(std::time::Duration::from_secs(*retry_after_seconds)),
+        ),
+        TransportError::HttpStatus {
+            status: 408 | 429 | 500 | 502 | 503 | 504,
+            retry_after_seconds,
+        } => Some(
+            TRANSIENT_PROVIDER_FAILURE_TTL.max(std::time::Duration::from_secs(
+                retry_after_seconds.unwrap_or_default(),
+            )),
+        ),
+        TransportError::Timeout | TransportError::Connection | TransportError::Network => {
+            Some(TRANSIENT_PROVIDER_FAILURE_TTL)
+        }
         TransportError::HttpStatus { status, .. }
             if (400..500).contains(status) && *status != 408 && *status != 429 =>
         {
             Some(PERMANENT_FAILURE_TTL)
         }
-        TransportError::InvalidJson
+        TransportError::NotConfigured
+        | TransportError::Configuration
+        | TransportError::InvalidRequest
+        | TransportError::InvalidJson
         | TransportError::InvalidImage
         | TransportError::BodyTooLarge => Some(PERMANENT_FAILURE_TTL),
         _ => None,
@@ -2686,11 +2749,18 @@ fn permanent_failure_ttl(error: &super::transport::TransportError) -> Option<std
 fn provider_error_code(error: &super::transport::TransportError) -> String {
     use super::transport::TransportError;
     match error {
+        TransportError::NotConfigured => "not_configured".into(),
+        TransportError::Configuration => "configuration".into(),
+        TransportError::InvalidRequest => "invalid_request".into(),
+        TransportError::Timeout => "timeout".into(),
+        TransportError::Connection => "connection".into(),
+        TransportError::Network => "network".into(),
         TransportError::BodyTooLarge => "body_too_large".into(),
         TransportError::InvalidJson => "invalid_json".into(),
         TransportError::InvalidImage => "invalid_image".into(),
+        TransportError::RateLimited { .. } => "rate_limited".into(),
         TransportError::HttpStatus { status, .. } => format!("http_{status}"),
-        _ => "permanent_provider_error".into(),
+        TransportError::Storage { .. } => "storage".into(),
     }
 }
 
@@ -2699,9 +2769,18 @@ fn cached_transport_error(
 ) -> super::transport::TransportError {
     use super::transport::TransportError;
     match failure.error_code.as_str() {
+        "not_configured" => TransportError::NotConfigured,
+        "configuration" => TransportError::Configuration,
+        "invalid_request" => TransportError::InvalidRequest,
+        "timeout" => TransportError::Timeout,
+        "connection" => TransportError::Connection,
+        "network" => TransportError::Network,
         "body_too_large" => TransportError::BodyTooLarge,
         "invalid_json" => TransportError::InvalidJson,
         "invalid_image" => TransportError::InvalidImage,
+        "rate_limited" => TransportError::RateLimited {
+            retry_after_seconds: failure.retry_after_seconds.unwrap_or(60),
+        },
         code if code.starts_with("http_") => code[5..]
             .parse::<u16>()
             .map(|status| TransportError::HttpStatus {
@@ -2717,7 +2796,8 @@ fn cover_cacheable_failure(error: &super::transport::TransportError) -> bool {
     use super::transport::TransportError;
     !matches!(
         error,
-        TransportError::Configuration
+        TransportError::NotConfigured
+            | TransportError::Configuration
             | TransportError::InvalidRequest
             | TransportError::Storage { .. }
             | TransportError::InvalidImage
@@ -2727,6 +2807,7 @@ fn cover_cacheable_failure(error: &super::transport::TransportError) -> bool {
 fn cover_error_code(error: &super::transport::TransportError) -> String {
     use super::transport::TransportError;
     match error {
+        TransportError::NotConfigured => "not_configured".into(),
         TransportError::Configuration => "configuration".into(),
         TransportError::InvalidRequest => "invalid_request".into(),
         TransportError::Timeout => "timeout".into(),
@@ -2753,9 +2834,7 @@ mod tests {
             commons::Commons, cover_art_archive::CoverArtArchive, musicbrainz::MusicBrainz,
             wikidata::Wikidata,
         },
-        transport::{
-            tests::client, tests::client_for, tests::response, tests::response_bytes,
-        },
+        transport::{tests::client, tests::client_for, tests::response, tests::response_bytes},
     };
     use super::*;
     use std::io::Cursor;
@@ -2854,6 +2933,43 @@ mod tests {
         assert_eq!(
             diagnostic,
             Some(ArtistRefreshDiagnosticCode::ConnectionFailed)
+        );
+
+        let (_, _, diagnostic) = refresh_transport_error(&TransportError::NotConfigured);
+        assert_eq!(
+            diagnostic,
+            Some(ArtistRefreshDiagnosticCode::ProviderNotConfigured)
+        );
+    }
+
+    #[test]
+    fn provider_failure_cache_applies_cooldowns_to_transient_and_permanent_errors() {
+        use super::super::policy::{PERMANENT_FAILURE_TTL, TRANSIENT_PROVIDER_FAILURE_TTL};
+        use super::super::transport::TransportError;
+
+        assert_eq!(
+            provider_failure_ttl(&TransportError::Network),
+            Some(TRANSIENT_PROVIDER_FAILURE_TTL)
+        );
+        assert_eq!(
+            provider_failure_ttl(&TransportError::HttpStatus {
+                status: 503,
+                retry_after_seconds: Some(3_600),
+            }),
+            Some(std::time::Duration::from_secs(3_600))
+        );
+        assert_eq!(
+            provider_failure_ttl(&TransportError::NotConfigured),
+            Some(PERMANENT_FAILURE_TTL)
+        );
+        assert_eq!(
+            cached_transport_error(&crate::enrichment::models::CachedProviderFailure {
+                error_code: "rate_limited".into(),
+                retry_after_seconds: Some(120),
+            }),
+            TransportError::RateLimited {
+                retry_after_seconds: 120
+            }
         );
     }
 

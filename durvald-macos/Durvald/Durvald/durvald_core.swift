@@ -626,6 +626,12 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func clearArtistOverride(artistId: Int64, field: ArtistProfileField, language: String) async throws
 
     /**
+     * Removes only the selected provider's cached enrichment snapshots,
+     * failures and managed assets. Other providers and local metadata remain.
+     */
+    func clearEnrichmentProviderData(provider: EnrichmentProvider) async throws
+
+    /**
      * Deletes every completed-playback event and returns the number removed.
      */
     func clearPlaybackHistory() async throws  -> UInt64
@@ -663,7 +669,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func deletePlaylist(playlistId: Int64) async throws
 
     /**
-     * Removes the locally stored Last.fm session and username.
+     * Ends the Last.fm integration and removes its credentials and cached
+     * metadata without affecting snapshots from other providers.
      */
     func disconnectLastfm() async throws
 
@@ -1292,6 +1299,27 @@ open func clearArtistOverride(artistId: Int64, field: ArtistProfileField, langua
 }
 
     /**
+     * Removes only the selected provider's cached enrichment snapshots,
+     * failures and managed assets. Other providers and local metadata remain.
+     */
+open func clearEnrichmentProviderData(provider: EnrichmentProvider)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_clear_enrichment_provider_data(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeEnrichmentProvider.lower(provider)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
      * Deletes every completed-playback event and returns the number removed.
      */
 open func clearPlaybackHistory()async throws  -> UInt64 {
@@ -1449,7 +1477,8 @@ open func deletePlaylist(playlistId: Int64)async throws  {
 }
 
     /**
-     * Removes the locally stored Last.fm session and username.
+     * Ends the Last.fm integration and removes its credentials and cached
+     * metadata without affecting snapshots from other providers.
      */
 open func disconnectLastfm()async throws  {
     return
@@ -7163,6 +7192,7 @@ extension ArtistProfileField: Equatable, Hashable {}
 
 public enum ArtistRefreshDiagnosticCode {
 
+    case providerNotConfigured
     case timeout
     case connectionFailed
     case invalidResponse
@@ -7179,17 +7209,19 @@ public struct FfiConverterTypeArtistRefreshDiagnosticCode: FfiConverterRustBuffe
         let variant: Int32 = try readInt(&buf)
         switch variant {
 
-        case 1: return .timeout
+        case 1: return .providerNotConfigured
 
-        case 2: return .connectionFailed
+        case 2: return .timeout
 
-        case 3: return .invalidResponse
+        case 3: return .connectionFailed
 
-        case 4: return .invalidImage
+        case 4: return .invalidResponse
 
-        case 5: return .databaseBusy
+        case 5: return .invalidImage
 
-        case 6: return .providerUnavailable
+        case 6: return .databaseBusy
+
+        case 7: return .providerUnavailable
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -7199,28 +7231,32 @@ public struct FfiConverterTypeArtistRefreshDiagnosticCode: FfiConverterRustBuffe
         switch value {
 
 
-        case .timeout:
+        case .providerNotConfigured:
             writeInt(&buf, Int32(1))
 
 
-        case .connectionFailed:
+        case .timeout:
             writeInt(&buf, Int32(2))
 
 
-        case .invalidResponse:
+        case .connectionFailed:
             writeInt(&buf, Int32(3))
 
 
-        case .invalidImage:
+        case .invalidResponse:
             writeInt(&buf, Int32(4))
 
 
-        case .databaseBusy:
+        case .invalidImage:
             writeInt(&buf, Int32(5))
 
 
-        case .providerUnavailable:
+        case .databaseBusy:
             writeInt(&buf, Int32(6))
+
+
+        case .providerUnavailable:
+            writeInt(&buf, Int32(7))
 
         }
     }
@@ -8689,6 +8725,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_clear_artist_override() != 27040) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_clear_enrichment_provider_data() != 46873) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_clear_playback_history() != 33583) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8713,7 +8752,7 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_delete_playlist() != 36449) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_disconnect_lastfm() != 41366) {
+    if (uniffi_durvald_core_checksum_method_durvaldcore_disconnect_lastfm() != 15313) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_enrichment_settings() != 18001) {

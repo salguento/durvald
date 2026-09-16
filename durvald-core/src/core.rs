@@ -1286,6 +1286,15 @@ impl DurvaldCore {
         self.enrichment.configure(settings).await
     }
 
+    /// Removes only the selected provider's cached enrichment snapshots,
+    /// failures and managed assets. Other providers and local metadata remain.
+    pub async fn clear_enrichment_provider_data(
+        &self,
+        provider: EnrichmentProvider,
+    ) -> CoreResult<()> {
+        self.enrichment.clear_provider_data(provider).await
+    }
+
     /// Explicitly refreshes the requested remote sections. Local reads remain
     /// network-free and scanning/playback never call this method implicitly.
     pub async fn refresh_artist(
@@ -1936,7 +1945,10 @@ impl DurvaldCore {
         self.lastfm
             .initialize_lastfm(api_key, api_secret)
             .await
-            .map_err(lastfm_error)
+            .map_err(lastfm_error)?;
+        self.enrichment
+            .clear_provider_failures(EnrichmentProvider::LastFm)
+            .await
     }
 
     /// Starts browser-based Last.fm authorization and returns its approval URL.
@@ -1967,9 +1979,17 @@ impl DurvaldCore {
             .map_err(lastfm_error)
     }
 
-    /// Removes the locally stored Last.fm session and username.
+    /// Ends the Last.fm integration and removes its credentials and cached
+    /// metadata without affecting snapshots from other providers.
     pub async fn disconnect_lastfm(&self) -> CoreResult<()> {
-        self.lastfm.disconnect_lastfm().await.map_err(lastfm_error)
+        self.lastfm
+            .disconnect_lastfm()
+            .await
+            .map_err(lastfm_error)?;
+        *self.lastfm_playback.lock().await = None;
+        self.enrichment
+            .clear_provider_data(EnrichmentProvider::LastFm)
+            .await
     }
 
     /// Returns the last session state.
