@@ -110,6 +110,7 @@ struct PlaylistView: View {
                 CollectionPlaybackControls(
                     isEnabled: !isLoading && !tracks.isEmpty,
                     presentation: .groupedCompactShuffle,
+                    controlHeight: 36,
                     isFavorite: currentPlaylist.isFavorite,
                     onToggleFavorite: {
                         store.setPlaylistFavorite(
@@ -154,7 +155,7 @@ struct PlaylistView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .frame(width: 34, height: 34)
+                        .frame(width: 36, height: 36)
                 }
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
@@ -176,7 +177,7 @@ struct PlaylistView: View {
                         }
                 }
                 .padding(.horizontal, 12)
-                .frame(width: 147, height: 34)
+                .frame(width: 147, height: 36)
                 .background(Color.primary.opacity(0.08), in: .capsule)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("playlist.tracks.search")
@@ -189,7 +190,7 @@ struct PlaylistView: View {
                     }
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease")
-                        .frame(width: 34, height: 34)
+                        .frame(width: 36, height: 36)
                 }
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)

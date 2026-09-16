@@ -11,6 +11,7 @@ struct CollectionPlaybackControls: View {
 
     let isEnabled: Bool
     let presentation: Presentation
+    let controlHeight: CGFloat
     let isFavorite: Bool?
     let onToggleFavorite: (() -> Void)?
     let onPlay: () -> Void
@@ -19,6 +20,7 @@ struct CollectionPlaybackControls: View {
     init(
         isEnabled: Bool,
         presentation: Presentation = .separate,
+        controlHeight: CGFloat = 34,
         isFavorite: Bool? = nil,
         onToggleFavorite: (() -> Void)? = nil,
         onPlay: @escaping () -> Void,
@@ -26,6 +28,7 @@ struct CollectionPlaybackControls: View {
     ) {
         self.isEnabled = isEnabled
         self.presentation = presentation
+        self.controlHeight = controlHeight
         self.isFavorite = isFavorite
         self.onToggleFavorite = onToggleFavorite
         self.onPlay = onPlay
@@ -54,7 +57,7 @@ struct CollectionPlaybackControls: View {
                     Button(action: onPlay) {
                         Label("Play", systemImage: "play.fill")
                             .padding(.horizontal, 16)
-                            .frame(height: 34)
+                            .frame(height: controlHeight)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("collection.play")
@@ -67,7 +70,7 @@ struct CollectionPlaybackControls: View {
                     Button(action: onShuffle) {
                         Image(systemName: "shuffle")
                             .padding(.horizontal, 14)
-                            .frame(height: 34)
+                            .frame(height: controlHeight)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Shuffle")
@@ -83,7 +86,7 @@ struct CollectionPlaybackControls: View {
                 if let isFavorite, let onToggleFavorite {
                     Button(action: onToggleFavorite) {
                         Image(systemName: isFavorite ? "star.fill" : "star")
-                            .frame(width: 34, height: 34)
+                            .frame(width: controlHeight, height: controlHeight)
                             .background {
                                 Circle()
                                     .fill(Color.primary.opacity(backgroundOpacity))
@@ -111,7 +114,7 @@ struct CollectionPlaybackControls: View {
                 .font(.body.weight(.medium))
                 .foregroundStyle(Color.accentColor.opacity(appearsActive ? 1 : 0.63))
                 .padding(.horizontal, 16)
-                .frame(height: 34)
+                .frame(height: controlHeight)
                 .background {
                     Capsule()
                         .fill(Color.primary.opacity(backgroundOpacity))

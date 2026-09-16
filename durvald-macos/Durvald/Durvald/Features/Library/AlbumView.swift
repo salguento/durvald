@@ -184,6 +184,7 @@ struct AlbumView: View {
                 CollectionPlaybackControls(
                     isEnabled: !isLoading && !tracks.isEmpty,
                     presentation: .groupedCompactShuffle,
+                    controlHeight: 36,
                     isFavorite: currentAlbum.isFavorite,
                     onToggleFavorite: {
                         store.setReleaseFavorite(
@@ -227,7 +228,7 @@ struct AlbumView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .frame(width: 34, height: 34)
+                        .frame(width: 36, height: 36)
                 }
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
@@ -249,7 +250,7 @@ struct AlbumView: View {
                         }
                 }
                 .padding(.horizontal, 12)
-                .frame(width: 147, height: 34)
+                .frame(width: 147, height: 36)
                 .background(Color.primary.opacity(0.08), in: .capsule)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("album.tracks.search")
@@ -262,7 +263,7 @@ struct AlbumView: View {
                     }
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease")
-                        .frame(width: 34, height: 34)
+                        .frame(width: 36, height: 36)
                 }
                 .menuIndicator(.hidden)
                 .buttonStyle(.plain)
