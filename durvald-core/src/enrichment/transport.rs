@@ -4,6 +4,7 @@
 //! JSON redirects are deliberately disabled. Artwork CDN redirects belong to the
 //! later artwork adapter and must not inherit API credentials.
 
+use super::cache;
 use super::models::CacheValidators;
 use super::policy::{self, normalize_language};
 use crate::api::EnrichmentProvider;
@@ -16,7 +17,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{Instant, sleep, sleep_until, timeout};
 
 /// No error stores a request URL, response body or reqwest error containing keys.
-#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TransportError {
     #[error("Enrichment provider is not configured")]
     NotConfigured,
@@ -359,12 +360,37 @@ impl EnrichmentHttpClient {
     ) -> Result<Vec<u8>, TransportError> {
         let url = Url::parse(url).map_err(|_| TransportError::InvalidRequest)?;
         validate_public_url(&url, allowed_hosts)?;
-        timeout(
+        let key = cache::key(
+            &format!("image:{}", self.base.host_str().unwrap_or_default()),
+            url.as_str(),
+        );
+        let _cache_lock = cache::request_lock(&key).await?;
+        if !cache::forced() {
+            if let Some(entry) = cache::load(&key).await?.filter(|entry| entry.fresh()) {
+                if let Some(error) = entry.failure {
+                    return Err(error);
+                }
+                return crate::metadata::normalize_remote_artwork(&entry.body)
+                    .map_err(|_| TransportError::InvalidImage);
+            }
+        }
+        cache::cooldown(self.base.host_str().unwrap_or_default()).await?;
+        let bytes = timeout(
             self.policy.operation_timeout,
             self.request_image(url, allowed_hosts),
         )
         .await
-        .map_err(|_| TransportError::Timeout)?
+        .map_err(|_| TransportError::Timeout)??;
+        cache::store(
+            &key,
+            &cache::entry(
+                bytes.clone(),
+                CacheValidators::default(),
+                policy::PROFILE_TTL,
+            ),
+        )
+        .await?;
+        Ok(bytes)
     }
 
     async fn request_image(
@@ -381,6 +407,7 @@ impl EnrichmentHttpClient {
         let mut redirect = 0_u32;
         let mut attempt = 0_u32;
         loop {
+            cache::cooldown(self.base.host_str().unwrap_or_default()).await?;
             self.gate.wait().await;
             let request = self
                 .client
@@ -425,6 +452,7 @@ impl EnrichmentHttpClient {
                     .and_then(|value| retry_after_seconds(value, chrono::Utc::now().timestamp()))
                     .unwrap_or(60);
                 self.gate.defer(Duration::from_secs(seconds)).await;
+                cache::defer(self.base.host_str().unwrap_or_default(), seconds).await?;
                 return Err(TransportError::RateLimited {
                     retry_after_seconds: seconds,
                 });
@@ -437,6 +465,7 @@ impl EnrichmentHttpClient {
             if response.status == StatusCode::SERVICE_UNAVAILABLE {
                 if let Some(seconds @ 1..) = retry_after {
                     self.gate.defer(Duration::from_secs(seconds)).await;
+                    cache::defer(self.base.host_str().unwrap_or_default(), seconds).await?;
                     return Err(TransportError::HttpStatus {
                         status: response.status.as_u16(),
                         retry_after_seconds: Some(seconds),
@@ -455,25 +484,19 @@ impl EnrichmentHttpClient {
                     retry_after_seconds: retry_after,
                 });
             }
-            if response
-                .headers
-                .get(header::CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok())
-                .map(|value| value.split(';').next().unwrap_or_default().trim())
-                .is_some_and(|mime| !matches!(mime, "image/jpeg" | "image/png"))
-            {
-                return Err(TransportError::InvalidImage);
-            }
-            match self
+            let bytes = match self
                 .read_body_limit(&mut response, crate::metadata::MAX_ARTWORK_BYTES)
                 .await
             {
                 Err(error) if attempt < 2 && error.is_retryable_io() => {
                     self.backoff(attempt).await;
                     attempt += 1;
+                    continue;
                 }
-                result => return result,
-            }
+                result => result?,
+            };
+            return crate::metadata::normalize_remote_artwork(&bytes)
+                .map_err(|_| TransportError::InvalidImage);
         }
     }
 
@@ -490,10 +513,39 @@ impl EnrichmentHttpClient {
             .acquire()
             .await
             .map_err(|_| TransportError::Network)?;
-        let mut validators = validators.clone();
+        let resource = serde_json::to_string(&(url.as_str(), query))
+            .map_err(|_| TransportError::InvalidRequest)?;
+        let cache_key = cache::key(
+            &format!("json:{}", self.base.host_str().unwrap_or_default()),
+            &resource,
+        );
+        let _cache_lock = cache::request_lock(&cache_key).await?;
+        let cached = cache::load(&cache_key).await?;
+        if !cache::forced() {
+            if let Some(value) = cached.as_ref().filter(|value| value.fresh()) {
+                if let Some(error) = &value.failure {
+                    return Err(error.clone());
+                }
+                return Ok(JsonResponse::Modified {
+                    body: serde_json::from_slice(&value.body)
+                        .map_err(|_| TransportError::InvalidJson)?,
+                    validators: value.validators.clone(),
+                });
+            }
+        }
+        let caller_has_validators = validators.etag.is_some() || validators.last_modified.is_some();
+        let mut validators = if !caller_has_validators {
+            cached
+                .as_ref()
+                .map(|entry| entry.validators.clone())
+                .unwrap_or_default()
+        } else {
+            validators.clone()
+        };
         let mut redirects = 0;
         let mut attempt = 0_u32;
         loop {
+            cache::cooldown(self.base.host_str().unwrap_or_default()).await?;
             self.gate.wait().await;
             let mut request = self
                 .client
@@ -557,6 +609,7 @@ impl EnrichmentHttpClient {
             if status == StatusCode::TOO_MANY_REQUESTS {
                 let seconds = retry_after.unwrap_or(60);
                 self.gate.defer(Duration::from_secs(seconds)).await;
+                cache::defer(self.base.host_str().unwrap_or_default(), seconds).await?;
                 return Err(TransportError::RateLimited {
                     retry_after_seconds: seconds,
                 });
@@ -564,6 +617,7 @@ impl EnrichmentHttpClient {
             if status == StatusCode::SERVICE_UNAVAILABLE {
                 if let Some(seconds @ 1..) = retry_after {
                     self.gate.defer(Duration::from_secs(seconds)).await;
+                    cache::defer(self.base.host_str().unwrap_or_default(), seconds).await?;
                     return Err(TransportError::HttpStatus {
                         status: status.as_u16(),
                         retry_after_seconds: Some(seconds),
@@ -591,6 +645,30 @@ impl EnrichmentHttpClient {
             if status == StatusCode::NOT_MODIFIED
                 && (validators.etag.is_some() || validators.last_modified.is_some())
             {
+                if let Some(cached) = cached.as_ref().filter(|entry| entry.failure.is_none()) {
+                    let renewed = cache::entry(
+                        cached.body.clone(),
+                        CacheValidators {
+                            etag: received
+                                .etag
+                                .clone()
+                                .or_else(|| cached.validators.etag.clone()),
+                            last_modified: received
+                                .last_modified
+                                .clone()
+                                .or_else(|| cached.validators.last_modified.clone()),
+                        },
+                        policy::TRANSIENT_PROVIDER_FAILURE_TTL,
+                    );
+                    cache::store(&cache_key, &renewed).await?;
+                    if !caller_has_validators {
+                        return Ok(JsonResponse::Modified {
+                            body: serde_json::from_slice(&renewed.body)
+                                .map_err(|_| TransportError::InvalidJson)?,
+                            validators: renewed.validators,
+                        });
+                    }
+                }
                 return Ok(JsonResponse::NotModified {
                     validators: CacheValidators {
                         etag: received.etag.or_else(|| validators.etag.clone()),
@@ -601,14 +679,30 @@ impl EnrichmentHttpClient {
                 });
             }
             if !status.is_success() {
-                return Err(TransportError::HttpStatus {
+                let error = TransportError::HttpStatus {
                     status: status.as_u16(),
                     retry_after_seconds: retry_after,
-                });
+                };
+                cache::store(
+                    &cache_key,
+                    &cache::negative(error.clone(), policy::TRANSIENT_PROVIDER_FAILURE_TTL),
+                )
+                .await?;
+                return Err(error);
             }
             let body = self.read_body(&mut response).await?;
+            let parsed = serde_json::from_slice(&body).map_err(|_| TransportError::InvalidJson)?;
+            cache::store(
+                &cache_key,
+                &cache::entry(
+                    body,
+                    received.clone(),
+                    policy::TRANSIENT_PROVIDER_FAILURE_TTL,
+                ),
+            )
+            .await?;
             return Ok(JsonResponse::Modified {
-                body: serde_json::from_slice(&body).map_err(|_| TransportError::InvalidJson)?,
+                body: parsed,
                 validators: received,
             });
         }
@@ -687,7 +781,7 @@ fn validate_public_url(url: &Url, allowed_hosts: &[&str]) -> Result<(), Transpor
     Ok(())
 }
 
-fn retry_after_seconds(value: &str, now: i64) -> Option<u64> {
+pub(crate) fn retry_after_seconds(value: &str, now: i64) -> Option<u64> {
     let value = value.trim();
     let seconds = value.parse::<u64>().ok().or_else(|| {
         chrono::DateTime::parse_from_rfc2822(value)
@@ -814,6 +908,191 @@ pub(crate) mod tests {
         client
             .get_json("data", &[], &CacheValidators::default())
             .await
+    }
+
+    #[tokio::test]
+    async fn caller_snapshot_304_never_decodes_a_negative_cached_body() {
+        let path = std::env::temp_dir().join(format!(
+            "durvald-negative-304-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (http, _) = client(vec![
+            response(404, &[], &[], None),
+            response(304, &[], &[], None),
+        ]);
+        cache::CACHE_CONTEXT
+            .scope((path.clone(), false), async {
+                assert!(get(&http).await.is_err());
+            })
+            .await;
+        cache::CACHE_CONTEXT
+            .scope((path.clone(), true), async {
+                let validators = CacheValidators {
+                    etag: Some("domain-snapshot".into()),
+                    last_modified: None,
+                };
+                assert!(matches!(
+                    http.get_json::<serde_json::Value>("data", &[], &validators)
+                        .await
+                        .unwrap(),
+                    JsonResponse::NotModified { .. }
+                ));
+            })
+            .await;
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn overlapping_requests_share_one_representation_and_negative_results_reopen() {
+        let path = std::env::temp_dir().join(format!(
+            "durvald-concurrent-cache-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (http, mock) = client(vec![
+            response(200, &[], &[r#"{"ok":true}"#], None),
+            response(404, &[], &[], None),
+        ]);
+        cache::REQUEST_LOCKS
+            .scope(
+                Arc::default(),
+                cache::CACHE_CONTEXT.scope((path.clone(), false), async {
+                    let (a, b) = tokio::join!(get(&http), get(&http));
+                    assert!(a.is_ok() && b.is_ok());
+                    assert_eq!(mock.calls(), 1);
+                    assert!(matches!(
+                        http.get_json::<serde_json::Value>(
+                            "missing",
+                            &[],
+                            &CacheValidators::default()
+                        )
+                        .await,
+                        Err(TransportError::HttpStatus { status: 404, .. })
+                    ));
+                }),
+            )
+            .await;
+        let (reopened, empty_mock) = client(vec![]);
+        cache::CACHE_CONTEXT
+            .scope((path.clone(), false), async {
+                assert!(matches!(
+                    reopened
+                        .get_json::<serde_json::Value>("missing", &[], &CacheValidators::default())
+                        .await,
+                    Err(TransportError::HttpStatus { status: 404, .. })
+                ));
+                assert_eq!(empty_mock.calls(), 0);
+            })
+            .await;
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn durable_cache_reopens_and_revalidates_without_repeating_download() {
+        let path = std::env::temp_dir().join(format!(
+            "durvald-transport-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (first, mock) = client(vec![
+            response(200, &[("etag", "v1")], &[r#"{"cached":true}"#], None),
+            response(304, &[("etag", "v2")], &[], None),
+        ]);
+        cache::CACHE_CONTEXT
+            .scope((path.clone(), false), async {
+                assert!(matches!(
+                    get(&first).await.unwrap(),
+                    JsonResponse::Modified { .. }
+                ));
+                assert!(matches!(
+                    get(&first).await.unwrap(),
+                    JsonResponse::Modified { .. }
+                ));
+                assert_eq!(mock.calls(), 1);
+            })
+            .await;
+        cache::CACHE_CONTEXT
+            .scope((path.clone(), true), async {
+                let JsonResponse::Modified { body, validators } = get(&first).await.unwrap() else {
+                    panic!("missing representation");
+                };
+                assert_eq!(body["cached"], true);
+                assert_eq!(validators.etag.as_deref(), Some("v2"));
+                assert_eq!(
+                    mock.requests.lock().unwrap()[1].headers()[header::IF_NONE_MATCH],
+                    "v1"
+                );
+                assert_eq!(mock.calls(), 2);
+            })
+            .await;
+        let (reopened, empty_mock) = client(vec![]);
+        cache::CACHE_CONTEXT
+            .scope((path.clone(), false), async {
+                assert!(matches!(
+                    get(&reopened).await.unwrap(),
+                    JsonResponse::Modified { .. }
+                ));
+                assert_eq!(empty_mock.calls(), 0);
+                cache::clear_provider(EnrichmentProvider::MusicBrainz, false)
+                    .await
+                    .unwrap();
+                assert!(
+                    cache::load(&cache::key(
+                        "json:musicbrainz.org",
+                        &serde_json::to_string(&(
+                            "https://musicbrainz.org/data",
+                            Vec::<(&str, &str)>::new()
+                        ))
+                        .unwrap()
+                    ))
+                    .await
+                    .unwrap()
+                    .is_none()
+                );
+            })
+            .await;
+    }
+
+    #[tokio::test]
+    async fn durable_cooldown_blocks_other_resources_and_force_after_reopening() {
+        let path = std::env::temp_dir().join(format!(
+            "durvald-transport-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let (first, mock) = client(vec![response(429, &[("retry-after", "120")], &[], None)]);
+        cache::CACHE_CONTEXT
+            .scope((path.clone(), false), async {
+                assert!(matches!(
+                    get(&first).await,
+                    Err(TransportError::RateLimited { .. })
+                ));
+                assert_eq!(mock.calls(), 1);
+            })
+            .await;
+        let (reopened, empty_mock) = client(vec![]);
+        cache::CACHE_CONTEXT
+            .scope((path, true), async {
+                let result = reopened
+                    .get_json::<serde_json::Value>("other", &[], &CacheValidators::default())
+                    .await;
+                assert!(matches!(result, Err(TransportError::RateLimited { .. })));
+                assert_eq!(empty_mock.calls(), 0);
+            })
+            .await;
     }
 
     #[tokio::test(start_paused = true)]

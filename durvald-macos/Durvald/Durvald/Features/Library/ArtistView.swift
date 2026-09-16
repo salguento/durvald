@@ -205,6 +205,10 @@ struct ArtistView: View {
             )
             albums = albums.map { refreshedByID[$0.id] ?? $0 }
         }
+        .onChange(of: store.isUpdatingLibraryMetadata) { wasUpdating, isUpdating in
+            guard wasUpdating, !isUpdating else { return }
+            Task { await reloadCachedEnrichment() }
+        }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
     }
 
@@ -575,7 +579,9 @@ struct ArtistView: View {
             language: enrichmentLanguage
         )
         async let cachedDiscography = store.artistDiscography(artistId: artist.id)
-        let (newDetails, newDiscography) = await (cachedDetails, cachedDiscography)
+        async let cachedPopularTracks = store.artistPopularTracks(artistId: artist.id)
+        let (newDetails, newDiscography, newPopularTracks) = await (cachedDetails, cachedDiscography, cachedPopularTracks)
+        popularTracks = newPopularTracks
         details = newDetails
         catalogRefreshResults = []
         if let newDiscography {
@@ -602,6 +608,7 @@ struct ArtistView: View {
             force: force
         )
         let (detailsRefresh, catalogResult) = await (refreshedDetails, refreshedCatalog)
+        popularTracks = await store.artistPopularTracks(artistId: artist.id)
         if let newDetails = detailsRefresh.details {
             details = newDetails
         }
@@ -998,21 +1005,23 @@ struct ArtistView: View {
         guard !isRefreshingCatalog else { return }
         isRefreshingCatalog = true
         defer { isRefreshingCatalog = false }
-
         guard let result = await store.refreshArtistSections(
-            artistId: artist.id,
-            language: enrichmentLanguage,
-            sections: [section]
+            artistId: artist.id, language: enrichmentLanguage,
+            sections: [section], force: true
         ) else { return }
-
         mergeRefreshResults(result.sections)
         switch section {
         case .profile, .portrait:
-            details = await store.artistDetails(artistId: artist.id, language: enrichmentLanguage)
+            details = await store.artistDetails(
+                artistId: artist.id,
+                language: enrichmentLanguage
+            )
+
         case .discography, .covers:
             if let page = await store.artistDiscography(artistId: artist.id) {
                 applyDiscographyPage(page, reset: true)
             }
+
         case .popularTracks:
             popularTracks = await store.artistPopularTracks(artistId: artist.id)
         }
@@ -1045,6 +1054,7 @@ struct ArtistView: View {
             artistId: artist.id,
             language: enrichmentLanguage
         )
+        popularTracks = await store.artistPopularTracks(artistId: artist.id)
         if let result {
             mergeRefreshResults(result.sections)
         }

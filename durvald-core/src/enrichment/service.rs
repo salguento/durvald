@@ -100,6 +100,7 @@ pub struct EnrichmentService {
     /// Enrichment snapshots are published in short, serialized database jobs.
     /// Network and filesystem work always happens before this gate is taken.
     write_coordinator: Arc<tokio::sync::Mutex<()>>,
+    http_request_locks: Arc<super::cache::RequestLocks>,
     covers_dir: Arc<std::path::PathBuf>,
 }
 
@@ -123,6 +124,7 @@ impl EnrichmentService {
             flights: Arc::default(),
             refresh_flights: Arc::default(),
             write_coordinator: Arc::default(),
+            http_request_locks: Arc::default(),
         }
     }
 
@@ -159,7 +161,7 @@ impl EnrichmentService {
     /// LOCKED. Other storage and domain failures are returned immediately.
     async fn write_database_idempotent<T, F>(
         &self,
-        operation_name: &'static str,
+        _operation_name: &'static str,
         operation: F,
     ) -> CoreResult<T>
     where
@@ -172,21 +174,15 @@ impl EnrichmentService {
             let conn = pool.get().map_err(|error| CoreError::Storage {
                 message: error.to_string(),
             })?;
-            let mut waited = std::time::Duration::ZERO;
             for attempt in 0..Self::SQLITE_WRITE_ATTEMPTS {
                 match operation(&conn) {
                     Ok(value) => return Ok(value),
                     Err(error) => {
-                        let Some(extended_code) =
-                            crate::database::sqlite_busy_extended_code(&error)
+                        let Some(_) = crate::database::sqlite_busy_extended_code(&error)
                         else {
                             return Err(error);
                         };
                         if attempt + 1 == Self::SQLITE_WRITE_ATTEMPTS {
-                            eprintln!(
-                                "enrichment_sqlite_retry operation={operation_name} extended_code={extended_code} wait_ms={} exhausted=true",
-                                waited.as_millis()
-                            );
                             return Err(error);
                         }
                         let jitter_ms = u64::from(
@@ -198,11 +194,6 @@ impl EnrichmentService {
                         );
                         let delay = Self::SQLITE_RETRY_BASE * (1 << attempt)
                             + std::time::Duration::from_millis(jitter_ms);
-                        waited += delay;
-                        eprintln!(
-                            "enrichment_sqlite_retry operation={operation_name} extended_code={extended_code} wait_ms={} exhausted=false",
-                            waited.as_millis()
-                        );
                         std::thread::sleep(delay);
                     }
                 }
@@ -231,7 +222,7 @@ impl EnrichmentService {
     {
         use super::models::ProviderFailureSnapshot;
         let now = chrono::Utc::now().timestamp();
-        if !force {
+        {
             let lookup_key = resource_key.clone();
             if let Some(failure) = self
                 .database(move |conn| {
@@ -248,11 +239,17 @@ impl EnrichmentService {
                 .await
                 .map_err(storage_transport)?
             {
-                return Err(cached_transport_error(&failure));
+                if !force
+                    || matches!(failure.error_code.as_str(), "rate_limited" | "http_429")
+                    || failure.retry_after_seconds.is_some()
+                {
+                    return Err(cached_transport_error(&failure));
+                }
             }
         }
 
-        match request.await {
+        let response = self.cached_request(force, request).await;
+        match response {
             Ok(value) => {
                 self.write_database_idempotent("provider_failure.clear", move |conn| {
                     enrichment::clear_provider_failure(
@@ -291,6 +288,28 @@ impl EnrichmentService {
         }
     }
 
+    async fn cached_request<T>(&self, force: bool, request: impl Future<Output = T>) -> T {
+        // Paused-clock domain tests use scripted clients. Transport/cache tests
+        // opt into the same production CACHE_CONTEXT using a real clock.
+        #[cfg(test)]
+        {
+            let _ = (force, &self.http_request_locks);
+            request.await
+        }
+        #[cfg(not(test))]
+        {
+            super::cache::REQUEST_LOCKS
+                .scope(
+                    self.http_request_locks.clone(),
+                    super::cache::CACHE_CONTEXT.scope(
+                        (self.covers_dir.join("enrichment-http.sqlite"), force),
+                        request,
+                    ),
+                )
+                .await
+        }
+    }
+
     pub async fn artist_identity(&self, artist_id: i64) -> CoreResult<ArtistIdentity> {
         // Identity resolution currently repairs its materialized state, so it
         // participates in the same publication queue as snapshot writes.
@@ -322,7 +341,9 @@ impl EnrichmentService {
                 let (sender, receiver) = tokio::sync::watch::channel(None);
                 let service = self.clone();
                 let task = tokio::spawn(async move {
-                    let result = service.resolve_identity_once(artist_id).await;
+                    let result = service
+                        .cached_request(false, service.resolve_identity_once(artist_id))
+                        .await;
                     let _ = sender.send(Some(result));
                 });
                 let flight = Arc::new(IdentityFlight {
@@ -509,6 +530,18 @@ impl EnrichmentService {
     }
 
     pub async fn external_release_details(
+        &self,
+        artist_id: i64,
+        release_group_mbid: String,
+    ) -> CoreResult<ExternalReleaseDetails> {
+        self.cached_request(
+            false,
+            self.external_release_details_once(artist_id, release_group_mbid),
+        )
+        .await
+    }
+
+    async fn external_release_details_once(
         &self,
         artist_id: i64,
         release_group_mbid: String,
@@ -746,7 +779,12 @@ impl EnrichmentService {
                 let (sender, receiver) = tokio::sync::watch::channel(None);
                 let service = self.clone();
                 let task = tokio::spawn(async move {
-                    let result = service.refresh_artist_once(artist_id, request).await;
+                    let result = service
+                        .cached_request(
+                            request.force,
+                            service.refresh_artist_once(artist_id, request),
+                        )
+                        .await;
                     let _ = sender.send(Some(result));
                 });
                 let flight = Arc::new(RefreshFlight {
@@ -998,6 +1036,17 @@ impl EnrichmentService {
             .as_ref()
             .map(|value| value.validators.clone())
             .unwrap_or_default();
+        let artist_name = self
+            .database(move |conn| {
+                conn.query_row(
+                    "SELECT name FROM artists WHERE artist_id=?1",
+                    [artist_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|error| crate::database::storage_error("Artist name", error))
+            })
+            .await
+            .map_err(storage_transport)?;
         let resource_key = provider_resource_key(&[mbid]);
         let response = self
             .provider_request(
@@ -1007,7 +1056,7 @@ impl EnrichmentService {
                 "popular_tracks",
                 resource_key,
                 force,
-                self.lastfm.top_tracks(mbid, &validators),
+                self.lastfm.top_tracks(mbid, &artist_name, &validators),
             )
             .await?;
         match response {
@@ -1710,6 +1759,57 @@ impl EnrichmentService {
                 TransportError::InvalidRequest,
             );
         };
+        if !force {
+            match self.artist_details(artist_id, language.to_owned()).await {
+                Ok(details) => {
+                    let profile_fresh = details.sources.iter().any(|source| {
+                        source.provider == EnrichmentProvider::LastFm && !source.stale
+                    });
+                    let portrait_fresh = details.portrait.as_ref().is_some_and(|portrait| {
+                        portrait.provider == EnrichmentProvider::LastFm
+                            && !portrait.stale
+                            && std::path::Path::new(&portrait.managed_path).is_file()
+                    });
+                    if (!requested_profile || profile_fresh)
+                        && (!requested_portrait || portrait_fresh)
+                    {
+                        return LastFmRefreshOutcome {
+                            profile: requested_profile
+                                .then_some(Ok(ArtistRefreshStatus::Unchanged)),
+                            portrait: requested_portrait
+                                .then_some(Ok(ArtistRefreshStatus::Unchanged)),
+                        };
+                    }
+                }
+                Err(error) => {
+                    return LastFmRefreshOutcome::failed(
+                        requested_profile,
+                        requested_portrait,
+                        storage_transport(error),
+                    );
+                }
+            }
+        }
+        let artist_name = match self
+            .database(move |conn| {
+                conn.query_row(
+                    "SELECT name FROM artists WHERE artist_id=?1",
+                    [artist_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(|error| crate::database::storage_error("Artist name", error))
+            })
+            .await
+        {
+            Ok(name) => name,
+            Err(error) => {
+                return LastFmRefreshOutcome::failed(
+                    requested_profile,
+                    requested_portrait,
+                    storage_transport(error),
+                );
+            }
+        };
         let lookup_language = language.to_owned();
         let validators = match self
             .database(move |conn| {
@@ -1731,6 +1831,21 @@ impl EnrichmentService {
                 );
             }
         };
+        let validators = if force
+            || (requested_portrait
+                && self
+                    .database(move |conn| {
+                        enrichment::asset_path(conn, artist_id, EnrichmentProvider::LastFm)
+                    })
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_none_or(|path| !std::path::Path::new(&path).is_file()))
+        {
+            super::models::CacheValidators::default()
+        } else {
+            validators
+        };
         let resource_key = provider_resource_key(&[mbid, language]);
         let response = match self
             .provider_request(
@@ -1740,7 +1855,8 @@ impl EnrichmentService {
                 "artist_info",
                 resource_key,
                 force,
-                self.lastfm.artist_info(mbid, language, &validators),
+                self.lastfm
+                    .artist_info(mbid, &artist_name, language, &validators),
             )
             .await
         {
@@ -1780,13 +1896,20 @@ impl EnrichmentService {
                 };
                 let portrait = if requested_portrait {
                     match self
-                        .database(move |conn| {
-                            enrichment::asset_path(conn, artist_id, EnrichmentProvider::LastFm)
+                        .write_database_idempotent("lastfm.portrait.touch", move |conn| {
+                            enrichment::touch_artist_asset(
+                                conn,
+                                artist_id,
+                                generation,
+                                EnrichmentProvider::LastFm,
+                                now,
+                                expires_at,
+                            )
                         })
                         .await
                     {
-                        Ok(Some(_)) => Some(Ok(ArtistRefreshStatus::Unchanged)),
-                        Ok(None) => Some(Ok(ArtistRefreshStatus::NotFound)),
+                        Ok(true) => Some(Ok(ArtistRefreshStatus::Unchanged)),
+                        Ok(false) => Some(Ok(ArtistRefreshStatus::NotFound)),
                         Err(error) => Some(Err(storage_transport(error))),
                     }
                 } else {
@@ -1853,24 +1976,64 @@ impl EnrichmentService {
     ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
         use super::models::AssetSnapshot;
         use super::transport::TransportError;
-        let resource_key = provider_resource_key(&[&portrait.provider_id]);
-        let bytes = self
-            .provider_request(
-                artist_id,
-                generation,
-                EnrichmentProvider::LastFm,
-                "portrait_image",
-                resource_key,
-                force,
-                self.lastfm.download(&portrait.download_url),
+        let existing = self
+            .artist_details(artist_id, "und".into())
+            .await
+            .map_err(storage_transport)?;
+        if existing.identity_generation != generation {
+            return Ok(ArtistRefreshStatus::Superseded);
+        }
+        let candidate = existing.portrait.filter(|asset| {
+            asset.provider == EnrichmentProvider::LastFm
+                && asset.provider_id == portrait.provider_id
+        });
+        let reused = tokio::task::spawn_blocking(move || {
+            candidate.filter(|asset| {
+                let path = std::path::Path::new(&asset.managed_path);
+                std::fs::metadata(path)
+                    .is_ok_and(|metadata| metadata.is_file() && metadata.len() <= 20 * 1024 * 1024)
+                    && std::fs::read(path)
+                        .is_ok_and(|bytes| crate::metadata::validate_artwork_bytes(&bytes).is_ok())
+            })
+        })
+        .await
+        .map_err(|_| TransportError::Storage {
+            extended_code: None,
+        })?;
+        let (managed_path, width, height) = if let Some(asset) = reused {
+            (
+                std::path::PathBuf::from(asset.managed_path),
+                asset.width,
+                asset.height,
             )
-            .await?;
-        let covers_dir = self.covers_dir.clone();
-        let managed_path =
-            tokio::task::spawn_blocking(move || crate::artwork::write_managed(&covers_dir, &bytes))
-                .await
-                .map_err(|_| TransportError::Network)?
-                .map_err(|_| TransportError::InvalidImage)?;
+        } else {
+            let resource_key = provider_resource_key(&[&portrait.provider_id]);
+            let bytes = self
+                .provider_request(
+                    artist_id,
+                    generation,
+                    EnrichmentProvider::LastFm,
+                    "portrait_image",
+                    resource_key,
+                    force,
+                    self.lastfm.download(&portrait.download_url),
+                )
+                .await?;
+            let covers_dir = self.covers_dir.clone();
+            tokio::task::spawn_blocking(move || {
+                let path = crate::artwork::write_managed(&covers_dir, &bytes).map_err(|_| {
+                    TransportError::Storage {
+                        extended_code: None,
+                    }
+                })?;
+                let dimensions = image::image_dimensions(&path).ok();
+                Ok::<_, TransportError>((path, dimensions.map(|v| v.0), dimensions.map(|v| v.1)))
+            })
+            .await
+            .map_err(|_| TransportError::Storage {
+                extended_code: None,
+            })??
+        };
         let previous_path = self
             .database(move |conn| {
                 enrichment::asset_path(conn, artist_id, EnrichmentProvider::LastFm)
@@ -1884,8 +2047,8 @@ impl EnrichmentService {
             provider_id: portrait.provider_id,
             source_url: portrait.source_url,
             managed_path: managed_path.to_string_lossy().into_owned(),
-            width: None,
-            height: None,
+            width,
+            height,
             attribution: portrait.attribution,
             fetched_at: chrono::Utc::now().timestamp(),
             expires_at,
@@ -1915,7 +2078,7 @@ impl EnrichmentService {
         language: &str,
         force: bool,
     ) -> Result<ProfileRefreshOutcome, super::transport::TransportError> {
-        use super::models::{ProfileSnapshot, ProviderFailureSnapshot};
+        use super::models::{CacheValidators, ProfileSnapshot, ProviderFailureSnapshot};
         use super::policy::{NOT_FOUND_TTL, PROFILE_TTL};
         use super::transport::TransportError;
         let artist_id = identity.artist_id;
@@ -2001,13 +2164,16 @@ impl EnrichmentService {
             .get_or_init(super::providers::wikidata::Wikidata::new)
             .as_ref()
             .map_err(|_| TransportError::Configuration)?;
-        let cached_validators = self
-            .database(move |conn| {
+        let cached_validators = if force {
+            CacheValidators::default()
+        } else {
+            self.database(move |conn| {
                 enrichment::profile_validators(conn, artist_id, EnrichmentProvider::Wikidata, "und")
             })
             .await
             .map_err(storage_transport)?
-            .unwrap_or_default();
+            .unwrap_or_default()
+        };
         let resource_key = provider_resource_key(&[&qid, language]);
         let response = self
             .provider_request(
@@ -2404,6 +2570,11 @@ impl EnrichmentService {
                 enrichment::clear_provider_data(conn, provider)
             })
             .await?;
+        self.cached_request(false, super::cache::clear_provider(provider, false))
+            .await
+            .map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })?;
         self.remove_managed_paths(paths).await
     }
 
@@ -2411,7 +2582,12 @@ impl EnrichmentService {
         self.write_database_idempotent("provider.clear_failures", move |conn| {
             enrichment::clear_provider_failures(conn, provider)
         })
-        .await
+        .await?;
+        self.cached_request(false, super::cache::clear_provider(provider, true))
+            .await
+            .map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })
     }
 
     async fn prune_provider_snapshots(
@@ -2736,11 +2912,11 @@ fn provider_failure_ttl(error: &super::transport::TransportError) -> Option<std:
         {
             Some(PERMANENT_FAILURE_TTL)
         }
+        TransportError::InvalidImage => Some(TRANSIENT_PROVIDER_FAILURE_TTL),
         TransportError::NotConfigured
         | TransportError::Configuration
         | TransportError::InvalidRequest
         | TransportError::InvalidJson
-        | TransportError::InvalidImage
         | TransportError::BodyTooLarge => Some(PERMANENT_FAILURE_TTL),
         _ => None,
     }
@@ -3419,7 +3595,7 @@ mod tests {
         image::DynamicImage::new_rgb8(2, 2)
             .write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)
             .unwrap();
-        let lastfm = test_lastfm_metadata_client(
+        let lastfm = test_lastfm_metadata_client_with_options(
             serde_json::json!({
                 "artist": {
                     "name": "Same Name",
@@ -3432,6 +3608,15 @@ mod tests {
                 }
             }),
             Some(png),
+            crate::lastfm::LastFmResponseHeaders {
+                validators: super::super::models::CacheValidators {
+                    etag: Some("portrait-v1".into()),
+                    last_modified: None,
+                },
+                ..Default::default()
+            },
+            true,
+            std::time::Duration::ZERO,
         );
         let service = service_with_lastfm(lastfm);
         service
@@ -3446,7 +3631,10 @@ mod tests {
             .confirm_artist_identity(1, Some("11111111-1111-4111-8111-111111111111".into()))
             .await
             .unwrap();
-        let (musicbrainz, _) = client(vec![response(200, &[], &[r#"{"relations":[]}"#], None)]);
+        let (musicbrainz, _) = client(vec![
+            response(200, &[], &[r#"{"relations":[]}"#], None),
+            response(200, &[], &[r#"{"relations":[]}"#], None),
+        ]);
         service
             .musicbrainz
             .set(Ok(MusicBrainz { http: musicbrainz }))
@@ -3493,6 +3681,75 @@ mod tests {
             Some("Last.fm community")
         );
         assert!(std::path::Path::new(&portrait.managed_path).is_file());
+        assert_eq!((portrait.width, portrait.height), (Some(2), Some(2)));
+        service
+            .database(|conn| {
+                conn.execute_batch(
+                    "UPDATE artist_profile_sources SET fetched_at=0, expires_at=0;
+                UPDATE enrichment_assets SET fetched_at=0, expires_at=0;",
+                )
+                .map_err(|error| CoreError::Storage {
+                    message: error.to_string(),
+                })
+            })
+            .await
+            .unwrap();
+        // No raw HTTP cache in this scripted service test: 304 must renew the
+        // domain asset even when its HTTP representation was evicted.
+        let conditional = service
+            .refresh_artist(
+                1,
+                ArtistRefreshRequest {
+                    sections: vec![ArtistRefreshSection::Portrait],
+                    language: "pt".into(),
+                    force: false,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            conditional.sections[0].status,
+            ArtistRefreshStatus::Unchanged
+        );
+        let refreshed = service
+            .artist_details(1, "pt".into())
+            .await
+            .unwrap()
+            .portrait
+            .unwrap();
+        assert!(!refreshed.stale);
+        assert_eq!(refreshed.managed_path, portrait.managed_path);
+        let mut reopened = service.clone();
+        // No image fixture: any redundant download would fail this refresh.
+        reopened.lastfm = Arc::new(super::super::providers::lastfm::LastFm::new(
+            test_lastfm_metadata_client(serde_json::json!({}), None),
+        ));
+        let expiry = chrono::Utc::now().timestamp() + 86400;
+        let status = reopened
+            .store_lastfm_portrait(
+                1,
+                details.identity_generation,
+                super::super::providers::lastfm::LastFmPortrait {
+                    provider_id: portrait.provider_id,
+                    download_url: "https://lastfm.freetls.fastly.net/i/u/300/portrait.png".into(),
+                    source_url: portrait.source_url,
+                    attribution: portrait.attribution,
+                },
+                expiry,
+                true,
+            )
+            .await
+            .unwrap();
+        assert_eq!(status, ArtistRefreshStatus::Updated);
+        let renewed = reopened
+            .artist_details(1, "pt".into())
+            .await
+            .unwrap()
+            .portrait
+            .unwrap();
+        assert_eq!(renewed.managed_path, portrait.managed_path);
+        assert_eq!(renewed.expires_at, expiry);
+        assert_eq!((renewed.width, renewed.height), (Some(2), Some(2)));
     }
 
     #[tokio::test]

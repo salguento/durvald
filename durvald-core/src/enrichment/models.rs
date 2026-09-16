@@ -3,7 +3,7 @@ use crate::api::{
 };
 
 /// Conditional-request metadata stays internal to Rust.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CacheValidators {
     pub etag: Option<String>,
     pub last_modified: Option<String>,

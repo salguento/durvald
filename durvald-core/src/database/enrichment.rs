@@ -41,18 +41,23 @@ pub fn active_provider_failure(
         return Err(invalid("Invalid provider failure lookup"));
     }
     let generation = i64::try_from(identity_generation).map_err(storage)?;
+    let invalid_image_cutoff = now.saturating_sub(
+        crate::enrichment::policy::TRANSIENT_PROVIDER_FAILURE_TTL.as_secs() as i64,
+    );
     conn.query_row(
         "SELECT error_code, retry_after_seconds
          FROM enrichment_provider_failures
          WHERE artist_id = ?1 AND provider = ?2 AND operation = ?3
-           AND resource_key = ?4 AND identity_generation = ?5 AND expires_at > ?6",
+           AND resource_key = ?4 AND identity_generation = ?5 AND expires_at > ?6
+           AND (error_code != 'invalid_image' OR recorded_at > ?7)",
         params![
             artist_id,
             provider.as_str(),
             operation,
             resource_key,
             generation,
-            now
+            now,
+            invalid_image_cutoff
         ],
         |row| {
             let retry_after = row.get::<_, Option<i64>>(1)?;
@@ -619,6 +624,36 @@ pub fn store_asset(conn: &Connection, snapshot: &AssetSnapshot) -> CoreResult<bo
     .map_err(storage)?;
     tx.commit().map_err(storage)?;
     Ok(true)
+}
+
+/// Renews a materialized artist asset after a conditional metadata response.
+/// An obsolete identity generation can never renew the current portrait.
+pub fn touch_artist_asset(
+    conn: &Connection,
+    artist_id: i64,
+    generation: u64,
+    provider: EnrichmentProvider,
+    fetched_at: i64,
+    expires_at: i64,
+) -> CoreResult<bool> {
+    let generation = i64::try_from(generation).map_err(storage)?;
+    if expires_at < fetched_at {
+        return Err(invalid("Invalid asset expiry"));
+    }
+    conn.execute(
+        "UPDATE enrichment_assets SET fetched_at=?4, expires_at=?5
+        WHERE artist_id=?1 AND provider=?2 AND catalog_key='' AND generation=?3
+        AND EXISTS (SELECT 1 FROM artist_enrichment_state WHERE artist_id=?1 AND generation=?3)",
+        params![
+            artist_id,
+            provider.as_str(),
+            generation,
+            fetched_at,
+            expires_at
+        ],
+    )
+    .map(|changed| changed > 0)
+    .map_err(storage)
 }
 
 /// Stores an external catalog cover without ever writing `releases.artwork`.

@@ -3,6 +3,7 @@
 final class FakeDurvaldCore: DurvaldCore {
     var snapshot: PlaybackSnapshot
     var releaseTrackResults: [Track] = []
+    private(set) var artistRefreshRequests: [ArtistRefreshRequest] = []
     var favoriteError: Error?
     private(set) var favoriteChanges: [Bool] = []
     var onSeek: ((UInt64) -> Void)?
@@ -27,6 +28,13 @@ final class FakeDurvaldCore: DurvaldCore {
     required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
         fatalError("FakeDurvaldCore não aceita ponteiros do backend Rust")
     }
+
+    override func refreshArtist(artistId: Int64, request: ArtistRefreshRequest) async throws -> ArtistRefreshResult {
+        artistRefreshRequests.append(request)
+        return ArtistRefreshResult(artistId: artistId, identityGeneration: 0, sections: [])
+    }
+
+    override func artistReleases(artistId: Int64) async throws -> [Release] { [] }
 
     override func playback() async -> PlaybackSnapshot {
         if let playbackHandler {

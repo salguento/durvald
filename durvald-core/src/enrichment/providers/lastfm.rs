@@ -37,18 +37,20 @@ struct ArtistInfoResponse {
 
 #[derive(Debug, Deserialize)]
 struct TopTracksResponse {
+    #[serde(default, deserialize_with = "deserialize_toptracks")]
     toptracks: RemoteTopTracks,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct RemoteTopTracks {
+    #[serde(default, deserialize_with = "deserialize_tracks")]
     track: Vec<RemoteTopTrack>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RemoteTopTrack {
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_string")]
     mbid: String,
     url: String,
     #[serde(default, deserialize_with = "deserialize_u64")]
@@ -62,7 +64,7 @@ struct RemoteArtist {
     name: String,
     #[serde(default)]
     url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_images")]
     image: Vec<RemoteImage>,
     #[serde(default)]
     bio: Option<RemoteBio>,
@@ -82,6 +84,36 @@ struct RemoteBio {
     summary: String,
     #[serde(default)]
     content: String,
+}
+
+fn deserialize_toptracks<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<RemoteTopTracks, D::Error> {
+    Ok(Option::<RemoteTopTracks>::deserialize(deserializer)?.unwrap_or_default())
+}
+fn deserialize_images<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<RemoteImage>, D::Error> {
+    Ok(Option::<Vec<RemoteImage>>::deserialize(deserializer)?.unwrap_or_default())
+}
+fn deserialize_optional_string<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+fn deserialize_tracks<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<RemoteTopTrack>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if value.is_null() || value.as_str() == Some("") {
+        return Ok(Vec::new());
+    }
+    serde_json::from_value(if value.is_object() {
+        serde_json::Value::Array(vec![value])
+    } else {
+        value
+    })
+    .map_err(serde::de::Error::custom)
 }
 
 impl LastFm {
@@ -104,6 +136,7 @@ impl LastFm {
     pub async fn artist_info(
         &self,
         mbid: &str,
+        artist_name: &str,
         language: &str,
         validators: &CacheValidators,
     ) -> Result<ProviderResponse<LastFmArtistInfo>, TransportError> {
@@ -118,8 +151,50 @@ impl LastFm {
                 &[("mbid", &mbid), ("lang", &language), ("autocorrect", "0")],
                 validators,
             )
-            .await
-            .map_err(map_error)?;
+            .await;
+        let mut used_name = false;
+        let mut response = match response {
+            Err(LastFmError::Api { code: 7, .. }) if !artist_name.trim().is_empty() => {
+                used_name = true;
+                self.client
+                    .get_metadata_json(
+                        "artist.getInfo",
+                        &[
+                            ("artist", artist_name),
+                            ("lang", &language),
+                            ("autocorrect", "0"),
+                        ],
+                        &CacheValidators::default(),
+                    )
+                    .await
+                    .map_err(map_error)?
+            }
+            value => value.map_err(map_error)?,
+        };
+        let mbid_result_is_empty = match &response {
+            LastFmMetadataResponse::Modified { body, headers } if !used_name => {
+                serde_json::from_value::<ArtistInfoResponse>(body.clone())
+                    .ok()
+                    .and_then(|remote| normalize_artist_info(remote.artist, headers.clone()).ok())
+                    .is_some_and(|value| value.profile.is_none() && value.portrait.is_none())
+            }
+            _ => false,
+        };
+        if mbid_result_is_empty && !artist_name.trim().is_empty() {
+            response = self
+                .client
+                .get_metadata_json(
+                    "artist.getInfo",
+                    &[
+                        ("artist", artist_name),
+                        ("lang", &language),
+                        ("autocorrect", "0"),
+                    ],
+                    &CacheValidators::default(),
+                )
+                .await
+                .map_err(map_error)?;
+        }
         match response {
             LastFmMetadataResponse::NotModified { headers } => Ok(ProviderResponse::NotModified {
                 validators: headers.validators,
@@ -127,7 +202,22 @@ impl LastFm {
             LastFmMetadataResponse::Modified { body, headers } => {
                 let remote: ArtistInfoResponse =
                     serde_json::from_value(body).map_err(|_| TransportError::InvalidJson)?;
-                let value = normalize_artist_info(remote.artist, headers.clone())?;
+                let source_url = normalize_catalog_url(&remote.artist.url, &remote.artist.name)
+                    .ok_or(TransportError::InvalidJson)?;
+                let mut value = normalize_artist_info(remote.artist, headers.clone())?;
+                if value.portrait.is_none() {
+                    match self.client.artist_page_image(&source_url).await {
+                        Ok(Some(download_url)) => {
+                            value.portrait = Some(portrait_for_url(download_url, source_url))
+                        }
+                        Err(error @ LastFmError::HttpStatus { status: 429, .. }) => {
+                            return Err(map_error(error));
+                        }
+                        // The API biography remains usable when a public page is
+                        // blocked or has no portrait; the page has its own TTL.
+                        _ => {}
+                    }
+                }
                 Ok(ProviderResponse::Modified {
                     value,
                     validators: headers.validators,
@@ -139,6 +229,7 @@ impl LastFm {
     pub async fn top_tracks(
         &self,
         mbid: &str,
+        artist_name: &str,
         validators: &CacheValidators,
     ) -> Result<ProviderResponse<(Vec<ArtistPopularTrack>, i64)>, TransportError> {
         let mbid = crate::enrichment::identity::normalize_mbid(mbid)
@@ -150,8 +241,46 @@ impl LastFm {
                 &[("mbid", &mbid), ("limit", "10"), ("autocorrect", "0")],
                 validators,
             )
-            .await
-            .map_err(map_error)?;
+            .await;
+        let used_name = matches!(&response, Err(LastFmError::Api { code: 7, .. }));
+        let response = match response {
+            Err(LastFmError::Api { code: 7, .. }) if !artist_name.trim().is_empty() => self
+                .client
+                .get_metadata_json(
+                    "artist.getTopTracks",
+                    &[
+                        ("artist", artist_name),
+                        ("limit", "10"),
+                        ("autocorrect", "0"),
+                    ],
+                    &CacheValidators::default(),
+                )
+                .await
+                .map_err(map_error)?,
+            value => value.map_err(map_error)?,
+        };
+        let response = match &response {
+            LastFmMetadataResponse::Modified { body, .. }
+                if !used_name
+                    && !artist_name.trim().is_empty()
+                    && serde_json::from_value::<TopTracksResponse>(body.clone())
+                        .is_ok_and(|remote| remote.toptracks.track.is_empty()) =>
+            {
+                self.client
+                    .get_metadata_json(
+                        "artist.getTopTracks",
+                        &[
+                            ("artist", artist_name),
+                            ("limit", "10"),
+                            ("autocorrect", "0"),
+                        ],
+                        &CacheValidators::default(),
+                    )
+                    .await
+                    .map_err(map_error)?
+            }
+            _ => response,
+        };
         match response {
             LastFmMetadataResponse::NotModified { headers } => Ok(ProviderResponse::NotModified {
                 validators: headers.validators,
@@ -223,8 +352,14 @@ fn normalize_artist_info(
         .image
         .into_iter()
         .filter_map(|image| {
-            let url = reqwest::Url::parse(image.url.trim()).ok()?;
-            (url.scheme() == "https").then_some((image_rank(&image.size), url.to_string()))
+            if image.url.contains("2a96cbd8b46e442fc41c2b86b821562f") {
+                return None;
+            }
+            let mut url = reqwest::Url::parse(image.url.trim()).ok()?;
+            (crate::lastfm::valid_lastfm_image_url(&url)).then(|| {
+                url.set_fragment(None);
+                (image_rank(&image.size), url.to_string())
+            })
         })
         .max_by_key(|(rank, _)| *rank)
         .map(|(_, download_url)| LastFmPortrait {
@@ -246,6 +381,21 @@ fn normalize_artist_info(
             crate::enrichment::policy::PROFILE_TTL,
         ),
     })
+}
+
+fn portrait_for_url(download_url: String, source_url: String) -> LastFmPortrait {
+    LastFmPortrait {
+        provider_id: format!("{:x}", Md5::digest(download_url.as_bytes())),
+        download_url,
+        attribution: EnrichmentAttribution {
+            source_url: source_url.clone(),
+            author: Some("Last.fm community".into()),
+            license_name: None,
+            license_url: None,
+            revision: None,
+        },
+        source_url,
+    }
 }
 
 fn normalize_catalog_url(value: &str, artist_name: &str) -> Option<String> {
@@ -297,10 +447,7 @@ fn normalize_top_tracks(
             let musicbrainz_id = if track.mbid.trim().is_empty() {
                 None
             } else {
-                Some(
-                    crate::enrichment::identity::normalize_mbid(&track.mbid)
-                        .ok_or(TransportError::InvalidJson)?,
-                )
+                crate::enrichment::identity::normalize_mbid(&track.mbid)
             };
             Ok(ArtistPopularTrack {
                 rank: index as u32 + 1,
@@ -439,6 +586,7 @@ fn map_error(error: LastFmError) -> TransportError {
             retry_after_seconds: retry_after.as_deref().and_then(parse_retry_after),
         },
         LastFmError::MetadataNetwork | LastFmError::Network(_) => TransportError::Network,
+        LastFmError::MetadataStorage { extended_code } => TransportError::Storage { extended_code },
         LastFmError::Json(_) => TransportError::InvalidJson,
         LastFmError::ResponseTooLarge { .. } => TransportError::BodyTooLarge,
         LastFmError::RateLimit(_) => TransportError::RateLimited {
@@ -478,6 +626,54 @@ mod tests {
             cache_control: cache_control.map(str::to_owned),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn cache_storage_errors_are_never_reported_as_invalid_images() {
+        assert_eq!(
+            map_image_error(LastFmError::MetadataStorage {
+                extended_code: Some(5)
+            }),
+            TransportError::Storage {
+                extended_code: Some(5)
+            }
+        );
+    }
+
+    #[test]
+    fn toptracks_accepts_missing_null_and_singleton_api_shapes() {
+        for body in [serde_json::json!({}), serde_json::json!({"toptracks":null})] {
+            assert!(
+                serde_json::from_value::<TopTracksResponse>(body)
+                    .unwrap()
+                    .toptracks
+                    .track
+                    .is_empty()
+            );
+        }
+        let artist: ArtistInfoResponse =
+            serde_json::from_value(serde_json::json!({"artist":{"name":"Artist", "image":null}}))
+                .unwrap();
+        assert!(artist.artist.image.is_empty());
+
+        for tracks in [
+            serde_json::json!({}),
+            serde_json::json!({"track":null}),
+            serde_json::json!({"track":""}),
+        ] {
+            let parsed: TopTracksResponse =
+                serde_json::from_value(serde_json::json!({"toptracks":tracks})).unwrap();
+            assert!(parsed.toptracks.track.is_empty());
+        }
+        let parsed: TopTracksResponse =
+            serde_json::from_value(serde_json::json!({"toptracks":{"track":{
+                "name":"Track", "url":"https://www.last.fm/music/Artist/_/Track", "mbid":null
+            }}}))
+            .unwrap();
+        assert_eq!(
+            normalize_top_tracks(parsed.toptracks.track).unwrap().len(),
+            1
+        );
     }
 
     #[test]
@@ -550,6 +746,29 @@ mod tests {
         let portrait_only = normalize_artist_info(portrait_only.artist, headers(None)).unwrap();
         assert!(portrait_only.profile.is_none());
         assert!(portrait_only.portrait.is_some());
+    }
+
+    #[test]
+    fn shared_lastfm_placeholder_is_not_an_artist_photo() {
+        let remote: ArtistInfoResponse = serde_json::from_value(serde_json::json!({
+            "artist": { "name": "Casey MQ", "image": [{ "size": "mega", "#text": "https://lastfm.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png" }] }
+        })).unwrap();
+        assert!(
+            normalize_artist_info(remote.artist, headers(None))
+                .unwrap()
+                .portrait
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn malformed_optional_track_mbid_does_not_discard_ranking() {
+        let remote: TopTracksResponse = serde_json::from_value(serde_json::json!({
+            "toptracks": {"track": [{"name": "Track", "url": "https://www.last.fm/music/Casey+MQ/_/Track", "mbid": "not-a-uuid"}]}
+        })).unwrap();
+        let tracks = normalize_top_tracks(remote.toptracks.track).unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert!(tracks[0].musicbrainz_id.is_none());
     }
 
     #[test]

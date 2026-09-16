@@ -54,6 +54,42 @@ fn decode_artwork_limited(bytes: &[u8]) -> MetadataResult<(DynamicImage, ImageFo
     Ok((reader.decode()?, format))
 }
 
+/// Decode with the same allocation/dimension limits used for managed artwork.
+/// CDN formats are converted to PNG before entering the local artwork cache.
+pub(crate) fn normalize_remote_artwork(bytes: &[u8]) -> MetadataResult<Vec<u8>> {
+    if bytes.len() > MAX_ARTWORK_BYTES {
+        return Err(MetadataError::Custom(
+            "Remote artwork exceeds byte limit".into(),
+        ));
+    }
+    let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format()?;
+    let format = reader
+        .format()
+        .ok_or_else(|| MetadataError::Custom("Unknown remote image format".into()))?;
+    if !matches!(
+        format,
+        ImageFormat::Jpeg | ImageFormat::Png | ImageFormat::WebP | ImageFormat::Gif
+    ) {
+        return Err(MetadataError::Custom(
+            "Unsupported remote image format".into(),
+        ));
+    }
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(MAX_ARTWORK_DIMENSION);
+    limits.max_image_height = Some(MAX_ARTWORK_DIMENSION);
+    limits.max_alloc = Some(MAX_ARTWORK_DECODE_BYTES);
+    reader.limits(limits);
+    let image = reader.decode()?;
+    if matches!(format, ImageFormat::Jpeg | ImageFormat::Png) {
+        return Ok(bytes.to_vec());
+    }
+    let mut output = Cursor::new(Vec::new());
+    image.write_to(&mut output, ImageFormat::Png)?;
+    let output = output.into_inner();
+    validate_artwork_bytes(&output)?;
+    Ok(output)
+}
+
 pub(crate) fn validate_artwork_bytes(bytes: &[u8]) -> MetadataResult<(u32, u32)> {
     decode_artwork_limited(bytes).map(|(image, _)| (image.width(), image.height()))
 }
@@ -355,6 +391,21 @@ pub(crate) fn split_artist_credit(credit: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_webp_and_gif_are_normalized_and_truncated_images_rejected() {
+        let image = image::DynamicImage::new_rgb8(2, 3);
+        for format in [ImageFormat::WebP, ImageFormat::Gif] {
+            let mut source = Cursor::new(Vec::new());
+            image.write_to(&mut source, format).unwrap();
+            let normalized = normalize_remote_artwork(source.get_ref()).unwrap();
+            assert_eq!(image::guess_format(&normalized).unwrap(), ImageFormat::Png);
+            assert_eq!(image::load_from_memory(&normalized).unwrap().height(), 3);
+            validate_artwork_bytes(&normalized).unwrap();
+            assert!(normalize_remote_artwork(&source.get_ref()[..12]).is_err());
+        }
+        assert!(normalize_remote_artwork(b"<html>blocked</html>").is_err());
+    }
 
     #[test]
     fn cancelled_extraction_stops_before_reading_the_file() {

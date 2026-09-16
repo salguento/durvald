@@ -35,7 +35,7 @@ kira = { version = "0.11.0", features = ["mp3", "ogg", "flac", "wav"] }
 
 # Metadata
 lofty = "0.22.4"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 base64 = "0.22.1"
 md-5 = "0.10.6"
 
@@ -43,6 +43,7 @@ md-5 = "0.10.6"
 reqwest = { version = "0.13.1", features = ["json", "form", "query"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+scraper = { version = "0.24", default-features = false }
 md5 = { version = "0.10.6", package = "md-5" }
 ring = "0.17.14"
 lazy_static = "1.5.0"

@@ -3,6 +3,7 @@
 //! Local reads and explicit MusicBrainz identity lookups. Opening the core and
 //! scanning files never initiate HTTP requests.
 
+pub(crate) mod cache;
 pub mod models;
 pub mod policy;
 pub mod service;

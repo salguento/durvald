@@ -1388,7 +1388,7 @@ final class DurvaldCoreStore {
             let result = try await core.refreshArtist(
                 artistId: artistId,
                 request: ArtistRefreshRequest(
-                    sections: [.discography, .covers],
+                    sections: [.discography, .covers, .popularTracks],
                     language: language,
                     force: force
                 )
@@ -1448,7 +1448,7 @@ final class DurvaldCoreStore {
                     _ = try await core.refreshArtist(
                         artistId: artist.id,
                         request: ArtistRefreshRequest(
-                            sections: [.discography],
+                            sections: [.profile, .portrait, .discography, .popularTracks],
                             language: enrichmentSettings?.preferredLanguage ?? "pt",
                             force: false
                         )

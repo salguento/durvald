@@ -31,6 +31,8 @@ pub enum LastFmError {
     Api { code: i64, message: String },
     #[error("Last.fm metadata network request failed")]
     MetadataNetwork,
+    #[error("Last.fm response cache storage failed")]
+    MetadataStorage { extended_code: Option<i32> },
     #[error("Last.fm metadata request returned HTTP {status}")]
     HttpStatus {
         status: u16,
@@ -76,7 +78,7 @@ fn configured_http_client() -> LastFmResult<Client> {
         .map_err(LastFmError::Network)
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(dead_code)] // Staged transport contract for enrichment providers.
 pub(crate) struct LastFmResponseHeaders {
     pub validators: CacheValidators,
@@ -99,11 +101,12 @@ pub(crate) enum LastFmMetadataResponse {
 
 const LASTFM_IMAGE_HOSTS: &[&str] = &[
     "lastfm.freetls.fastly.net",
+    "lastfm-img.freetls.fastly.net",
     "userserve-ak.last.fm",
     "lastfm-img2.akamaized.net",
 ];
 
-fn valid_lastfm_image_url(url: &reqwest::Url) -> bool {
+pub(crate) fn valid_lastfm_image_url(url: &reqwest::Url) -> bool {
     url.scheme() == "https"
         && url.username().is_empty()
         && url.password().is_none()
@@ -113,10 +116,80 @@ fn valid_lastfm_image_url(url: &reqwest::Url) -> bool {
             .is_some_and(|host| LASTFM_IMAGE_HOSTS.contains(&host))
 }
 
+fn cache_error(error: crate::enrichment::transport::TransportError) -> LastFmError {
+    LastFmError::MetadataStorage {
+        extended_code: match error {
+            crate::enrichment::transport::TransportError::Storage { extended_code } => {
+                extended_code
+            }
+            _ => None,
+        },
+    }
+}
+
+pub(crate) fn page_image(html: &str) -> Option<String> {
+    let document = scraper::Html::parse_document(html);
+    let metadata = scraper::Selector::parse(
+        "meta[property='og:image'], meta[name='twitter:image']",
+    )
+    .ok()?;
+    let gallery = scraper::Selector::parse(
+        "a[href*='/+images/'] img, a[href$='/+images'] img, img.image-list-image",
+    )
+    .ok()?;
+    document
+        .select(&metadata)
+        .filter_map(|element| element.value().attr("content"))
+        .chain(document.select(&gallery).filter_map(|element| {
+            element
+                .value()
+                .attr("data-src")
+                .or_else(|| element.value().attr("src"))
+                .or_else(|| element.value().attr("data-background-image-url"))
+                .or_else(|| element.value().attr("srcset").and_then(largest_srcset_url))
+        }))
+        .find_map(normalize_page_image_url)
+}
+
+fn largest_srcset_url(value: &str) -> Option<&str> {
+    value
+        .split(',')
+        .filter_map(|candidate| candidate.split_ascii_whitespace().next())
+        .next_back()
+}
+
+fn normalize_page_image_url(source: &str) -> Option<String> {
+    if source.contains("2a96cbd8b46e442fc41c2b86b821562f") {
+        return None;
+    }
+    let absolute;
+    let source = if source.starts_with("//") {
+        absolute = format!("https:{source}");
+        absolute.as_str()
+    } else {
+        source
+    };
+    let mut url = reqwest::Url::parse(source).ok()?;
+    if !valid_lastfm_image_url(&url) {
+        return None;
+    }
+    url.set_fragment(None);
+    Some(url.to_string())
+}
+
 fn valid_lastfm_image_mime(value: Option<&str>) -> bool {
     value
         .map(|value| value.split(';').next().unwrap_or_default().trim())
-        .is_none_or(|mime| matches!(mime, "image/jpeg" | "image/png"))
+        .is_none_or(|mime| {
+            matches!(
+                mime.to_ascii_lowercase().as_str(),
+                "image/jpeg"
+                    | "image/png"
+                    | "image/webp"
+                    | "image/gif"
+                    | "application/octet-stream"
+            )
+        })
 }
 
 #[allow(dead_code)] // Used by the staged metadata transport.
@@ -240,9 +313,8 @@ async fn bounded_metadata_image_response(mut response: reqwest::Response) -> Las
         }
         body.extend_from_slice(&chunk);
     }
-    crate::metadata::validate_artwork_bytes(&body)
-        .map_err(|_| LastFmError::Custom("Invalid Last.fm image".into()))?;
-    Ok(body)
+    crate::metadata::normalize_remote_artwork(&body)
+        .map_err(|_| LastFmError::Custom("Invalid Last.fm image decode".into()))
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -278,6 +350,77 @@ fn require_api_success(response: &Value) -> LastFmResult<()> {
         Some(error) => Err(error),
         None => Ok(()),
     }
+}
+
+async fn renew_metadata_representation(
+    key: &str,
+    entry: &crate::enrichment::cache::Entry,
+    mut received: LastFmResponseHeaders,
+) -> LastFmResult<LastFmMetadataResponse> {
+    let (body, old_headers): (Value, LastFmResponseHeaders) = serde_json::from_slice(&entry.body)?;
+    received.validators.etag = received.validators.etag.or(old_headers.validators.etag);
+    received.validators.last_modified = received
+        .validators
+        .last_modified
+        .or(old_headers.validators.last_modified);
+    received.cache_control = received.cache_control.or(old_headers.cache_control);
+    received.expires = received.expires.or(old_headers.expires);
+    let renewed = crate::enrichment::cache::entry(
+        serde_json::to_vec(&(body.clone(), received.clone()))?,
+        received.validators.clone(),
+        crate::enrichment::policy::TRANSIENT_PROVIDER_FAILURE_TTL,
+    );
+    crate::enrichment::cache::store(key, &renewed)
+        .await
+        .map_err(cache_error)?;
+    require_api_success(&body)?;
+    Ok(LastFmMetadataResponse::Modified {
+        body,
+        headers: received,
+    })
+}
+
+static LASTFM_METADATA_COOLDOWN_UNTIL: AtomicU64 = AtomicU64::new(0);
+
+async fn remember_metadata_cooldown(status: u16, retry_after: Option<&str>) -> LastFmResult<()> {
+    if status == 429 || (status == 503 && retry_after.is_some()) {
+        let seconds = retry_after
+            .and_then(|value| {
+                crate::enrichment::transport::retry_after_seconds(
+                    value,
+                    chrono::Utc::now().timestamp(),
+                )
+            })
+            .unwrap_or(60);
+        let until =
+            (chrono::Utc::now().timestamp().max(0) as u64).saturating_add(seconds.min(86400));
+        LASTFM_METADATA_COOLDOWN_UNTIL.fetch_max(until, Ordering::SeqCst);
+        crate::enrichment::cache::defer("lastfm", seconds)
+            .await
+            .map_err(cache_error)?;
+    }
+    Ok(())
+}
+async fn metadata_cooldown() -> LastFmResult<()> {
+    let now = chrono::Utc::now().timestamp().max(0) as u64;
+    let until = LASTFM_METADATA_COOLDOWN_UNTIL.load(Ordering::SeqCst);
+    if until > now {
+        return Err(LastFmError::HttpStatus {
+            status: 429,
+            retry_after: Some((until - now).to_string()),
+        });
+    }
+    crate::enrichment::cache::cooldown("lastfm")
+        .await
+        .map_err(|error| match error {
+            crate::enrichment::transport::TransportError::RateLimited {
+                retry_after_seconds,
+            } => LastFmError::HttpStatus {
+                status: 429,
+                retry_after: Some(retry_after_seconds.to_string()),
+            },
+            _ => cache_error(error),
+        })
 }
 
 // ✅ Lock-free rate limiter: enforces Last.fm's 1 request/second limit
@@ -460,6 +603,15 @@ impl LastFmClient {
 
     /// Performs a public Last.fm metadata request using only the API key.
     /// Session keys and the API secret never enter the query string.
+    async fn wait_metadata_budget(&self) -> LastFmResult<()> {
+        metadata_cooldown().await?;
+        #[cfg(test)]
+        if self.test_transport.is_some() {
+            return Ok(());
+        }
+        enforce_rate_limit().await
+    }
+
     #[allow(dead_code)] // Called by artist metadata adapters in the next phase.
     pub(crate) async fn get_metadata_json(
         &self,
@@ -479,7 +631,30 @@ impl LastFmClient {
             ));
         }
 
-        enforce_rate_limit().await?;
+        use crate::enrichment::cache;
+        let key = cache::key(
+            "lastfm-json",
+            &serde_json::to_string(&(method, parameters))?,
+        );
+        let _cache_lock = cache::request_lock(&key).await.map_err(cache_error)?;
+        let cached = cache::load(&key).await.map_err(cache_error)?;
+        if !cache::forced() {
+            if let Some(entry) = cached.as_ref().filter(|entry| entry.fresh()) {
+                let (body, headers) = serde_json::from_slice(&entry.body)?;
+                require_api_success(&body)?;
+                return Ok(LastFmMetadataResponse::Modified { body, headers });
+            }
+        }
+        let caller_has_validators = validators.etag.is_some() || validators.last_modified.is_some();
+        let validators = if caller_has_validators {
+            validators.clone()
+        } else {
+            cached
+                .as_ref()
+                .map(|entry| entry.validators.clone())
+                .unwrap_or_default()
+        };
+        self.wait_metadata_budget().await?;
         let api_key = self.get_api_key().await?;
         let mut query = Vec::with_capacity(parameters.len() + 3);
         query.push(("method".to_string(), method.to_string()));
@@ -506,15 +681,41 @@ impl LastFmClient {
             if !transport.metadata_delay.is_zero() {
                 tokio::time::sleep(transport.metadata_delay).await;
             }
-            require_api_success(&transport.response)?;
             if transport.metadata_not_modified_after_first
                 && request_number > 1
                 && (validators.etag.is_some() || validators.last_modified.is_some())
             {
+                if let Some(entry) = cached.as_ref() {
+                    return renew_metadata_representation(
+                        &key,
+                        entry,
+                        transport.metadata_headers.clone(),
+                    )
+                    .await;
+                }
                 return Ok(LastFmMetadataResponse::NotModified {
                     headers: transport.metadata_headers.clone(),
                 });
             }
+            if transport.response["error"]
+                .as_i64()
+                .is_none_or(|code| code == 7)
+            {
+                cache::store(
+                    &key,
+                    &cache::entry(
+                        serde_json::to_vec(&(
+                            transport.response.clone(),
+                            transport.metadata_headers.clone(),
+                        ))?,
+                        transport.metadata_headers.validators.clone(),
+                        crate::enrichment::policy::TRANSIENT_PROVIDER_FAILURE_TTL,
+                    ),
+                )
+                .await
+                .map_err(cache_error)?;
+            }
+            require_api_success(&transport.response)?;
             return Ok(LastFmMetadataResponse::Modified {
                 body: transport.response.clone(),
                 headers: transport.metadata_headers.clone(),
@@ -534,6 +735,7 @@ impl LastFmClient {
             .map_err(|_| LastFmError::MetadataNetwork)?;
         let status = response.status();
         let mut received = metadata_response_headers(response.headers());
+        remember_metadata_cooldown(status.as_u16(), received.retry_after.as_deref()).await?;
         if status == StatusCode::NOT_MODIFIED
             && (validators.etag.is_some() || validators.last_modified.is_some())
         {
@@ -542,6 +744,9 @@ impl LastFmClient {
                 .validators
                 .last_modified
                 .or_else(|| validators.last_modified.clone());
+            if let Some(entry) = cached.as_ref() {
+                return renew_metadata_representation(&key, entry, received).await;
+            }
             return Ok(LastFmMetadataResponse::NotModified { headers: received });
         }
         if !status.is_success() {
@@ -551,6 +756,25 @@ impl LastFmClient {
             });
         }
         let body = bounded_metadata_json_response(response).await?;
+        if body["error"].as_i64() == Some(29) {
+            remember_metadata_cooldown(429, received.retry_after.as_deref()).await?;
+        }
+        // Preserve an unknown-MBID response too: name fallback must not repeat
+        // the same failed identity lookup on every refresh. Credential/rate
+        // errors are deliberately not cached as metadata representations.
+        if api_error_from_response(&body).is_some() && body["error"].as_i64() != Some(7) {
+            require_api_success(&body)?;
+        }
+        cache::store(
+            &key,
+            &cache::entry(
+                serde_json::to_vec(&(body.clone(), received.clone()))?,
+                received.validators.clone(),
+                crate::enrichment::policy::TRANSIENT_PROVIDER_FAILURE_TTL,
+            ),
+        )
+        .await
+        .map_err(cache_error)?;
         require_api_success(&body)?;
         Ok(LastFmMetadataResponse::Modified {
             body,
@@ -566,7 +790,20 @@ impl LastFmClient {
             return Err(LastFmError::Custom("Invalid Last.fm image URL".into()));
         }
 
-        enforce_rate_limit().await?;
+        use crate::enrichment::cache;
+        let key = cache::key("lastfm-image", url.as_str());
+        let _cache_lock = cache::request_lock(&key).await.map_err(cache_error)?;
+        if !cache::forced() {
+            if let Some(entry) = cache::load(&key)
+                .await
+                .map_err(cache_error)?
+                .filter(|entry| entry.fresh())
+            {
+                return crate::metadata::normalize_remote_artwork(&entry.body)
+                    .map_err(|_| LastFmError::Custom("Invalid cached Last.fm image".into()));
+            }
+        }
+        self.wait_metadata_budget().await?;
         #[cfg(test)]
         if let Some(transport) = &self.test_transport {
             return transport.image_bytes.clone().ok_or_else(|| {
@@ -578,7 +815,7 @@ impl LastFmClient {
             let response = self
                 .client
                 .get(url.clone())
-                .header(header::ACCEPT, "image/jpeg,image/png")
+                .header(header::ACCEPT, "image/jpeg,image/png,image/webp,image/gif")
                 .send()
                 .await
                 .map_err(|_| LastFmError::MetadataNetwork)?;
@@ -606,6 +843,7 @@ impl LastFmClient {
             }
             let status = response.status();
             let retry_after = bounded_header(response.headers(), header::RETRY_AFTER);
+            remember_metadata_cooldown(status.as_u16(), retry_after.as_deref()).await?;
             if !status.is_success() {
                 return Err(LastFmError::HttpStatus {
                     status: status.as_u16(),
@@ -622,7 +860,121 @@ impl LastFmClient {
                     "Invalid Last.fm image MIME type".into(),
                 ));
             }
-            return bounded_metadata_image_response(response).await;
+            let bytes = bounded_metadata_image_response(response).await?;
+            cache::store(
+                &key,
+                &cache::entry(
+                    bytes.clone(),
+                    CacheValidators::default(),
+                    crate::enrichment::policy::PROFILE_TTL,
+                ),
+            )
+            .await
+            .map_err(cache_error)?;
+            return Ok(bytes);
+        }
+        unreachable!()
+    }
+
+    /// Public artist page used when the API returns its shared placeholder.
+    /// Never forwards API/session credentials, and never fetches arbitrary hosts.
+    pub(crate) async fn artist_page_image(&self, source: &str) -> LastFmResult<Option<String>> {
+        use crate::enrichment::cache;
+        #[cfg(test)]
+        if self.test_transport.is_some() {
+            return Ok(None);
+        }
+        let mut url = reqwest::Url::parse(source)
+            .map_err(|_| LastFmError::Custom("Invalid artist page".into()))?;
+        let key = cache::key("lastfm-page", source);
+        let _cache_lock = cache::request_lock(&key).await.map_err(cache_error)?;
+        let cached = cache::load(&key).await.map_err(cache_error)?;
+        if !cache::forced() {
+            if let Some(entry) = cached.as_ref().filter(|entry| entry.fresh()) {
+                let html = String::from_utf8_lossy(&entry.body);
+                return Ok(page_image(&html));
+            }
+        }
+        for redirect in 0..=3 {
+            if url.scheme() != "https"
+                || !matches!(url.host_str(), Some("www.last.fm" | "last.fm"))
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.port().is_some()
+            {
+                return Err(LastFmError::Custom("Invalid artist page redirect".into()));
+            }
+            self.wait_metadata_budget().await?;
+            let response = self
+                .client
+                .get(url.clone())
+                .header(header::ACCEPT, "text/html")
+                .send()
+                .await
+                .map_err(|_| LastFmError::MetadataNetwork)?;
+            let status = response.status();
+            if status.is_redirection() && redirect < 3 {
+                let location = response
+                    .headers()
+                    .get(header::LOCATION)
+                    .and_then(|value| value.to_str().ok())
+                    .ok_or_else(|| LastFmError::Custom("Invalid artist page redirect".into()))?;
+                url = url
+                    .join(location)
+                    .map_err(|_| LastFmError::Custom("Invalid artist page redirect".into()))?;
+                continue;
+            }
+            if !status.is_success() {
+                let retry_after = bounded_header(response.headers(), header::RETRY_AFTER);
+                remember_metadata_cooldown(status.as_u16(), retry_after.as_deref()).await?;
+                let ttl = retry_after
+                    .as_deref()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .unwrap_or(900)
+                    .clamp(60, 86400);
+                cache::store(
+                    &key,
+                    &cache::entry(
+                        Vec::new(),
+                        CacheValidators::default(),
+                        Duration::from_secs(ttl),
+                    ),
+                )
+                .await
+                .map_err(cache_error)?;
+                return Err(LastFmError::HttpStatus {
+                    status: status.as_u16(),
+                    retry_after,
+                });
+            }
+            let mut response = response;
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|_| LastFmError::MetadataNetwork)?
+            {
+                if bytes.len().saturating_add(chunk.len())
+                    > crate::enrichment::policy::MAX_JSON_BYTES
+                {
+                    return Err(LastFmError::ResponseTooLarge {
+                        limit_bytes: crate::enrichment::policy::MAX_JSON_BYTES,
+                    });
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            let image = page_image(&String::from_utf8_lossy(&bytes));
+            cache::store(
+                &key,
+                &cache::entry(
+                    bytes,
+                    CacheValidators::default(),
+                    crate::enrichment::policy::POPULAR_TRACKS_TTL,
+                ),
+            )
+            .await
+            .map_err(cache_error)?;
+            return Ok(image);
         }
         unreachable!()
     }
@@ -1146,12 +1498,127 @@ mod tests {
     }
 
     #[test]
+    fn casey_page_selects_photo_and_rejects_placeholder_or_untrusted_hosts() {
+        let photo = "https://lastfm.freetls.fastly.net/i/u/300x300/casey.webp";
+        let html = format!("<meta content='{photo}' property='og:image'>");
+        assert_eq!(page_image(&html).as_deref(), Some(photo));
+        assert!(
+            page_image("<meta property='og:image' content='https://evil.test/photo.jpg'>")
+                .is_none()
+        );
+        assert!(page_image("<meta property='og:image' content='https://lastfm.freetls.fastly.net/i/u/300x300/2a96cbd8b46e442fc41c2b86b821562f.png'>").is_none());
+        assert!(page_image("<html>No image</html>").is_none());
+    }
+
+    #[test]
     fn metadata_images_accept_only_supported_mime_types() {
         assert!(valid_lastfm_image_mime(Some("image/jpeg")));
         assert!(valid_lastfm_image_mime(Some("image/png; charset=binary")));
         assert!(valid_lastfm_image_mime(None));
-        assert!(!valid_lastfm_image_mime(Some("image/gif")));
+        assert!(valid_lastfm_image_mime(Some("image/gif")));
+        assert!(valid_lastfm_image_mime(Some("image/webp")));
+        assert!(valid_lastfm_image_mime(Some("application/octet-stream")));
         assert!(!valid_lastfm_image_mime(Some("text/html")));
+    }
+
+    #[tokio::test]
+    async fn not_modified_renews_raw_metadata_and_returns_body_for_portrait_materialization() {
+        use crate::enrichment::cache;
+        let path = std::env::temp_dir().join(format!(
+            "durvald-lastfm-304-{}-{}.sqlite",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        cache::CACHE_CONTEXT
+            .scope((path.clone(), true), async {
+                let body = serde_json::json!({"artist":{"name":"Casey MQ","image":[],"bio":null}});
+                let old = LastFmResponseHeaders {
+                    validators: CacheValidators {
+                        etag: Some("v1".into()),
+                        last_modified: None,
+                    },
+                    ..Default::default()
+                };
+                let mut entry = cache::entry(
+                    serde_json::to_vec(&(body.clone(), old)).unwrap(),
+                    CacheValidators::default(),
+                    Duration::ZERO,
+                );
+                entry.expires_at = 0;
+                let response = renew_metadata_representation(
+                    "lastfm-json:test",
+                    &entry,
+                    LastFmResponseHeaders::default(),
+                )
+                .await
+                .unwrap();
+                let LastFmMetadataResponse::Modified {
+                    body: received,
+                    headers,
+                } = response
+                else {
+                    panic!("missing body");
+                };
+                assert_eq!(received, body);
+                assert_eq!(headers.validators.etag.as_deref(), Some("v1"));
+                assert!(
+                    cache::load("lastfm-json:test")
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .fresh()
+                );
+            })
+            .await;
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[tokio::test]
+    async fn unknown_mbid_is_persisted_without_storing_request_credentials() {
+        use crate::enrichment::cache;
+        let directory = std::env::temp_dir().join(format!(
+            "durvald-negative-lastfm-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = SecureStore::new(directory.clone(), "durvald-test".into()).unwrap();
+        let (client, transport) = LastFmClient::with_test_transport(
+            Arc::new(Mutex::new(store)),
+            serde_json::json!({"error":7,"message":"Artist not found"}),
+        )
+        .unwrap();
+        let path = directory.join("http.sqlite");
+        cache::CACHE_CONTEXT
+            .scope((path.clone(), false), async {
+                for _ in 0..2 {
+                    assert!(matches!(
+                        client
+                            .get_metadata_json(
+                                "artist.getInfo",
+                                &[("mbid", "unknown")],
+                                &CacheValidators::default()
+                            )
+                            .await,
+                        Err(LastFmError::Api { code: 7, .. })
+                    ));
+                }
+                assert_eq!(transport.metadata_queries.lock().unwrap().len(), 1);
+            })
+            .await;
+        let database = rusqlite::Connection::open(&path).unwrap();
+        let key: String = database
+            .query_row("SELECT key FROM http_cache", [], |row| row.get(0))
+            .unwrap();
+        assert!(key.starts_with("lastfm-json:"));
+        assert!(!key.contains("unknown"));
+        drop(database);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[tokio::test]

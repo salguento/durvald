@@ -6,6 +6,19 @@ import SwiftUI
 
 final class DurvaldCoreStoreTests: XCTestCase {
     @MainActor
+    func testCatalogRefreshRequestsPopularTracksAndPreservesForce() async {
+        let fake = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        let store = DurvaldCoreStore(core: fake)
+        let result = await store.refreshArtistCatalog(artistId: 1, language: "pt-br", force: true)
+        XCTAssertNotNil(result)
+        XCTAssertEqual(fake.artistRefreshRequests.count, 1)
+        XCTAssertEqual(Set(fake.artistRefreshRequests[0].sections), Set([.discography, .covers, .popularTracks]))
+        XCTAssertTrue(fake.artistRefreshRequests[0].force)
+        XCTAssertEqual(fake.artistRefreshRequests[0].language, "pt-br")
+        XCTAssertNil(store.errorMessage)
+    }
+
+    @MainActor
     func testFavoritePersistsAndUpdatesLibraryAndPlayer() async {
         let snapshot = Fixtures.playingSnapshot
         let fake = FakeDurvaldCore(snapshot: snapshot)
