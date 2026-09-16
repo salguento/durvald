@@ -144,6 +144,11 @@ private final class InspectorLayoutController {
     func configure() {
         guard let anchor else { return }
         anchor.window?.titlebarSeparatorStyle = .none
+        // Disable the native toolbar's display/customization context menu.
+        if let toolbar = anchor.window?.toolbar {
+            toolbar.allowsUserCustomization = false
+            toolbar.allowsDisplayModeCustomization = false
+        }
 
         if let inspectorItem, let contentItem {
             applyConfiguration(inspector: inspectorItem, content: contentItem)
