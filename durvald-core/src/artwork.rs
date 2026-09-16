@@ -147,6 +147,23 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unsupported_payloads_and_excessive_dimensions() {
+        let directory = std::env::temp_dir().join(format!(
+            "durvald-remote-artwork-limits-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&directory);
+        assert!(write_managed(&directory, b"GIF89a").is_err());
+
+        let mut oversized = Vec::new();
+        image::DynamicImage::new_rgb8(crate::metadata::MAX_ARTWORK_DIMENSION + 1, 1)
+            .write_to(&mut Cursor::new(&mut oversized), ImageFormat::Png)
+            .unwrap();
+        assert!(write_managed(&directory, &oversized).is_err());
+        assert!(!directory.exists());
+    }
+
+    #[test]
     fn cleanup_removes_only_managed_content_addressed_files() {
         let directory =
             std::env::temp_dir().join(format!("durvald-remote-cleanup-{}", std::process::id()));

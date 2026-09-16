@@ -113,6 +113,12 @@ fn valid_lastfm_image_url(url: &reqwest::Url) -> bool {
             .is_some_and(|host| LASTFM_IMAGE_HOSTS.contains(&host))
 }
 
+fn valid_lastfm_image_mime(value: Option<&str>) -> bool {
+    value
+        .map(|value| value.split(';').next().unwrap_or_default().trim())
+        .is_none_or(|mime| matches!(mime, "image/jpeg" | "image/png"))
+}
+
 #[allow(dead_code)] // Used by the staged metadata transport.
 fn bounded_header(headers: &header::HeaderMap, name: header::HeaderName) -> Option<String> {
     headers
@@ -342,6 +348,10 @@ struct TestTransport {
     response: Value,
     forms: std::sync::Mutex<Vec<Vec<(String, String)>>>,
     metadata_queries: std::sync::Mutex<Vec<Vec<(String, String)>>>,
+    metadata_validators: std::sync::Mutex<Vec<CacheValidators>>,
+    metadata_headers: LastFmResponseHeaders,
+    metadata_not_modified_after_first: bool,
+    metadata_delay: std::time::Duration,
     image_bytes: Option<Vec<u8>>,
 }
 
@@ -367,6 +377,10 @@ impl LastFmClient {
             response,
             forms: std::sync::Mutex::new(Vec::new()),
             metadata_queries: std::sync::Mutex::new(Vec::new()),
+            metadata_validators: std::sync::Mutex::new(Vec::new()),
+            metadata_headers: LastFmResponseHeaders::default(),
+            metadata_not_modified_after_first: false,
+            metadata_delay: std::time::Duration::ZERO,
             image_bytes: None,
         });
         let client = Self {
@@ -384,10 +398,13 @@ impl LastFmClient {
     }
 
     #[cfg(test)]
-    pub(crate) fn with_test_metadata_transport(
+    pub(crate) fn with_test_metadata_transport_options(
         secure_store: Arc<Mutex<SecureStore>>,
         response: Value,
         image_bytes: Option<Vec<u8>>,
+        metadata_headers: LastFmResponseHeaders,
+        metadata_not_modified_after_first: bool,
+        metadata_delay: std::time::Duration,
     ) -> LastFmResult<Self> {
         let (mut client, _) = Self::with_test_transport(secure_store, response)?;
         client.test_transport = client.test_transport.take().map(|transport| {
@@ -395,6 +412,10 @@ impl LastFmClient {
                 response: transport.response.clone(),
                 forms: std::sync::Mutex::new(Vec::new()),
                 metadata_queries: std::sync::Mutex::new(Vec::new()),
+                metadata_validators: std::sync::Mutex::new(Vec::new()),
+                metadata_headers,
+                metadata_not_modified_after_first,
+                metadata_delay,
                 image_bytes,
             })
         });
@@ -406,6 +427,14 @@ impl LastFmClient {
         self.test_transport
             .as_ref()
             .map(|transport| transport.metadata_queries.lock().unwrap().len())
+            .unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metadata_validators(&self) -> Vec<CacheValidators> {
+        self.test_transport
+            .as_ref()
+            .map(|transport| transport.metadata_validators.lock().unwrap().clone())
             .unwrap_or_default()
     }
 
@@ -464,11 +493,31 @@ impl LastFmClient {
 
         #[cfg(test)]
         if let Some(transport) = &self.test_transport {
-            transport.metadata_queries.lock().unwrap().push(query);
+            let request_number = {
+                let mut queries = transport.metadata_queries.lock().unwrap();
+                queries.push(query);
+                queries.len()
+            };
+            transport
+                .metadata_validators
+                .lock()
+                .unwrap()
+                .push(validators.clone());
+            if !transport.metadata_delay.is_zero() {
+                tokio::time::sleep(transport.metadata_delay).await;
+            }
             require_api_success(&transport.response)?;
+            if transport.metadata_not_modified_after_first
+                && request_number > 1
+                && (validators.etag.is_some() || validators.last_modified.is_some())
+            {
+                return Ok(LastFmMetadataResponse::NotModified {
+                    headers: transport.metadata_headers.clone(),
+                });
+            }
             return Ok(LastFmMetadataResponse::Modified {
                 body: transport.response.clone(),
-                headers: LastFmResponseHeaders::default(),
+                headers: transport.metadata_headers.clone(),
             });
         }
 
@@ -563,13 +612,12 @@ impl LastFmClient {
                     retry_after,
                 });
             }
-            if response
-                .headers()
-                .get(header::CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok())
-                .map(|value| value.split(';').next().unwrap_or_default().trim())
-                .is_some_and(|mime| !matches!(mime, "image/jpeg" | "image/png"))
-            {
+            if !valid_lastfm_image_mime(
+                response
+                    .headers()
+                    .get(header::CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok()),
+            ) {
                 return Err(LastFmError::Custom(
                     "Invalid Last.fm image MIME type".into(),
                 ));
@@ -1095,6 +1143,15 @@ mod tests {
             Some("Mon, 15 Sep 2026 13:00:00 GMT")
         );
         assert_eq!(parsed.retry_after.as_deref(), Some("120"));
+    }
+
+    #[test]
+    fn metadata_images_accept_only_supported_mime_types() {
+        assert!(valid_lastfm_image_mime(Some("image/jpeg")));
+        assert!(valid_lastfm_image_mime(Some("image/png; charset=binary")));
+        assert!(valid_lastfm_image_mime(None));
+        assert!(!valid_lastfm_image_mime(Some("image/gif")));
+        assert!(!valid_lastfm_image_mime(Some("text/html")));
     }
 
     #[tokio::test]

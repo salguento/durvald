@@ -2860,6 +2860,22 @@ mod tests {
         response: serde_json::Value,
         image_bytes: Option<Vec<u8>>,
     ) -> Arc<crate::lastfm::LastFmClient> {
+        test_lastfm_metadata_client_with_options(
+            response,
+            image_bytes,
+            crate::lastfm::LastFmResponseHeaders::default(),
+            false,
+            std::time::Duration::ZERO,
+        )
+    }
+
+    fn test_lastfm_metadata_client_with_options(
+        response: serde_json::Value,
+        image_bytes: Option<Vec<u8>>,
+        headers: crate::lastfm::LastFmResponseHeaders,
+        not_modified_after_first: bool,
+        delay: std::time::Duration,
+    ) -> Arc<crate::lastfm::LastFmClient> {
         let directory = std::env::temp_dir().join(format!(
             "durvald-enrichment-lastfm-metadata-test-{}-{}",
             std::process::id(),
@@ -2874,10 +2890,13 @@ mod tests {
         )
         .unwrap();
         Arc::new(
-            crate::lastfm::LastFmClient::with_test_metadata_transport(
+            crate::lastfm::LastFmClient::with_test_metadata_transport_options(
                 Arc::new(tokio::sync::Mutex::new(store)),
                 response,
                 image_bytes,
+                headers,
+                not_modified_after_first,
+                delay,
             )
             .unwrap(),
         )
@@ -3556,6 +3575,133 @@ mod tests {
         let offline = service.artist_popular_tracks(1).await.unwrap().unwrap();
         assert_eq!(offline.items, cached.items);
         assert!(offline.stale);
+    }
+
+    #[tokio::test]
+    async fn lastfm_popular_tracks_revalidate_with_cached_validators() {
+        let headers = crate::lastfm::LastFmResponseHeaders {
+            validators: super::super::models::CacheValidators {
+                etag: Some("\"popular-v1\"".into()),
+                last_modified: Some("Tue, 15 Sep 2026 12:00:00 GMT".into()),
+            },
+            ..Default::default()
+        };
+        let lastfm = test_lastfm_metadata_client_with_options(
+            serde_json::json!({
+                "toptracks": {"track": [{
+                    "name": "Track One",
+                    "mbid": "",
+                    "url": "https://www.last.fm/music/Same+Name/_/Track+One",
+                    "playcount": "120",
+                    "listeners": "80"
+                }]}
+            }),
+            None,
+            headers.clone(),
+            true,
+            std::time::Duration::ZERO,
+        );
+        let service = service_with_lastfm(lastfm.clone());
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: false,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        service
+            .confirm_artist_identity(1, Some("11111111-1111-4111-8111-111111111111".into()))
+            .await
+            .unwrap();
+        let request = ArtistRefreshRequest {
+            sections: vec![ArtistRefreshSection::PopularTracks],
+            language: "pt".into(),
+            force: true,
+        };
+
+        let first = service.refresh_artist(1, request.clone()).await.unwrap();
+        assert_eq!(first.sections[0].status, ArtistRefreshStatus::Updated);
+        let second = service.refresh_artist(1, request).await.unwrap();
+        assert_eq!(second.sections[0].status, ArtistRefreshStatus::Unchanged);
+        assert_eq!(lastfm.metadata_query_count(), 2);
+        let validators = lastfm.metadata_validators();
+        assert_eq!(
+            validators[0],
+            super::super::models::CacheValidators::default()
+        );
+        assert_eq!(validators[1], headers.validators);
+        assert_eq!(
+            service
+                .artist_popular_tracks(1)
+                .await
+                .unwrap()
+                .unwrap()
+                .items[0]
+                .title,
+            "Track One"
+        );
+    }
+
+    #[tokio::test]
+    async fn lastfm_response_is_discarded_when_identity_changes_during_request() {
+        let lastfm = test_lastfm_metadata_client_with_options(
+            serde_json::json!({
+                "toptracks": {"track": [{
+                    "name": "Old Identity Track",
+                    "mbid": "",
+                    "url": "https://www.last.fm/music/Same+Name/_/Old+Identity+Track",
+                    "playcount": "1",
+                    "listeners": "1"
+                }]}
+            }),
+            None,
+            crate::lastfm::LastFmResponseHeaders::default(),
+            false,
+            std::time::Duration::from_millis(250),
+        );
+        let service = service_with_lastfm(lastfm.clone());
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: false,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        service
+            .confirm_artist_identity(1, Some("11111111-1111-4111-8111-111111111111".into()))
+            .await
+            .unwrap();
+        let worker = service.clone();
+        let refresh = tokio::spawn(async move {
+            worker
+                .refresh_artist(
+                    1,
+                    ArtistRefreshRequest {
+                        sections: vec![ArtistRefreshSection::PopularTracks],
+                        language: "pt".into(),
+                        force: true,
+                    },
+                )
+                .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(3), async {
+            while lastfm.metadata_query_count() == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let changed = service
+            .confirm_artist_identity(1, Some("22222222-2222-4222-8222-222222222222".into()))
+            .await
+            .unwrap();
+        let result = refresh.await.unwrap().unwrap();
+        assert_eq!(result.sections[0].status, ArtistRefreshStatus::Superseded);
+        assert!(service.artist_popular_tracks(1).await.unwrap().is_none());
+        assert!(changed.generation > result.identity_generation);
     }
 
     #[tokio::test(start_paused = true)]

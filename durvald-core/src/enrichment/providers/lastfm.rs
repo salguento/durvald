@@ -520,6 +520,56 @@ mod tests {
     }
 
     #[test]
+    fn biography_and_portrait_are_independent_optional_fields() {
+        let biography_only: ArtistInfoResponse = serde_json::from_value(serde_json::json!({
+            "artist": {
+                "name": "Artist",
+                "url": "https://www.last.fm/music/Artist",
+                "bio": {"summary": "Biography only"}
+            }
+        }))
+        .unwrap();
+        let biography_only = normalize_artist_info(biography_only.artist, headers(None)).unwrap();
+        assert_eq!(
+            biography_only.profile.unwrap().biography.as_deref(),
+            Some("Biography only")
+        );
+        assert!(biography_only.portrait.is_none());
+
+        let portrait_only: ArtistInfoResponse = serde_json::from_value(serde_json::json!({
+            "artist": {
+                "name": "Artist",
+                "url": "https://www.last.fm/music/Artist",
+                "image": [{
+                    "#text": "https://lastfm.freetls.fastly.net/i/u/300/portrait.jpg",
+                    "size": "extralarge"
+                }]
+            }
+        }))
+        .unwrap();
+        let portrait_only = normalize_artist_info(portrait_only.artist, headers(None)).unwrap();
+        assert!(portrait_only.profile.is_none());
+        assert!(portrait_only.portrait.is_some());
+    }
+
+    #[test]
+    fn insecure_lastfm_images_are_ignored() {
+        let remote: ArtistInfoResponse = serde_json::from_value(serde_json::json!({
+            "artist": {
+                "name": "Artist",
+                "url": "https://www.last.fm/music/Artist",
+                "image": [{
+                    "#text": "http://userserve-ak.last.fm/portrait.jpg",
+                    "size": "mega"
+                }]
+            }
+        }))
+        .unwrap();
+        let info = normalize_artist_info(remote.artist, headers(None)).unwrap();
+        assert!(info.portrait.is_none());
+    }
+
+    #[test]
     fn lastfm_error_codes_have_stable_enrichment_semantics() {
         assert!(matches!(
             map_error(LastFmError::Api {
@@ -575,6 +625,24 @@ mod tests {
                 .all(|track| track.lastfm_url.starts_with("https://"))
         );
         assert!(tracks.iter().all(|track| track.local_track_id.is_none()));
+    }
+
+    #[test]
+    fn top_tracks_accept_fewer_than_ten_results() {
+        let remote: TopTracksResponse = serde_json::from_value(serde_json::json!({
+            "toptracks": {"track": [{
+                "name": "Only Track",
+                "mbid": "",
+                "url": "https://www.last.fm/music/Artist/_/Only+Track",
+                "playcount": "7",
+                "listeners": "3"
+            }]}
+        }))
+        .unwrap();
+        let tracks = normalize_top_tracks(remote.toptracks.track).unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].rank, 1);
+        assert_eq!(tracks[0].musicbrainz_id, None);
     }
 
     #[test]

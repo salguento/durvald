@@ -59,9 +59,11 @@ struct ArtistView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ArtworkView(
-                        artworkID: details?.portrait?.managedPath
-                            ?? albums.compactMap(\.artworkId).first
-                            ?? discographyItems.compactMap { $0.artwork?.image.managedPath }.first,
+                        artworkID: ArtistPresentationPolicy.portraitArtworkID(
+                            portrait: details?.portrait,
+                            localArtworkIDs: albums.map(\.artworkId)
+                                + discographyItems.map { $0.artwork?.image.managedPath }
+                        ),
                         size: geometry.size.width,
                         aspectRatio: 16.0 / 9.0,
                         alignment: .top,
@@ -1061,31 +1063,36 @@ struct ArtistView: View {
         let layout = isStacked
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 28))
             : AnyLayout(HStackLayout(alignment: .top, spacing: 24))
-        let externalRanking = popularTracks?.items.isEmpty == false ? popularTracks?.items : nil
-        let localRanking = mostPlayedLocalTracks
+        let ranking = ArtistPresentationPolicy.popularRanking(
+            lastFm: popularTracks,
+            localTracks: mostPlayedLocalTracks
+        )
 
         return layout {
             VStack(alignment: .leading, spacing: 16) {
-                Text(externalRanking == nil ? "Mais ouvidas nesta biblioteca" : "Mais populares")
+                Text(ranking.title)
                     .font(.title2.bold())
                     .accessibilityAddTraits(.isHeader)
 
-                if !isLoading && externalRanking == nil && localRanking.isEmpty {
+                if !isLoading, case .empty = ranking {
                     Text("Nenhuma música disponível")
                         .foregroundStyle(.secondary)
                 }
 
                 LazyVStack(spacing: 0) {
-                    if let externalRanking {
+                    switch ranking {
+                    case let .lastFm(externalRanking):
                         ForEach(externalRanking, id: \.rank) { item in
                             popularTrackRow(item)
                             if item.rank != externalRanking.last?.rank { Divider() }
                         }
-                    } else {
+                    case let .library(localRanking):
                         ForEach(localRanking, id: \.id) { track in
                             trackRow(track)
                             if track.id != localRanking.last?.id { Divider() }
                         }
+                    case .empty:
+                        EmptyView()
                     }
                 }
             }
@@ -1561,8 +1568,7 @@ struct ArtistView: View {
     }
 
     private var biographySource: ArtistProfileSource? {
-        details?.sources.first { $0.provider == .wikipedia && $0.profile.biography != nil }
-            ?? details?.sources.first { $0.provider == .lastFm && $0.profile.biography != nil }
+        biographySelection?.source
     }
 
     private var biographySourceName: String {
@@ -1578,8 +1584,14 @@ struct ArtistView: View {
     }
 
     private var biographyText: String? {
-        if let biographyOverride { return biographyOverride.value }
-        return biographySource?.profile.biography
+        biographySelection?.text
+    }
+
+    private var biographySelection: ArtistBiographySelection? {
+        ArtistPresentationPolicy.biography(
+            overrides: details?.overrides ?? [],
+            sources: details?.sources ?? []
+        )
     }
 
     private var factsSummary: String? {

@@ -3799,6 +3799,39 @@ mod tests {
     }
 
     #[test]
+    fn lastfm_biography_does_not_replace_an_existing_wikipedia_snapshot() {
+        let conn = database();
+        let wikipedia = snapshot();
+        assert!(store_profile(&conn, &wikipedia).unwrap());
+
+        let mut lastfm = wikipedia.clone();
+        lastfm.provider = EnrichmentProvider::LastFm;
+        lastfm.fetched_at = 101;
+        lastfm.profile.biography = Some("Last.fm biography".into());
+        lastfm.profile.attribution.source_url = "https://www.last.fm/music/Artist".into();
+        assert!(store_profile(&conn, &lastfm).unwrap());
+
+        let details = read_artist_details(&conn, 7, "pt-br", 150).unwrap();
+        assert_eq!(details.sources.len(), 2);
+        assert_eq!(
+            details
+                .sources
+                .iter()
+                .find(|source| source.provider == EnrichmentProvider::Wikipedia)
+                .and_then(|source| source.profile.biography.as_deref()),
+            Some("A biography")
+        );
+        assert_eq!(
+            details
+                .sources
+                .iter()
+                .find(|source| source.provider == EnrichmentProvider::LastFm)
+                .and_then(|source| source.profile.biography.as_deref()),
+            Some("Last.fm biography")
+        );
+    }
+
+    #[test]
     fn replacement_removes_missing_fields_and_rejects_outdated_work() {
         let conn = database();
         let mut profile = snapshot();
