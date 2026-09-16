@@ -49,7 +49,8 @@ pub fn active_provider_failure(
          FROM enrichment_provider_failures
          WHERE artist_id = ?1 AND provider = ?2 AND operation = ?3
            AND resource_key = ?4 AND identity_generation = ?5 AND expires_at > ?6
-           AND (error_code != 'invalid_image' OR recorded_at > ?7)",
+           AND (error_code != 'invalid_image' OR recorded_at > ?7)
+           AND (provider != 'last_fm' OR error_code != 'invalid_request' OR recorded_at > ?7)",
         params![
             artist_id,
             provider.as_str(),

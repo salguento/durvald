@@ -154,7 +154,7 @@ impl LastFm {
             .await;
         let mut used_name = false;
         let mut response = match response {
-            Err(LastFmError::Api { code: 7, .. }) if !artist_name.trim().is_empty() => {
+            Err(LastFmError::Api { code: 6 | 7, .. }) if !artist_name.trim().is_empty() => {
                 used_name = true;
                 self.client
                     .get_metadata_json(
@@ -242,9 +242,9 @@ impl LastFm {
                 validators,
             )
             .await;
-        let used_name = matches!(&response, Err(LastFmError::Api { code: 7, .. }));
+        let used_name = matches!(&response, Err(LastFmError::Api { code: 6 | 7, .. }));
         let response = match response {
-            Err(LastFmError::Api { code: 7, .. }) if !artist_name.trim().is_empty() => self
+            Err(LastFmError::Api { code: 6 | 7, .. }) if !artist_name.trim().is_empty() => self
                 .client
                 .get_metadata_json(
                     "artist.getTopTracks",
