@@ -38,6 +38,10 @@ struct ArtistView: View {
     @State private var discographyItems: [ExternalReleaseGroup] = []
     @State private var discographyPage: ArtistDiscographyPage?
     @State private var popularTracks: ArtistPopularTracks?
+    @State private var popularTrackArtworkIDs: [String: String] = [:]
+    @State private var popularTrackReleaseGroupIDs: [String: String] = [:]
+    @State private var releaseDetailsByGroupID: [String: ExternalReleaseDetails] = [:]
+    @State private var isCachingReleaseTracks = false
     @State private var similarArtistArtworkIDs: [Int64: String] = [:]
     @State private var catalogRefreshResults: [ArtistRefreshSectionResult] = []
     @State private var isRefreshingCatalog = false
@@ -155,6 +159,10 @@ struct ArtistView: View {
             discographyItems = []
             discographyPage = nil
             popularTracks = nil
+            popularTrackArtworkIDs = [:]
+            popularTrackReleaseGroupIDs = [:]
+            releaseDetailsByGroupID = [:]
+            isCachingReleaseTracks = false
             similarArtistArtworkIDs = [:]
             catalogRefreshResults = []
             async let loadedTracks = store.tracks(forArtistID: artist.id)
@@ -198,6 +206,7 @@ struct ArtistView: View {
                 }
             }
             await loadSimilarArtistArtworkIDs()
+            await cacheReleaseTracksAndResolvePopularArtwork()
         }
         .sheet(isPresented: $isIdentityPickerPresented) {
             identityPicker
@@ -213,6 +222,7 @@ struct ArtistView: View {
             Task {
                 await reloadCachedEnrichment()
                 await loadSimilarArtistArtworkIDs()
+                await cacheReleaseTracksAndResolvePopularArtwork()
             }
         }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
@@ -1026,6 +1036,7 @@ struct ArtistView: View {
         case .discography, .covers:
             if let page = await store.artistDiscography(artistId: artist.id) {
                 applyDiscographyPage(page, reset: true)
+                await cacheReleaseTracksAndResolvePopularArtwork()
             }
 
         case .popularTracks:
@@ -1049,6 +1060,7 @@ struct ArtistView: View {
         defer { isLoadingMoreDiscography = false }
         if let page = await store.artistDiscography(artistId: artist.id, offset: offset) {
             applyDiscographyPage(page, reset: false)
+            await cacheReleaseTracksAndResolvePopularArtwork()
         }
     }
 
@@ -1069,6 +1081,7 @@ struct ArtistView: View {
             albums = await store.releases(forArtistID: artist.id).sorted {
                 $0.title.localizedStandardCompare($1.title) == .orderedAscending
             }
+            await cacheReleaseTracksAndResolvePopularArtwork()
         }
     }
 
@@ -1103,8 +1116,8 @@ struct ArtistView: View {
                             if item.rank != externalRanking.last?.rank { Divider() }
                         }
                     case let .library(localRanking):
-                        ForEach(localRanking, id: \.id) { track in
-                            trackRow(track)
+                        ForEach(Array(localRanking.enumerated()), id: \.element.id) { index, track in
+                            popularLocalTrackRow(track, rank: index + 1)
                             if track.id != localRanking.last?.id { Divider() }
                         }
                     case .empty:
@@ -1465,36 +1478,82 @@ struct ArtistView: View {
     private func popularTrackRow(_ item: ArtistPopularTrack) -> some View {
         if let localTrackID = item.localTrackId,
            let localTrack = tracks.first(where: { $0.id == localTrackID }) {
-            trackRow(localTrack)
+            popularLocalTrackRow(localTrack, rank: Int(item.rank))
         } else {
-            HStack(spacing: 12) {
-                ArtworkView(artworkID: nil, size: 36)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    if let url = URL(string: item.lastfmUrl) {
-                        Link(item.title, destination: url)
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text(item.title)
-                            .foregroundStyle(.secondary)
-                    }
-                    Text("\(item.listeners.formatted()) ouvintes · não disponível na biblioteca")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text("#\(item.rank)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 8)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(item.title), posição \(item.rank), não disponível na biblioteca")
+            let matchedRelease = popularExternalRelease(for: item.title)
+            PopularTrackListRow(
+                rank: Int(item.rank),
+                trackID: nil,
+                title: item.title,
+                subtitle: item.listeners.formatted(),
+                artworkID: popularTrackValue(for: item.title, in: popularTrackArtworkIDs),
+                durationSeconds: popularTrackDuration(
+                    for: item.title,
+                    release: matchedRelease
+                ),
+                isFavorite: false,
+                onToggleFavorite: nil,
+                onPlay: nil,
+                onAddToQueue: nil,
+                onSelectArtwork: matchedRelease.map { release in
+                    { selectExternalRelease(release) }
+                },
+                externalURL: URL(string: item.lastfmUrl)
+            )
+            .accessibilityLabel("\(item.title), posição \(item.rank)")
             .accessibilityIdentifier("artist.popular.external.\(item.rank)")
         }
+    }
+
+    private func popularLocalTrackRow(_ track: Track, rank: Int) -> some View {
+        let currentTrack = store.tracks.first(where: { $0.id == track.id }) ?? track
+        let release = albums.first(where: { $0.id == track.releaseId })
+        let playRanking: () -> Void = {
+            _ = Task {
+                await store.playTracks(
+                    popularPlaybackTracks,
+                    startingAt: track.id,
+                    shuffleEnabled: false
+                )
+            }
+        }
+        return PopularTrackListRow(
+            rank: rank,
+            trackID: track.id,
+            title: track.title,
+            subtitle: track.release,
+            artworkID: track.artworkId,
+            durationSeconds: track.durationSeconds,
+            isFavorite: currentTrack.isFavorite,
+            onToggleFavorite: {
+                Task {
+                    await store.setTrackFavorite(
+                        trackID: track.id,
+                        favorite: !currentTrack.isFavorite
+                    )
+                }
+            },
+            onPlay: playRanking,
+            onAddToQueue: { Task { await store.addToQueue(trackID: track.id) } },
+            onSelectArtwork: release.map { album in
+                { selectAlbum(album) }
+            },
+            externalURL: nil
+        )
+        .playTrackOnDoubleClick(playRanking)
+        .trackContextMenu(track: currentTrack, onPlay: playRanking)
+        .accessibilityIdentifier("artist.popular.local.\(track.id)")
+    }
+
+    private var popularPlaybackTracks: [Track] {
+        if let items = popularTracks?.items, !items.isEmpty {
+            return items.compactMap { item in
+                item.localTrackId.flatMap { trackID in
+                    tracks.first(where: { $0.id == trackID })
+                }
+            }
+        }
+        return mostPlayedLocalTracks
     }
 
     private func artistFooter(width: CGFloat) -> some View {
@@ -1740,6 +1799,126 @@ struct ArtistView: View {
         similarArtistArtworkIDs = resolved
     }
 
+    @MainActor
+    private func cacheReleaseTracksAndResolvePopularArtwork() async {
+        guard !isCachingReleaseTracks else { return }
+        let pending = discographyItems.filter {
+            releaseDetailsByGroupID[$0.musicbrainzId] == nil
+        }
+        guard !pending.isEmpty else {
+            rebuildPopularTrackArtworkIDs()
+            return
+        }
+        isCachingReleaseTracks = true
+        defer { isCachingReleaseTracks = false }
+
+        for release in pending {
+            guard !Task.isCancelled else { return }
+            guard let releaseDetails = await store.externalReleaseDetails(
+                artistId: artist.id,
+                releaseGroupMbid: release.musicbrainzId,
+                reportErrors: false
+            ) else { continue }
+            releaseDetailsByGroupID[release.musicbrainzId] = releaseDetails
+            rebuildPopularTrackArtworkIDs()
+        }
+    }
+
+    private func rebuildPopularTrackArtworkIDs() {
+        var artworkByTitle: [String: String] = [:]
+        var releaseGroupByTitle: [String: String] = [:]
+        for release in discographyItems {
+            guard let details = releaseDetailsByGroupID[release.musicbrainzId] else { continue }
+            for track in details.tracks {
+                for key in popularTrackTitleKeys(track.title) {
+                    if releaseGroupByTitle[key] == nil {
+                        releaseGroupByTitle[key] = release.musicbrainzId
+                    }
+                    if let artworkID = release.artwork?.image.managedPath,
+                       artworkByTitle[key] == nil {
+                        artworkByTitle[key] = artworkID
+                        releaseGroupByTitle[key] = release.musicbrainzId
+                    }
+                }
+            }
+        }
+        popularTrackArtworkIDs = artworkByTitle
+        popularTrackReleaseGroupIDs = releaseGroupByTitle
+    }
+
+    private func popularExternalRelease(for title: String) -> ExternalReleaseGroup? {
+        guard let groupID = popularTrackValue(for: title, in: popularTrackReleaseGroupIDs) else {
+            return nil
+        }
+        return discographyItems.first(where: { $0.musicbrainzId == groupID })
+    }
+
+    private func popularTrackDuration(
+        for title: String,
+        release: ExternalReleaseGroup?
+    ) -> Double? {
+        guard let release else { return nil }
+        let requestedKeys = Set(popularTrackTitleKeys(title))
+
+        if let details = releaseDetailsByGroupID[release.musicbrainzId],
+           let remoteTrack = details.tracks.first(where: {
+               !requestedKeys.isDisjoint(with: popularTrackTitleKeys($0.title))
+           }), let duration = remoteTrack.durationSeconds, duration > 0 {
+            return Double(duration)
+        }
+
+        if let localReleaseID = release.localReleaseId,
+           let localTrack = tracks.first(where: {
+               $0.releaseId == localReleaseID
+                   && !requestedKeys.isDisjoint(with: popularTrackTitleKeys($0.title))
+                   && $0.durationSeconds > 0
+           }) {
+            return localTrack.durationSeconds
+        }
+
+        return nil
+    }
+
+    private func popularTrackValue<Value>(for title: String, in values: [String: Value]) -> Value? {
+        for key in popularTrackTitleKeys(title) {
+            if let value = values[key] {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func popularTrackTitleKeys(_ value: String) -> [String] {
+        let normalized = popularTrackTitleKey(value)
+        guard !normalized.isEmpty else { return [] }
+
+        var keys = [normalized]
+        for (opening, closing) in [("(", ")"), ("[", "]")] where normalized.hasSuffix(closing) {
+            guard let openingRange = normalized.range(of: opening, options: .backwards) else { continue }
+            let base = String(normalized[..<openingRange.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !base.isEmpty, !keys.contains(base) {
+                keys.append(base)
+            }
+        }
+        return keys
+    }
+
+    private func popularTrackTitleKey(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "‐", with: "-")
+            .replacingOccurrences(of: "‑", with: "-")
+            .replacingOccurrences(of: "‒", with: "-")
+            .replacingOccurrences(of: "–", with: "-")
+            .replacingOccurrences(of: "—", with: "-")
+            .replacingOccurrences(of: "−", with: "-")
+            .replacingOccurrences(of: "‘", with: "'")
+            .replacingOccurrences(of: "’", with: "'")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+            .lowercased()
+    }
+
     private func selectAlbum(_ album: Release) {
         onSelectAlbum(album)
     }
@@ -1750,6 +1929,125 @@ struct ArtistView: View {
 
     private func selectArtist(_ artist: Artist) {
         onSelectArtist?(artist)
+    }
+}
+
+private struct PopularTrackListRow: View {
+    let rank: Int
+    let trackID: Int64?
+    let title: String
+    let subtitle: String
+    let artworkID: String?
+    let durationSeconds: Double?
+    let isFavorite: Bool
+    let onToggleFavorite: (() -> Void)?
+    let onPlay: (() -> Void)?
+    let onAddToQueue: (() -> Void)?
+    let onSelectArtwork: (() -> Void)?
+    let externalURL: URL?
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(rank)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 22, alignment: .trailing)
+
+            if let onSelectArtwork {
+                Button(action: onSelectArtwork) {
+                    ArtworkView(artworkID: artworkID, size: 36)
+                }
+                .buttonStyle(.plain)
+                .help("Abrir álbum")
+                .accessibilityLabel("Abrir álbum de \(title)")
+            } else {
+                ArtworkView(artworkID: artworkID, size: 36)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                if let externalURL {
+                    Link(title, destination: externalURL)
+                        .foregroundStyle(.primary)
+                } else if let trackID {
+                    Text(title)
+                        .activeTrackTitle(trackID: trackID)
+                } else {
+                    Text(title)
+                }
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 8) {
+                Text(durationText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .frame(width: 44, alignment: .trailing)
+
+                Button {
+                    onToggleFavorite?()
+                } label: {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(isFavorite ? Color.accentColor : .secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(onToggleFavorite == nil)
+                .opacity(isFavorite || isHovered ? 1 : 0)
+                .allowsHitTesting(isFavorite || isHovered)
+                .accessibilityHidden(!isFavorite && !isHovered)
+                .help(isFavorite ? "Desfavoritar faixa" : "Favoritar faixa")
+
+                Menu {
+                    if let onPlay {
+                        Button("Reproduzir", systemImage: "play.fill", action: onPlay)
+                    }
+                    if let onAddToQueue {
+                        Button("Adicionar à fila", systemImage: "text.badge.plus", action: onAddToQueue)
+                    }
+                    if let onToggleFavorite {
+                        Button(
+                            isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
+                            systemImage: isFavorite ? "star.slash" : "star",
+                            action: onToggleFavorite
+                        )
+                    }
+                    if let externalURL {
+                        Link("Abrir no Last.fm", destination: externalURL)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(.rect)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
+                .accessibilityHidden(!isHovered)
+                .help("Opções da faixa")
+            }
+            .frame(width: 116, alignment: .trailing)
+        }
+        .padding(.vertical, 8)
+        .contentShape(.rect)
+        .onHover { isHovered = $0 }
+    }
+
+    private var durationText: String {
+        guard let durationSeconds, durationSeconds > 0 else { return "—" }
+        let totalSeconds = Int(durationSeconds.rounded())
+        guard totalSeconds > 0 else { return "—" }
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 }
 

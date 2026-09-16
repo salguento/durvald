@@ -658,7 +658,11 @@ final class DurvaldCoreStore {
         }
     }
 
-    func playTracks(_ tracks: [Track], shuffleEnabled: Bool) async {
+    func playTracks(
+        _ tracks: [Track],
+        startingAt trackID: Int64? = nil,
+        shuffleEnabled: Bool
+    ) async {
         guard let core, !isChangingTrack, !tracks.isEmpty else { return }
 
         isChangingTrack = true
@@ -669,7 +673,14 @@ final class DurvaldCoreStore {
         }
 
         do {
-            let selectedTracks = shuffleEnabled ? tracks.shuffled() : tracks
+            let orderedTracks: [Track]
+            if let trackID,
+               let startIndex = tracks.firstIndex(where: { $0.id == trackID }) {
+                orderedTracks = Array(tracks[startIndex...])
+            } else {
+                orderedTracks = tracks
+            }
+            let selectedTracks = shuffleEnabled ? orderedTracks.shuffled() : orderedTracks
             guard let firstTrack = selectedTracks.first else { return }
 
             try await core.clearQueue()
@@ -1362,7 +1373,8 @@ final class DurvaldCoreStore {
     /// de faixas. Nenhuma faixa externa é adicionada à biblioteca ou à fila.
     func externalReleaseDetails(
         artistId: Int64,
-        releaseGroupMbid: String
+        releaseGroupMbid: String,
+        reportErrors: Bool = true
     ) async -> ExternalReleaseDetails? {
         guard let core else { return nil }
         do {
@@ -1371,7 +1383,9 @@ final class DurvaldCoreStore {
                 releaseGroupMbid: releaseGroupMbid
             )
         } catch {
-            errorMessage = String(describing: error)
+            if reportErrors {
+                errorMessage = String(describing: error)
+            }
             return nil
         }
     }

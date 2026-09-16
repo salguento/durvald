@@ -2865,6 +2865,7 @@ pub fn external_release_details(
           AND ar.catalog_generation = ds.active_generation
           AND ar.release_group_mbid = d.release_group_mbid
          WHERE d.artist_id = ?1 AND d.release_group_mbid = ?2
+           AND d.payload_version = 2
            AND s.identity_status = 'resolved'",
         params![artist_id, release_group_mbid],
         |row| {
@@ -2945,7 +2946,7 @@ pub fn store_external_release_details(
         "INSERT INTO external_release_details
          (artist_id, release_group_mbid, identity_generation, payload_version,
           payload, fetched_at, expires_at, etag, last_modified)
-         VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8)
+         VALUES (?1, ?2, ?3, 2, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT (artist_id, release_group_mbid) DO UPDATE SET
            identity_generation = excluded.identity_generation,
            payload_version = excluded.payload_version,

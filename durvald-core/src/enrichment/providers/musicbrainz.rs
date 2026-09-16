@@ -430,9 +430,21 @@ impl MusicBrainz {
                     .iter()
                     .map(|medium| medium.tracks.len())
                     .sum::<usize>();
+                let tracks_with_duration = release
+                    .media
+                    .iter()
+                    .flat_map(|medium| &medium.tracks)
+                    .filter(|track| {
+                        track
+                            .length
+                            .or_else(|| track.recording.as_ref().and_then(|value| value.length))
+                            .is_some_and(|milliseconds| milliseconds > 0)
+                    })
+                    .count();
                 (
                     normalized_match_text(&release.title) != normalized_match_text(&group.title),
                     track_count == 0,
+                    std::cmp::Reverse(tracks_with_duration),
                     !group_date.as_deref().is_some_and(|date| {
                         release
                             .date
@@ -633,6 +645,7 @@ impl RemoteRelease {
                     duration_seconds: track
                         .length
                         .or_else(|| recording.and_then(|value| value.length))
+                        .filter(|milliseconds| *milliseconds > 0)
                         .map(|milliseconds| milliseconds.div_ceil(1_000)),
                 });
             }
