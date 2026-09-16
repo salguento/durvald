@@ -707,6 +707,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func libraryPaths() async throws  -> [String]
 
     /**
+     * Moves a track entry to another zero-based playlist position.
+     */
+    func movePlaylistTrack(playlistId: Int64, from: UInt64, to: UInt64) async throws
+
+    /**
      * Moves an upcoming queue item to a new queue position.
      */
     func moveQueueItem(from: UInt64, to: UInt64) async throws
@@ -1630,6 +1635,26 @@ open func libraryPaths()async throws  -> [String] {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceString.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Moves a track entry to another zero-based playlist position.
+     */
+open func movePlaylistTrack(playlistId: Int64, from: UInt64, to: UInt64)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_move_playlist_track(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(playlistId),FfiConverterUInt64.lower(from),FfiConverterUInt64.lower(to)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -8774,6 +8799,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_library_paths() != 25229) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_move_playlist_track() != 20004) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_move_queue_item() != 36793) {

@@ -1676,6 +1676,21 @@ impl DurvaldCore {
         .await
     }
 
+    /// Moves a track entry to another zero-based playlist position.
+    pub async fn move_playlist_track(
+        &self,
+        playlist_id: i64,
+        from: u64,
+        to: u64,
+    ) -> CoreResult<()> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        self.run_database(move |conn| {
+            crate::database::operations::move_playlist_track(conn, playlist_id, from, to)
+                .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
     /// Starts playback of a track.
     pub async fn play(&self, track_id: i64) -> CoreResult<PlaybackSnapshot> {
         non_negative_id(track_id, "Track ID")?;

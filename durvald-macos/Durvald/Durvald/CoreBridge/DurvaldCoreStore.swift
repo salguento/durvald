@@ -462,6 +462,31 @@ final class DurvaldCoreStore {
         }
     }
 
+    @discardableResult
+    func movePlaylistTrack(
+        playlistID: Int64,
+        from sourcePosition: Int,
+        to destinationPosition: Int
+    ) async -> Bool {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo."
+            return false
+        }
+        guard sourcePosition >= 0, destinationPosition >= 0 else { return false }
+
+        do {
+            try await core.movePlaylistTrack(
+                playlistId: playlistID,
+                from: UInt64(sourcePosition),
+                to: UInt64(destinationPosition)
+            )
+            return true
+        } catch {
+            errorMessage = String(describing: error)
+            return false
+        }
+    }
+
     private func makeConfig() throws -> CoreConfig {
         let appSupport = try FileManager.default.url(
             for: .applicationSupportDirectory,

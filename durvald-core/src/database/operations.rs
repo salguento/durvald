@@ -1852,6 +1852,67 @@ pub fn remove_track_from_playlist(
     Ok(())
 }
 
+/// Moves one playlist entry to another zero-based position and compacts every
+/// persisted position. The whole rewrite is transactional so readers never
+/// observe a partially reordered playlist.
+pub fn move_playlist_track(
+    conn: &Connection,
+    playlist_id: u64,
+    from: u64,
+    to: u64,
+) -> DatabaseResult<()> {
+    let transaction = conn.unchecked_transaction()?;
+    let mut row_ids = {
+        let mut statement = transaction.prepare(
+            "SELECT rowid FROM playlist_songs
+             WHERE playlist_id = ?1
+             ORDER BY position, rowid",
+        )?;
+        let rows = statement.query_map([playlist_id], |row| row.get::<_, i64>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()?
+    };
+
+    let from = usize::try_from(from)
+        .map_err(|_| DatabaseError::Custom("Playlist source position is too large".into()))?;
+    let to = usize::try_from(to)
+        .map_err(|_| DatabaseError::Custom("Playlist destination position is too large".into()))?;
+    if from >= row_ids.len() || to >= row_ids.len() {
+        return Err(DatabaseError::Custom(format!(
+            "Playlist move is out of bounds: {from} -> {to} for {} tracks",
+            row_ids.len()
+        )));
+    }
+    if from == to {
+        return Ok(());
+    }
+
+    let moved = row_ids.remove(from);
+    row_ids.insert(to, moved);
+
+    // Move all positions outside their normal range first. This avoids
+    // transient primary-key conflicts when a playlist contains the same song
+    // more than once.
+    let temporary_offset: u64 = transaction.query_row(
+        "SELECT COALESCE(MAX(position), 0) + COUNT(*) + 1
+         FROM playlist_songs WHERE playlist_id = ?1",
+        [playlist_id],
+        |row| row.get(0),
+    )?;
+    transaction.execute(
+        "UPDATE playlist_songs SET position = position + ?1 WHERE playlist_id = ?2",
+        params![temporary_offset, playlist_id],
+    )?;
+    for (position, row_id) in row_ids.into_iter().enumerate() {
+        transaction.execute(
+            "UPDATE playlist_songs SET position = ?1 WHERE rowid = ?2",
+            params![position as u64, row_id],
+        )?;
+    }
+
+    transaction.commit()?;
+    Ok(())
+}
+
 // ===== LAST SESSION COMMANDS =====
 
 /// Ensures a default session row exists (session_id = 1).
@@ -3424,30 +3485,44 @@ mod tests {
             [],
         )
         .unwrap();
-        conn.execute(
-            "INSERT INTO songs (
-                song_id, title, artist_id, artist_name, release_id, release_title,
-                track_number, disc_number, duration, file_path
-             ) VALUES (1, 'Track', 1, 'Artist', 1, 'Album', 1, 1, 180, '/music/track.mp3')",
-            [],
-        )
-        .unwrap();
+        for id in 1..=3 {
+            conn.execute(
+                "INSERT INTO songs (
+                    song_id, title, artist_id, artist_name, release_id, release_title,
+                    track_number, disc_number, duration, file_path
+                 ) VALUES (?1, ?2, 1, 'Artist', 1, 'Album', ?1, 1, 180, ?3)",
+                params![id, format!("Track {id}"), format!("/music/track-{id}.mp3")],
+            )
+            .unwrap();
+        }
         let release = get_release_by_id(&conn, "1").unwrap();
         assert!(release.release_date.is_empty());
         assert!(release.artwork.is_empty());
         assert_eq!(release.duration, 0);
 
         add_track_to_playlist_songs(&conn, playlist.id, 1, 0).unwrap();
-        assert_eq!(get_playlist_track_count(&conn, playlist.id).unwrap(), 1);
-        assert_eq!(get_playlist_tracks(&conn, playlist.id).unwrap().len(), 1);
+        add_track_to_playlist_songs(&conn, playlist.id, 2, 1).unwrap();
+        add_track_to_playlist_songs(&conn, playlist.id, 3, 2).unwrap();
+        assert_eq!(get_playlist_track_count(&conn, playlist.id).unwrap(), 3);
+        assert_eq!(get_playlist_tracks(&conn, playlist.id).unwrap().len(), 3);
+        move_playlist_track(&conn, playlist.id, 0, 2).unwrap();
+        assert_eq!(
+            get_playlist_tracks(&conn, playlist.id)
+                .unwrap()
+                .into_iter()
+                .map(|track| track.song_id)
+                .collect::<Vec<_>>(),
+            vec![2, 3, 1]
+        );
+        assert!(move_playlist_track(&conn, playlist.id, 3, 0).is_err());
         let playlist_summaries = get_all_playlists_with_track_counts(&conn).unwrap();
         assert_eq!(playlist_summaries.len(), 2);
         assert_eq!(playlist_summaries[0].playlist.id, playlist.id);
-        assert_eq!(playlist_summaries[0].track_count, 1);
+        assert_eq!(playlist_summaries[0].track_count, 3);
         assert_eq!(playlist_summaries[1].playlist.id, empty_playlist.id);
         assert_eq!(playlist_summaries[1].track_count, 0);
-        remove_track_from_playlist(&conn, playlist.id, 1, 0).unwrap();
-        assert!(get_playlist_tracks(&conn, playlist.id).unwrap().is_empty());
+        remove_track_from_playlist(&conn, playlist.id, 1, 2).unwrap();
+        assert_eq!(get_playlist_tracks(&conn, playlist.id).unwrap().len(), 2);
 
         assert!(delete_playlist(&conn, playlist.id).unwrap());
         assert!(get_playlist_by_id(&conn, playlist.id).is_err());
