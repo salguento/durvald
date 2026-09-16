@@ -174,6 +174,33 @@ struct QueueTableView: NSViewRepresentable {
 
         func tableView(
             _ tableView: NSTableView,
+            draggingSession session: NSDraggingSession,
+            willBeginAt screenPoint: NSPoint,
+            forRowIndexes rowIndexes: IndexSet
+        ) {
+            guard let row = rowIndexes.first, rows.indices.contains(row) else { return }
+            let preview = dragPreviewImage(for: row, in: tableView)
+
+            session.draggingFormation = .none
+            session.enumerateDraggingItems(
+                options: [],
+                for: tableView,
+                classes: [NSPasteboardItem.self],
+                searchOptions: [:]
+            ) { draggingItem, _, _ in
+                let currentFrame = draggingItem.draggingFrame
+                let previewFrame = NSRect(
+                    x: currentFrame.midX - preview.size.width / 2,
+                    y: currentFrame.midY - preview.size.height / 2,
+                    width: preview.size.width,
+                    height: preview.size.height
+                )
+                draggingItem.setDraggingFrame(previewFrame, contents: preview)
+            }
+        }
+
+        func tableView(
+            _ tableView: NSTableView,
             validateDrop info: NSDraggingInfo,
             proposedRow row: Int,
             proposedDropOperation dropOperation: NSTableView.DropOperation
@@ -272,6 +299,65 @@ struct QueueTableView: NSViewRepresentable {
                   )
             else { return nil }
             return Int(rawValue)
+        }
+
+        private func dragPreviewImage(for row: Int, in tableView: NSTableView) -> NSImage {
+            let value = rows[row]
+            let previewSize = NSSize(width: 260, height: 54)
+            let artwork = (tableView.view(
+                atColumn: 0,
+                row: row,
+                makeIfNecessary: false
+            ) as? QueueTableCellView)?.artworkImageView.image
+
+            return NSImage(size: previewSize, flipped: false) { bounds in
+                let cardBounds = bounds.insetBy(dx: 0.5, dy: 0.5)
+                let card = NSBezierPath(
+                    roundedRect: cardBounds,
+                    xRadius: 8,
+                    yRadius: 8
+                )
+                NSColor.controlAccentColor.withAlphaComponent(0.22).setFill()
+                card.fill()
+                NSColor.controlAccentColor.withAlphaComponent(0.55).setStroke()
+                card.lineWidth = 1
+                card.stroke()
+
+                let artworkRect = NSRect(x: 8, y: 8, width: 38, height: 38)
+                artwork?.draw(
+                    in: artworkRect,
+                    from: .zero,
+                    operation: .sourceOver,
+                    fraction: 1,
+                    respectFlipped: true,
+                    hints: nil
+                )
+
+                let paragraph = NSMutableParagraphStyle()
+                paragraph.lineBreakMode = .byTruncatingTail
+                let textWidth = previewSize.width - 64
+                let titleY: CGFloat = value.artist.isEmpty ? 18 : 28
+                (value.title as NSString).draw(
+                    in: NSRect(x: 56, y: titleY, width: textWidth, height: 18),
+                    withAttributes: [
+                        .font: NSFont.systemFont(ofSize: NSFont.systemFontSize),
+                        .foregroundColor: NSColor.labelColor,
+                        .paragraphStyle: paragraph,
+                    ]
+                )
+
+                if !value.artist.isEmpty {
+                    (value.artist as NSString).draw(
+                        in: NSRect(x: 56, y: 10, width: textWidth, height: 16),
+                        withAttributes: [
+                            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                            .foregroundColor: NSColor.secondaryLabelColor,
+                            .paragraphStyle: paragraph,
+                        ]
+                    )
+                }
+                return true
+            }
         }
     }
 }
