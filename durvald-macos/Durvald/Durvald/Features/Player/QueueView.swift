@@ -2,6 +2,7 @@ import SwiftUI
 
 struct QueueView: View {
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(TrackInfoCoordinator.self) private var trackInfo
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
@@ -51,7 +52,8 @@ struct QueueView: View {
                         Task {
                             await store.removeQueueItem(at: position)
                         }
-                    }
+                    },
+                    onInfo: { trackInfo.open(trackID: $0) }
                 )
                 .frame(width: geometry.size.width, height: geometry.size.height)
             }

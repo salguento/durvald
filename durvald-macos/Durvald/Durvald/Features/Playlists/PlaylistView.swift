@@ -129,6 +129,10 @@ struct PlaylistView: View {
             isLoading = false
         }
         .accessibilityIdentifier("playlist.detail.\(playlist.id)")
+        .task(id: store.metadataRevision) {
+            guard store.metadataRevision > 0 else { return }
+            tracks = await store.tracks(forPlaylistID: playlist.id)
+        }
     }
 
     private var header: some View {

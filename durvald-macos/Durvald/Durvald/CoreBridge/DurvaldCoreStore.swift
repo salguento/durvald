@@ -31,6 +31,7 @@ final class DurvaldCoreStore {
     private(set) var artists: [Artist] = []
     private(set) var playlists: [Playlist] = []
     private(set) var history: [PlaybackHistoryItem] = []
+    private(set) var metadataRevision = 0
     var errorMessage: String?
     private(set) var appSettings: Settings?
     private(set) var libraryPaths: [String] = []
@@ -1067,6 +1068,27 @@ final class DurvaldCoreStore {
         } catch {
             errorMessage = String(describing: error)
         }
+    }
+
+    func refreshAfterMetadataEdit(_ info: TrackInfo) async {
+        guard let core else { return }
+        if playback?.currentTrack?.id == info.track.id { playback?.currentTrack = info.track }
+        do {
+            let trackPageSize = max(Self.libraryPageSize, UInt64(tracks.count))
+            let releasePageSize = max(Self.libraryPageSize, UInt64(releases.count))
+            async let refreshedTracks = core.tracksPage(pageSize: trackPageSize, offset: 0)
+            async let refreshedReleases = core.releasesPage(pageSize: releasePageSize, offset: 0)
+            async let refreshedArtists = core.artists()
+            let result = try await (refreshedTracks, refreshedReleases, refreshedArtists)
+            tracks = result.0.items
+            nextTracksOffset = result.0.nextOffset
+            releases = result.1.items
+            nextReleasesOffset = result.1.nextOffset
+            artists = result.2
+        } catch {
+            errorMessage = "Metadados salvos; falha ao atualizar a biblioteca: \(error)"
+        }
+        metadataRevision &+= 1
     }
 
     func setReleaseFavorite(releaseID: Int64, favorite: Bool) {

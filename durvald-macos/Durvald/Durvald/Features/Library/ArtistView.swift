@@ -150,6 +150,14 @@ struct ArtistView: View {
             .preservesLibraryScrollPosition(isContentReady: !isLoading)
         }
         .ignoresSafeArea(.container, edges: [.top, .bottom])
+        .task(id: store.metadataRevision) {
+            guard store.metadataRevision > 0 else { return }
+            async let refreshedTracks = store.tracks(forArtistID: artist.id)
+            async let refreshedAlbums = store.releases(forArtistID: artist.id)
+            let result = await (refreshedTracks, refreshedAlbums)
+            tracks = result.0
+            albums = result.1
+        }
         .task(id: artist.id) {
             isLoading = true
             details = nil

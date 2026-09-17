@@ -4,9 +4,17 @@ import SwiftUI
 struct LibrarySettingsView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @State private var pathPendingRemoval: String?
+    @AppStorage("metadata.writeChangesToFiles") private var writeChangesToFiles = true
 
     var body: some View {
         Form {
+            Section("Edição de metadados") {
+                Toggle("Gravar alterações nos arquivos", isOn: $writeChangesToFiles)
+                    .accessibilityIdentifier("settings.metadata.writeChangesToFiles")
+                Text("Ativado: salva nas tags e atualiza a biblioteca. Desativado: mantém alterações apenas no Durvald, inclusive após novos scans.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Pastas da biblioteca") {
                 if store.libraryPaths.isEmpty {
                     Text("Nenhuma pasta configurada")

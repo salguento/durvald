@@ -117,6 +117,10 @@ struct AlbumView: View {
             }
         }
         .accessibilityIdentifier("album.detail.\(detailID)")
+        .task(id: store.metadataRevision) {
+            guard store.metadataRevision > 0, let album else { return }
+            tracks = await store.tracks(forReleaseID: album.id)
+        }
     }
 
     private var header: some View {

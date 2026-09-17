@@ -56,6 +56,7 @@ extension View {
 private struct TrackContextMenuModifier: ViewModifier {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
+    @Environment(TrackInfoCoordinator.self) private var trackInfo
 
     let track: Track
     let onPlay: () -> Void
@@ -69,7 +70,9 @@ private struct TrackContextMenuModifier: ViewModifier {
                 onAddToQueue: { Task { await store.addToQueue(trackID: track.id) } },
                 onCreatePlaylist: { playlistCreation.request(for: track.id) },
                 onAddToPlaylist: { store.addTrack(track.id, to: $0) },
-                additionalActions: additionalActions
+                additionalActions: [TrackMenuAction("Info", systemImage: "info.circle") {
+                    trackInfo.open(trackID: track.id)
+                }] + additionalActions
             )
             .accessibilityHidden(true)
         }

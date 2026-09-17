@@ -14,7 +14,9 @@ private final class LibraryScrollOffsetStore {
 
 struct ContentView: View {
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(TrackInfoCoordinator.self) private var trackInfo
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.openWindow) private var openWindow
 
     @State private var shell = ContentShellState()
     @State private var windowLayout = WindowSplitLayoutCoordinator()
@@ -97,6 +99,11 @@ struct ContentView: View {
             shell.adaptToWidth(width, compactThreshold: Layout.compactNavigationWidth)
         }
         .environment(playlistCreation)
+        .onAppear {
+            trackInfo.presentWindow = {
+                openWindow(id: "track-info")
+            }
+        }
         .focusedSceneValue(\.openLibrarySearch) {
             destinationBinding.wrappedValue = .search
         }
@@ -439,4 +446,5 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environment(DurvaldCoreStore())
+        .environment(TrackInfoCoordinator())
 }

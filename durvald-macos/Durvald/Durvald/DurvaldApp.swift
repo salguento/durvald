@@ -10,6 +10,7 @@ import SwiftUI
 @main
 struct DurvaldApp: App {
     @State private var coreStore: DurvaldCoreStore
+    @State private var trackInfo = TrackInfoCoordinator()
 
     init() {
         #if DEBUG
@@ -31,6 +32,7 @@ struct DurvaldApp: App {
         WindowGroup {
             ContentView()
                 .environment(coreStore)
+                .environment(trackInfo)
                 .task {
                     guard !ProcessInfo.processInfo.arguments.contains("--ui-testing") else {
                         #if DEBUG
@@ -50,9 +52,22 @@ struct DurvaldApp: App {
         .commands {
             AppCommands(store: coreStore)
         }
+        Window("Info da faixa", id: "track-info") {
+            if let trackID = trackInfo.trackID {
+                TrackInfoSheet(trackID: trackID)
+                    .id(trackID)
+                    .environment(coreStore)
+            }
+        }
+        .defaultSize(width: 560, height: 690)
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
+        .windowBackgroundDragBehavior(.enabled)
         SwiftUI.Settings {
             SettingsView()
                 .environment(coreStore)
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowBackgroundDragBehavior(.enabled)
     }
 }

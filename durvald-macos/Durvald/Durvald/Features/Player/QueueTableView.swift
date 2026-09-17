@@ -20,6 +20,7 @@ struct QueueTableView: NSViewRepresentable {
     let onPlay: (UInt64) -> Void
     let onTogglePlayback: () -> Void
     let onRemove: (UInt64) -> Void
+    let onInfo: (Int64) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -249,9 +250,15 @@ struct QueueTableView: NSViewRepresentable {
         func menuNeedsUpdate(_ menu: NSMenu) {
             menu.removeAllItems()
             guard let tableView,
-                  rows.indices.contains(tableView.clickedRow),
-                  rows[tableView.clickedRow].position > 0
+                  rows.indices.contains(tableView.clickedRow)
             else { return }
+
+            let info = NSMenuItem(title: "Info", action: #selector(showInfo(_:)), keyEquivalent: "")
+            info.target = self
+            info.representedObject = tableView.clickedRow
+            menu.addItem(info)
+            guard rows[tableView.clickedRow].position > 0 else { return }
+            menu.addItem(.separator())
 
             let item = NSMenuItem(
                 title: "Remover da fila",
@@ -290,6 +297,11 @@ struct QueueTableView: NSViewRepresentable {
                   rows.indices.contains(row)
             else { return }
             parent.onRemove(rows[row].position)
+        }
+
+        @objc private func showInfo(_ sender: NSMenuItem) {
+            guard let row = sender.representedObject as? Int, rows.indices.contains(row) else { return }
+            parent.onInfo(rows[row].trackID)
         }
 
         private func sourceRow(from info: NSDraggingInfo) -> Int? {

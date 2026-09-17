@@ -49,6 +49,7 @@ struct SettingsView: View {
                 .tabItem { Label("Last.fm", systemImage: "dot.radiowaves.left.and.right") }
         }
         .frame(width: 600, height: 420)
+        .background(WindowTrafficLightsHider(closesOnEscape: true))
         .task { apply(store.appSettings) }
         .onChange(of: store.appSettings) { _, settings in
             apply(settings)

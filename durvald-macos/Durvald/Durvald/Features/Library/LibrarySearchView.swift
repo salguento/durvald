@@ -31,6 +31,10 @@ struct LibrarySearchView: View {
                 }
             }
         .accessibilityIdentifier("search.page")
+        .task(id: store.metadataRevision) {
+            guard store.metadataRevision > 0, !normalizedSearchText.isEmpty else { return }
+            searchResults = await store.searchLibrary(query: normalizedSearchText)
+        }
         .task(id: searchText) {
             let query = normalizedSearchText
 

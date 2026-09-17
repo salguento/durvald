@@ -9,6 +9,7 @@ import SwiftUI
 
 struct HistoryView: View {
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(TrackInfoCoordinator.self) private var trackInfo
     private static let playbackTimestamp = Date.ISO8601FormatStyle(
         includingFractionalSeconds: true
     )
@@ -26,6 +27,11 @@ struct HistoryView: View {
             }
             .task {
                 await store.loadMoreHistory(ifNeededAfter: item.id)
+            }
+            .contextMenu {
+                Button("Info", systemImage: "info.circle") {
+                    trackInfo.open(trackID: item.trackId)
+                }
             }
         }
         .preservesLibraryScrollPosition()
