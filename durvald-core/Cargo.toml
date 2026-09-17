@@ -32,6 +32,8 @@ tokio-rusqlite = "0.7.0"
 # aligned with `audio::SUPPORTED_AUDIO_EXTENSIONS`; Kira 0.11 has no AAC, M4A,
 # Opus, or AIFF decoder feature to enable here.
 kira = { version = "0.11.0", features = ["mp3", "ogg", "flac", "wav"] }
+rtrb = "0.3"
+symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "ogg", "vorbis", "flac", "wav", "pcm"] }
 
 # Metadata
 lofty = "0.22.4"

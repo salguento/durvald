@@ -751,37 +751,56 @@ impl DurvaldCore {
 
         let core = Arc::new(core);
 
-        // Kira exposes completed playback through its sound state rather than a
-        // callback. Poll in the background so the next queued track begins
-        // without a SwiftUI view having to drive the transition.
+        // Prepare the successor while the current track plays. The audio
+        // renderer switches streams; this worker only reconciles queue state
+        // and reports completions, so its timer cannot insert playback gaps.
         let weak_core = Arc::downgrade(&core);
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 let Some(core) = weak_core.upgrade() else {
                     break;
                 };
 
                 let transitioned = {
                     let _transition = core.playback_transition.lock().await;
-                    let (completed_track_id, plan) = {
-                        let player = core.audio_player.lock().await;
-                        (
-                            player.get_current_song_id(),
-                            player.completed_playback_plan(),
-                        )
+                    let gapless_plan = {
+                        let mut player = core.audio_player.lock().await;
+                        player.synchronize_gapless();
+                        player.gapless_plan()
                     };
-                    let Some(plan) = plan else {
-                        continue;
-                    };
-                    let Ok(prepared) = core.prepare_sound(plan.path().to_string()).await else {
-                        continue;
-                    };
-                    let started_track_id = plan.song_id();
-                    let mut player = core.audio_player.lock().await;
-                    match player.commit_plan(plan, prepared) {
-                        Ok(()) => Some((completed_track_id, Some(started_track_id))),
-                        Err(_) => None,
+                    if let Some(plan) = gapless_plan {
+                        if let Ok(prepared) = core.prepare_sound(plan.path().to_string()).await {
+                            let _ = core
+                                .audio_player
+                                .lock()
+                                .await
+                                .schedule_gapless(plan, prepared);
+                        }
+                    }
+                    let completed = core.audio_player.lock().await.pop_completed_transition();
+                    if let Some((previous, next)) = completed {
+                        Some((previous, Some(next)))
+                    } else {
+                        let (completed_track_id, plan) = {
+                            let player = core.audio_player.lock().await;
+                            (
+                                player.get_current_song_id(),
+                                player.completed_playback_plan(),
+                            )
+                        };
+                        let Some(plan) = plan else {
+                            continue;
+                        };
+                        let Ok(prepared) = core.prepare_sound(plan.path().to_string()).await else {
+                            continue;
+                        };
+                        let started_track_id = plan.song_id();
+                        let mut player = core.audio_player.lock().await;
+                        match player.commit_plan(plan, prepared) {
+                            Ok(()) => Some((completed_track_id, Some(started_track_id))),
+                            Err(_) => None,
+                        }
                     }
                 };
 
@@ -1739,7 +1758,8 @@ impl DurvaldCore {
     /// Returns the current playback state.
     pub async fn playback(&self) -> PlaybackSnapshot {
         let playback_state = {
-            let player = self.audio_player.lock().await;
+            let mut player = self.audio_player.lock().await;
+            player.synchronize_gapless();
             playback_state_for_player(&player)
         };
         playback_from_state(self, playback_state).await
@@ -2191,6 +2211,7 @@ impl DurvaldCore {
     /// Advances to the next queued track.
     pub async fn next_track(&self) -> CoreResult<PlaybackSnapshot> {
         let _transition = self.playback_transition.lock().await;
+        self.audio_player.lock().await.cancel_gapless_transition();
         let plan =
             self.audio_player
                 .lock()
@@ -2223,6 +2244,7 @@ impl DurvaldCore {
     /// Returns to the previously played track, when one exists.
     pub async fn previous_track(&self) -> CoreResult<PlaybackSnapshot> {
         let _transition = self.playback_transition.lock().await;
+        self.audio_player.lock().await.cancel_gapless_transition();
         let plan = self
             .audio_player
             .lock()
@@ -2255,6 +2277,7 @@ impl DurvaldCore {
     /// Starts the upcoming track at the given queue position.
     pub async fn play_queue_item(&self, position: u64) -> CoreResult<PlaybackSnapshot> {
         let _transition = self.playback_transition.lock().await;
+        self.audio_player.lock().await.cancel_gapless_transition();
         let plan = {
             let player = self.audio_player.lock().await;
             let upcoming_position = if player.get_current_song_id().is_some() {
@@ -2356,7 +2379,8 @@ impl DurvaldCore {
 
     /// Returns the current queue.
     pub async fn queue(&self) -> CoreResult<Vec<QueueItem>> {
-        let player = self.audio_player.lock().await;
+        let mut player = self.audio_player.lock().await;
+        player.synchronize_gapless();
         let queue = player.get_playback_queue();
         let mut items: Vec<QueueItem> = Vec::new();
         for (pos, (id, _)) in queue.iter().enumerate() {
@@ -2392,11 +2416,15 @@ impl DurvaldCore {
         self.run_database_core(move |conn| {
             crate::metadata_edit::ensure_cached(conn, track_id)?;
             crate::metadata_edit::info(conn, track_id)
-        }).await
+        })
+        .await
     }
 
     pub async fn save_track_metadata(
-        &self, track_id: i64, metadata: TrackMetadataEdit, write_to_file: bool,
+        &self,
+        track_id: i64,
+        metadata: TrackMetadataEdit,
+        write_to_file: bool,
     ) -> CoreResult<TrackInfo> {
         non_negative_id(track_id, "Track ID")?;
         let _queue = self.metadata_edit_queue.lock().await;
@@ -2404,13 +2432,15 @@ impl DurvaldCore {
         self.run_database_core(move |conn| {
             crate::metadata_edit::ensure_cached(conn, track_id)?;
             crate::metadata_edit::save(conn, track_id, metadata, write_to_file, &backup_dir)
-        }).await
+        })
+        .await
     }
 
     pub async fn undo_track_metadata(&self, track_id: i64) -> CoreResult<TrackInfo> {
         non_negative_id(track_id, "Track ID")?;
         let _queue = self.metadata_edit_queue.lock().await;
-        self.run_database_core(move |conn| crate::metadata_edit::undo(conn, track_id)).await
+        self.run_database_core(move |conn| crate::metadata_edit::undo(conn, track_id))
+            .await
     }
 
     /// Gets a release by ID.

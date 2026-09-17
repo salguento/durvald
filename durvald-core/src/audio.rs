@@ -1,5 +1,7 @@
 //! Audio playback module using kira
 
+mod decoder;
+mod gapless;
 pub mod player;
 
 pub use player::{AudioPlayer, QueueData, QueueItem};

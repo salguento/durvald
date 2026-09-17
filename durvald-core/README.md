@@ -46,6 +46,21 @@ When volume normalization is enabled, playback applies a valid bounded
 `REPLAYGAIN_TRACK_GAIN` tag to each newly loaded track. Files without a valid
 tag retain the user-selected volume.
 
+### Gapless playback
+
+The player prepares and buffers the next queued track while the current track
+plays. A single Kira sound switches streams at the audio sample boundary, with
+no stop/start fade or overlap for automatic advancement. The background worker
+only reconciles queue/history and Last.fm events; UI polling does not drive audio
+transitions. Pending streams are cancelled when queue order or repeat/shuffle
+policy changes. Only the current and next track are buffered.
+
+Symphonia gapless demuxing is enabled so supported files with encoder delay and
+padding metadata (such as LAME-tagged MP3s) can discard those extra samples.
+Silence in the recording is preserved. Missing/corrupt files, storage underruns,
+or adding a successor too late to buffer it cannot provide a seamless boundary.
+Manual track changes retain the configured crossfade.
+
 ### Public error mapping
 
 The FFI surface reports only `CoreError` variants:

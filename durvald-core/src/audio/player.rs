@@ -1,13 +1,15 @@
 use crate::api::RepeatMode;
 use kira::Tween;
 use kira::sound::FromFileError;
-use kira::sound::streaming::{StreamingSoundData, StreamingSoundHandle};
+use kira::sound::streaming::StreamingSoundData;
 use kira::{AudioManager, AudioManagerSettings, DefaultBackend};
 use std::collections::VecDeque;
 use std::time::Duration;
 use thiserror::Error;
 
-type SoundHandle = StreamingSoundHandle<FromFileError>;
+use super::gapless::{GaplessData, StreamHandle, Transport, Voice};
+use std::sync::atomic::Ordering;
+type SoundHandle = StreamHandle;
 
 #[derive(Debug, Clone)]
 pub struct QueueItem {
@@ -35,6 +37,15 @@ pub(crate) enum PlaybackPlan {
     RepeatAll(QueueItem),
     Previous(QueueItem),
     Skip { item: QueueItem, position: usize },
+}
+
+struct ScheduledNext {
+    plan: PlaybackPlan,
+    sound: SoundHandle,
+    duration: Duration,
+    path: String,
+    gain_db: f32,
+    token: u64,
 }
 
 impl PlaybackPlan {
@@ -102,6 +113,10 @@ pub struct AudioPlayer {
     shuffle_enabled: bool,
     repeat_mode: RepeatMode,
     playback_requested: bool,
+    gapless: Option<Transport>,
+    scheduled_next: Option<ScheduledNext>,
+    next_token: u64,
+    completed_transitions: VecDeque<(Option<i64>, i64)>,
 }
 
 impl AudioPlayer {
@@ -162,6 +177,10 @@ impl AudioPlayer {
             shuffle_enabled: false,
             repeat_mode: RepeatMode::None,
             playback_requested: false,
+            gapless: None,
+            scheduled_next: None,
+            next_token: 1,
+            completed_transitions: VecDeque::new(),
         }
     }
 
@@ -175,7 +194,8 @@ impl AudioPlayer {
                 .then(|| crate::metadata::replay_gain_db(&path_clone))
                 .flatten()
                 .unwrap_or_default() as f32;
-            StreamingSoundData::from_file(&path_clone).map(|sound_data| (sound_data, gain_db))
+            super::decoder::GaplessDecoder::open(&path_clone)
+                .map(|decoder| (StreamingSoundData::from_decoder(decoder), gain_db))
         })
         .await
         .map_err(AudioError::Join)?
@@ -221,17 +241,22 @@ impl AudioPlayer {
         self.paused_position = None;
         self.current_gain_db = gain_db;
 
-        let sound_handle = match &mut self.manager {
+        let volume_db = self.volume_db(gain_db);
+        let (voice, sound_handle) = Voice::prepare(sound_data.volume(volume_db), self.next_token)
+            .map_err(|e| AudioError::Kira(Box::new(e)))?;
+        self.next_token += 1;
+        let data = GaplessData::new(voice);
+        let transport = match &mut self.manager {
             PlayerBackend::Default(manager) => manager
-                .play(sound_data)
+                .play(data)
                 .map_err(|e| AudioError::Kira(Box::new(e)))?,
             #[cfg(test)]
             PlayerBackend::Mock(manager) => manager
-                .play(sound_data)
+                .play(data)
                 .map_err(|e| AudioError::Kira(Box::new(e)))?,
         };
         self.current_sound = Some(sound_handle);
-        self.set_volume(self.current_volume);
+        self.gapless = Some(transport);
         self.playback_requested = true;
         Ok(())
     }
@@ -262,6 +287,7 @@ impl AudioPlayer {
     }
 
     pub fn pause(&mut self) {
+        self.synchronize_gapless();
         if let Some(sound) = &mut self.current_sound {
             self.paused_position = Some(sound.position());
             sound.pause(Tween::default());
@@ -269,6 +295,7 @@ impl AudioPlayer {
     }
 
     pub fn resume(&mut self) {
+        self.synchronize_gapless();
         if let Some(sound) = &mut self.current_sound {
             sound.resume(Tween::default());
             self.paused_position = None;
@@ -280,6 +307,7 @@ impl AudioPlayer {
     }
 
     fn stop_sound_with_tween(&mut self, tween: Tween) {
+        self.invalidate_gapless();
         if let Some(mut sound) = self.current_sound.take() {
             sound.stop(tween);
         }
@@ -287,6 +315,7 @@ impl AudioPlayer {
         self.current_path = None;
         self.paused_position = None;
         self.current_gain_db = 0.0;
+        self.gapless = None;
     }
 
     /// Stops the active track but preserves the upcoming queue.
@@ -304,6 +333,7 @@ impl AudioPlayer {
 
     /// Enables ReplayGain track normalization for subsequently loaded tracks.
     pub fn set_volume_normalization(&mut self, enabled: bool) {
+        self.invalidate_gapless();
         self.normalize_volume = enabled;
         if !enabled {
             self.current_gain_db = 0.0;
@@ -312,14 +342,25 @@ impl AudioPlayer {
     }
 
     fn apply_volume(&mut self) {
+        self.synchronize_gapless();
+        let volume_db = self.volume_db(self.current_gain_db);
         if let Some(sound) = &mut self.current_sound {
-            let volume_db = if self.current_volume > 0.00001 {
-                20.0 * self.current_volume.log10() + self.current_gain_db
-            } else {
-                -80.0
-            };
-
             sound.set_volume(volume_db, Tween::default());
+        }
+        let next_db = self
+            .scheduled_next
+            .as_ref()
+            .map(|next| self.volume_db(next.gain_db));
+        if let Some(next) = &mut self.scheduled_next {
+            next.sound.set_volume(next_db.unwrap(), Tween::default());
+        }
+    }
+
+    fn volume_db(&self, gain_db: f32) -> f32 {
+        if self.current_volume > 0.00001 {
+            20.0 * self.current_volume.log10() + gain_db
+        } else {
+            -80.0
         }
     }
 
@@ -330,11 +371,10 @@ impl AudioPlayer {
     }
 
     pub fn is_paused(&self) -> bool {
-        if self.current_sound.is_none() {
+        if self.active_sound().is_none() {
             return self.current_song_id.is_some() && self.paused_position.is_some();
         }
-        self.current_sound
-            .as_ref()
+        self.active_sound()
             .map(|sound| {
                 matches!(
                     sound.state(),
@@ -345,8 +385,7 @@ impl AudioPlayer {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.current_sound
-            .as_ref()
+        self.active_sound()
             .map(|sound| {
                 matches!(
                     sound.state(),
@@ -361,14 +400,15 @@ impl AudioPlayer {
             return Duration::from_secs_f64(paused_pos);
         }
 
-        self.current_sound
-            .as_ref()
+        self.active_sound()
             .map(|sound| Duration::from_secs_f64(sound.position()))
             .unwrap_or(Duration::ZERO)
     }
 
     pub fn get_duration(&self) -> Option<Duration> {
-        self.total_duration
+        self.activated_next()
+            .map(|next| next.duration)
+            .or(self.total_duration)
     }
 
     pub fn get_progress(&self) -> (Duration, Option<Duration>) {
@@ -376,7 +416,7 @@ impl AudioPlayer {
     }
 
     pub fn get_progress_percentage(&self) -> Option<f32> {
-        if let Some(total) = self.total_duration {
+        if let Some(total) = self.get_duration() {
             let current = self.get_position();
             let total_secs = total.as_secs_f32();
             if total_secs > 0.0 {
@@ -387,6 +427,7 @@ impl AudioPlayer {
     }
 
     pub async fn seek_to_position(&mut self, seconds: u64) -> Result<(), AudioError> {
+        self.synchronize_gapless();
         if let Some(sound) = &mut self.current_sound {
             sound.seek_to(seconds as f64);
             if self.paused_position.is_some() {
@@ -399,6 +440,7 @@ impl AudioPlayer {
     }
 
     pub async fn seek_to_percentage(&mut self, percentage: f32) -> Result<(), AudioError> {
+        self.synchronize_gapless();
         if let Some(duration) = self.total_duration {
             let target_seconds = (duration.as_secs_f32() * percentage.clamp(0.0, 1.0)) as u64;
             self.seek_to_position(target_seconds).await
@@ -409,6 +451,7 @@ impl AudioPlayer {
 
     // Queue management methods
     pub async fn add_to_queue(&mut self, song_id: i64, path: String) -> Result<(), AudioError> {
+        self.prepare_queue_append();
         if self.is_empty() && self.queue.is_empty() {
             // Nothing playing, start immediately
             self.current_song_id = Some(song_id);
@@ -417,11 +460,25 @@ impl AudioPlayer {
             // Add to queue
             self.queue.push_back(QueueItem { song_id, path });
         }
+        // A preload error must not reject a queue edit or stop active audio.
+        let _ = self.prepare_gapless_next().await;
         Ok(())
     }
 
     pub(crate) fn enqueue(&mut self, song_id: i64, path: String) {
+        self.prepare_queue_append();
         self.queue.push_back(QueueItem { song_id, path });
+    }
+
+    fn prepare_queue_append(&mut self) {
+        self.synchronize_gapless();
+        if self
+            .scheduled_next
+            .as_ref()
+            .is_some_and(|next| matches!(next.plan, PlaybackPlan::RepeatAll(_)))
+        {
+            self.invalidate_gapless();
+        }
     }
 
     pub(crate) fn should_start_queued_track(&self) -> bool {
@@ -464,7 +521,16 @@ impl AudioPlayer {
         }
 
         if self.repeat_mode == RepeatMode::All && self.current_song_id.is_some() {
-            return self.history.front().cloned().map(PlaybackPlan::RepeatAll);
+            return self
+                .history
+                .front()
+                .cloned()
+                .or_else(|| {
+                    self.current_song_id
+                        .zip(self.current_path.clone())
+                        .map(|(song_id, path)| QueueItem { song_id, path })
+                })
+                .map(PlaybackPlan::RepeatAll);
         }
         None
     }
@@ -486,13 +552,23 @@ impl AudioPlayer {
         plan: PlaybackPlan,
         prepared: PreparedSound,
     ) -> Result<(), AudioError> {
+        self.synchronize_gapless();
         let previous = self
             .current_song_id
             .zip(self.current_path.clone())
             .map(|(song_id, path)| QueueItem { song_id, path });
         let next_song_id = plan.song_id();
         self.play_prepared(prepared)?;
+        self.apply_queue_plan(plan, previous)?;
+        self.current_song_id = Some(next_song_id);
+        Ok(())
+    }
 
+    fn apply_queue_plan(
+        &mut self,
+        plan: PlaybackPlan,
+        previous: Option<QueueItem>,
+    ) -> Result<(), AudioError> {
         match plan {
             PlaybackPlan::RepeatCurrent(_) => {}
             PlaybackPlan::Next { index, .. } => {
@@ -526,8 +602,130 @@ impl AudioPlayer {
                 }
             }
         }
-        self.current_song_id = Some(next_song_id);
         Ok(())
+    }
+
+    pub(crate) fn synchronize_gapless(&mut self) {
+        if let Some(transport) = &mut self.gapless {
+            transport.collect();
+        }
+        let activated = self.scheduled_next.as_ref().is_some_and(|next| {
+            self.gapless.as_ref().is_some_and(|transport| {
+                transport.shared.active.load(Ordering::Acquire) == next.token
+            })
+        });
+        if !activated {
+            return;
+        }
+        let next = self.scheduled_next.take().unwrap();
+        let previous_id = self.current_song_id;
+        let previous = self
+            .current_song_id
+            .zip(self.current_path.take())
+            .map(|(song_id, path)| QueueItem { song_id, path });
+        let next_id = next.plan.song_id();
+        // Queue changes invalidate a pending transition before editing indices.
+        self.apply_queue_plan(next.plan, previous)
+            .expect("scheduled queue plan remains valid");
+        self.current_sound = Some(next.sound);
+        self.current_song_id = Some(next_id);
+        self.current_path = Some(next.path);
+        self.total_duration = Some(next.duration);
+        self.current_gain_db = next.gain_db;
+        self.paused_position = None;
+        self.completed_transitions.push_back((previous_id, next_id));
+    }
+
+    fn invalidate_gapless(&mut self) {
+        if let Some(transport) = &mut self.gapless {
+            let pending = transport.shared.pending.swap(0, Ordering::AcqRel);
+            // If the renderer already claimed the boundary, reconcile that
+            // transition before changing queue indices. Only the control thread
+            // may wait; the audio thread never takes a lock or waits for us.
+            if pending & super::gapless::ACTIVATING != 0 {
+                let token = pending & !super::gapless::ACTIVATING;
+                while transport.shared.active.load(Ordering::Acquire) != token {
+                    std::thread::yield_now();
+                }
+            }
+        }
+        self.synchronize_gapless();
+        if let Some(mut next) = self.scheduled_next.take() {
+            next.sound.stop(Tween {
+                duration: Duration::ZERO,
+                ..Default::default()
+            });
+        }
+    }
+
+    pub(crate) fn cancel_gapless_transition(&mut self) {
+        self.invalidate_gapless();
+    }
+
+    fn activated_next(&self) -> Option<&ScheduledNext> {
+        self.scheduled_next.as_ref().filter(|next| {
+            self.gapless.as_ref().is_some_and(|transport| {
+                transport.shared.active.load(Ordering::Acquire) == next.token
+            })
+        })
+    }
+
+    fn active_sound(&self) -> Option<&SoundHandle> {
+        self.activated_next()
+            .map(|next| &next.sound)
+            .or(self.current_sound.as_ref())
+    }
+
+    pub(crate) fn gapless_plan(&self) -> Option<PlaybackPlan> {
+        (self.playback_requested && self.current_sound.is_some() && self.scheduled_next.is_none())
+            .then(|| self.plan_next())
+            .flatten()
+    }
+
+    pub(crate) fn schedule_gapless(
+        &mut self,
+        plan: PlaybackPlan,
+        prepared: PreparedSound,
+    ) -> Result<(), AudioError> {
+        if self.scheduled_next.is_some() || self.gapless.is_none() {
+            return Ok(());
+        }
+        let duration = prepared.sound_data.duration();
+        let token = self.next_token;
+        self.next_token += 1;
+        let volume_db = self.volume_db(prepared.gain_db);
+        let (voice, sound) = Voice::prepare(prepared.sound_data.volume(volume_db), token)
+            .map_err(|error| AudioError::Kira(Box::new(error)))?;
+        let transport = self.gapless.as_mut().unwrap();
+        transport.collect();
+        transport.shared.pending.store(token, Ordering::Release);
+        transport
+            .incoming
+            .push(voice)
+            .map_err(|_| AudioError::FailedToRemove)?;
+        self.scheduled_next = Some(ScheduledNext {
+            plan,
+            sound,
+            duration,
+            path: prepared.path,
+            gain_db: prepared.gain_db,
+            token,
+        });
+        Ok(())
+    }
+
+    async fn prepare_gapless_next(&mut self) -> Result<(), AudioError> {
+        self.synchronize_gapless();
+        if let Some(plan) = self.gapless_plan() {
+            let prepared =
+                Self::prepare_sound(plan.path().to_string(), self.normalize_volume).await?;
+            self.schedule_gapless(plan, prepared)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn pop_completed_transition(&mut self) -> Option<(Option<i64>, i64)> {
+        self.completed_transitions.pop_front()
     }
 
     pub(crate) fn completed_playback_plan(&self) -> Option<PlaybackPlan> {
@@ -546,6 +744,7 @@ impl AudioPlayer {
     }
 
     pub fn insert_at_position(&mut self, song_id: i64, path: String, position: usize) {
+        self.invalidate_gapless();
         let item = QueueItem { song_id, path };
         if position >= self.queue.len() {
             self.queue.push_back(item);
@@ -555,6 +754,7 @@ impl AudioPlayer {
     }
 
     pub async fn play_next(&mut self) -> Result<bool, AudioError> {
+        self.invalidate_gapless();
         if self.repeat_mode == RepeatMode::One {
             if let Some(path) = self.current_path.clone() {
                 self.play(path).await?;
@@ -607,6 +807,7 @@ impl AudioPlayer {
     }
 
     pub async fn play_previous(&mut self) -> Result<bool, AudioError> {
+        self.invalidate_gapless();
         if let Some(prev_item) = self.history.pop_back() {
             // Add current song back to front of queue if playing
             if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
@@ -625,6 +826,7 @@ impl AudioPlayer {
     }
 
     pub async fn skip_to(&mut self, position: usize) -> Result<(), AudioError> {
+        self.invalidate_gapless();
         if position >= self.queue.len() {
             return Err(AudioError::PositionOutOfBounds);
         }
@@ -642,6 +844,7 @@ impl AudioPlayer {
     }
 
     pub fn remove_from_queue(&mut self, position: usize) -> Result<QueueItem, AudioError> {
+        self.invalidate_gapless();
         if position >= self.queue.len() {
             return Err(AudioError::PositionOutOfBounds);
         }
@@ -651,6 +854,7 @@ impl AudioPlayer {
     }
 
     pub fn clear_queue(&mut self) {
+        self.invalidate_gapless();
         self.queue.clear();
     }
 
@@ -674,7 +878,9 @@ impl AudioPlayer {
     }
 
     pub fn get_current_song_id(&self) -> Option<i64> {
-        self.current_song_id
+        self.activated_next()
+            .map(|next| next.plan.song_id())
+            .or(self.current_song_id)
     }
 
     /// Restores a persisted session without starting audio. `resume` can then
@@ -722,6 +928,7 @@ impl AudioPlayer {
     }
 
     pub fn set_shuffle_enabled(&mut self, enabled: bool) {
+        self.invalidate_gapless();
         self.shuffle_enabled = enabled;
     }
 
@@ -730,10 +937,12 @@ impl AudioPlayer {
     }
 
     pub fn set_repeat_mode(&mut self, mode: RepeatMode) {
+        self.invalidate_gapless();
         self.repeat_mode = mode;
     }
 
     pub fn move_in_queue(&mut self, from: usize, to: usize) -> Result<(), AudioError> {
+        self.invalidate_gapless();
         if from >= self.queue.len() || to >= self.queue.len() {
             return Err(AudioError::PositionOutOfBounds);
         }
@@ -744,6 +953,10 @@ impl AudioPlayer {
     }
 
     pub async fn check_and_play_next(&mut self) -> Result<bool, AudioError> {
+        self.prepare_gapless_next().await?;
+        if self.pop_completed_transition().is_some() {
+            return Ok(true);
+        }
         if self.playback_requested && self.is_empty() {
             self.play_next().await
         } else {
@@ -753,6 +966,7 @@ impl AudioPlayer {
 
     // Database persistence methods
     pub fn load_queue(&mut self, data: QueueData) -> Result<(), AudioError> {
+        self.invalidate_gapless();
         self.queue = data.items.into_iter().collect();
         self.history.clear();
         Ok(())
@@ -785,7 +999,7 @@ impl AudioPlayer {
     }
 
     pub fn get_playback_state(&self) -> Option<kira::sound::PlaybackState> {
-        self.current_sound.as_ref().map(|sound| sound.state())
+        self.active_sound().map(|sound| sound.state())
     }
 }
 
@@ -813,6 +1027,85 @@ mod tests {
         wav.extend_from_slice(&data_len.to_le_bytes());
         wav.resize(44 + data_len as usize, 0);
         wav
+    }
+
+    fn temporary_tracks(label: &str, count: usize) -> (std::path::PathBuf, Vec<String>) {
+        let directory = std::env::temp_dir().join(format!(
+            "durvald-gapless-{label}-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let paths = (0..count)
+            .map(|index| {
+                let path = directory.join(format!("{index}.wav"));
+                std::fs::write(&path, wav_fixture()).unwrap();
+                path.to_string_lossy().into_owned()
+            })
+            .collect();
+        (directory, paths)
+    }
+
+    #[tokio::test]
+    async fn gapless_queue_reorder_cancels_the_old_successor() {
+        let (directory, paths) = temporary_tracks("reorder", 3);
+        let mut player = AudioPlayer::new_mock().unwrap();
+        for (index, path) in paths.iter().enumerate() {
+            player
+                .add_to_queue(index as i64 + 1, path.clone())
+                .await
+                .unwrap();
+        }
+        player.move_in_queue(1, 0).unwrap();
+        player.prepare_gapless_next().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        player.process_mock_audio(80);
+        assert_eq!(player.get_current_song_id(), Some(3));
+        assert!(!player.is_empty());
+        player.synchronize_gapless();
+        assert_eq!(player.get_queue(), vec![(2, paths[1].clone())]);
+        assert_eq!(player.history.back().map(|item| item.song_id), Some(1));
+        player.stop();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn repeat_one_and_single_track_repeat_all_restart_without_a_control_poll() {
+        let (directory, paths) = temporary_tracks("repeat", 1);
+        for mode in [RepeatMode::One, RepeatMode::All] {
+            let mut player = AudioPlayer::new_mock().unwrap();
+            player.play_song(1, paths[0].clone()).await.unwrap();
+            player.set_repeat_mode(mode);
+            player.prepare_gapless_next().await.unwrap();
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            player.process_mock_audio(80);
+            assert!(!player.is_empty(), "repeat must already be audible");
+            assert_eq!(player.get_current_song_id(), Some(1));
+            player.synchronize_gapless();
+            assert_eq!(player.pop_completed_transition(), Some((Some(1), 1)));
+            assert!(player.queue_is_empty());
+            player.stop();
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn removing_the_prebuffered_track_prevents_automatic_playback() {
+        let (directory, paths) = temporary_tracks("remove", 2);
+        let mut player = AudioPlayer::new_mock().unwrap();
+        player.add_to_queue(1, paths[0].clone()).await.unwrap();
+        player.add_to_queue(2, paths[1].clone()).await.unwrap();
+        player.remove_from_queue(0).unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        player.process_mock_audio(80);
+        player.synchronize_gapless();
+        assert_eq!(player.get_current_song_id(), Some(1));
+        assert!(player.is_empty());
+        assert!(player.pop_completed_transition().is_none());
+        player.stop();
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -953,7 +1246,11 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(20)).await;
         player.process_mock_audio(80);
-        assert!(player.is_empty());
+        assert!(
+            !player.is_empty(),
+            "successor is already playing before a control/UI poll"
+        );
+        assert_eq!(player.get_current_song_id(), Some(2));
         assert!(player.check_and_play_next().await.expect("advance queue"));
         assert_eq!(player.get_current_song_id(), Some(2));
 
