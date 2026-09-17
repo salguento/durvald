@@ -93,16 +93,7 @@ struct PlayerBar: View {
             .disabled(album == nil)
             .accessibilityLabel(album.map { "Abrir álbum \($0.title)" } ?? "Capa da faixa")
             .accessibilityIdentifier("player.artwork")
-            .contextMenu {
-                if let album {
-                    Button("Abrir álbum", systemImage: "square.stack") {
-                        onSelectAlbum(album)
-                    }
-                    Button("Reproduzir álbum", systemImage: "play") {
-                        Task { await store.playRelease(releaseID: album.id) }
-                    }
-                }
-            }
+            .albumContextMenu(album: album)
 
             VStack(alignment: .leading, spacing: 0) {
                 trackMetadata(track, album: album, artist: artist)
@@ -128,25 +119,7 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.trackTitle")
                 .trackContextMenu(
                     track: track,
-                    onPlay: { Task { await store.play(trackID: track.id) } },
-                    additionalActions: [
-                        TrackMenuAction(
-                        track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
-                        systemImage: track.isFavorite ? "star.slash" : "star"
-                        ) {
-                        Task {
-                            await store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
-                        }
-                        },
-                        TrackMenuAction("Abrir álbum", systemImage: "square.stack",
-                                        isEnabled: album != nil) {
-                            if let album { onSelectAlbum(album) }
-                        },
-                        TrackMenuAction("Abrir artista", systemImage: "music.mic",
-                                        isEnabled: artist != nil) {
-                            if let artist { onSelectArtist(artist) }
-                        }
-                    ]
+                    onPlay: { Task { await store.play(trackID: track.id) } }
                 )
             } else {
                 PlayerMetadataLink(

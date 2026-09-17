@@ -130,6 +130,7 @@ struct AlbumView: View {
                     artworkID: artworkID,
                     size: artworkSize
                 )
+                .albumContextMenu(album: currentAlbum)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)

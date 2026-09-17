@@ -11,6 +11,7 @@ struct PlaylistsView: View {
                 CollectionListingItem(title: playlist.name, mode: listingMode, artworkSize: size, action: { onSelectPlaylist(playlist) }) {
                     PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: size)
                 }
+                .playlistContextMenu(playlist: playlist)
                 .accessibilityIdentifier("playlist.\(playlist.id)")
             }
         }

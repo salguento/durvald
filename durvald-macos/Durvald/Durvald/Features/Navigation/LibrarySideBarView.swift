@@ -134,9 +134,7 @@ struct LibrarySidebarView: View {
                                 isSelected: selectedPlaylistID == playlist.id,
                                 action: { onSelectPlaylist(playlist) }
                             )
-                            .contextMenu {
-                                playlistContextMenu(for: playlist)
-                            }
+                            .playlistContextMenu(playlist: playlist)
                         }
                     }
                 }
@@ -150,7 +148,7 @@ struct LibrarySidebarView: View {
                     CollectionListingItem(title: playlist.name, mode: playlistListingMode, artworkSize: size, isSelected: selectedPlaylistID == playlist.id, action: { onSelectPlaylist(playlist) }) {
                         PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: size)
                     }
-                    .contextMenu { playlistContextMenu(for: playlist) }
+                    .playlistContextMenu(playlist: playlist)
                     .accessibilityIdentifier("sidebar.playlist.\(playlist.id)")
                 }
             }
@@ -161,6 +159,7 @@ struct LibrarySidebarView: View {
                     CollectionListingItem(title: album.title, subtitle: album.artist, mode: albumListingMode, artworkSize: size, action: { onSelectAlbum(album) }) {
                         ArtworkView(artworkID: album.artworkId, size: size)
                     }
+                    .albumContextMenu(album: album)
                     .accessibilityIdentifier("sidebar.album.\(album.id)")
                     .task { await store.loadMoreReleases(ifNeededAfter: album.id) }
                 }
@@ -208,17 +207,6 @@ struct LibrarySidebarView: View {
         .accessibilityValue(arePlaylistsExpanded ? "Expandido" : "Recolhido")
         .accessibilityHint(arePlaylistsExpanded ? "Ocultar playlists" : "Mostrar playlists")
         .accessibilityIdentifier("sidebar.playlists.toggle")
-    }
-
-    private func playlistContextMenu(for playlist: Playlist) -> some View {
-        Button("Excluir", systemImage: "trash", role: .destructive) {
-            Task {
-                guard await store.deletePlaylist(id: playlist.id) else { return }
-                if selectedPlaylistID == playlist.id {
-                    destination = .playlists
-                }
-            }
-        }
     }
 
     private func navigationSectionHeader(_ title: String) -> some View {

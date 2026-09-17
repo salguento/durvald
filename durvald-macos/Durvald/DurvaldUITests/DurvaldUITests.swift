@@ -74,14 +74,26 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertTrue(artwork.waitForExistence(timeout: 3))
 
         artwork.rightClick()
-        XCTAssertTrue(app.menuItems["Reproduzir álbum"].waitForExistence(timeout: 2))
-        XCTAssertFalse(app.menuItems["Favoritar faixa"].exists)
-        app.menuItems["Abrir álbum"].click()
+        XCTAssertTrue(app.menuItems["Tocar"].waitForExistence(timeout: 2))
+        for title in ["Aleatório", "Adicionar à playlist", "Tocar de próxima", "Adicionar à fila", "Favoritar", "Compartilhar"] {
+            XCTAssertTrue(app.menuItems[title].exists, "Ação de álbum ausente: \(title)")
+        }
+        app.menuItems["Compartilhar"].hover()
+        XCTAssertTrue(app.menuItems["Copiar título"].waitForExistence(timeout: 2))
+        XCTAssertFalse(app.menuItems["Copiar nome"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+        artwork.click()
         XCTAssertTrue(app.descendants(matching: .any)["album.detail.42"].waitForExistence(timeout: 3))
 
         app.links["player.trackTitle"].rightClick()
-        XCTAssertTrue(app.menuItems["Favoritar faixa"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.menuItems["Favoritar"].waitForExistence(timeout: 2))
         XCTAssertTrue(app.menuItems["Adicionar à fila"].exists)
+        for title in ["Tocar de próxima", "Ir ao artista", "Ir ao álbum", "Ir à playlist", "Info", "Compartilhar"] {
+            XCTAssertTrue(app.menuItems[title].exists, "Ação ausente: \(title)")
+        }
+        XCTAssertFalse(app.menuItems["Reproduzir agora"].exists)
+        app.menuItems["Compartilhar"].hover()
+        XCTAssertTrue(app.menuItems["Copiar nome"].waitForExistence(timeout: 2))
         let addToPlaylist = app.menuItems["Adicionar à playlist"]
         XCTAssertTrue(addToPlaylist.exists)
         addToPlaylist.hover()

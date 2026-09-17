@@ -9,30 +9,11 @@ import SwiftUI
 
 struct HistoryView: View {
     @Environment(DurvaldCoreStore.self) private var store
-    @Environment(TrackInfoCoordinator.self) private var trackInfo
-    private static let playbackTimestamp = Date.ISO8601FormatStyle(
-        includingFractionalSeconds: true
-    )
 
     var body: some View {
         List(store.history, id: \.id) { item in
-            let track = store.tracks.first { $0.id == item.trackId }
-
-            VStack(alignment: .leading) {
-                Text(track?.title ?? "Música #\(item.trackId)")
-                    .activeTrackTitle(trackID: item.trackId)
-                Text(formattedPlaybackDate(item.playedAt))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .task {
-                await store.loadMoreHistory(ifNeededAfter: item.id)
-            }
-            .contextMenu {
-                Button("Info", systemImage: "info.circle") {
-                    trackInfo.open(trackID: item.trackId)
-                }
-            }
+            HistoryTrackRow(item: item)
+                .task { await store.loadMoreHistory(ifNeededAfter: item.id) }
         }
         .preservesLibraryScrollPosition()
         .task {
@@ -42,11 +23,44 @@ struct HistoryView: View {
             }
         }
     }
+}
 
-    private func formattedPlaybackDate(_ timestamp: String) -> String {
-        guard let date = try? Self.playbackTimestamp.parse(timestamp) else {
-            return timestamp
+private struct HistoryTrackRow: View {
+    @Environment(DurvaldCoreStore.self) private var store
+    @Environment(TrackInfoCoordinator.self) private var trackInfo
+    let item: PlaybackHistoryItem
+    @State private var loadedTrack: Track?
+
+    var body: some View {
+        let track = store.tracks.first { $0.id == item.trackId } ?? loadedTrack
+        Group {
+            if let track {
+                label(track.title)
+                    .trackContextMenu(track: track) {
+                        Task { await store.play(trackID: track.id) }
+                    }
+            } else {
+                label("Música #\(item.trackId)")
+                    .contextMenu {
+                        Button("Info") { trackInfo.open(trackID: item.trackId) }
+                    }
+            }
         }
+        .task(id: item.trackId) {
+            if track == nil { loadedTrack = try? await store.core?.track(trackId: item.trackId) }
+        }
+    }
+
+    private func label(_ title: String) -> some View {
+        VStack(alignment: .leading) {
+            Text(title).activeTrackTitle(trackID: item.trackId)
+            Text(playbackDate).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private var playbackDate: String {
+        let format = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+        guard let date = try? format.parse(item.playedAt) else { return item.playedAt }
         return date.formatted(date: .abbreviated, time: .shortened)
     }
 }

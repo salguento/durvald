@@ -21,6 +21,7 @@ struct QueueTableView: NSViewRepresentable {
     let onTogglePlayback: () -> Void
     let onRemove: (UInt64) -> Void
     let onInfo: (Int64) -> Void
+    let configureMenu: (TrackMenuController, Int64) -> Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -83,6 +84,7 @@ struct QueueTableView: NSViewRepresentable {
         context.coordinator.tableView?.reloadData()
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate,
         NSMenuDelegate {
         static let columnIdentifier = NSUserInterfaceItemIdentifier("queue.column")
@@ -247,19 +249,21 @@ struct QueueTableView: NSViewRepresentable {
             return true
         }
 
+        private let trackMenuController = TrackMenuController()
+
         func menuNeedsUpdate(_ menu: NSMenu) {
             menu.removeAllItems()
             guard let tableView,
                   rows.indices.contains(tableView.clickedRow)
             else { return }
 
-            let info = NSMenuItem(title: "Info", action: #selector(showInfo(_:)), keyEquivalent: "")
-            info.target = self
-            info.representedObject = tableView.clickedRow
-            menu.addItem(info)
-            guard rows[tableView.clickedRow].position > 0 else { return }
-            menu.addItem(.separator())
-
+            trackMenuController.rootMenu = menu
+            if !parent.configureMenu(trackMenuController, rows[tableView.clickedRow].trackID) {
+                let info = NSMenuItem(title: "Info", action: #selector(showInfo(_:)), keyEquivalent: "")
+                info.target = self
+                info.representedObject = tableView.clickedRow
+                menu.addItem(info)
+            }
             let item = NSMenuItem(
                 title: "Remover da fila",
                 action: #selector(removeQueueItem(_:)),
@@ -267,7 +271,17 @@ struct QueueTableView: NSViewRepresentable {
             )
             item.target = self
             item.representedObject = tableView.clickedRow
-            menu.addItem(item)
+            item.isEnabled = rows[tableView.clickedRow].position > 0
+            menu.insertItem(item, at: 0)
+            menu.insertItem(.separator(), at: 1)
+        }
+
+        func menuWillOpen(_ menu: NSMenu) {
+            trackMenuController.menuWillOpen(menu)
+        }
+
+        func menuDidClose(_ menu: NSMenu) {
+            trackMenuController.menuDidClose(menu)
         }
 
         @objc private func playQueueItem(_ sender: NSButton) {

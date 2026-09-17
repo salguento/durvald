@@ -6,6 +6,10 @@ final class FakeDurvaldCore: DurvaldCore {
     var discographyPages: [UInt64: ArtistDiscographyPage] = [:]
     private(set) var discographyOffsets: [UInt64] = []
     private(set) var artistRefreshRequests: [ArtistRefreshRequest] = []
+    var simulatesQueueMutations = false
+    var playlistResultsByID: [Int64: [Track]] = [:]
+    var playlistTrackResults: [Track] = []
+    private(set) var playlistAdditions: [(trackID: Int64, position: UInt64)] = []
     var favoriteError: Error?
     private(set) var favoriteChanges: [Bool] = []
     var onSeek: ((UInt64) -> Void)?
@@ -85,6 +89,22 @@ final class FakeDurvaldCore: DurvaldCore {
 
     override func addToQueue(trackId: Int64) async throws {
         playbackOperations.append("enqueue:\(trackId)")
+        if simulatesQueueMutations {
+            snapshot.queue.append(QueueItem(trackId: trackId, position: UInt64(snapshot.queue.count)))
+        }
+    }
+
+    override func moveQueueItem(from: UInt64, to: UInt64) async throws {
+        let item = snapshot.queue.remove(at: Int(from))
+        snapshot.queue.insert(item, at: Int(to))
+        for index in snapshot.queue.indices { snapshot.queue[index].position = UInt64(index) }
+    }
+
+    override func playlistTracks(playlistId: Int64) async throws -> [Track] { playlistResultsByID[playlistId] ?? playlistTrackResults }
+
+    override func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws -> PlaylistTrack {
+        playlistAdditions.append((trackId, position))
+        return PlaylistTrack(playlistId: playlistId, trackId: trackId, position: position, addedAt: "")
     }
 
     override func seek(seconds: UInt64) async throws {

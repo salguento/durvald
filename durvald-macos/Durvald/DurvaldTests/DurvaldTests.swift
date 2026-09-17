@@ -117,6 +117,111 @@ final class DurvaldCoreStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testPlaylistQueueAndCopyActionsPreserveOrderAndRepeatedTracks() async {
+        let playlist = Playlist(id: 2, name: "Destino", description: "", artworkId: nil,
+            isFavorite: false, suggestLess: false, trackCount: 1, createdAt: "", updatedAt: "")
+        for playNext in [false, true] {
+            var snapshot = Fixtures.playingSnapshot
+            snapshot.queue = [QueueItem(trackId: 1, position: 0), QueueItem(trackId: 9, position: 1)]
+            let fake = FakeDurvaldCore(snapshot: snapshot)
+            fake.simulatesQueueMutations = true
+            fake.playlistResultsByID = [
+                1: [Fixtures.track(id: 3, trackNumber: 3, discNumber: 1),
+                    Fixtures.track(id: 2, trackNumber: 2, discNumber: 1),
+                    Fixtures.track(id: 3, trackNumber: 3, discNumber: 1)],
+                2: [Fixtures.track]
+            ]
+            let store = DurvaldCoreStore(core: fake, playback: snapshot)
+
+            await store.enqueuePlaylist(playlistID: 1, playNext: playNext)
+            let copied = await store.addPlaylist(1, to: playlist)
+
+            XCTAssertEqual(store.queue.map(\.trackId), playNext ? [1, 3, 2, 3, 9] : [1, 9, 3, 2, 3])
+            XCTAssertTrue(copied)
+            XCTAssertEqual(fake.playlistAdditions.map { $0.trackID }, [3, 2, 3])
+            XCTAssertEqual(fake.playlistAdditions.map { $0.position }, [1, 2, 3])
+            XCTAssertNil(store.errorMessage)
+        }
+    }
+
+    @MainActor
+    func testPlaylistMenuHasRequestedOrderAndCreationContext() {
+        let playlist = Playlist(id: 1, name: "Origem", description: "", artworkId: nil,
+            isFavorite: false, suggestLess: false, trackCount: 1, createdAt: "", updatedAt: "")
+        let controller = TrackMenuController()
+        let creation = PlaylistCreationCoordinator()
+        controller.configure(playlist: playlist, store: DurvaldCoreStore(), creation: creation,
+            navigation: TrackMenuNavigation())
+
+        XCTAssertEqual(controller.rootMenu.items.map { $0.isSeparatorItem ? "—" : $0.title },
+            ["Tocar", "Aleatório", "—", "Adicionar à playlist", "Tocar de próxima", "Adicionar à fila",
+             "—", "Editar detalhes", "—", "Deletar"])
+        XCTAssertNotNil(controller.rootMenu.items[3].submenu)
+        creation.requestPlaylist(1)
+        XCTAssertEqual(creation.pendingPlaylistID, 1)
+        XCTAssertNil(creation.pendingTrackID)
+        XCTAssertNil(creation.pendingReleaseID)
+        creation.reset()
+        XCTAssertNil(creation.pendingPlaylistID)
+    }
+
+    @MainActor
+    func testAlbumQueueActionsPreserveAlbumAndExistingQueueOrder() async {
+        for playNext in [false, true] {
+            var snapshot = Fixtures.playingSnapshot
+            snapshot.queue = [QueueItem(trackId: 1, position: 0), QueueItem(trackId: 9, position: 1)]
+            let fake = FakeDurvaldCore(snapshot: snapshot)
+            fake.simulatesQueueMutations = true
+            fake.releaseTrackResults = [
+                Fixtures.track(id: 4, trackNumber: 1, discNumber: 2),
+                Fixtures.track(id: 3, trackNumber: 2, discNumber: 1),
+                Fixtures.track(id: 2, trackNumber: 1, discNumber: 1)
+            ]
+            let store = DurvaldCoreStore(core: fake, playback: snapshot)
+
+            await store.enqueueRelease(releaseID: 1, playNext: playNext)
+
+            XCTAssertEqual(store.queue.map(\.trackId), playNext ? [1, 2, 3, 4, 9] : [1, 9, 2, 3, 4])
+            XCTAssertEqual(store.playback?.currentTrack?.id, 1)
+            XCTAssertNil(store.errorMessage)
+        }
+    }
+
+    @MainActor
+    func testAddingAnAlbumToPlaylistAppendsTracksInDiscOrder() async {
+        let fake = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        fake.playlistTrackResults = [Fixtures.track]
+        fake.releaseTrackResults = [
+            Fixtures.track(id: 3, trackNumber: 1, discNumber: 2),
+            Fixtures.track(id: 2, trackNumber: 1, discNumber: 1)
+        ]
+        let store = DurvaldCoreStore(core: fake)
+        let playlist = Playlist(id: 1, name: "Teste", description: "", artworkId: nil,
+            isFavorite: false, suggestLess: false, trackCount: 1, createdAt: "", updatedAt: "")
+
+        let added = await store.addRelease(1, to: playlist)
+
+        XCTAssertTrue(added)
+        XCTAssertEqual(fake.playlistAdditions.map { $0.trackID }, [2, 3])
+        XCTAssertEqual(fake.playlistAdditions.map { $0.position }, [1, 2])
+    }
+
+    @MainActor
+    func testAlbumMenuHasRequestedOrderAndSharingSubmenu() {
+        let controller = TrackMenuController()
+        let creation = PlaylistCreationCoordinator()
+        controller.configure(album: Fixtures.release, store: DurvaldCoreStore(), playlistCreation: creation)
+
+        XCTAssertEqual(controller.rootMenu.items.map { $0.isSeparatorItem ? "—" : $0.title },
+            ["Tocar", "Aleatório", "—", "Adicionar à playlist", "Tocar de próxima", "Adicionar à fila",
+             "—", "Favoritar", "—", "Compartilhar"])
+        XCTAssertEqual(controller.rootMenu.items.last?.submenu?.items.first?.title, "Copiar título")
+        creation.requestAlbum(1)
+        XCTAssertEqual(creation.pendingReleaseID, 1)
+        XCTAssertNil(creation.pendingTrackID)
+    }
+
+    @MainActor
     func testPlayReleaseReplacesQueueInAlbumOrder() async {
         let snapshot = Fixtures.playingSnapshot
         let fake = FakeDurvaldCore(snapshot: snapshot)

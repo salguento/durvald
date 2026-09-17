@@ -61,6 +61,7 @@ struct AlbumsView: View {
                         CollectionListingItem(title: release.title, subtitle: release.artist, mode: listingMode, artworkSize: size, action: { onSelectAlbum(release) }) {
                             ArtworkView(artworkID: release.artworkId, size: size)
                         }
+                        .albumContextMenu(album: release)
                     }
                 }
                 .accessibilityIdentifier("album.\(release.id)")
@@ -149,6 +150,7 @@ struct AlbumCard: View {
         }
         .frame(width: AlbumGridLayout.cardWidth, alignment: .leading)
         .contentShape(Rectangle())
+        .albumContextMenu(album: release)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.12)) {
                 isHovered = hovering

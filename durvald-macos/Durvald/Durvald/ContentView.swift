@@ -117,6 +117,12 @@ struct ContentView: View {
             shell.adaptToWidth(width, compactThreshold: Layout.compactNavigationWidth)
         }
         .environment(playlistCreation)
+        .environment(\.trackMenuNavigation, TrackMenuNavigation(artist: showArtist, album: showAlbum, playlist: showPlaylist,
+            deletedPlaylist: { id in
+                if case .playlist(let playlist) = shell.navigationHistory.currentRoute, playlist.id == id {
+                    shell.navigationHistory.navigate(to: .playlists)
+                }
+            }))
         .onAppear {
             trackInfo.presentWindow = {
                 openWindow(id: "track-info")
@@ -173,6 +179,12 @@ struct ContentView: View {
                 ) else { return false }
                 if let trackID = playlistCreation.pendingTrackID {
                     store.addTrack(trackID, to: playlist)
+                }
+                if let releaseID = playlistCreation.pendingReleaseID {
+                    guard await store.addRelease(releaseID, to: playlist) else { return false }
+                }
+                if let sourceID = playlistCreation.pendingPlaylistID {
+                    guard await store.addPlaylist(sourceID, to: playlist) else { return false }
                 }
                 let updatedPlaylist = store.playlists.first { $0.id == playlist.id } ?? playlist
                 showPlaylist(updatedPlaylist)

@@ -3,6 +3,9 @@ import SwiftUI
 struct QueueView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(TrackInfoCoordinator.self) private var trackInfo
+    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
+    @Environment(\.trackMenuNavigation) private var navigation
+    @State private var menuTracks: [Int64: Track] = [:]
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
@@ -53,7 +56,16 @@ struct QueueView: View {
                             await store.removeQueueItem(at: position)
                         }
                     },
-                    onInfo: { trackInfo.open(trackID: $0) }
+                    onInfo: { trackInfo.open(trackID: $0) },
+                    configureMenu: { controller, trackID in
+                        guard let track = store.tracks.first(where: { $0.id == trackID })
+                            ?? store.playback?.currentTrack.flatMap({ $0.id == trackID ? $0 : nil })
+                            ?? menuTracks[trackID] else { return false }
+                        controller.configure(track: track, store: store,
+                            playlistCreation: playlistCreation, trackInfo: trackInfo,
+                            navigation: navigation)
+                        return true
+                    }
                 )
                 .frame(width: geometry.size.width, height: geometry.size.height)
             }
@@ -62,6 +74,12 @@ struct QueueView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("queue.sidebar")
+        .task(id: store.queue.map(\.trackId)) {
+            for item in store.queue where menuTracks[item.trackId] == nil {
+                guard !Task.isCancelled else { return }
+                menuTracks[item.trackId] = try? await store.core?.track(trackId: item.trackId)
+            }
+        }
     }
 
     private var tableRows: [QueueTableRow] {

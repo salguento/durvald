@@ -103,6 +103,7 @@ struct LibrarySearchView: View {
                                 .lineLimit(1)
                         }
                     }
+                    .albumContextMenu(album: release)
                     .accessibilityIdentifier("search.release.\(release.id)")
                 }
             }
@@ -127,6 +128,7 @@ struct LibrarySearchView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    .playlistContextMenu(playlist: playlist)
                     .accessibilityIdentifier("search.playlist.\(playlist.id)")
                 }
             }

@@ -1138,6 +1138,118 @@ final class DurvaldCoreStore {
         }
     }
 
+    private func orderedReleaseTracks(_ releaseID: Int64) async throws -> [Track] {
+        guard let core else { return [] }
+        return try await core.releaseTracks(releaseId: releaseID).sorted {
+            if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
+            if $0.trackNumber != $1.trackNumber { return $0.trackNumber < $1.trackNumber }
+            return $0.id < $1.id
+        }
+    }
+
+    func enqueuePlaylist(playlistID: Int64, playNext: Bool = false) async {
+        guard let core else { return }
+        do {
+            let tracks = try await core.playlistTracks(playlistId: playlistID)
+            guard !tracks.isEmpty else { errorMessage = "Esta playlist não possui faixas."; return }
+            try await enqueueTracks(tracks, playNext: playNext)
+        } catch {
+            errorMessage = String(describing: error)
+            await refreshPlayback()
+        }
+    }
+
+    @discardableResult
+    func addPlaylist(_ playlistID: Int64, to target: Playlist) async -> Bool {
+        guard let core else { return false }
+        do {
+            let tracks = try await core.playlistTracks(playlistId: playlistID)
+            guard !tracks.isEmpty else { errorMessage = "Esta playlist não possui faixas."; return false }
+            try await appendTracks(tracks, to: target)
+            return true
+        } catch {
+            errorMessage = String(describing: error)
+            return false
+        }
+    }
+
+    private func enqueueTracks(_ tracks: [Track], playNext: Bool) async throws {
+        guard let core else { return }
+        let initial = await core.playback()
+        var destination: UInt64 = initial.currentTrack == nil ? 0 : 1
+        for track in tracks {
+            try await core.addToQueue(trackId: track.id)
+            if playNext {
+                let snapshot = await core.playback()
+                if let appended = snapshot.queue.last, appended.position > destination {
+                    try await core.moveQueueItem(from: appended.position, to: destination)
+                }
+                destination += 1
+            }
+        }
+        await refreshPlayback()
+    }
+
+    private func appendTracks(_ tracks: [Track], to playlist: Playlist) async throws {
+        guard let core else { return }
+        let existing = try await core.playlistTracks(playlistId: playlist.id)
+        for (offset, track) in tracks.enumerated() {
+            _ = try await core.addTrackToPlaylist(playlistId: playlist.id,
+                trackId: track.id, position: UInt64(existing.count + offset))
+            if let index = playlists.firstIndex(where: { $0.id == playlist.id }) {
+                playlists[index].trackCount += 1
+            }
+        }
+    }
+
+    func enqueueRelease(releaseID: Int64, playNext: Bool = false) async {
+        guard let core else { return }
+        do {
+            let tracks = try await orderedReleaseTracks(releaseID)
+            guard !tracks.isEmpty else {
+                errorMessage = "Este álbum não possui faixas."
+                return
+            }
+            try await enqueueTracks(tracks, playNext: playNext)
+        } catch {
+            errorMessage = String(describing: error)
+            await refreshPlayback()
+        }
+    }
+
+    @discardableResult
+    func addRelease(_ releaseID: Int64, to playlist: Playlist) async -> Bool {
+        guard let core else { return false }
+        do {
+            let tracks = try await orderedReleaseTracks(releaseID)
+            guard !tracks.isEmpty else {
+                errorMessage = "Este álbum não possui faixas."
+                return false
+            }
+            try await appendTracks(tracks, to: playlist)
+            return true
+        } catch {
+            errorMessage = String(describing: error)
+            return false
+        }
+    }
+
+    func playNext(trackID: Int64) async {
+        guard let core else { return }
+        do {
+            try await core.addToQueue(trackId: trackID)
+            let snapshot = await core.playback()
+            let destination: UInt64 = snapshot.currentTrack == nil ? 0 : 1
+            if let appended = snapshot.queue.last, appended.position > destination {
+                try await core.moveQueueItem(from: appended.position, to: destination)
+            }
+            await refreshPlayback()
+        } catch {
+            errorMessage = String(describing: error)
+            await refreshPlayback()
+        }
+    }
+
     func playQueueItem(at position: UInt64) async {
         guard let core, !isChangingTrack else { return }
 

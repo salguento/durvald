@@ -143,6 +143,7 @@ struct PlaylistView: View {
                     artworkBase64: currentPlaylist.artworkId,
                     size: artworkSize
                 )
+                .playlistContextMenu(playlist: currentPlaylist)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Button {

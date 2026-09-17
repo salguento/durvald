@@ -155,6 +155,7 @@ struct PlaylistMusicPicker: View {
                            artworkID: album.artworkId, systemImage: "square.stack")
             }
             .buttonStyle(.plain)
+            .albumContextMenu(album: album)
         case .artist(let artist):
             Button { selection = .artist(artist) } label: {
                 libraryRow(title: artist.name, subtitle: "Artista",
@@ -197,6 +198,9 @@ struct PlaylistMusicPicker: View {
         }
         .padding(.vertical, 6)
         .playTrackOnDoubleClick {
+            Task { await store.play(trackID: track.id) }
+        }
+        .trackContextMenu(track: track) {
             Task { await store.play(trackID: track.id) }
         }
     }

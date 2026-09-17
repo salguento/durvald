@@ -1232,6 +1232,7 @@ struct ArtistView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Abrir lançamento \(latestRelease.title)")
+                        .albumContextMenu(album: albums.first { $0.id == latestRelease.localReleaseId })
                         .accessibilityIdentifier("artist.latestRelease.\(latestRelease.musicbrainzId)")
                         if discographyPage?.remoteExhausted == false {
                             Text("Mais recente no catálogo disponível. Continue a atualização da discografia para consultar os demais lançamentos.")
@@ -1275,6 +1276,7 @@ struct ArtistView: View {
                                     .contentShape(.rect)
                                 }
                                 .buttonStyle(.plain)
+                                .albumContextMenu(album: album)
                                 .accessibilityLabel("Abrir álbum \(album.title)")
                             }
                         }
