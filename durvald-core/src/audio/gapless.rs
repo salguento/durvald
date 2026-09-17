@@ -25,6 +25,9 @@ pub(super) struct Voice {
     pub token: u64,
     handle: StreamingSoundHandle<FromFileError>,
     control: Arc<Control>,
+    prefix_frames: usize,
+    sample_rate: u32,
+    priming: bool,
 }
 
 struct Control {
@@ -35,6 +38,7 @@ struct Control {
     action: AtomicU64,
     stop_duration: AtomicU64,
     manually_stopped: AtomicBool,
+    target_volume: AtomicU64,
 }
 
 pub(super) struct StreamHandle {
@@ -61,6 +65,11 @@ impl StreamHandle {
             .volume
             .store((db as f64).to_bits(), Ordering::Release);
     }
+    pub fn set_target_volume(&mut self, db: f32) {
+        self.control
+            .target_volume
+            .store((db as f64).to_bits(), Ordering::Release);
+    }
     pub fn pause(&mut self, _: Tween) {
         self.control.action.store(1, Ordering::Release);
     }
@@ -85,8 +94,11 @@ impl Voice {
     pub fn prepare(
         data: StreamingSoundData<FromFileError>,
         token: u64,
+        duration: f64,
+        prefix_frames: usize,
+        sample_rate: u32,
+        target_volume_db: f32,
     ) -> Result<(Self, StreamHandle), FromFileError> {
-        let duration = data.duration().as_secs_f64();
         let (sound, handle) = data.into_sound()?;
         let control = Arc::new(Control {
             state: AtomicU64::new(0),
@@ -96,6 +108,7 @@ impl Voice {
             action: AtomicU64::new(0),
             stop_duration: AtomicU64::new(0),
             manually_stopped: AtomicBool::new(false),
+            target_volume: AtomicU64::new((target_volume_db as f64).to_bits()),
         });
         Ok((
             Self {
@@ -104,6 +117,9 @@ impl Voice {
                 token,
                 handle,
                 control: control.clone(),
+                prefix_frames,
+                sample_rate,
+                priming: false,
             },
             StreamHandle { control },
         ))
@@ -145,7 +161,10 @@ impl Voice {
             .store(self.handle.state() as u64, Ordering::Release);
         self.control
             .position
-            .store(self.handle.position().to_bits(), Ordering::Release);
+            .store(self.position().to_bits(), Ordering::Release);
+    }
+    fn position(&self) -> f64 {
+        (self.handle.position() - self.prefix_frames as f64 / self.sample_rate as f64).max(0.0)
     }
     fn retire(&mut self) {
         self.handle.stop(Tween {
@@ -154,6 +173,17 @@ impl Voice {
         });
         self.sound.on_start_processing();
         self.publish();
+    }
+    fn activate(&mut self) {
+        let volume = f64::from_bits(self.control.target_volume.load(Ordering::Acquire));
+        self.handle.set_volume(
+            volume as f32,
+            Tween {
+                duration: std::time::Duration::ZERO,
+                ..Default::default()
+            },
+        );
+        self.sound.on_start_processing();
     }
 }
 
@@ -257,7 +287,7 @@ impl Sound for GaplessSound {
             current.update();
             // Follow the renderer's actual progress, including decoder stalls
             // and seeks, rather than wall-clock time.
-            self.elapsed = current.handle.position();
+            self.elapsed = current.position();
         }
         if let Some(next) = &mut self.next {
             next.update();
@@ -277,6 +307,33 @@ impl Sound for GaplessSound {
             let at_boundary = self.current.as_ref().is_some_and(|voice| {
                 self.elapsed + dt * 0.5 >= voice.duration || naturally_finished
             });
+            let remaining = out.len() - offset;
+            let frames_to_boundary = self.current.as_ref().map_or(remaining, |voice| {
+                (((voice.duration - self.elapsed).max(0.0) / dt).round() as usize).max(1)
+            });
+            if let (Some(current), Some(next)) = (&self.current, &mut self.next)
+                && !next.priming
+                && current.sample_rate == next.sample_rate
+                && next.prefix_frames > 0
+            {
+                let source_per_output = next.sample_rate as f64 * dt;
+                let prefix_capacity =
+                    (next.prefix_frames as f64 / source_per_output).floor() as usize;
+                if frames_to_boundary <= prefix_capacity {
+                    let consumed_source =
+                        (frames_to_boundary as f64 * source_per_output).floor() as usize;
+                    let start = next.prefix_frames.saturating_sub(consumed_source);
+                    next.handle.seek_to(start as f64 / next.sample_rate as f64);
+                    next.update();
+                    next.priming = true;
+                } else {
+                    let count = (frames_to_boundary - prefix_capacity).min(remaining).max(1);
+                    self.process_current_and_prime(out, offset, count, dt, info);
+                    self.elapsed += dt * count as f64;
+                    offset += count;
+                    continue;
+                }
+            }
             if (advancing || naturally_finished)
                 && at_boundary
                 && !self.retired.is_full()
@@ -292,7 +349,8 @@ impl Sound for GaplessSound {
                         .is_ok()
                 })
             {
-                let next = self.next.take().unwrap();
+                let mut next = self.next.take().unwrap();
+                next.activate();
                 let token = next.token;
                 if let Some(mut previous) = self.current.replace(next) {
                     previous.retire();
@@ -302,7 +360,6 @@ impl Sound for GaplessSound {
                 self.shared.active.store(token, Ordering::Release);
                 continue;
             }
-            let remaining = out.len() - offset;
             let count = if advancing && self.next.is_some() && !at_boundary {
                 self.current.as_ref().map_or(remaining, |voice| {
                     (((voice.duration - self.elapsed) / dt).round() as usize)
@@ -312,12 +369,7 @@ impl Sound for GaplessSound {
             } else {
                 remaining
             };
-            let chunk = &mut out[offset..offset + count];
-            if let Some(current) = &mut self.current {
-                current.sound.process(chunk, dt, info);
-            } else {
-                chunk.fill(Frame::ZERO);
-            }
+            self.process_current_and_prime(out, offset, count, dt, info);
             if advancing {
                 self.elapsed += dt * count as f64;
             }
@@ -336,10 +388,50 @@ impl Sound for GaplessSound {
     }
 }
 
+impl GaplessSound {
+    fn process_current_and_prime(
+        &mut self,
+        out: &mut [Frame],
+        offset: usize,
+        count: usize,
+        dt: f64,
+        info: &Info,
+    ) {
+        let chunk = &mut out[offset..offset + count];
+        let use_primed = self.next.as_ref().is_some_and(|next| next.priming)
+            && self
+                .current
+                .as_ref()
+                .is_some_and(|current| current.handle.state().is_advancing());
+        if use_primed {
+            let mut processed = 0;
+            let mut scratch = [Frame::ZERO; 256];
+            while processed < count {
+                let size = (count - processed).min(scratch.len());
+                self.current
+                    .as_mut()
+                    .unwrap()
+                    .sound
+                    .process(&mut scratch[..size], dt, info);
+                processed += size;
+            }
+            // The prefixed successor contains an exact copy of the current
+            // tail plus the next track. Rendering it here preserves the
+            // resampler's look-behind, look-ahead, and fractional phase.
+            self.next.as_mut().unwrap().sound.process(chunk, dt, info);
+        } else if let Some(current) = &mut self.current {
+            current.sound.process(chunk, dt, info);
+        } else {
+            chunk.fill(Frame::ZERO);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use kira::info::MockInfoBuilder;
+    use kira::sound::streaming::Decoder;
     use std::{io::Cursor, time::Duration};
 
     fn tone(frames: usize, sample: i16) -> StreamingSoundData<FromFileError> {
@@ -371,10 +463,46 @@ mod tests {
         StreamingSoundData::from_cursor(Cursor::new(wav)).unwrap()
     }
 
+    struct FramesDecoder {
+        frames: Vec<Frame>,
+        position: usize,
+        sample_rate: u32,
+    }
+
+    impl Decoder for FramesDecoder {
+        type Error = FromFileError;
+        fn sample_rate(&self) -> u32 {
+            self.sample_rate
+        }
+        fn num_frames(&self) -> usize {
+            self.frames.len()
+        }
+        fn decode(&mut self) -> Result<Vec<Frame>, Self::Error> {
+            let end = (self.position + 256).min(self.frames.len());
+            let result = self.frames[self.position..end].to_vec();
+            self.position = end;
+            Ok(result)
+        }
+        fn seek(&mut self, index: usize) -> Result<usize, Self::Error> {
+            self.position = index.min(self.frames.len());
+            Ok(self.position)
+        }
+    }
+
+    fn frames_data(frames: Vec<Frame>, sample_rate: u32) -> StreamingSoundData<FromFileError> {
+        StreamingSoundData::from_decoder(FramesDecoder {
+            frames,
+            position: 0,
+            sample_rate,
+        })
+    }
+
     #[test]
     fn rendered_samples_switch_at_the_exact_boundary_without_silence_or_overlap() {
-        let (first, _) = Voice::prepare(tone(257, 8_192), 1).unwrap();
-        let (second, _) = Voice::prepare(tone(401, -8_192), 2).unwrap();
+        let (first, _) =
+            Voice::prepare(tone(257, 8_192), 1, 257.0 / 8_000.0, 0, 8_000, 0.0).unwrap();
+        let (second, _) =
+            Voice::prepare(tone(401, -8_192), 2, 401.0 / 8_000.0, 0, 8_000, 0.0).unwrap();
         let (mut sound, mut transport) = GaplessData::new(first).into_sound().unwrap();
         transport.shared.pending.store(2, Ordering::Release);
         transport
@@ -404,8 +532,24 @@ mod tests {
 
     #[test]
     fn resampled_streams_with_different_rates_do_not_insert_silent_frames() {
-        let (first, _) = Voice::prepare(tone_at_rate(257, 8_192, 8_000), 1).unwrap();
-        let (second, _) = Voice::prepare(tone_at_rate(401, -8_192, 12_000), 2).unwrap();
+        let (first, _) = Voice::prepare(
+            tone_at_rate(257, 8_192, 8_000),
+            1,
+            257.0 / 8_000.0,
+            0,
+            8_000,
+            0.0,
+        )
+        .unwrap();
+        let (second, _) = Voice::prepare(
+            tone_at_rate(401, -8_192, 12_000),
+            2,
+            401.0 / 12_000.0,
+            0,
+            12_000,
+            0.0,
+        )
+        .unwrap();
         let (mut sound, mut transport) = GaplessData::new(first).into_sound().unwrap();
         transport.shared.pending.store(2, Ordering::Release);
         transport
@@ -438,8 +582,28 @@ mod tests {
 
     #[test]
     fn resampling_matches_an_unbroken_recording_at_the_track_boundary() {
-        let (first, _) = Voice::prepare(tone_at_rate(441, 8_192, 44_100), 1).unwrap();
-        let (second, _) = Voice::prepare(tone_at_rate(441, 8_192, 44_100), 2).unwrap();
+        let sample = Frame::from_mono(0.25);
+        let first_frames = vec![sample; 441];
+        let mut prefixed_second = first_frames.clone();
+        prefixed_second.extend(vec![sample; 441]);
+        let (first, _) = Voice::prepare(
+            frames_data(first_frames, 44_100),
+            1,
+            441.0 / 44_100.0,
+            0,
+            44_100,
+            0.0,
+        )
+        .unwrap();
+        let (second, _) = Voice::prepare(
+            frames_data(prefixed_second, 44_100),
+            2,
+            441.0 / 44_100.0,
+            441,
+            44_100,
+            0.0,
+        )
+        .unwrap();
         let (mut split, mut transport) = GaplessData::new(first).into_sound().unwrap();
         let (mut continuous, _) = tone_at_rate(882, 8_192, 44_100).into_sound().unwrap();
         transport.shared.pending.store(2, Ordering::Release);
@@ -474,8 +638,10 @@ mod tests {
 
     #[test]
     fn cancelling_a_prebuffered_successor_keeps_it_out_of_the_output() {
-        let (first, _) = Voice::prepare(tone(257, 8_192), 1).unwrap();
-        let (second, _) = Voice::prepare(tone(401, -8_192), 2).unwrap();
+        let (first, _) =
+            Voice::prepare(tone(257, 8_192), 1, 257.0 / 8_000.0, 0, 8_000, 0.0).unwrap();
+        let (second, _) =
+            Voice::prepare(tone(401, -8_192), 2, 401.0 / 8_000.0, 0, 8_000, 0.0).unwrap();
         let (mut sound, mut transport) = GaplessData::new(first).into_sound().unwrap();
         transport.shared.pending.store(2, Ordering::Release);
         transport
@@ -495,8 +661,10 @@ mod tests {
 
     #[test]
     fn pause_does_not_advance_the_boundary_and_resume_remains_gapless() {
-        let (first, mut handle) = Voice::prepare(tone(257, 8_192), 1).unwrap();
-        let (second, _) = Voice::prepare(tone(401, -8_192), 2).unwrap();
+        let (first, mut handle) =
+            Voice::prepare(tone(257, 8_192), 1, 257.0 / 8_000.0, 0, 8_000, 0.0).unwrap();
+        let (second, _) =
+            Voice::prepare(tone(401, -8_192), 2, 401.0 / 8_000.0, 0, 8_000, 0.0).unwrap();
         let (mut sound, mut transport) = GaplessData::new(first).into_sound().unwrap();
         transport.shared.pending.store(2, Ordering::Release);
         transport

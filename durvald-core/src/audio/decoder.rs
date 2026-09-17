@@ -19,6 +19,8 @@ pub(super) struct GaplessDecoder {
     track_id: u32,
     sample_rate: u32,
     frames: usize,
+    prefix: Vec<Frame>,
+    prefix_position: usize,
 }
 
 impl GaplessDecoder {
@@ -59,7 +61,36 @@ impl GaplessDecoder {
             track_id,
             sample_rate,
             frames,
+            prefix: Vec::new(),
+            prefix_position: 0,
         })
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+    pub fn duration(&self) -> std::time::Duration {
+        std::time::Duration::from_secs_f64(self.frames as f64 / self.sample_rate as f64)
+    }
+    pub fn prepend(&mut self, frames: Vec<Frame>) {
+        self.prefix = frames;
+        self.prefix_position = 0;
+    }
+
+    pub fn tail(path: &str, count: usize) -> Result<Vec<Frame>, FromFileError> {
+        let mut decoder = Self::open(path)?;
+        let count = count.min(decoder.frames);
+        let target = decoder.frames.saturating_sub(count);
+        let actual = Decoder::seek(&mut decoder, target)?;
+        let mut skip = target.saturating_sub(actual);
+        let mut result = Vec::with_capacity(count);
+        while result.len() < count {
+            let chunk = Decoder::decode(&mut decoder)?;
+            let start = skip.min(chunk.len());
+            skip -= start;
+            result.extend(chunk.into_iter().skip(start).take(count - result.len()));
+        }
+        Ok(result)
     }
 }
 
@@ -69,9 +100,14 @@ impl Decoder for GaplessDecoder {
         self.sample_rate
     }
     fn num_frames(&self) -> usize {
-        self.frames
+        self.prefix.len() + self.frames
     }
     fn decode(&mut self) -> Result<Vec<Frame>, FromFileError> {
+        if self.prefix_position < self.prefix.len() {
+            let frames = self.prefix[self.prefix_position..].to_vec();
+            self.prefix_position = self.prefix.len();
+            return Ok(frames);
+        }
         let packet = loop {
             let packet = self.reader.next_packet()?;
             if packet.track_id() == self.track_id {
@@ -92,14 +128,28 @@ impl Decoder for GaplessDecoder {
             .collect())
     }
     fn seek(&mut self, index: usize) -> Result<usize, FromFileError> {
+        if index < self.prefix.len() {
+            self.prefix_position = index;
+            let _ = self.reader.seek(
+                SeekMode::Accurate,
+                SeekTo::TimeStamp {
+                    ts: 0,
+                    track_id: self.track_id,
+                },
+            )?;
+            self.codec.reset();
+            return Ok(index);
+        }
+        self.prefix_position = self.prefix.len();
+        let source_index = index - self.prefix.len();
         let seek = self.reader.seek(
             SeekMode::Accurate,
             SeekTo::TimeStamp {
-                ts: index as u64,
+                ts: source_index as u64,
                 track_id: self.track_id,
             },
         )?;
         self.codec.reset();
-        Ok(seek.actual_ts as usize)
+        Ok(self.prefix.len() + seek.actual_ts as usize)
     }
 }

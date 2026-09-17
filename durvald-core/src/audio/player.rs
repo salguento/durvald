@@ -26,7 +26,10 @@ const MAX_PLAYBACK_HISTORY_ITEMS: usize = 100;
 
 pub(crate) struct PreparedSound {
     path: String,
-    sound_data: StreamingSoundData<FromFileError>,
+    decoder: super::decoder::GaplessDecoder,
+    duration: Duration,
+    sample_rate: u32,
+    tail: Vec<kira::Frame>,
     gain_db: f32,
 }
 
@@ -46,6 +49,8 @@ struct ScheduledNext {
     path: String,
     gain_db: f32,
     token: u64,
+    tail: Vec<kira::Frame>,
+    sample_rate: u32,
 }
 
 impl PlaybackPlan {
@@ -117,6 +122,8 @@ pub struct AudioPlayer {
     scheduled_next: Option<ScheduledNext>,
     next_token: u64,
     completed_transitions: VecDeque<(Option<i64>, i64)>,
+    current_tail: Vec<kira::Frame>,
+    current_sample_rate: u32,
 }
 
 impl AudioPlayer {
@@ -181,6 +188,8 @@ impl AudioPlayer {
             scheduled_next: None,
             next_token: 1,
             completed_transitions: VecDeque::new(),
+            current_tail: Vec::new(),
+            current_sample_rate: 0,
         }
     }
 
@@ -189,21 +198,28 @@ impl AudioPlayer {
         normalize_volume: bool,
     ) -> Result<PreparedSound, AudioError> {
         let path_clone = path.clone();
-        let (sound_data, gain_db) = tokio::task::spawn_blocking(move || {
-            let gain_db = normalize_volume
-                .then(|| crate::metadata::replay_gain_db(&path_clone))
-                .flatten()
-                .unwrap_or_default() as f32;
-            super::decoder::GaplessDecoder::open(&path_clone)
-                .map(|decoder| (StreamingSoundData::from_decoder(decoder), gain_db))
-        })
-        .await
-        .map_err(AudioError::Join)?
-        .map_err(|e| AudioError::Kira(Box::new(e)))?;
+        let (decoder, duration, sample_rate, tail, gain_db) =
+            tokio::task::spawn_blocking(move || {
+                let gain_db = normalize_volume
+                    .then(|| crate::metadata::replay_gain_db(&path_clone))
+                    .flatten()
+                    .unwrap_or_default() as f32;
+                let decoder = super::decoder::GaplessDecoder::open(&path_clone)?;
+                let duration = decoder.duration();
+                let sample_rate = decoder.sample_rate();
+                let tail = super::decoder::GaplessDecoder::tail(&path_clone, 4096)?;
+                Ok::<_, FromFileError>((decoder, duration, sample_rate, tail, gain_db))
+            })
+            .await
+            .map_err(AudioError::Join)?
+            .map_err(|e| AudioError::Kira(Box::new(e)))?;
 
         Ok(PreparedSound {
             path,
-            sound_data,
+            decoder,
+            duration,
+            sample_rate,
+            tail,
             gain_db,
         })
     }
@@ -215,9 +231,13 @@ impl AudioPlayer {
     fn play_prepared(&mut self, prepared: PreparedSound) -> Result<(), AudioError> {
         let PreparedSound {
             path,
-            sound_data,
+            decoder,
+            duration,
+            sample_rate,
+            tail,
             gain_db,
         } = prepared;
+        let sound_data = StreamingSoundData::from_decoder(decoder);
 
         let crossfade_duration = self
             .crossfade_duration
@@ -236,14 +256,21 @@ impl AudioPlayer {
         } else {
             sound_data
         };
-        self.total_duration = Some(sound_data.duration());
+        self.total_duration = Some(duration);
         self.current_path = Some(path.clone());
         self.paused_position = None;
         self.current_gain_db = gain_db;
 
         let volume_db = self.volume_db(gain_db);
-        let (voice, sound_handle) = Voice::prepare(sound_data.volume(volume_db), self.next_token)
-            .map_err(|e| AudioError::Kira(Box::new(e)))?;
+        let (voice, sound_handle) = Voice::prepare(
+            sound_data.volume(volume_db),
+            self.next_token,
+            duration.as_secs_f64(),
+            0,
+            sample_rate,
+            volume_db,
+        )
+        .map_err(|e| AudioError::Kira(Box::new(e)))?;
         self.next_token += 1;
         let data = GaplessData::new(voice);
         let transport = match &mut self.manager {
@@ -257,6 +284,8 @@ impl AudioPlayer {
         };
         self.current_sound = Some(sound_handle);
         self.gapless = Some(transport);
+        self.current_tail = tail;
+        self.current_sample_rate = sample_rate;
         self.playback_requested = true;
         Ok(())
     }
@@ -352,7 +381,8 @@ impl AudioPlayer {
             .as_ref()
             .map(|next| self.volume_db(next.gain_db));
         if let Some(next) = &mut self.scheduled_next {
-            next.sound.set_volume(next_db.unwrap(), Tween::default());
+            next.sound.set_volume(volume_db, Tween::default());
+            next.sound.set_target_volume(next_db.unwrap());
         }
     }
 
@@ -427,7 +457,7 @@ impl AudioPlayer {
     }
 
     pub async fn seek_to_position(&mut self, seconds: u64) -> Result<(), AudioError> {
-        self.synchronize_gapless();
+        self.invalidate_gapless();
         if let Some(sound) = &mut self.current_sound {
             sound.seek_to(seconds as f64);
             if self.paused_position.is_some() {
@@ -632,6 +662,8 @@ impl AudioPlayer {
         self.current_path = Some(next.path);
         self.total_duration = Some(next.duration);
         self.current_gain_db = next.gain_db;
+        self.current_tail = next.tail;
+        self.current_sample_rate = next.sample_rate;
         self.paused_position = None;
         self.completed_transitions.push_back((previous_id, next_id));
     }
@@ -690,12 +722,29 @@ impl AudioPlayer {
         if self.scheduled_next.is_some() || self.gapless.is_none() {
             return Ok(());
         }
-        let duration = prepared.sound_data.duration();
+        let duration = prepared.duration;
         let token = self.next_token;
         self.next_token += 1;
         let volume_db = self.volume_db(prepared.gain_db);
-        let (voice, sound) = Voice::prepare(prepared.sound_data.volume(volume_db), token)
-            .map_err(|error| AudioError::Kira(Box::new(error)))?;
+        let mut decoder = prepared.decoder;
+        let prefix = if prepared.sample_rate == self.current_sample_rate {
+            self.current_tail.clone()
+        } else {
+            Vec::new()
+        };
+        let prefix_frames = prefix.len();
+        decoder.prepend(prefix);
+        let sound_data = StreamingSoundData::from_decoder(decoder);
+        let prefix_volume_db = self.volume_db(self.current_gain_db);
+        let (voice, sound) = Voice::prepare(
+            sound_data.volume(prefix_volume_db),
+            token,
+            duration.as_secs_f64(),
+            prefix_frames,
+            prepared.sample_rate,
+            volume_db,
+        )
+        .map_err(|error| AudioError::Kira(Box::new(error)))?;
         let transport = self.gapless.as_mut().unwrap();
         transport.collect();
         transport.shared.pending.store(token, Ordering::Release);
@@ -710,6 +759,8 @@ impl AudioPlayer {
             path: prepared.path,
             gain_db: prepared.gain_db,
             token,
+            tail: prepared.tail,
+            sample_rate: prepared.sample_rate,
         });
         Ok(())
     }

@@ -43,6 +43,12 @@ struct LastFmPlayback {
     played_seconds: u64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AutomaticPlaybackEvent {
+    completed_track_id: Option<i64>,
+    started_track_id: Option<i64>,
+}
+
 impl DurvaldCore {
     // Internal accessor methods for Tauri integration (not exported to UniFFI)
     pub fn db_pool(&self) -> &Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>> {
@@ -751,9 +757,31 @@ impl DurvaldCore {
 
         let core = Arc::new(core);
 
+        // Keep completion bookkeeping and Last.fm I/O strictly outside the
+        // preloader. A single consumer preserves event order without allowing
+        // a slow scrobble or now-playing request to delay the next decode.
+        let (playback_event_sender, mut playback_event_receiver) =
+            tokio::sync::mpsc::unbounded_channel::<AutomaticPlaybackEvent>();
+        let reporting_core = Arc::downgrade(&core);
+        tokio::spawn(async move {
+            while let Some(event) = playback_event_receiver.recv().await {
+                let Some(core) = reporting_core.upgrade() else {
+                    break;
+                };
+                if let Some(track_id) = event.completed_track_id {
+                    core.record_completed_playback(track_id).await;
+                    core.report_lastfm_track_completed(track_id).await;
+                }
+                if let Some(track_id) = event.started_track_id {
+                    core.report_lastfm_track_started(track_id).await;
+                }
+                let _ = core.persist_playback_session().await;
+            }
+        });
+
         // Prepare the successor while the current track plays. The audio
-        // renderer switches streams; this worker only reconciles queue state
-        // and reports completions, so its timer cannot insert playback gaps.
+        // renderer switches streams; this worker only preloads and reconciles
+        // queue state, so database and network latency cannot insert gaps.
         let weak_core = Arc::downgrade(&core);
         tokio::spawn(async move {
             loop {
@@ -805,14 +833,10 @@ impl DurvaldCore {
                 };
 
                 if let Some((completed_track_id, started_track_id)) = transitioned {
-                    if let Some(track_id) = completed_track_id {
-                        core.record_completed_playback(track_id).await;
-                        core.report_lastfm_track_completed(track_id).await;
-                    }
-                    if let Some(track_id) = started_track_id {
-                        core.report_lastfm_track_started(track_id).await;
-                    }
-                    let _ = core.persist_playback_session().await;
+                    let _ = playback_event_sender.send(AutomaticPlaybackEvent {
+                        completed_track_id,
+                        started_track_id,
+                    });
                 }
             }
         });
