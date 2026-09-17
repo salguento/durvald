@@ -19,6 +19,8 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
 
     @State private var shell = ContentShellState()
+    @State private var isTopbarHovered = false
+    @State private var isPageScrolled = false
     @State private var windowLayout = WindowSplitLayoutCoordinator()
     @State private var playlistCreation = PlaylistCreationCoordinator()
     // Scroll geometry can change on every rendered frame. Keeping these values
@@ -89,6 +91,12 @@ struct ContentView: View {
                 )
         }
         .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(isPageScrolled && isTopbarHovered ? .visible : .hidden, for: .windowToolbar)
+        .background {
+            TopbarHoverObserver(isHovered: $isTopbarHovered)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .frame(
             minWidth: Layout.contentViewMinimumWidth,
             minHeight: Layout.windowMinimumHeight
@@ -109,6 +117,9 @@ struct ContentView: View {
         }
         .onChange(of: shell.navigationHistory.current, initial: true) { _, destination in
             shell.handleDestinationChange(destination)
+        }
+        .onChange(of: shell.navigationHistory.currentEntryID, initial: true) { _, entryID in
+            isPageScrolled = pageScrollOffsets.offset(for: entryID) > 8
         }
         .alert(
             "Erro",
@@ -353,7 +364,13 @@ struct ContentView: View {
         let entryID = shell.navigationHistory.currentEntryID
         return Binding(
             get: { pageScrollOffsets.offset(for: entryID) },
-            set: { pageScrollOffsets.setOffset($0, for: entryID) }
+            set: {
+                pageScrollOffsets.setOffset($0, for: entryID)
+                if entryID == shell.navigationHistory.currentEntryID {
+                    let scrolled = $0 > 8
+                    if isPageScrolled != scrolled { isPageScrolled = scrolled }
+                }
+            }
         )
     }
 
