@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
-const CURRENT_METADATA_VERSION: i64 = 6;
+const CURRENT_METADATA_VERSION: i64 = 7;
 static SCAN_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 const SCAN_DISCOVERY_BATCH_SIZE: usize = 512;
 
@@ -536,6 +536,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
 
     ensure_indexes(conn)?;
     ensure_search_indexes(conn)?;
+    crate::metadata_edit::create_tables(conn)?;
 
     Ok(())
 }
@@ -2626,7 +2627,13 @@ pub(crate) fn persist_metadata_with_existing_ids(
             "Metadata batch contains mismatched record counts".to_string(),
         ));
     }
-    let metadata: Vec<AudioMetadata> = metadata.into_iter().map(normalize_metadata).collect();
+    let metadata: Vec<AudioMetadata> = metadata
+        .into_iter()
+        .map(|mut item| {
+            crate::metadata_edit::apply_override(conn, &mut item)?;
+            Ok(normalize_metadata(item))
+        })
+        .collect::<DatabaseResult<_>>()?;
     let transaction = conn.unchecked_transaction()?;
     let all_artist = group_artists(&metadata);
     for artist in all_artist {
@@ -2642,6 +2649,7 @@ pub(crate) fn persist_metadata_with_existing_ids(
     let mut updated_tracks = 0;
     let mut touched_release_ids = BTreeSet::new();
     for (i, md) in metadata.into_iter().enumerate() {
+        let cached_metadata = crate::metadata_edit::from_extracted(&md);
         let existing_song_id = existing_song_ids[i];
         if let Some(song_id) = existing_song_id {
             if let Some(release_id) = transaction
@@ -2656,12 +2664,14 @@ pub(crate) fn persist_metadata_with_existing_ids(
             }
         }
         let new_release_id = lookup_release_id(&transaction, &md)?;
+        let file_path = md.file_path.clone();
         match add_song(&transaction, md, mtimes[i], existing_song_id)? {
             SongWriteResult::Added => added_tracks += 1,
             SongWriteResult::Updated => updated_tracks += 1,
             SongWriteResult::SkippedDuplicate => {}
         }
         touched_release_ids.insert(new_release_id);
+        crate::metadata_edit::cache_scanned(&transaction, &file_path, &cached_metadata)?;
     }
 
     for release in &all_releases {

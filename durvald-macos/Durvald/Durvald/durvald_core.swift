@@ -839,6 +839,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func saveSession(session: LastSession) async throws
 
+    func saveTrackMetadata(trackId: Int64, metadata: TrackMetadataEdit, writeToFile: Bool) async throws  -> TrackInfo
+
     /**
      * Scans every configured library folder.
      */
@@ -953,6 +955,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func track(trackId: Int64) async throws  -> Track
 
     /**
+     * Reads indexed metadata, backfilling older libraries once when necessary.
+     */
+    func trackInfo(trackId: Int64) async throws  -> TrackInfo
+
+    /**
      * Returns all tracks in the library.
      */
     func tracks() async throws  -> [Track]
@@ -961,6 +968,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Returns a bounded page of tracks ordered by their stable database ID.
      */
     func tracksPage(pageSize: UInt64, offset: UInt64) async throws  -> TrackPage
+
+    func undoTrackMetadata(trackId: Int64) async throws  -> TrackInfo
 
     /**
      * Updates a playlist's name, description, and optional artwork.
@@ -2178,6 +2187,23 @@ open func saveSession(session: LastSession)async throws  {
         )
 }
 
+open func saveTrackMetadata(trackId: Int64, metadata: TrackMetadataEdit, writeToFile: Bool)async throws  -> TrackInfo {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_save_track_metadata(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(trackId),FfiConverterTypeTrackMetadataEdit.lower(metadata),FfiConverterBool.lower(writeToFile)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeTrackInfo.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Scans every configured library folder.
      */
@@ -2627,6 +2653,26 @@ open func track(trackId: Int64)async throws  -> Track {
 }
 
     /**
+     * Reads indexed metadata, backfilling older libraries once when necessary.
+     */
+open func trackInfo(trackId: Int64)async throws  -> TrackInfo {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_track_info(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(trackId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeTrackInfo.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
      * Returns all tracks in the library.
      */
 open func tracks()async throws  -> [Track] {
@@ -2662,6 +2708,23 @@ open func tracksPage(pageSize: UInt64, offset: UInt64)async throws  -> TrackPage
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeTrackPage.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func undoTrackMetadata(trackId: Int64)async throws  -> TrackInfo {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_undo_track_metadata(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(trackId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeTrackInfo.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -6784,6 +6847,198 @@ public func FfiConverterTypeTrack_lower(_ value: Track) -> RustBuffer {
 
 
 /**
+ * Editable and technical information shown by the track inspector.
+ */
+public struct TrackInfo {
+    public var track: Track
+    public var metadata: TrackMetadataEdit
+    public var canUndo: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(track: Track, metadata: TrackMetadataEdit, canUndo: Bool) {
+        self.track = track
+        self.metadata = metadata
+        self.canUndo = canUndo
+    }
+}
+
+
+
+extension TrackInfo: Equatable, Hashable {
+    public static func ==(lhs: TrackInfo, rhs: TrackInfo) -> Bool {
+        if lhs.track != rhs.track {
+            return false
+        }
+        if lhs.metadata != rhs.metadata {
+            return false
+        }
+        if lhs.canUndo != rhs.canUndo {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(track)
+        hasher.combine(metadata)
+        hasher.combine(canUndo)
+    }
+}
+
+
+public struct FfiConverterTypeTrackInfo: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TrackInfo {
+        return
+            try TrackInfo(
+                track: FfiConverterTypeTrack.read(from: &buf),
+                metadata: FfiConverterTypeTrackMetadataEdit.read(from: &buf),
+                canUndo: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TrackInfo, into buf: inout [UInt8]) {
+        FfiConverterTypeTrack.write(value.track, into: &buf)
+        FfiConverterTypeTrackMetadataEdit.write(value.metadata, into: &buf)
+        FfiConverterBool.write(value.canUndo, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeTrackInfo_lift(_ buf: RustBuffer) throws -> TrackInfo {
+    return try FfiConverterTypeTrackInfo.lift(buf)
+}
+
+public func FfiConverterTypeTrackInfo_lower(_ value: TrackInfo) -> RustBuffer {
+    return FfiConverterTypeTrackInfo.lower(value)
+}
+
+
+/**
+ * Editable tags for one local audio file.
+ */
+public struct TrackMetadataEdit {
+    public var title: String
+    public var artist: String
+    public var albumArtist: String
+    public var album: String
+    public var genre: String
+    public var year: UInt32?
+    public var trackNumber: UInt32?
+    public var discNumber: UInt32?
+    public var composer: String
+    public var comment: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String, artist: String, albumArtist: String, album: String, genre: String, year: UInt32?, trackNumber: UInt32?, discNumber: UInt32?, composer: String, comment: String) {
+        self.title = title
+        self.artist = artist
+        self.albumArtist = albumArtist
+        self.album = album
+        self.genre = genre
+        self.year = year
+        self.trackNumber = trackNumber
+        self.discNumber = discNumber
+        self.composer = composer
+        self.comment = comment
+    }
+}
+
+
+
+extension TrackMetadataEdit: Equatable, Hashable {
+    public static func ==(lhs: TrackMetadataEdit, rhs: TrackMetadataEdit) -> Bool {
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.albumArtist != rhs.albumArtist {
+            return false
+        }
+        if lhs.album != rhs.album {
+            return false
+        }
+        if lhs.genre != rhs.genre {
+            return false
+        }
+        if lhs.year != rhs.year {
+            return false
+        }
+        if lhs.trackNumber != rhs.trackNumber {
+            return false
+        }
+        if lhs.discNumber != rhs.discNumber {
+            return false
+        }
+        if lhs.composer != rhs.composer {
+            return false
+        }
+        if lhs.comment != rhs.comment {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(title)
+        hasher.combine(artist)
+        hasher.combine(albumArtist)
+        hasher.combine(album)
+        hasher.combine(genre)
+        hasher.combine(year)
+        hasher.combine(trackNumber)
+        hasher.combine(discNumber)
+        hasher.combine(composer)
+        hasher.combine(comment)
+    }
+}
+
+
+public struct FfiConverterTypeTrackMetadataEdit: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TrackMetadataEdit {
+        return
+            try TrackMetadataEdit(
+                title: FfiConverterString.read(from: &buf),
+                artist: FfiConverterString.read(from: &buf),
+                albumArtist: FfiConverterString.read(from: &buf),
+                album: FfiConverterString.read(from: &buf),
+                genre: FfiConverterString.read(from: &buf),
+                year: FfiConverterOptionUInt32.read(from: &buf),
+                trackNumber: FfiConverterOptionUInt32.read(from: &buf),
+                discNumber: FfiConverterOptionUInt32.read(from: &buf),
+                composer: FfiConverterString.read(from: &buf),
+                comment: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TrackMetadataEdit, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artist, into: &buf)
+        FfiConverterString.write(value.albumArtist, into: &buf)
+        FfiConverterString.write(value.album, into: &buf)
+        FfiConverterString.write(value.genre, into: &buf)
+        FfiConverterOptionUInt32.write(value.year, into: &buf)
+        FfiConverterOptionUInt32.write(value.trackNumber, into: &buf)
+        FfiConverterOptionUInt32.write(value.discNumber, into: &buf)
+        FfiConverterString.write(value.composer, into: &buf)
+        FfiConverterString.write(value.comment, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeTrackMetadataEdit_lift(_ buf: RustBuffer) throws -> TrackMetadataEdit {
+    return try FfiConverterTypeTrackMetadataEdit.lift(buf)
+}
+
+public func FfiConverterTypeTrackMetadataEdit_lower(_ value: TrackMetadataEdit) -> RustBuffer {
+    return FfiConverterTypeTrackMetadataEdit.lower(value)
+}
+
+
+/**
  * One bounded page of tracks. `next_offset` is absent on the final page.
  */
 public struct TrackPage {
@@ -8882,6 +9137,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_save_session() != 12984) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_save_track_metadata() != 31822) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_scan_configured_library() != 25181) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -8951,10 +9209,16 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_track() != 44215) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_track_info() != 63609) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_tracks() != 21683) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_tracks_page() != 23995) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_undo_track_metadata() != 5316) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_update_playlist() != 8366) {

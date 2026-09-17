@@ -83,6 +83,31 @@ pub struct Track {
     pub suggest_less: bool,
 }
 
+/// Editable tags for one local audio file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct TrackMetadataEdit {
+    pub title: String,
+    pub artist: String,
+    pub album_artist: String,
+    pub album: String,
+    pub genre: String,
+    pub year: Option<u32>,
+    pub track_number: Option<u32>,
+    pub disc_number: Option<u32>,
+    pub composer: String,
+    pub comment: String,
+}
+
+/// Editable and technical information shown by the track inspector.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct TrackInfo {
+    pub track: Track,
+    pub metadata: TrackMetadataEdit,
+    pub can_undo: bool,
+}
+
 /// One completed playback event.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

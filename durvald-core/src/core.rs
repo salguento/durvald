@@ -22,6 +22,7 @@ pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
     audio_player: Arc<tokio::sync::Mutex<crate::audio::AudioPlayer>>,
     playback_transition: tokio::sync::Mutex<()>,
+    metadata_edit_queue: tokio::sync::Mutex<()>,
     lastfm: Arc<LastFmClient>,
     enrichment: crate::enrichment::service::EnrichmentService,
     covers_dir: String,
@@ -387,7 +388,7 @@ fn finish_page<T>(mut items: Vec<T>, page_size: usize, offset: u64) -> (Vec<T>, 
     (items, next_offset)
 }
 
-fn track_from_song(track: crate::database::models::SongItem) -> Track {
+pub(crate) fn track_from_song(track: crate::database::models::SongItem) -> Track {
     Track {
         id: track.song_id as i64,
         title: track.title,
@@ -739,6 +740,7 @@ impl DurvaldCore {
             db_pool,
             audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
             playback_transition: tokio::sync::Mutex::new(()),
+            metadata_edit_queue: tokio::sync::Mutex::new(()),
             lastfm,
             covers_dir: config.covers_dir.clone(),
             scan_in_progress: Arc::new(AtomicBool::new(false)),
@@ -814,6 +816,9 @@ impl DurvaldCore {
             });
         }
         self.scan_cancel_requested.store(false, Ordering::Release);
+        // Scans and edits share the same serial lane so extracted old tags
+        // cannot overwrite an edit after the file has been replaced.
+        let _metadata_lane = self.metadata_edit_queue.lock().await;
 
         let mut total_files: u64 = 0;
         let mut new_tracks: u64 = 0;
@@ -2379,6 +2384,33 @@ impl DurvaldCore {
                 })
         })
         .await
+    }
+
+    /// Reads indexed metadata, backfilling older libraries once when necessary.
+    pub async fn track_info(&self, track_id: i64) -> CoreResult<TrackInfo> {
+        non_negative_id(track_id, "Track ID")?;
+        self.run_database_core(move |conn| {
+            crate::metadata_edit::ensure_cached(conn, track_id)?;
+            crate::metadata_edit::info(conn, track_id)
+        }).await
+    }
+
+    pub async fn save_track_metadata(
+        &self, track_id: i64, metadata: TrackMetadataEdit, write_to_file: bool,
+    ) -> CoreResult<TrackInfo> {
+        non_negative_id(track_id, "Track ID")?;
+        let _queue = self.metadata_edit_queue.lock().await;
+        let backup_dir = std::path::PathBuf::from(&self.covers_dir).join("metadata-backups");
+        self.run_database_core(move |conn| {
+            crate::metadata_edit::ensure_cached(conn, track_id)?;
+            crate::metadata_edit::save(conn, track_id, metadata, write_to_file, &backup_dir)
+        }).await
+    }
+
+    pub async fn undo_track_metadata(&self, track_id: i64) -> CoreResult<TrackInfo> {
+        non_negative_id(track_id, "Track ID")?;
+        let _queue = self.metadata_edit_queue.lock().await;
+        self.run_database_core(move |conn| crate::metadata_edit::undo(conn, track_id)).await
     }
 
     /// Gets a release by ID.

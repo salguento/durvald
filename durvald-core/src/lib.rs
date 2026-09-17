@@ -17,6 +17,7 @@ pub mod database;
 pub mod enrichment;
 pub mod lastfm;
 pub mod metadata;
+mod metadata_edit;
 pub mod secure_store;
 
 // Re-export public API types
