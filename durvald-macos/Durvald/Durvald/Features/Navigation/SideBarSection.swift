@@ -19,7 +19,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .navigation: "sidebar.left"
+        case .navigation: "list.bullet"
         case .playlists: "music.note.list"
         case .albums: "square.stack"
         case .artists: "music.mic"

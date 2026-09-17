@@ -4,7 +4,61 @@ import Observation
 import SwiftUI
 @testable import Durvald
 
+final class WindowSplitLayoutPolicyTests: XCTestCase {
+    func testSidebarLeavesMinimumWidthForContentAndDivider() {
+        XCTAssertEqual(WindowSplitLayoutPolicy.sidebarMaximumWidth(screenMaximum: 600, navigationWidth: 900, dividerWidth: 1), 539)
+        // Opening a 260 pt inspector leaves a 640 pt navigation split.
+        XCTAssertEqual(WindowSplitLayoutPolicy.sidebarMaximumWidth(screenMaximum: 600, navigationWidth: 640, dividerWidth: 1), 279)
+        // Closing it restores the previous allowance.
+        XCTAssertEqual(WindowSplitLayoutPolicy.sidebarMaximumWidth(screenMaximum: 600, navigationWidth: 900, dividerWidth: 1), 539)
+    }
+
+    func testSidebarStillRespectsHalfScreenLimitInWideWindows() {
+        XCTAssertEqual(WindowSplitLayoutPolicy.sidebarMaximumWidth(screenMaximum: 600, navigationWidth: 1400, dividerWidth: 1), 600)
+    }
+}
+
 final class DurvaldCoreStoreTests: XCTestCase {
+    @MainActor
+    func testLatestReleaseReadsBeyondFirstCachedPage() async {
+        let fake = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        fake.discographyPages = [
+            0: discographyPage(id: "older", year: 2020, generation: 1, nextOffset: 200),
+            200: discographyPage(id: "latest", year: 2024, generation: 1, nextOffset: nil)
+        ]
+        let store = DurvaldCoreStore(core: fake)
+        let latest = await store.latestArtistRelease(artistId: 1)
+        XCTAssertEqual(latest?.musicbrainzId, "latest")
+        XCTAssertEqual(fake.discographyOffsets, [0, 200])
+        XCTAssertTrue(fake.artistRefreshRequests.isEmpty)
+    }
+
+    @MainActor
+    func testLatestReleaseDiscardsPagesFromDifferentCatalogGenerations() async {
+        let fake = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        fake.discographyPages = [
+            0: discographyPage(id: "older", year: 2020, generation: 1, nextOffset: 200),
+            200: discographyPage(id: "latest", year: 2024, generation: 2, nextOffset: nil)
+        ]
+        let store = DurvaldCoreStore(core: fake)
+        let latest = await store.latestArtistRelease(artistId: 1)
+        XCTAssertNil(latest)
+    }
+
+    private func discographyPage(id: String, year: Int32, generation: UInt64, nextOffset: UInt64?) -> ArtistDiscographyPage {
+        ArtistDiscographyPage(
+            artistId: 1, identityGeneration: 1, catalogGeneration: generation,
+            items: [ExternalReleaseGroup(
+                musicbrainzId: id, title: id, primaryType: "Album", secondaryTypes: [],
+                firstReleaseDate: ArtistPartialDate(year: year, month: nil, day: nil),
+                localReleaseId: nil, artwork: nil,
+                attribution: EnrichmentAttribution(sourceUrl: "https://musicbrainz.org/release-group/\(id)", author: nil, licenseName: nil, licenseUrl: nil, revision: nil)
+            )],
+            nextOffset: nextOffset, remoteExhausted: true, remoteNextOffset: nil,
+            remoteTotal: 201, lastSuccessAt: 1, stale: false
+        )
+    }
+
     @MainActor
     func testCatalogRefreshRequestsPopularTracksAndPreservesForce() async {
         let fake = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)

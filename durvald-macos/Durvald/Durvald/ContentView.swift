@@ -18,9 +18,13 @@ struct ContentView: View {
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.openWindow) private var openWindow
 
-    @State private var shell = ContentShellState()
+    @AppStorage("albums.listingMode") private var albumListingMode: CollectionListingMode = .standardGrid
+    @AppStorage("playlists.listingMode") private var playlistListingMode: CollectionListingMode = .standard
+
+    @State private var queueColumnWidth: CGFloat = 300
     @State private var isTopbarHovered = false
     @State private var isPageScrolled = false
+    @State private var shell = ContentShellState()
     @State private var windowLayout = WindowSplitLayoutCoordinator()
     @State private var playlistCreation = PlaylistCreationCoordinator()
     // Scroll geometry can change on every rendered frame. Keeping these values
@@ -29,10 +33,13 @@ struct ContentView: View {
     @State private var pageScrollOffsets = LibraryScrollOffsetStore()
 
     private enum Layout {
+        static let panelToggleIconWidth: CGFloat = 20
+        static let panelToggleIconHeight: CGFloat = 16
+        static let panelAnimation = Animation.smooth(duration: 0.32)
         static let contentViewMinimumWidth: CGFloat = 360
         static let windowMinimumHeight: CGFloat = 360
         static let compactNavigationWidth: CGFloat = 700
-        static let contentMinimumWidth: CGFloat = 360
+        static let contentMinimumWidth = WindowSplitLayoutPolicy.contentMinimumWidth
         static let queueMinimumWidth: CGFloat = 260
         static let queueIdealWidth: CGFloat = 300
         static let queueMaximumWidth: CGFloat = 380
@@ -51,6 +58,7 @@ struct ContentView: View {
                 onSelectArtist: showArtist,
                 onSelectPlaylist: showPlaylist
             )
+            .frame(minWidth: WindowSplitLayoutPolicy.sidebarMinimumWidth)
             .navigationSplitViewColumnWidth(
                 min: WindowSplitLayoutPolicy.sidebarMinimumWidth,
                 ideal: WindowSplitLayoutPolicy.sidebarIdealWidth,
@@ -64,7 +72,8 @@ struct ContentView: View {
             .toolbar(removing: .sidebarToggle)
             .toolbar {
                 if shell.columnVisibility != .detailOnly {
-                    ToolbarItem(placement: .primaryAction) {
+                    ToolbarSpacer(.flexible)
+                    ToolbarItem(placement: .automatic) {
                         sidebarToolbarButtons
                     }
                 }
@@ -84,6 +93,7 @@ struct ContentView: View {
         }
         .inspector(isPresented: $shell.isQueuePresented) {
             QueueView()
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { queueColumnWidth = $0 }
                 .inspectorColumnWidth(
                     min: Layout.queueMinimumWidth,
                     ideal: Layout.queueIdealWidth,
@@ -196,35 +206,7 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var contentToolbar: some ToolbarContent {
-        if shell.columnVisibility == .detailOnly {
-            ToolbarItem(placement: .navigation) {
-                sidebarToolbarButtons
-            }
-        }
-
-        ToolbarItem(placement: .navigation) {
-            ControlGroup {
-                Button {
-                    navigateBack()
-                } label: {
-                    Label("Voltar", systemImage: "chevron.left")
-                }
-                .disabled(!shell.navigationHistory.canGoBack)
-                .keyboardShortcut(AppKeyboardShortcuts.goBack)
-                .accessibilityIdentifier("navigation.back")
-
-                Button {
-                    shell.navigationHistory.goForward()
-                } label: {
-                    Label("Avançar", systemImage: "chevron.right")
-                }
-                .disabled(!shell.navigationHistory.canGoForward)
-                .keyboardShortcut(AppKeyboardShortcuts.goForward)
-                .accessibilityIdentifier("navigation.forward")
-            }
-            .labelStyle(.iconOnly)
-            .controlGroupStyle(.navigation)
-        }
+        navigationToolbar
 
         ToolbarItem(placement: .principal) {
             if shell.navigationHistory.current == .search {
@@ -285,49 +267,108 @@ struct ContentView: View {
         ToolbarSpacer(.flexible)
 
         ToolbarItem(placement: .automatic) {
-            Button {
-                toggleQueue()
-            } label: {
-                Image(systemName: "sidebar.trailing")
-                    .foregroundStyle(
-                        shell.isQueuePresented && appearsActive
-                            ? Color.accentColor
-                            : Color.secondary
-                    )
+            // Both controls share a trailing anchor. Opening the inspector
+            // moves the listing control by its measured width while the queue
+            // toggle stays at the window edge; closing restores the 16 pt gap.
+            HStack(spacing: shell.isQueuePresented ? max(16, queueColumnWidth - 36) : 16) {
+                if case .section(let destination) = shell.navigationHistory.currentRoute,
+                   destination == .albums || destination == .playlists {
+                    CollectionListingMenu(mode: destination == .albums ? $albumListingMode : $playlistListingMode, controlSize: 36, controlWidth: 38)
+                        .accessibilityIdentifier("\(destination.rawValue).listingMode")
+                }
+                queueToggleButton
             }
-            .help(shell.isQueuePresented ? "Ocultar fila" : "Mostrar fila")
-            .accessibilityHint("Mostra ou oculta a fila lateral de reprodução")
-            .accessibilityLabel(shell.isQueuePresented ? "Ocultar fila" : "Mostrar fila")
-            .accessibilityIdentifier("player.queue")
-            .keyboardShortcut(AppKeyboardShortcuts.toggleQueue)
         }
+        .sharedBackgroundVisibility(.hidden)
+    }
+
+    @ToolbarContentBuilder
+    private var navigationToolbar: some ToolbarContent {
+        if shell.columnVisibility == .detailOnly {
+            ToolbarItem(placement: .navigation) {
+                sidebarToolbarButtons
+            }
+            ToolbarSpacer(.fixed, placement: .navigation)
+        }
+
+        ToolbarItem(placement: .navigation) {
+            backForwardButtons
+        }
+    }
+
+    private var queueToggleButton: some View {
+        Button {
+            toggleQueue()
+        } label: {
+            Image(systemName: "sidebar.trailing")
+                .resizable()
+                .scaledToFit()
+                .frame(width: Layout.panelToggleIconWidth, height: Layout.panelToggleIconHeight)
+                .foregroundStyle(Color.primary)
+                .frame(width: 38, height: 36)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .frame(width: 38, height: 36)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .help(shell.isQueuePresented ? "Ocultar fila" : "Mostrar fila")
+        .accessibilityHint("Mostra ou oculta a fila lateral de reprodução")
+        .accessibilityLabel(shell.isQueuePresented ? "Ocultar fila" : "Mostrar fila")
+        .accessibilityIdentifier("player.queue")
+        .keyboardShortcut(AppKeyboardShortcuts.toggleQueue)
     }
 
     private var sidebarToggleButton: some View {
         Button {
-            shell.toggleSidebar()
+            toggleSidebar()
         } label: {
-            Label(
-                shell.columnVisibility == .detailOnly
-                    ? "Mostrar barra lateral"
-                    : "Ocultar barra lateral",
-                systemImage: "sidebar.leading"
-            )
+            Image(systemName: "sidebar.leading")
+                .resizable()
+                .scaledToFit()
+                .frame(width: Layout.panelToggleIconWidth, height: Layout.panelToggleIconHeight)
         }
-        .labelStyle(.iconOnly)
-        .help(
-            shell.columnVisibility == .detailOnly
-                ? "Mostrar barra lateral"
-                : "Ocultar barra lateral"
-        )
+        .help(sidebarToggleTitle)
+        .accessibilityLabel(sidebarToggleTitle)
         .accessibilityIdentifier("navigation.sidebar")
     }
 
+    private var sidebarToggleTitle: String {
+        shell.columnVisibility == .detailOnly
+            ? "Mostrar barra lateral"
+            : "Ocultar barra lateral"
+    }
+
     private var sidebarToolbarButtons: some View {
-        HStack(spacing: 4) {
+        ControlGroup {
             sidebarToggleButton
             addPlaylistButton
         }
+        .labelStyle(.iconOnly)
+        .controlGroupStyle(.navigation)
+    }
+
+    private var backForwardButtons: some View {
+        ControlGroup {
+            Button {
+                navigateBack()
+            } label: {
+                Label("Voltar", systemImage: "chevron.left")
+            }
+            .disabled(!shell.navigationHistory.canGoBack)
+            .keyboardShortcut(AppKeyboardShortcuts.goBack)
+            .accessibilityIdentifier("navigation.back")
+
+            Button {
+                shell.navigationHistory.goForward()
+            } label: {
+                Label("Avançar", systemImage: "chevron.right")
+            }
+            .disabled(!shell.navigationHistory.canGoForward)
+            .keyboardShortcut(AppKeyboardShortcuts.goForward)
+            .accessibilityIdentifier("navigation.forward")
+        }
+        .labelStyle(.iconOnly)
+        .controlGroupStyle(.navigation)
     }
 
     private var addPlaylistButton: some View {
@@ -382,14 +423,18 @@ struct ContentView: View {
         shell.navigationHistory.goBack()
     }
 
+    private func toggleSidebar() {
+        withAnimation(Layout.panelAnimation) {
+            shell.toggleSidebar()
+        }
+    }
+
     private func toggleQueue() {
         // Configure the collapsed inspector before its first layout can grow
         // the window. A helper inside QueueView would only run after opening.
         windowLayout.prepareInspectorPresentation()
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
 
-        withTransaction(transaction) {
+        withAnimation(Layout.panelAnimation) {
             shell.toggleQueue()
         }
     }
@@ -453,7 +498,7 @@ struct ContentView: View {
         case .artists:
             ArtistsView(onSelectArtist: showArtist)
         case .playlists:
-            PlaylistsView()
+            PlaylistsView(onSelectPlaylist: showPlaylist)
         case .history:
             HistoryView()
         }

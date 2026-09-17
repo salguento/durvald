@@ -36,6 +36,7 @@ struct ArtistView: View {
     @State private var identity: ArtistIdentity?
     @State private var identityCandidates: ArtistIdentityCandidates?
     @State private var discographyItems: [ExternalReleaseGroup] = []
+    @State private var latestRelease: ExternalReleaseGroup?
     @State private var discographyPage: ArtistDiscographyPage?
     @State private var popularTracks: ArtistPopularTracks?
     @State private var popularTrackArtworkIDs: [String: String] = [:]
@@ -70,7 +71,7 @@ struct ArtistView: View {
                                 + discographyItems.map { $0.artwork?.image.managedPath }
                         ),
                         size: geometry.size.width,
-                        aspectRatio: 16.0 / 9.0,
+                        aspectRatio: 16.0 / 11.0,
                         alignment: .top,
                         showsBorder: false
                     )
@@ -165,6 +166,7 @@ struct ArtistView: View {
             identityCandidates = nil
             selectedCandidateID = nil
             discographyItems = []
+            latestRelease = nil
             discographyPage = nil
             popularTracks = nil
             popularTrackArtworkIDs = [:]
@@ -208,6 +210,11 @@ struct ArtistView: View {
                 applyDiscographyPage(resolvedDiscography, reset: true)
             }
             isLoading = false
+            if resolvedIdentity?.status == .resolved,
+               resolvedDiscography == nil || resolvedDiscography?.stale == true
+                    || resolvedDiscography?.catalogGeneration == 0 || resolvedDiscography?.remoteExhausted == false {
+                await refreshLatestReleaseCatalog()
+            }
             if let synchronizedAlbums = await store.syncArtistReleaseMetadata(artistId: artist.id) {
                 albums = synchronizedAlbums.sorted {
                     $0.title.localizedStandardCompare($1.title) == .orderedAscending
@@ -215,6 +222,12 @@ struct ArtistView: View {
             }
             await loadSimilarArtistArtworkIDs()
             await cacheReleaseTracksAndResolvePopularArtwork()
+        }
+        .task(id: discographyPage) {
+            guard discographyPage != nil else { latestRelease = nil; return }
+            let release = await store.latestArtistRelease(artistId: artist.id)
+            guard !Task.isCancelled else { return }
+            latestRelease = release
         }
         .sheet(isPresented: $isIdentityPickerPresented) {
             identityPicker
@@ -1072,6 +1085,37 @@ struct ArtistView: View {
         }
     }
 
+    /// Continue bounded MusicBrainz batches so a partial first page doesn't
+    /// masquerade as the artist's latest release. Stop if a gate or provider
+    /// failure prevents progress, preserving the catalog already available.
+    private func refreshLatestReleaseCatalog() async {
+        guard !isRefreshingCatalog else { return }
+        isRefreshingCatalog = true
+        defer { isRefreshingCatalog = false }
+        while !Task.isCancelled {
+            let previousOffset = discographyPage?.remoteNextOffset
+            guard let result = await store.refreshArtistSections(
+                artistId: artist.id, language: enrichmentLanguage, sections: [.discography]
+            ), !Task.isCancelled else { return }
+            mergeRefreshResults(result.sections)
+            guard let page = await store.artistDiscography(artistId: artist.id),
+                  !Task.isCancelled else { return }
+            applyDiscographyPage(page, reset: true)
+            if page.remoteExhausted { break }
+            guard let next = page.remoteNextOffset,
+                  previousOffset == nil || next > previousOffset! else { break }
+        }
+        guard !Task.isCancelled else { return }
+        if let result = await store.refreshArtistSections(
+            artistId: artist.id, language: enrichmentLanguage, sections: [.covers]
+        ) {
+            mergeRefreshResults(result.sections)
+            if let page = await store.artistDiscography(artistId: artist.id), !Task.isCancelled {
+                applyDiscographyPage(page, reset: true)
+            }
+        }
+    }
+
     private func refreshCatalog() async {
         guard !isRefreshingCatalog else { return }
         isRefreshingCatalog = true
@@ -1143,12 +1187,16 @@ struct ArtistView: View {
 
                     if let latestRelease {
                         Button {
-                            selectAlbum(latestRelease)
+                            if let local = albums.first(where: { $0.id == latestRelease.localReleaseId }) {
+                                selectAlbum(local)
+                            } else {
+                                onSelectExternalRelease(latestRelease)
+                            }
                         } label: {
                             HStack(alignment: .center, spacing: 15) {
                                 ArtworkView(
-                                    artworkID: latestRelease.artworkId
-                                        ?? externalFallbackArtworkID(for: latestRelease),
+                                    artworkID: albums.first(where: { $0.id == latestRelease.localReleaseId })?.artworkId
+                                        ?? latestRelease.artwork?.image.managedPath,
                                     size: 160
                                 )
 
@@ -1157,15 +1205,24 @@ struct ArtistView: View {
                                         Text(latestRelease.title)
                                             .font(AlbumListingTypography.title)
                                             .lineLimit(2)
-                                        Text(latestRelease.artist)
+                                        Text(artist.name)
                                             .font(AlbumListingTypography.secondary)
                                             .foregroundStyle(.secondary)
                                             .lineLimit(1)
                                     }
-                                    Text(releaseYear(for: latestRelease))
+                                    Text(latestRelease.firstReleaseDate.map { String($0.year) } ?? "")
                                         .font(AlbumListingTypography.secondary)
                                         .foregroundStyle(.secondary)
-                                    Text("\(latestRelease.totalTracks) músicas")
+                                    if let count = releaseDetailsByGroupID[latestRelease.musicbrainzId]?.tracks.count {
+                                        Text("\(count) músicas")
+                                            .font(AlbumListingTypography.secondary)
+                                            .foregroundStyle(.secondary)
+                                    } else if let kind = latestRelease.primaryType {
+                                        Text(kind)
+                                            .font(AlbumListingTypography.secondary)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Text("MusicBrainz")
                                         .font(AlbumListingTypography.secondary)
                                         .foregroundStyle(.secondary)
                                 }
@@ -1174,7 +1231,13 @@ struct ArtistView: View {
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Abrir álbum \(latestRelease.title)")
+                        .accessibilityLabel("Abrir lançamento \(latestRelease.title)")
+                        .accessibilityIdentifier("artist.latestRelease.\(latestRelease.musicbrainzId)")
+                        if discographyPage?.remoteExhausted == false {
+                            Text("Mais recente no catálogo disponível. Continue a atualização da discografia para consultar os demais lançamentos.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     } else if !isLoading {
                         Text("Nenhum lançamento disponível")
                             .foregroundStyle(.secondary)
@@ -1236,15 +1299,6 @@ struct ArtistView: View {
             .frame(width: columnWidth + 24, alignment: .topLeading)
         }
         .padding(.trailing, -24)
-    }
-
-    private var latestRelease: Release? {
-        albums.sorted {
-            let leftDate = $0.releaseDate ?? ""
-            let rightDate = $1.releaseDate ?? ""
-            if leftDate != rightDate { return leftDate > rightDate }
-            return $0.id < $1.id
-        }.first
     }
 
     // Local ratings provide an interim order until editorial recommendations are available.

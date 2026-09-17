@@ -46,34 +46,26 @@ enum AlbumListingTypography {
 }
 
 struct AlbumsView: View {
+    @AppStorage("albums.listingMode") private var listingMode: CollectionListingMode = .standardGrid
     @Environment(DurvaldCoreStore.self) private var store
 
     let onSelectAlbum: (Release) -> Void
 
     var body: some View {
-        GeometryReader { proxy in
-            ScrollView {
-                LazyVGrid(
-                    columns: AlbumGridLayout.columns(
-                        for: proxy.size.width
-                    ),
-                    alignment: .leading,
-                    spacing: AlbumGridLayout.spacing
-                ) {
-                    ForEach(store.releases, id: \.id) { release in
-                        AlbumCard(
-                            release: release,
-                            onSelectAlbum: onSelectAlbum
-                        )
-                        .task {
-                            await store.loadMoreReleases(ifNeededAfter: release.id)
+        CollectionListingLayout(mode: listingMode) { size in
+            ForEach(store.releases, id: \.id) { release in
+                Group {
+                    if listingMode == .standardGrid && size == AlbumGridLayout.cardWidth {
+                        AlbumCard(release: release, onSelectAlbum: onSelectAlbum)
+                    } else {
+                        CollectionListingItem(title: release.title, subtitle: release.artist, mode: listingMode, artworkSize: size, action: { onSelectAlbum(release) }) {
+                            ArtworkView(artworkID: release.artworkId, size: size)
                         }
                     }
                 }
-                .padding(.horizontal, AlbumGridLayout.horizontalPadding)
-                .padding(.vertical, 24)
+                .accessibilityIdentifier("album.\(release.id)")
+                .task { await store.loadMoreReleases(ifNeededAfter: release.id) }
             }
-            .preservesLibraryScrollPosition()
         }
     }
 }

@@ -2,9 +2,27 @@ import AppKit
 import SwiftUI
 
 enum WindowSplitLayoutPolicy {
-    static let sidebarMinimumWidth: CGFloat = 180
+    static let contentMinimumWidth: CGFloat = 360
+    // Leave room for the traffic lights and both sidebar toolbar buttons.
+    static let sidebarMinimumWidth: CGFloat = 220
     static let sidebarIdealWidth: CGFloat = 240
-    static let sidebarMaximumWidth: CGFloat = 280
+    @MainActor
+    static var sidebarMaximumWidth: CGFloat {
+        sidebarMaximumWidth(forVisibleScreenWidth: NSScreen.main?.visibleFrame.width ?? sidebarIdealWidth * 2)
+    }
+
+    static func sidebarMaximumWidth(forVisibleScreenWidth width: CGFloat) -> CGFloat {
+        max(sidebarMinimumWidth, width / 2)
+    }
+
+    static func sidebarMaximumWidth(
+        screenMaximum: CGFloat,
+        navigationWidth: CGFloat,
+        dividerWidth: CGFloat
+    ) -> CGFloat {
+        max(sidebarMinimumWidth, min(screenMaximum, navigationWidth - contentMinimumWidth - dividerWidth))
+    }
+
 }
 
 @MainActor
@@ -15,12 +33,18 @@ final class WindowSplitLayoutCoordinator {
     func prepareInspectorPresentation() {
         inspectorController.configure()
     }
+
+
 }
 
 @MainActor
 private final class SidebarLayoutController {
     weak var anchor: NSView?
     private weak var sidebarItem: NSSplitViewItem?
+    private weak var contentItem: NSSplitViewItem?
+    private weak var navigationSplitView: NSSplitView?
+
+
 
     func attach(to anchor: NSView) {
         guard self.anchor !== anchor else { return }
@@ -30,6 +54,8 @@ private final class SidebarLayoutController {
 
     func invalidateResolvedHierarchy() {
         sidebarItem = nil
+        contentItem = nil
+        navigationSplitView = nil
     }
 
     func configure() {
@@ -50,6 +76,8 @@ private final class SidebarLayoutController {
                }),
                sidebar.behavior != .inspector {
                 sidebarItem = sidebar
+                contentItem = controller.splitViewItems.first(where: { $0 !== sidebar })
+                navigationSplitView = splitView
                 applyConfiguration(to: sidebar)
                 return
             }
@@ -60,6 +88,33 @@ private final class SidebarLayoutController {
     private func applyConfiguration(to sidebar: NSSplitViewItem) {
         if sidebar.minimumThickness != WindowSplitLayoutPolicy.sidebarMinimumWidth {
             sidebar.minimumThickness = WindowSplitLayoutPolicy.sidebarMinimumWidth
+        }
+        // visibleFrame is in points and excludes the Dock's occupied area.
+        let screenMaximum = anchor?.window?.screen.map {
+            WindowSplitLayoutPolicy.sidebarMaximumWidth(forVisibleScreenWidth: $0.visibleFrame.width)
+        } ?? WindowSplitLayoutPolicy.sidebarMaximumWidth
+        if let contentItem, contentItem.minimumThickness != WindowSplitLayoutPolicy.contentMinimumWidth {
+            contentItem.minimumThickness = WindowSplitLayoutPolicy.contentMinimumWidth
+        }
+        // The inner navigation split excludes the inspector's actual width.
+        // Reserve the detail column's minimum before allowing sidebar growth.
+        let maximum = navigationSplitView.map {
+            WindowSplitLayoutPolicy.sidebarMaximumWidth(
+                screenMaximum: screenMaximum,
+                navigationWidth: $0.bounds.width,
+                dividerWidth: $0.dividerThickness
+            )
+        } ?? screenMaximum
+        if sidebar.maximumThickness != maximum {
+            sidebar.maximumThickness = maximum
+        }
+        // A restored divider position can remain below a newly raised minimum.
+        if !sidebar.isCollapsed,
+           let splitView = navigationSplitView,
+           splitView.bounds.width > 0,
+           let sidebarView = splitView.subviews.first,
+           sidebarView.frame.width < WindowSplitLayoutPolicy.sidebarMinimumWidth {
+            splitView.setPosition(WindowSplitLayoutPolicy.sidebarMinimumWidth, ofDividerAt: 0)
         }
     }
 }
@@ -143,7 +198,9 @@ private final class InspectorLayoutController {
 
     func configure() {
         guard let anchor else { return }
-        anchor.window?.titlebarSeparatorStyle = .none
+        if let window = anchor.window {
+            window.titlebarSeparatorStyle = .none
+        }
         // Disable the native toolbar's display/customization context menu.
         if let toolbar = anchor.window?.toolbar {
             toolbar.allowsUserCustomization = false

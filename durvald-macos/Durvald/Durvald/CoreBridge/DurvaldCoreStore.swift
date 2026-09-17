@@ -1404,6 +1404,31 @@ final class DurvaldCoreStore {
         }
     }
 
+    /// Examines every page of the stored MusicBrainz catalog, independently
+    /// of how far the user has scrolled in the discography.
+    func latestArtistRelease(artistId: Int64) async -> ExternalReleaseGroup? {
+        guard let firstPage = await artistDiscography(artistId: artistId) else { return nil }
+        var items = firstPage.items
+        var page = firstPage
+        while let offset = page.nextOffset {
+            guard !Task.isCancelled,
+                  let next = await artistDiscography(artistId: artistId, offset: offset),
+                  next.identityGeneration == firstPage.identityGeneration,
+                  next.catalogGeneration == firstPage.catalogGeneration else { return nil }
+            items.append(contentsOf: next.items)
+            guard next.nextOffset == nil || next.nextOffset! > offset else { return nil }
+            page = next
+        }
+        guard !Task.isCancelled else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let today = calendar.dateComponents([.year, .month, .day], from: Date())
+        return ArtistPresentationPolicy.latestRelease(
+            in: items,
+            today: ArtistPartialDate(year: Int32(today.year!), month: UInt8(today.month!), day: UInt8(today.day!))
+        )
+    }
+
     /// Lê exclusivamente o ranking Last.fm persistido pelo core. Abrir a tela
     /// do artista nunca dispara uma consulta ao provedor.
     func artistPopularTracks(artistId: Int64) async -> ArtistPopularTracks? {

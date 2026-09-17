@@ -21,6 +21,28 @@ struct ArtistBiographySelection {
 }
 
 enum ArtistPresentationPolicy {
+    /// Uses the original release date, not a later reissue's date. Unknown
+    /// dates cannot establish recency; future releases aren't out yet.
+    static func latestRelease(
+        in releases: [ExternalReleaseGroup],
+        today: ArtistPartialDate
+    ) -> ExternalReleaseGroup? {
+        let cutoff = dateKey(today)
+        return releases.filter {
+            guard let date = $0.firstReleaseDate else { return false }
+            return dateKey(date) <= cutoff
+        }.sorted {
+            let left = dateKey($0.firstReleaseDate!)
+            let right = dateKey($1.firstReleaseDate!)
+            if left != right { return left > right }
+            return $0.musicbrainzId < $1.musicbrainzId
+        }.first
+    }
+
+    private static func dateKey(_ date: ArtistPartialDate) -> Int {
+        Int(date.year) * 10_000 + Int(date.month ?? 1) * 100 + Int(date.day ?? 1)
+    }
+
     static func portraitArtworkID(
         portrait: ArtistImageReference?,
         localArtworkIDs: [String?]

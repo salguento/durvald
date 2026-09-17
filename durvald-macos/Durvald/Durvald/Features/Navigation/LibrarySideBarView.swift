@@ -11,6 +11,9 @@ struct LibrarySidebarView: View {
     let onSelectArtist: (Artist) -> Void
     let onSelectPlaylist: (Playlist) -> Void
 
+    @AppStorage("sidebar.albums.listingMode") private var albumListingMode: CollectionListingMode = .standardGrid
+    @AppStorage("sidebar.playlists.listingMode") private var playlistListingMode: CollectionListingMode = .standard
+
     @State private var isLocalSearchExpanded = false
     @State private var arePlaylistsExpanded = true
     @State private var localSearchText = ""
@@ -58,11 +61,22 @@ struct LibrarySidebarView: View {
                     .frame(maxWidth: .infinity)
 
                 if section != .navigation {
-                    SidebarSectionSearchField(
-                        scope: section.title,
-                        text: $localSearchText,
-                        isExpanded: $isLocalSearchExpanded
-                    )
+                    HStack(spacing: 8) {
+                        SidebarSectionSearchField(
+                            scope: section.title,
+                            text: $localSearchText,
+                            isExpanded: $isLocalSearchExpanded
+                        )
+                        if section == .albums {
+                            CollectionListingMenu(mode: $albumListingMode)
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("sidebar.albums.listingMode")
+                        } else if section == .playlists {
+                            CollectionListingMenu(mode: $playlistListingMode)
+                                .buttonStyle(.plain)
+                                .accessibilityIdentifier("sidebar.playlists.listingMode")
+                        }
+                    }
                 }
             }
             .padding(.horizontal, 10)
@@ -131,78 +145,24 @@ struct LibrarySidebarView: View {
             }
 
         case .playlists:
-            List(localPlaylists, id: \.id) { playlist in
-                Button {
-                    onSelectPlaylist(playlist)
-                } label: {
-                    SidebarItemLabel(
-                        title: playlist.name,
-                        subtitle: "\(playlist.trackCount) músicas",
-                        systemImage: "music.note.list"
-                    )
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    playlistContextMenu(for: playlist)
+            CollectionListingLayout(mode: playlistListingMode, isSidebar: true) { size in
+                ForEach(localPlaylists, id: \.id) { playlist in
+                    CollectionListingItem(title: playlist.name, mode: playlistListingMode, artworkSize: size, isSelected: selectedPlaylistID == playlist.id, action: { onSelectPlaylist(playlist) }) {
+                        PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: size)
+                    }
+                    .contextMenu { playlistContextMenu(for: playlist) }
+                    .accessibilityIdentifier("sidebar.playlist.\(playlist.id)")
                 }
             }
-            .listStyle(.sidebar)
 
         case .albums:
-            GeometryReader { proxy in
-                let availableWidth = max(0, proxy.size.width - 20)
-                let columnCount = min(3, max(1, Int((availableWidth + 6) / 66)))
-                let artworkSize = max(0, (availableWidth - CGFloat(columnCount - 1) * 6) / CGFloat(columnCount))
-                let columns = Array(
-                    repeating: GridItem(.flexible(minimum: 0), spacing: 6, alignment: .top),
-                    count: columnCount
-                )
-
-                ScrollView {
-                    LazyVGrid(
-                        columns: columns,
-                        alignment: .leading,
-                        spacing: 6
-                    ) {
-                        ForEach(localAlbums, id: \.id) { album in
-                            Button {
-                                onSelectAlbum(album)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    ArtworkView(
-                                        artworkID: album.artworkId,
-                                        size: artworkSize
-                                    )
-
-                                    VStack(alignment: .leading, spacing: 0) {
-                                        Text(album.title)
-                                            .font(.caption)
-                                            .lineLimit(1)
-
-                                        Text(album.artist)
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                    .frame(width: artworkSize, alignment: .leading)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .help("\(album.title) — \(album.artist)")
-                            .accessibilityLabel(
-                                album.artist.isEmpty
-                                    ? album.title
-                                    : "\(album.title), \(album.artist)"
-                            )
-                            .accessibilityIdentifier("sidebar.album.\(album.id)")
-                            .task {
-                                await store.loadMoreReleases(ifNeededAfter: album.id)
-                            }
-                        }
+            CollectionListingLayout(mode: albumListingMode, isSidebar: true) { size in
+                ForEach(localAlbums, id: \.id) { album in
+                    CollectionListingItem(title: album.title, subtitle: album.artist, mode: albumListingMode, artworkSize: size, action: { onSelectAlbum(album) }) {
+                        ArtworkView(artworkID: album.artworkId, size: size)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("sidebar.album.\(album.id)")
+                    .task { await store.loadMoreReleases(ifNeededAfter: album.id) }
                 }
             }
 

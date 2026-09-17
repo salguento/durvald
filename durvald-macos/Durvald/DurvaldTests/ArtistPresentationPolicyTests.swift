@@ -2,6 +2,40 @@ import XCTest
 @testable import Durvald
 
 final class ArtistPresentationPolicyTests: XCTestCase {
+    func testLatestReleaseUsesFullMusicBrainzDateAndExcludesFutureAndUndatedItems() {
+        let today = ArtistPartialDate(year: 2026, month: 9, day: 16)
+        let releases = [
+            release(id: "old", date: ArtistPartialDate(year: 2025, month: 12, day: 31)),
+            release(id: "undated", date: nil),
+            release(id: "future", date: ArtistPartialDate(year: 2026, month: 9, day: 17)),
+            release(id: "earlier-month", date: ArtistPartialDate(year: 2026, month: 8, day: 31)),
+            release(id: "latest", date: today),
+            release(id: "earlier-day", date: ArtistPartialDate(year: 2026, month: 9, day: 15))
+        ]
+        XCTAssertEqual(ArtistPresentationPolicy.latestRelease(in: releases, today: today)?.musicbrainzId, "latest")
+    }
+
+    func testLatestReleaseSupportsPartialDatesAndStableTies() {
+        let today = ArtistPartialDate(year: 2026, month: 9, day: 16)
+        let releases = [
+            release(id: "year", date: ArtistPartialDate(year: 2026, month: nil, day: nil)),
+            release(id: "b", date: ArtistPartialDate(year: 2026, month: 9, day: nil)),
+            release(id: "a", date: ArtistPartialDate(year: 2026, month: 9, day: nil))
+        ]
+        XCTAssertEqual(ArtistPresentationPolicy.latestRelease(in: releases, today: today)?.musicbrainzId, "a")
+        XCTAssertEqual(ArtistPresentationPolicy.latestRelease(in: Array(releases.reversed()), today: today)?.musicbrainzId, "a")
+        XCTAssertNil(ArtistPresentationPolicy.latestRelease(in: [release(id: "unknown", date: nil)], today: today))
+        XCTAssertNil(ArtistPresentationPolicy.latestRelease(in: [], today: today))
+    }
+
+    private func release(id: String, date: ArtistPartialDate?) -> ExternalReleaseGroup {
+        ExternalReleaseGroup(
+            musicbrainzId: id, title: id, primaryType: "Album", secondaryTypes: [],
+            firstReleaseDate: date, localReleaseId: nil, artwork: nil,
+            attribution: EnrichmentAttribution(sourceUrl: "https://musicbrainz.org/release-group/\(id)", author: nil, licenseName: nil, licenseUrl: nil, revision: nil)
+        )
+    }
+
     func testPortraitPrefersSelectedLastFmThenCommonsBeforeLocalArtwork() {
         XCTAssertEqual(
             ArtistPresentationPolicy.portraitArtworkID(

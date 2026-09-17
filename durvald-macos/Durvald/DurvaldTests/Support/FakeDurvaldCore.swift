@@ -3,6 +3,8 @@
 final class FakeDurvaldCore: DurvaldCore {
     var snapshot: PlaybackSnapshot
     var releaseTrackResults: [Track] = []
+    var discographyPages: [UInt64: ArtistDiscographyPage] = [:]
+    private(set) var discographyOffsets: [UInt64] = []
     private(set) var artistRefreshRequests: [ArtistRefreshRequest] = []
     var favoriteError: Error?
     private(set) var favoriteChanges: [Bool] = []
@@ -32,6 +34,11 @@ final class FakeDurvaldCore: DurvaldCore {
     override func refreshArtist(artistId: Int64, request: ArtistRefreshRequest) async throws -> ArtistRefreshResult {
         artistRefreshRequests.append(request)
         return ArtistRefreshResult(artistId: artistId, identityGeneration: 0, sections: [])
+    }
+
+    override func artistDiscography(artistId: Int64, pageSize: UInt64, offset: UInt64) async throws -> ArtistDiscographyPage {
+        discographyOffsets.append(offset)
+        return discographyPages[offset]!
     }
 
     override func artistReleases(artistId: Int64) async throws -> [Release] { [] }
