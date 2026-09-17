@@ -93,7 +93,6 @@ struct PlayerBar: View {
             .disabled(album == nil)
             .accessibilityLabel(album.map { "Abrir álbum \($0.title)" } ?? "Capa da faixa")
             .accessibilityIdentifier("player.artwork")
-            .albumContextMenu(album: album)
 
             VStack(alignment: .leading, spacing: 0) {
                 trackMetadata(track, album: album, artist: artist)

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct LibrarySidebarView: View {
@@ -189,14 +190,13 @@ struct LibrarySidebarView: View {
             }
         } label: {
             HStack {
-                Text("Playlists")
+                SidebarSectionTitle(title: "Playlists")
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary.opacity(0.75))
                     .rotationEffect(.degrees(arePlaylistsExpanded ? 90 : 0))
             }
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.secondary)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -210,9 +210,7 @@ struct LibrarySidebarView: View {
     }
 
     private func navigationSectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.secondary)
+        SidebarSectionTitle(title: title)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.top, 16)
@@ -242,6 +240,20 @@ struct LibrarySidebarView: View {
         }
     }
 
+}
+
+private struct SidebarSectionTitle: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.secondary)
+            .opacity(0.55)
+            .blendMode(colorScheme == .dark ? .plusLighter : .plusDarker)
+            .lineLimit(1)
+    }
 }
 
 private struct SidebarNavigationButton: View {

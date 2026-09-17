@@ -74,14 +74,8 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertTrue(artwork.waitForExistence(timeout: 3))
 
         artwork.rightClick()
-        XCTAssertTrue(app.menuItems["Tocar"].waitForExistence(timeout: 2))
-        for title in ["Aleatório", "Adicionar à playlist", "Tocar de próxima", "Adicionar à fila", "Favoritar", "Compartilhar"] {
-            XCTAssertTrue(app.menuItems[title].exists, "Ação de álbum ausente: \(title)")
-        }
-        app.menuItems["Compartilhar"].hover()
-        XCTAssertTrue(app.menuItems["Copiar título"].waitForExistence(timeout: 2))
-        XCTAssertFalse(app.menuItems["Copiar nome"].exists)
-        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertFalse(app.menuItems["Tocar"].exists)
+        XCTAssertFalse(app.menuItems["Adicionar à playlist"].exists)
         artwork.click()
         XCTAssertTrue(app.descendants(matching: .any)["album.detail.42"].waitForExistence(timeout: 3))
 
