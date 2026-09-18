@@ -23,28 +23,217 @@ enum CollectionListingMode: String, CaseIterable, Identifiable {
     }
 }
 
-struct CollectionListingMenu: View {
-    @Binding var mode: CollectionListingMode
-    var controlSize: CGFloat = 32
-    var controlWidth: CGFloat? = nil
-    var body: some View {
-        Menu {
-            Picker("Visualização", selection: $mode) {
-                ForEach(CollectionListingMode.allCases) { option in
-                    Label(option.title, systemImage: option.icon).tag(option)
+enum CollectionListingOrder: String, CaseIterable, Identifiable {
+    case recent
+    case recentlyAdded
+    case alphabetical
+    case artist
+    case releaseDate
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .recent: "Recentes"
+        case .recentlyAdded: "Adicionados recentemente"
+        case .alphabetical: "Alfabética"
+        case .artist: "Artista"
+        case .releaseDate: "Lançamento"
+        }
+    }
+
+}
+
+enum CollectionListingSorter {
+    static func albums(
+        _ albums: [Release],
+        order: CollectionListingOrder,
+        tracks: [Track]
+    ) -> [Release] {
+        let lastPlayedByRelease = tracks.reduce(into: [Int64: String]()) { result, track in
+            guard let lastPlayed = track.lastPlayed else { return }
+            result[track.releaseId] = max(result[track.releaseId] ?? "", lastPlayed)
+        }
+
+        return albums.sorted { lhs, rhs in
+            switch order {
+            case .recent:
+                let left = lastPlayedByRelease[lhs.id]
+                let right = lastPlayedByRelease[rhs.id]
+                if left != right { return (left ?? "") > (right ?? "") }
+            case .recentlyAdded:
+                if lhs.id != rhs.id { return lhs.id > rhs.id }
+            case .alphabetical:
+                let comparison = lhs.title.localizedStandardCompare(rhs.title)
+                if comparison != .orderedSame { return comparison == .orderedAscending }
+            case .artist:
+                let comparison = lhs.artist.localizedStandardCompare(rhs.artist)
+                if comparison != .orderedSame { return comparison == .orderedAscending }
+            case .releaseDate:
+                if lhs.releaseDate != rhs.releaseDate {
+                    return (lhs.releaseDate ?? "") > (rhs.releaseDate ?? "")
                 }
             }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .frame(width: controlWidth ?? controlSize, height: controlSize)
+            return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
         }
-        .menuIndicator(.hidden)
+    }
+
+    static func playlists(
+        _ playlists: [Playlist],
+        order: CollectionListingOrder,
+        tracksByPlaylist: [Int64: [Track]],
+        releases: [Release]
+    ) -> [Playlist] {
+        let releaseDates = Dictionary(uniqueKeysWithValues: releases.map { ($0.id, $0.releaseDate) })
+        return playlists.sorted { lhs, rhs in
+            switch order {
+            case .recent:
+                let left = latestPlayback(in: tracksByPlaylist[lhs.id] ?? [])
+                let right = latestPlayback(in: tracksByPlaylist[rhs.id] ?? [])
+                if left != right { return (left ?? "") > (right ?? "") }
+            case .recentlyAdded:
+                if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+            case .alphabetical:
+                break
+            case .artist:
+                let left = firstArtist(in: tracksByPlaylist[lhs.id] ?? [])
+                let right = firstArtist(in: tracksByPlaylist[rhs.id] ?? [])
+                if left != right {
+                    guard let left else { return false }
+                    guard let right else { return true }
+                    return left.localizedStandardCompare(right) == .orderedAscending
+                }
+            case .releaseDate:
+                let left = latestReleaseDate(
+                    in: tracksByPlaylist[lhs.id] ?? [],
+                    releaseDates: releaseDates
+                )
+                let right = latestReleaseDate(
+                    in: tracksByPlaylist[rhs.id] ?? [],
+                    releaseDates: releaseDates
+                )
+                if left != right { return (left ?? "") > (right ?? "") }
+            }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    private static func latestPlayback(in tracks: [Track]) -> String? {
+        tracks.compactMap(\.lastPlayed).max()
+    }
+
+    private static func firstArtist(in tracks: [Track]) -> String? {
+        tracks.map(\.artist).min { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private static func latestReleaseDate(
+        in tracks: [Track],
+        releaseDates: [Int64: String?]
+    ) -> String? {
+        tracks.compactMap { releaseDates[$0.releaseId] ?? nil }.max()
+    }
+}
+
+struct CollectionListingMenu: View {
+    @Binding var mode: CollectionListingMode
+    @Binding var order: CollectionListingOrder
+    var controlSize: CGFloat = 32
+    var controlWidth: CGFloat? = nil
+    var usesGlassEffect = true
+    @State private var isPresented = false
+
+    var body: some View {
+        Button {
+            isPresented.toggle()
+        } label: {
+            ZStack {
+                Color.clear
+                Image(systemName: "line.3.horizontal.decrease")
+            }
+            .frame(width: controlWidth ?? controlSize, height: controlSize)
+            .contentShape(Rectangle())
+        }
         .buttonStyle(.plain)
         .frame(width: controlWidth ?? controlSize, height: controlSize)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .help("Visualização da listagem")
-        .accessibilityLabel("Visualização da listagem")
-        .accessibilityValue(mode.title)
+        .contentShape(Capsule())
+        .modifier(CollectionListingGlassEffect(enabled: usesGlassEffect))
+        .popover(isPresented: $isPresented, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Ordenar")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(CollectionListingOrder.allCases) { option in
+                    Button {
+                        order = option
+                        isPresented = false
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(option.title)
+                            Spacer(minLength: 16)
+                            Image(systemName: "checkmark")
+                                .opacity(order == option ? 1 : 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Divider()
+
+                Text("Visualização")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 0) {
+                    ForEach(CollectionListingMode.allCases) { option in
+                        Button {
+                            mode = option
+                            isPresented = false
+                        } label: {
+                            Image(systemName: option.icon)
+                                .frame(maxWidth: .infinity, minHeight: 26)
+                                .foregroundStyle(
+                                    mode == option
+                                        ? Color(nsColor: .selectedMenuItemTextColor)
+                                        : Color.primary
+                                )
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
+                        .background {
+                            if mode == option {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.accentColor)
+                            }
+                        }
+                        .help(option.title)
+                        .accessibilityLabel(option.title)
+                        .accessibilityAddTraits(mode == option ? .isSelected : [])
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .padding(12)
+            .frame(width: 238)
+        }
+        .help("Organizar listagem")
+        .accessibilityLabel("Organizar listagem")
+        .accessibilityValue("\(order.title), \(mode.title)")
+    }
+}
+
+private struct CollectionListingGlassEffect: ViewModifier {
+    let enabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if enabled {
+            content.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content
+        }
     }
 }
 
@@ -56,11 +245,22 @@ struct CollectionListingLayout<Content: View>: View {
     var body: some View {
         GeometryReader { geometry in
             let padding: CGFloat = isSidebar ? 10 : 24
-            let spacing: CGFloat = isSidebar ? 6 : 16
+            let spacing: CGFloat = switch mode {
+            case .compactGrid: isSidebar ? 6 : 16
+            case .standardGrid: isSidebar ? 12 : 24
+            case .compact, .standard: isSidebar ? 6 : 16
+            }
             let width = max(1, geometry.size.width - padding * 2)
-            let target: CGFloat = isSidebar ? (mode == .compactGrid ? 66 : 110) : (mode == .compactGrid ? 120 : 192)
-            let count = AlbumGridLayout.columnCount(for: width, minimumCardWidth: target, padding: 0, gap: spacing)
-            let size = AlbumGridLayout.cardSize(for: width, minimumCardWidth: target, padding: 0, gap: spacing)
+            let target: CGFloat = mode.isGrid ? (isSidebar ? 66 : 120) : (isSidebar ? 110 : 192)
+            // Both grid modes keep the same column count. The standard grid
+            // spends part of each column on gaps instead of growing the art.
+            let count = AlbumGridLayout.columnCount(
+                for: width,
+                minimumCardWidth: target,
+                padding: 0,
+                gap: mode.isGrid ? 0 : spacing
+            )
+            let size = max(1, (width - CGFloat(count - 1) * spacing) / CGFloat(count))
             ScrollView {
                 Group {
                     if mode.isGrid {

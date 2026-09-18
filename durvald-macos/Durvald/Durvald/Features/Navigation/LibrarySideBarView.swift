@@ -15,11 +15,15 @@ struct LibrarySidebarView: View {
 
     @AppStorage("sidebar.albums.listingMode") private var albumListingMode: CollectionListingMode = .standardGrid
     @AppStorage("sidebar.playlists.listingMode") private var playlistListingMode: CollectionListingMode = .standard
+    @AppStorage("sidebar.albums.listingOrder") private var albumListingOrder: CollectionListingOrder = .recent
+    @AppStorage("sidebar.playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
 
     @State private var isLocalSearchExpanded = false
     @State private var arePlaylistsExpanded = true
     @State private var localSearchText = ""
     @State private var committedLocalQuery = ""
+    @State private var orderingTracks: [Track] = []
+    @State private var tracksByPlaylist: [Int64: [Track]] = [:]
 
     var body: some View {
         selectedSectionContent
@@ -55,6 +59,9 @@ struct LibrarySidebarView: View {
             committedLocalQuery = ""
             isLocalSearchExpanded = false
         }
+        .task(id: orderingTaskID) {
+            await loadOrderingMetadataIfNeeded()
+        }
     }
 
     private var fixedControls: some View {
@@ -71,11 +78,19 @@ struct LibrarySidebarView: View {
                             isExpanded: $isLocalSearchExpanded
                         )
                         if section == .albums {
-                            CollectionListingMenu(mode: $albumListingMode)
+                            CollectionListingMenu(
+                                mode: $albumListingMode,
+                                order: $albumListingOrder,
+                                usesGlassEffect: false
+                            )
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("sidebar.albums.listingMode")
                         } else if section == .playlists {
-                            CollectionListingMenu(mode: $playlistListingMode)
+                            CollectionListingMenu(
+                                mode: $playlistListingMode,
+                                order: $playlistListingOrder,
+                                usesGlassEffect: false
+                            )
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("sidebar.playlists.listingMode")
                         }
@@ -221,18 +236,46 @@ struct LibrarySidebarView: View {
     }
 
     private var localPlaylists: [Playlist] {
-        guard !committedLocalQuery.isEmpty else { return store.playlists }
-        return store.playlists.filter {
+        let filtered = committedLocalQuery.isEmpty ? store.playlists : store.playlists.filter {
             $0.name.localizedStandardContains(committedLocalQuery)
         }
+        return CollectionListingSorter.playlists(
+            filtered,
+            order: playlistListingOrder,
+            tracksByPlaylist: tracksByPlaylist,
+            releases: store.releases
+        )
     }
 
     private var localAlbums: [Release] {
-        guard !committedLocalQuery.isEmpty else { return store.releases }
-        return store.releases.filter {
+        let filtered = committedLocalQuery.isEmpty ? store.releases : store.releases.filter {
             $0.title.localizedStandardContains(committedLocalQuery)
                 || $0.artist.localizedStandardContains(committedLocalQuery)
         }
+        return CollectionListingSorter.albums(
+            filtered,
+            order: albumListingOrder,
+            tracks: orderingTracks.isEmpty ? store.tracks : orderingTracks
+        )
+    }
+
+    private var orderingTaskID: String {
+        "\(section.rawValue):\(albumListingOrder.rawValue):\(playlistListingOrder.rawValue):\(store.core != nil):\(store.playlists.map(\.id))"
+    }
+
+    private func loadOrderingMetadataIfNeeded() async {
+        if section == .albums, albumListingOrder == .recent {
+            orderingTracks = (try? await store.core?.tracks()) ?? store.tracks
+        }
+        guard section == .playlists,
+              playlistListingOrder == .recent || playlistListingOrder == .artist || playlistListingOrder == .releaseDate,
+              let core = store.core else { return }
+        var loaded: [Int64: [Track]] = [:]
+        for playlist in store.playlists {
+            guard !Task.isCancelled else { return }
+            loaded[playlist.id] = try? await core.playlistTracks(playlistId: playlist.id)
+        }
+        tracksByPlaylist = loaded
     }
 
     private var localArtists: [Artist] {

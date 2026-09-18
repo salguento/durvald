@@ -241,6 +241,7 @@ struct AlbumView: View {
                 .help("Opções")
                 .accessibilityLabel("Opções")
                 .accessibilityIdentifier("album.options")
+                .albumOptionsMenu(album: currentAlbum)
 
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")

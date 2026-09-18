@@ -231,6 +231,7 @@ struct PlaylistView: View {
                 .help("Opções")
                 .accessibilityLabel("Opções")
                 .accessibilityIdentifier("playlist.options")
+                .playlistOptionsMenu(playlist: currentPlaylist)
 
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")

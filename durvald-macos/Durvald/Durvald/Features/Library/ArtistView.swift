@@ -1549,6 +1549,7 @@ struct ArtistView: View {
             let matchedRelease = popularExternalRelease(for: item.title)
             PopularTrackListRow(
                 rank: Int(item.rank),
+                track: nil,
                 trackID: nil,
                 title: item.title,
                 subtitle: item.listeners.formatted(),
@@ -1585,6 +1586,7 @@ struct ArtistView: View {
         }
         return PopularTrackListRow(
             rank: rank,
+            track: currentTrack,
             trackID: track.id,
             title: track.title,
             subtitle: track.release,
@@ -2008,6 +2010,7 @@ struct ArtistView: View {
 
 private struct PopularTrackListRow: View {
     let rank: Int
+    let track: Track?
     let trackID: Int64?
     let title: String
     let subtitle: String
@@ -2109,6 +2112,7 @@ private struct PopularTrackListRow: View {
                 .allowsHitTesting(isHovered)
                 .accessibilityHidden(!isHovered)
                 .help("Opções da faixa")
+                .trackOptionsMenu(track: track, onPlay: onPlay ?? {})
             }
             .frame(width: 116, alignment: .trailing)
         }

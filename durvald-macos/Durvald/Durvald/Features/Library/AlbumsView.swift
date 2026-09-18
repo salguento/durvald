@@ -57,27 +57,39 @@ enum AlbumListingTypography {
 
 struct AlbumsView: View {
     @AppStorage("albums.listingMode") private var listingMode: CollectionListingMode = .standardGrid
+    @AppStorage("albums.listingOrder") private var listingOrder: CollectionListingOrder = .recent
     @Environment(DurvaldCoreStore.self) private var store
+    @State private var orderingTracks: [Track] = []
 
     let onSelectAlbum: (Release) -> Void
 
     var body: some View {
         CollectionListingLayout(mode: listingMode) { size in
-            ForEach(store.releases, id: \.id) { release in
-                Group {
-                    if listingMode == .standardGrid {
-                        AlbumCard(release: release, onSelectAlbum: onSelectAlbum, artworkSize: size)
-                    } else {
-                        CollectionListingItem(title: release.title, subtitle: release.artist, mode: listingMode, artworkSize: size, action: { onSelectAlbum(release) }) {
-                            ArtworkView(artworkID: release.artworkId, size: size)
-                        }
-                        .albumContextMenu(album: release)
-                    }
+            ForEach(orderedReleases, id: \.id) { release in
+                CollectionListingItem(title: release.title, subtitle: release.artist, mode: listingMode, artworkSize: size, action: { onSelectAlbum(release) }) {
+                    ArtworkView(artworkID: release.artworkId, size: size)
                 }
+                .albumContextMenu(album: release)
                 .accessibilityIdentifier("album.\(release.id)")
                 .task { await store.loadMoreReleases(ifNeededAfter: release.id) }
             }
         }
+        .task(id: orderingTaskID) {
+            guard listingOrder == .recent else { return }
+            orderingTracks = (try? await store.core?.tracks()) ?? store.tracks
+        }
+    }
+
+    private var orderedReleases: [Release] {
+        CollectionListingSorter.albums(
+            store.releases,
+            order: listingOrder,
+            tracks: orderingTracks.isEmpty ? store.tracks : orderingTracks
+        )
+    }
+
+    private var orderingTaskID: String {
+        "\(listingOrder.rawValue):\(store.core != nil)"
     }
 }
 

@@ -20,6 +20,8 @@ struct ContentView: View {
 
     @AppStorage("albums.listingMode") private var albumListingMode: CollectionListingMode = .standardGrid
     @AppStorage("playlists.listingMode") private var playlistListingMode: CollectionListingMode = .standard
+    @AppStorage("albums.listingOrder") private var albumListingOrder: CollectionListingOrder = .recent
+    @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
 
     @State private var queueColumnWidth: CGFloat = 300
     @State private var isTopbarHovered = false
@@ -285,7 +287,12 @@ struct ContentView: View {
             HStack(spacing: shell.isQueuePresented ? max(16, queueColumnWidth - 36) : 16) {
                 if case .section(let destination) = shell.navigationHistory.currentRoute,
                    destination == .albums || destination == .playlists {
-                    CollectionListingMenu(mode: destination == .albums ? $albumListingMode : $playlistListingMode, controlSize: 36, controlWidth: 38)
+                    CollectionListingMenu(
+                        mode: destination == .albums ? $albumListingMode : $playlistListingMode,
+                        order: destination == .albums ? $albumListingOrder : $playlistListingOrder,
+                        controlSize: 36,
+                        controlWidth: 38
+                    )
                         .accessibilityIdentifier("\(destination.rawValue).listingMode")
                 }
                 queueToggleButton

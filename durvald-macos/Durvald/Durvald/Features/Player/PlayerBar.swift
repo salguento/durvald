@@ -229,6 +229,10 @@ struct PlayerBar: View {
                 .help("Opções da faixa")
                 .accessibilityLabel("Opções da faixa")
                 .accessibilityIdentifier("player.options")
+                .trackOptionsMenu(track: track) {
+                    guard let track else { return }
+                    Task { await store.play(trackID: track.id) }
+                }
             }
         }
         .font(.system(size: 15))

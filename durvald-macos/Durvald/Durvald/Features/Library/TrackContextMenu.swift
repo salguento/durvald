@@ -210,6 +210,177 @@ private struct NativePlaylistContextMenu: NSViewRepresentable {
     }
 }
 
+extension View {
+    func trackOptionsMenu(
+        track: Track?,
+        onPlay: @escaping () -> Void,
+        additionalActions: [TrackMenuAction] = []
+    ) -> some View {
+        modifier(TrackOptionsMenuModifier(
+            track: track,
+            onPlay: onPlay,
+            additionalActions: additionalActions
+        ))
+    }
+
+    func albumOptionsMenu(album: Release?) -> some View {
+        modifier(AlbumOptionsMenuModifier(album: album))
+    }
+
+    func playlistOptionsMenu(playlist: Playlist) -> some View {
+        modifier(PlaylistOptionsMenuModifier(playlist: playlist))
+    }
+}
+
+private struct TrackOptionsMenuModifier: ViewModifier {
+    @Environment(DurvaldCoreStore.self) private var store
+    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
+    @Environment(TrackInfoCoordinator.self) private var trackInfo
+    @Environment(\.trackMenuNavigation) private var navigation
+
+    let track: Track?
+    let onPlay: () -> Void
+    let additionalActions: [TrackMenuAction]
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if let track {
+                NativeTrackOptionsMenu(
+                    track: track,
+                    store: store,
+                    playlistCreation: playlistCreation,
+                    trackInfo: trackInfo,
+                    navigation: navigation,
+                    additionalActions: additionalActions
+                )
+                .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+private struct AlbumOptionsMenuModifier: ViewModifier {
+    @Environment(DurvaldCoreStore.self) private var store
+    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
+    let album: Release?
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if let album {
+                NativeAlbumOptionsMenu(
+                    album: album,
+                    store: store,
+                    playlistCreation: playlistCreation
+                )
+                .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+private struct PlaylistOptionsMenuModifier: ViewModifier {
+    @Environment(DurvaldCoreStore.self) private var store
+    @Environment(PlaylistCreationCoordinator.self) private var creation
+    @Environment(\.trackMenuNavigation) private var navigation
+    let playlist: Playlist
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            NativePlaylistOptionsMenu(
+                playlist: playlist,
+                store: store,
+                creation: creation,
+                navigation: navigation
+            )
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+private struct NativeTrackOptionsMenu: NSViewRepresentable {
+    let track: Track
+    let store: DurvaldCoreStore
+    let playlistCreation: PlaylistCreationCoordinator
+    let trackInfo: TrackInfoCoordinator
+    let navigation: TrackMenuNavigation
+    let additionalActions: [TrackMenuAction]
+
+    func makeCoordinator() -> TrackMenuController { TrackMenuController() }
+    func makeNSView(context: Context) -> OptionsMenuCaptureView {
+        let view = OptionsMenuCaptureView(frame: .zero)
+        view.controller = context.coordinator
+        return view
+    }
+    func updateNSView(_ view: OptionsMenuCaptureView, context: Context) {
+        context.coordinator.configure(
+            track: track,
+            store: store,
+            playlistCreation: playlistCreation,
+            trackInfo: trackInfo,
+            navigation: navigation,
+            additionalActions: additionalActions
+        )
+        view.menu = context.coordinator.rootMenu
+    }
+}
+
+private struct NativeAlbumOptionsMenu: NSViewRepresentable {
+    let album: Release
+    let store: DurvaldCoreStore
+    let playlistCreation: PlaylistCreationCoordinator
+
+    func makeCoordinator() -> TrackMenuController { TrackMenuController() }
+    func makeNSView(context: Context) -> OptionsMenuCaptureView {
+        let view = OptionsMenuCaptureView(frame: .zero)
+        view.controller = context.coordinator
+        return view
+    }
+    func updateNSView(_ view: OptionsMenuCaptureView, context: Context) {
+        context.coordinator.configure(
+            album: album,
+            store: store,
+            playlistCreation: playlistCreation
+        )
+        view.menu = context.coordinator.rootMenu
+    }
+}
+
+private struct NativePlaylistOptionsMenu: NSViewRepresentable {
+    let playlist: Playlist
+    let store: DurvaldCoreStore
+    let creation: PlaylistCreationCoordinator
+    let navigation: TrackMenuNavigation
+
+    func makeCoordinator() -> TrackMenuController { TrackMenuController() }
+    func makeNSView(context: Context) -> OptionsMenuCaptureView {
+        let view = OptionsMenuCaptureView(frame: .zero)
+        view.controller = context.coordinator
+        return view
+    }
+    func updateNSView(_ view: OptionsMenuCaptureView, context: Context) {
+        context.coordinator.configure(
+            playlist: playlist,
+            store: store,
+            creation: creation,
+            navigation: navigation
+        )
+        view.menu = context.coordinator.rootMenu
+    }
+}
+
+private final class OptionsMenuCaptureView: NSView {
+    weak var controller: TrackMenuController?
+
+    override func mouseDown(with event: NSEvent) {
+        guard let menu else { return }
+        menu.popUp(
+            positioning: nil,
+            at: NSPoint(x: bounds.minX, y: bounds.minY - 4),
+            in: self
+        )
+    }
+}
+
 private final class ContextMenuCaptureView: NSView {
     weak var controller: TrackMenuController?
 
