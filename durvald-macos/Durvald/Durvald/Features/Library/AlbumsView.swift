@@ -12,26 +12,36 @@ enum AlbumGridLayout {
     static let spacing: CGFloat = 16
     static let horizontalPadding: CGFloat = 24
 
-    static func columnCount(for availableWidth: CGFloat) -> Int {
-        let usableWidth = max(
-            availableWidth - (horizontalPadding * 2),
-            cardWidth
-        )
-
-        return max(
-            Int((usableWidth + spacing) / (cardWidth + spacing)),
-            1
-        )
+    static func columnCount(
+        for availableWidth: CGFloat,
+        minimumCardWidth: CGFloat = cardWidth,
+        padding: CGFloat = horizontalPadding,
+        gap: CGFloat = spacing
+    ) -> Int {
+        let usableWidth = max(1, availableWidth - padding * 2)
+        return max(1, Int((usableWidth + gap) / (minimumCardWidth + gap)))
     }
 
-    static func columns(for availableWidth: CGFloat) -> [GridItem] {
+    static func cardSize(
+        for availableWidth: CGFloat,
+        minimumCardWidth: CGFloat = cardWidth,
+        padding: CGFloat = horizontalPadding,
+        gap: CGFloat = spacing
+    ) -> CGFloat {
+        let usableWidth = max(1, availableWidth - padding * 2)
+        let count = columnCount(for: availableWidth, minimumCardWidth: minimumCardWidth, padding: padding, gap: gap)
+        return max(1, (usableWidth - CGFloat(count - 1) * gap) / CGFloat(count))
+    }
+
+    static func columns(
+        for availableWidth: CGFloat,
+        minimumCardWidth: CGFloat = cardWidth,
+        padding: CGFloat = horizontalPadding,
+        gap: CGFloat = spacing
+    ) -> [GridItem] {
         Array(
-            repeating: GridItem(
-                .fixed(cardWidth),
-                spacing: spacing,
-                alignment: .top
-            ),
-            count: columnCount(for: availableWidth)
+            repeating: GridItem(.flexible(minimum: 0), spacing: gap, alignment: .top),
+            count: columnCount(for: availableWidth, minimumCardWidth: minimumCardWidth, padding: padding, gap: gap)
         )
     }
 }
@@ -55,8 +65,8 @@ struct AlbumsView: View {
         CollectionListingLayout(mode: listingMode) { size in
             ForEach(store.releases, id: \.id) { release in
                 Group {
-                    if listingMode == .standardGrid && size == AlbumGridLayout.cardWidth {
-                        AlbumCard(release: release, onSelectAlbum: onSelectAlbum)
+                    if listingMode == .standardGrid {
+                        AlbumCard(release: release, onSelectAlbum: onSelectAlbum, artworkSize: size)
                     } else {
                         CollectionListingItem(title: release.title, subtitle: release.artist, mode: listingMode, artworkSize: size, action: { onSelectAlbum(release) }) {
                             ArtworkView(artworkID: release.artworkId, size: size)
@@ -82,6 +92,9 @@ struct AlbumCard: View {
     /// prefer `release.artworkId`, which represents local/manual artwork.
     var fallbackArtworkID: String? = nil
 
+    var artworkSize: CGFloat = AlbumGridLayout.cardWidth
+    var titleLineLimit: Int = 1
+
     @State private var isHovered = false
     @FocusState private var isPlayFocused: Bool
 
@@ -97,13 +110,13 @@ struct AlbumCard: View {
                 VStack(alignment: .leading, spacing: 7) {
                     ArtworkView(
                         artworkID: release.artworkId ?? fallbackArtworkID,
-                        size: AlbumGridLayout.cardWidth
+                        size: artworkSize
                     )
 
                     VStack(alignment: .leading, spacing: 0) {
                         Text(release.title)
                             .font(AlbumListingTypography.title)
-                            .lineLimit(1)
+                            .lineLimit(titleLineLimit)
 
                         Text(subtitle ?? release.artist)
                             .font(AlbumListingTypography.secondary)
@@ -111,7 +124,7 @@ struct AlbumCard: View {
                             .lineLimit(1)
                     }
                     .frame(
-                        width: AlbumGridLayout.cardWidth,
+                        width: artworkSize,
                         alignment: .leading
                     )
                 }
@@ -143,12 +156,12 @@ struct AlbumCard: View {
                 .help("Reproduzir álbum")
             }
             .frame(
-                width: AlbumGridLayout.cardWidth,
-                height: AlbumGridLayout.cardWidth
+                width: artworkSize,
+                height: artworkSize
             )
             .animation(.easeInOut(duration: 0.12), value: showsPlay)
         }
-        .frame(width: AlbumGridLayout.cardWidth, alignment: .leading)
+        .frame(width: artworkSize, alignment: .leading)
         .contentShape(Rectangle())
         .albumContextMenu(album: release)
         .onHover { hovering in

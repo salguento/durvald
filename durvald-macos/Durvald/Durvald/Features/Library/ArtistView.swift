@@ -777,7 +777,8 @@ struct ArtistView: View {
                             release: album,
                             onSelectAlbum: selectAlbum,
                             subtitle: releaseYear(for: album),
-                            fallbackArtworkID: externalFallbackArtworkID(for: album)
+                            fallbackArtworkID: externalFallbackArtworkID(for: album),
+                            artworkSize: AlbumGridLayout.cardSize(for: width)
                         )
                     }
                 }
@@ -817,17 +818,32 @@ struct ArtistView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
-                    LazyVGrid(
-                        columns: AlbumGridLayout.columns(for: width),
-                        alignment: .leading,
-                        spacing: AlbumGridLayout.spacing
-                    ) {
-                        ForEach(onlineOnlyReleases, id: \.musicbrainzId) { release in
-                            ExternalReleaseCard(
-                                release: release,
-                                subtitle: externalReleaseSubtitle(release),
-                                onSelectRelease: selectExternalRelease
-                            )
+                    ForEach(ArtistDiscographyCategory.allCases) { category in
+                        let releases = onlineOnlyReleases.filter {
+                            ArtistDiscographyCategory.category(for: $0) == category
+                        }
+                        if !releases.isEmpty {
+                            VStack(alignment: .leading, spacing: 16) {
+                                Text(category.title)
+                                    .font(.title3.bold())
+                                    .accessibilityAddTraits(.isHeader)
+
+                                LazyVGrid(
+                                    columns: AlbumGridLayout.columns(for: width),
+                                    alignment: .leading,
+                                    spacing: AlbumGridLayout.spacing
+                                ) {
+                                    ForEach(releases, id: \.musicbrainzId) { release in
+                                        ExternalReleaseCard(
+                                            release: release,
+                                            subtitle: externalReleaseSubtitle(release),
+                                            onSelectRelease: selectExternalRelease,
+                                            artworkSize: AlbumGridLayout.cardSize(for: width)
+                                        )
+                                    }
+                                }
+                            }
+                            .accessibilityIdentifier("artist.discography.online.\(category.rawValue)")
                         }
                     }
                 }
@@ -1251,50 +1267,22 @@ struct ArtistView: View {
                         .font(.title2.bold())
                         .accessibilityAddTraits(.isHeader)
 
-                    ScrollView(.horizontal) {
-                        LazyHStack(alignment: .top, spacing: 20) {
-                            ForEach(essentialAlbums, id: \.id) { album in
-                                Button {
-                                    selectAlbum(album)
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 7) {
-                                        ArtworkView(
-                                            artworkID: album.artworkId
-                                                ?? externalFallbackArtworkID(for: album),
-                                            size: 160
-                                        )
-                                        VStack(alignment: .leading, spacing: 0) {
-                                            Text(album.title)
-                                                .font(AlbumListingTypography.title)
-                                                .lineLimit(2)
-                                            Text(releaseYear(for: album))
-                                                .font(AlbumListingTypography.secondary)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                    .frame(width: 160, alignment: .leading)
-                                    .contentShape(.rect)
-                                }
-                                .buttonStyle(.plain)
-                                .albumContextMenu(album: album)
-                                .accessibilityLabel("Abrir álbum \(album.title)")
-                            }
-                        }
-                        .padding(.leading, isStacked ? 0 : 24)
-                    }
-                    .scrollIndicators(.hidden)
-                    // Extend into the column gap so the fade doesn't cover
-                    // the first cover at its initial scroll position.
-                    .mask {
-                        HStack(spacing: 0) {
-                            if !isStacked {
-                                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                                    .frame(width: 24)
-                            }
-                            Rectangle()
+                    LazyVGrid(
+                        columns: AlbumGridLayout.columns(for: columnWidth + 24, minimumCardWidth: 160, padding: 0),
+                        alignment: .leading,
+                        spacing: AlbumGridLayout.spacing
+                    ) {
+                        ForEach(essentialAlbums, id: \.id) { album in
+                            AlbumCard(
+                                release: album,
+                                onSelectAlbum: selectAlbum,
+                                subtitle: releaseYear(for: album),
+                                fallbackArtworkID: externalFallbackArtworkID(for: album),
+                                artworkSize: AlbumGridLayout.cardSize(for: columnWidth + 24, minimumCardWidth: 160, padding: 0),
+                                titleLineLimit: 2
+                            )
                         }
                     }
-                    .padding(.leading, isStacked ? 0 : -24)
                     .accessibilityIdentifier("artist.essentialAlbums")
                 }
             }
@@ -2120,6 +2108,8 @@ private struct ExternalReleaseCard: View {
     let subtitle: String
     let onSelectRelease: (ExternalReleaseGroup) -> Void
 
+    var artworkSize: CGFloat = AlbumGridLayout.cardWidth
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
@@ -2129,11 +2119,13 @@ private struct ExternalReleaseCard: View {
                     ZStack(alignment: .topTrailing) {
                         ArtworkView(
                             artworkID: release.artwork?.image.managedPath,
-                            size: AlbumGridLayout.cardWidth
+                            size: artworkSize
                         )
 
-                        Text("Somente online")
-                            .font(.caption2.weight(.semibold))
+                        Image(systemName: "cloud.fill")
+                            .font(.caption.weight(.semibold))
+                            .accessibilityLabel("Somente online")
+                            .help("Somente online")
                             .foregroundStyle(.white)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 4)
@@ -2150,18 +2142,13 @@ private struct ExternalReleaseCard: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    .frame(width: AlbumGridLayout.cardWidth, alignment: .leading)
+                    .frame(width: artworkSize, alignment: .leading)
                 }
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Abrir \(release.title), \(subtitle), somente online")
             .accessibilityIdentifier("artist.discography.remote.\(release.musicbrainzId)")
-
-            if let source = URL(string: release.attribution.sourceUrl) {
-                Link("MusicBrainz", destination: source)
-                    .font(.caption2)
-            }
         }
-        .frame(width: AlbumGridLayout.cardWidth, alignment: .leading)
+        .frame(width: artworkSize, alignment: .leading)
     }
 }

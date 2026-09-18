@@ -568,16 +568,31 @@ final class AlbumGridLayoutTests: XCTestCase {
         XCTAssertEqual(AlbumGridLayout.columnCount(for: 656), 3)
     }
 
-    func testColumnsUseConfiguredFixedCardWidth() {
+    func testColumnsUseFlexibleWidth() {
         let columns = AlbumGridLayout.columns(for: 900)
 
         XCTAssertEqual(
             columns.count,
             AlbumGridLayout.columnCount(for: 900)
         )
+        for column in columns {
+            guard case .flexible = column.size else {
+                return XCTFail("Columns must adapt to the available width")
+            }
+        }
         XCTAssertEqual(AlbumGridLayout.cardWidth, 192)
         XCTAssertEqual(AlbumGridLayout.spacing, 16)
     }
+    func testCardSizesFillAvailableWidthWithoutOverflow() {
+        for width: CGFloat in [32, 240, 447, 448, 655, 656, 900, 1400] {
+            let count = AlbumGridLayout.columnCount(for: width)
+            let size = AlbumGridLayout.cardSize(for: width)
+            XCTAssertGreaterThan(size, 0)
+            XCTAssertEqual(size * CGFloat(count) + CGFloat(count - 1) * AlbumGridLayout.spacing,
+                           max(1, width - 48), accuracy: 0.001)
+        }
+    }
+
 }
 
 

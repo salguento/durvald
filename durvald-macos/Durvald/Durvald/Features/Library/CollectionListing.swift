@@ -59,12 +59,12 @@ struct CollectionListingLayout<Content: View>: View {
             let spacing: CGFloat = isSidebar ? 6 : 16
             let width = max(1, geometry.size.width - padding * 2)
             let target: CGFloat = isSidebar ? (mode == .compactGrid ? 66 : 110) : (mode == .compactGrid ? 120 : 192)
-            let count = max(1, Int((width + spacing) / (target + spacing)))
-            let size = isSidebar ? max(1, (width - CGFloat(count - 1) * spacing) / CGFloat(count)) : min(target, width)
+            let count = AlbumGridLayout.columnCount(for: width, minimumCardWidth: target, padding: 0, gap: spacing)
+            let size = AlbumGridLayout.cardSize(for: width, minimumCardWidth: target, padding: 0, gap: spacing)
             ScrollView {
                 Group {
                     if mode.isGrid {
-                        LazyVGrid(columns: Array(repeating: GridItem(.fixed(size), spacing: spacing, alignment: .top), count: count), alignment: .leading, spacing: spacing) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: spacing, alignment: .top), count: count), alignment: .leading, spacing: spacing) {
                             content(size)
                         }
                     } else {

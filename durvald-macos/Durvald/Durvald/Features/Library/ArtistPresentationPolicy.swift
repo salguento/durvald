@@ -20,6 +20,33 @@ struct ArtistBiographySelection {
     let source: ArtistProfileSource?
 }
 
+enum ArtistDiscographyCategory: String, CaseIterable, Identifiable {
+    case album, singlesAndEPs, live, broadcast, other
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .album: "Álbum"
+        case .singlesAndEPs: "Singles & EPs"
+        case .live: "Ao vivo"
+        case .broadcast: "Broadcast"
+        case .other: "Outros"
+        }
+    }
+
+    static func category(for release: ExternalReleaseGroup) -> Self {
+        // Broadcasts may also be tagged live; keep them in their own section.
+        if release.primaryType?.lowercased() == "broadcast" { return .broadcast }
+        if release.secondaryTypes.contains(where: { $0.lowercased() == "live" }) { return .live }
+        switch release.primaryType?.lowercased() {
+        case "album": return .album
+        case "single", "ep": return .singlesAndEPs
+        default: return .other
+        }
+    }
+}
+
 enum ArtistPresentationPolicy {
     /// Uses the original release date, not a later reissue's date. Unknown
     /// dates cannot establish recency; future releases aren't out yet.
