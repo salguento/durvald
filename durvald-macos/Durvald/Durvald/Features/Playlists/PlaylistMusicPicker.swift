@@ -152,7 +152,8 @@ struct PlaylistMusicPicker: View {
         case .album(let album):
             Button { selection = .album(album) } label: {
                 libraryRow(title: album.title, subtitle: album.artist,
-                           artworkID: album.artworkId, systemImage: "square.stack")
+                           artworkID: album.artworkId, systemImage: "square.stack",
+                           isFavorite: album.isFavorite)
             }
             .buttonStyle(.plain)
             .albumContextMenu(album: album)
@@ -166,7 +167,7 @@ struct PlaylistMusicPicker: View {
     }
 
     private func libraryRow(title: String, subtitle: String, artworkID: String?,
-                            systemImage: String) -> some View {
+                            systemImage: String, isFavorite: Bool = false) -> some View {
         HStack(spacing: 10) {
             if let artworkID {
                 ArtworkView(artworkID: artworkID, size: 40)
@@ -176,7 +177,8 @@ struct PlaylistMusicPicker: View {
                     .frame(width: 40, height: 40)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).lineLimit(1)
+                AlbumTitleLabel(title: title, isFavorite: isFavorite, font: .body)
+                    .lineLimit(1)
                 Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -217,7 +219,7 @@ struct PlaylistMusicPicker: View {
 
     private func albumContent(_ album: Release) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            submenuLabel(album.title)
+            submenuLabel(album.title, isFavorite: album.isFavorite)
             if isLoadingAlbum {
                 ProgressView("Carregando músicas…").controlSize(.small)
             } else {
@@ -249,7 +251,8 @@ struct PlaylistMusicPicker: View {
                 ForEach(albums, id: \.id) { album in
                     Button { selection = .album(album) } label: {
                         libraryRow(title: album.title, subtitle: album.artist,
-                                   artworkID: album.artworkId, systemImage: "square.stack")
+                                   artworkID: album.artworkId, systemImage: "square.stack",
+                                   isFavorite: album.isFavorite)
                     }
                     .buttonStyle(.plain)
                     if album.id != albums.last?.id { Divider() }
@@ -264,7 +267,7 @@ struct PlaylistMusicPicker: View {
             .foregroundStyle(.secondary)
     }
 
-    private func submenuLabel(_ title: String) -> some View {
+    private func submenuLabel(_ title: String, isFavorite: Bool = false) -> some View {
         Button {
             selection = nil
             albumTracks = []
@@ -272,7 +275,13 @@ struct PlaylistMusicPicker: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.left")
-                sectionLabel(title)
+                AlbumTitleLabel(
+                    title: title,
+                    isFavorite: isFavorite,
+                    font: .subheadline,
+                    weight: .semibold
+                )
+                .foregroundStyle(.secondary)
             }
             .contentShape(Rectangle())
         }

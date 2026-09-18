@@ -1232,8 +1232,11 @@ struct ArtistView: View {
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     VStack(alignment: .leading, spacing: 0) {
-                                        Text(latestRelease.title)
-                                            .font(AlbumListingTypography.title)
+                                        AlbumTitleLabel(
+                                            title: latestRelease.title,
+                                            isFavorite: albums.first(where: { $0.id == latestRelease.localReleaseId })?.isFavorite == true,
+                                            font: AlbumListingTypography.title
+                                        )
                                             .lineLimit(2)
                                         Text(artist.name)
                                             .font(AlbumListingTypography.secondary)

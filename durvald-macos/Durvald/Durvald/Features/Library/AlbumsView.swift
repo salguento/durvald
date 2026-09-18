@@ -66,7 +66,7 @@ struct AlbumsView: View {
     var body: some View {
         CollectionListingLayout(mode: listingMode) { size in
             ForEach(orderedReleases, id: \.id) { release in
-                CollectionListingItem(title: release.title, subtitle: release.artist, mode: listingMode, artworkSize: size, action: { onSelectAlbum(release) }) {
+                CollectionListingItem(title: release.title, subtitle: release.artist, isFavorite: release.isFavorite, mode: listingMode, artworkSize: size, action: { onSelectAlbum(release) }) {
                     ArtworkView(artworkID: release.artworkId, size: size)
                 }
                 .albumContextMenu(album: release)
@@ -126,8 +126,11 @@ struct AlbumCard: View {
                     )
 
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(release.title)
-                            .font(AlbumListingTypography.title)
+                        AlbumTitleLabel(
+                            title: release.title,
+                            isFavorite: release.isFavorite,
+                            font: AlbumListingTypography.title
+                        )
                             .lineLimit(titleLineLimit)
 
                         Text(subtitle ?? release.artist)

@@ -133,9 +133,12 @@ struct AlbumView: View {
                 .albumContextMenu(album: currentAlbum)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
+                    AlbumTitleLabel(
+                        title: title,
+                        isFavorite: currentAlbum?.isFavorite == true,
+                        font: .largeTitle,
+                        weight: .bold
+                    )
                         .multilineTextAlignment(.leading)
                         .padding(.top, 24)
 

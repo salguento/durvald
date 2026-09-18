@@ -285,6 +285,7 @@ struct CollectionListingLayout<Content: View>: View {
 struct CollectionListingItem<Artwork: View>: View {
     let title: String
     var subtitle: String? = nil
+    var isFavorite = false
     let mode: CollectionListingMode
     let artworkSize: CGFloat
     var isSelected = false
@@ -308,8 +309,14 @@ struct CollectionListingItem<Artwork: View>: View {
                     HStack(spacing: 10) {
                         if mode == .standard { artwork() }
                         if mode == .compact {
-                            Text("\(title)\(Text(subtitle.map { " · \($0)" } ?? "").foregroundColor(.secondary))")
-                                .lineLimit(1)
+                            HStack(spacing: 4) {
+                                if isFavorite {
+                                    Image(systemName: "star.fill")
+                                        .font(.body)
+                                }
+                                Text("\(title)\(Text(subtitle.map { " · \($0)" } ?? "").foregroundColor(.secondary))")
+                                    .lineLimit(1)
+                            }
                         } else {
                             textDetails
                         }
@@ -353,10 +360,33 @@ struct CollectionListingItem<Artwork: View>: View {
 
     private var textDetails: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(AlbumListingTypography.title).lineLimit(1)
+            AlbumTitleLabel(
+                title: title,
+                isFavorite: isFavorite,
+                font: AlbumListingTypography.title
+            )
+            .lineLimit(1)
             if let subtitle {
                 Text(subtitle).font(AlbumListingTypography.secondary).foregroundStyle(.secondary).lineLimit(1)
             }
         }
+    }
+}
+
+struct AlbumTitleLabel: View {
+    let title: String
+    let isFavorite: Bool
+    let font: Font
+    var weight: Font.Weight? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            if isFavorite {
+                Image(systemName: "star.fill")
+            }
+            Text(title)
+        }
+        .font(font)
+        .fontWeight(weight)
     }
 }

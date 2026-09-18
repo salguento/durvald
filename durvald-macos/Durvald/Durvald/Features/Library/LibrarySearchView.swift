@@ -94,8 +94,11 @@ struct LibrarySearchView: View {
                         )
 
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(release.title)
-                                .font(AlbumListingTypography.title)
+                            AlbumTitleLabel(
+                                title: release.title,
+                                isFavorite: release.isFavorite,
+                                font: AlbumListingTypography.title
+                            )
                                 .lineLimit(1)
                             Text(release.artist)
                                 .font(AlbumListingTypography.secondary)

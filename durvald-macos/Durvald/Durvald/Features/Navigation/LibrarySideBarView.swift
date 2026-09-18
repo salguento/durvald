@@ -174,7 +174,7 @@ struct LibrarySidebarView: View {
         case .albums:
             CollectionListingLayout(mode: albumListingMode, isSidebar: true) { size in
                 ForEach(localAlbums, id: \.id) { album in
-                    CollectionListingItem(title: album.title, subtitle: album.artist, mode: albumListingMode, artworkSize: size, action: { onSelectAlbum(album) }) {
+                    CollectionListingItem(title: album.title, subtitle: album.artist, isFavorite: album.isFavorite, mode: albumListingMode, artworkSize: size, action: { onSelectAlbum(album) }) {
                         ArtworkView(artworkID: album.artworkId, size: size)
                     }
                     .albumContextMenu(album: album)
