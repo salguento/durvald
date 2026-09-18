@@ -50,6 +50,8 @@ pub struct AssetSnapshot {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReleaseGroupSnapshot {
+    #[serde(default)]
+    pub primary_artist_mbid: Option<String>,
     pub musicbrainz_id: String,
     pub title: String,
     pub primary_type: Option<String>,

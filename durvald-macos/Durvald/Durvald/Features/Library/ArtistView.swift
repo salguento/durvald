@@ -220,6 +220,13 @@ struct ArtistView: View {
                     $0.title.localizedStandardCompare($1.title) == .orderedAscending
                 }
             }
+            if let result = await store.refreshArtistSections(
+                artistId: artist.id, language: enrichmentLanguage,
+                sections: [.similarArtists], force: false
+            ) {
+                mergeRefreshResults(result.sections)
+                details = await store.artistDetails(artistId: artist.id, language: enrichmentLanguage)
+            }
             await loadSimilarArtistArtworkIDs()
             await cacheReleaseTracksAndResolvePopularArtwork()
         }
@@ -818,32 +825,34 @@ struct ArtistView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(ArtistDiscographyCategory.allCases) { category in
-                        let releases = onlineOnlyReleases.filter {
-                            ArtistDiscographyCategory.category(for: $0) == category
-                        }
-                        if !releases.isEmpty {
-                            VStack(alignment: .leading, spacing: 16) {
-                                Text(category.title)
-                                    .font(.title3.bold())
-                                    .accessibilityAddTraits(.isHeader)
+                    VStack(alignment: .leading, spacing: 32) {
+                        ForEach(ArtistDiscographyCategory.allCases) { category in
+                            let releases = onlineOnlyReleases.filter {
+                                ArtistDiscographyCategory.category(for: $0, artistMBID: identity?.musicbrainzId) == category
+                            }
+                            if !releases.isEmpty {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text(category.title)
+                                        .font(.title3.bold())
+                                        .accessibilityAddTraits(.isHeader)
 
-                                LazyVGrid(
-                                    columns: AlbumGridLayout.columns(for: width),
-                                    alignment: .leading,
-                                    spacing: AlbumGridLayout.spacing
-                                ) {
-                                    ForEach(releases, id: \.musicbrainzId) { release in
-                                        ExternalReleaseCard(
-                                            release: release,
-                                            subtitle: externalReleaseSubtitle(release),
-                                            onSelectRelease: selectExternalRelease,
-                                            artworkSize: AlbumGridLayout.cardSize(for: width)
-                                        )
+                                    LazyVGrid(
+                                        columns: AlbumGridLayout.columns(for: width),
+                                        alignment: .leading,
+                                        spacing: AlbumGridLayout.spacing
+                                    ) {
+                                        ForEach(releases, id: \.musicbrainzId) { release in
+                                            ExternalReleaseCard(
+                                                release: release,
+                                                subtitle: externalReleaseSubtitle(release),
+                                                onSelectRelease: selectExternalRelease,
+                                                artworkSize: AlbumGridLayout.cardSize(for: width)
+                                            )
+                                        }
                                     }
                                 }
+                                .accessibilityIdentifier("artist.discography.online.\(category.rawValue)")
                             }
-                            .accessibilityIdentifier("artist.discography.online.\(category.rawValue)")
                         }
                     }
                 }
@@ -1018,6 +1027,8 @@ struct ArtistView: View {
             return discographyItems.contains { $0.artwork != nil }
         case .popularTracks:
             return popularTracks != nil
+        case .similarArtists:
+            return details?.similarArtistsFetchedAt != nil
         }
     }
 
@@ -1034,6 +1045,8 @@ struct ArtistView: View {
             timestamp = discographyItems.compactMap { $0.artwork?.image.fetchedAt }.max()
         case .popularTracks:
             timestamp = popularTracks?.fetchedAt
+        case .similarArtists:
+            timestamp = details?.similarArtistsFetchedAt
         }
         return timestamp.map { Date(timeIntervalSince1970: TimeInterval($0)) }
     }
@@ -1064,11 +1077,12 @@ struct ArtistView: View {
         ) else { return }
         mergeRefreshResults(result.sections)
         switch section {
-        case .profile, .portrait:
+        case .profile, .portrait, .similarArtists:
             details = await store.artistDetails(
                 artistId: artist.id,
                 language: enrichmentLanguage
             )
+            await loadSimilarArtistArtworkIDs()
 
         case .discography, .covers:
             if let page = await store.artistDiscography(artistId: artist.id) {
@@ -1647,26 +1661,24 @@ struct ArtistView: View {
                     .accessibilityAddTraits(.isHeader)
                     .padding(.horizontal, 24)
 
+                if similarArtists.isEmpty {
+                    Text("Nenhum artista similar disponível.")
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 24)
+                }
+
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 20) {
-                        ForEach(similarArtists, id: \.id) { similar in
-                            Button {
-                                selectArtist(similar)
-                            } label: {
-                                VStack(spacing: 10) {
-                                    similarArtistAvatar(for: similar)
-
-                                    Text(similar.name)
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundStyle(.primary)
-                                        .lineLimit(2)
-                                        .multilineTextAlignment(.center)
-                                        .frame(width: 104)
+                        ForEach(similarArtists, id: \.name) { similar in
+                            Group {
+                                if let local = localArtist(for: similar) {
+                                    Button { selectArtist(local) } label: { similarArtistCard(similar) }
+                                } else if let url = URL(string: similar.lastfmUrl) {
+                                    Link(destination: url) { similarArtistCard(similar) }
                                 }
-                                .contentShape(.rect)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Abrir artista \(similar.name)")
+                            .accessibilityLabel(localArtist(for: similar) != nil ? "Abrir artista \(similar.name)" : "Abrir \(similar.name) no Last.fm")
                         }
                     }
                     .padding(.horizontal, 24)
@@ -1777,22 +1789,29 @@ struct ArtistView: View {
         return ArtistPartialDate(year: year, month: month, day: day)
     }
 
-    private var similarArtists: [Artist] {
-        let candidates = store.artists.filter { $0.id != artist.id }
-        if !candidates.isEmpty {
-            return Array(candidates.prefix(10))
+    private func similarArtistCard(_ similar: SimilarArtist) -> some View {
+        VStack(spacing: 10) {
+            similarArtistAvatar(for: similar)
+            Text(similar.name)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(width: 104)
         }
-        return [
-            Artist(id: -1, name: "Artista Similar 1"),
-            Artist(id: -2, name: "Artista Similar 2"),
-            Artist(id: -3, name: "Artista Similar 3"),
-            Artist(id: -4, name: "Artista Similar 4"),
-            Artist(id: -5, name: "Artista Similar 5")
-        ]
+        .contentShape(.rect)
     }
 
-    private func similarArtistAvatar(for similar: Artist) -> some View {
-        let artID = similarArtistArtworkIDs[similar.id]
+    private var similarArtists: [SimilarArtist] {
+        details?.similarArtists ?? []
+    }
+
+    private func localArtist(for similar: SimilarArtist) -> Artist? {
+        store.artists.first { $0.name.compare(similar.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+    }
+
+    private func similarArtistAvatar(for similar: SimilarArtist) -> some View {
+        let artID = localArtist(for: similar).flatMap { similarArtistArtworkIDs[$0.id] }
         return Group {
             if let artID {
                 ArtworkView(
@@ -1823,7 +1842,7 @@ struct ArtistView: View {
     @MainActor
     private func loadSimilarArtistArtworkIDs() async {
         var resolved: [Int64: String] = [:]
-        for similar in similarArtists where similar.id >= 0 {
+        for similar in similarArtists.compactMap({ localArtist(for: $0) }) {
             async let loadedDetails = store.artistDetails(
                 artistId: similar.id,
                 language: enrichmentLanguage
@@ -1838,10 +1857,13 @@ struct ArtistView: View {
             let orderedReleases = releases.sorted {
                 $0.title.localizedStandardCompare($1.title) == .orderedAscending
             }
+            let localArtworkIDs: [String?] = orderedReleases.map(\.artworkId)
+            let catalogArtworkIDs: [String?] = (discography?.items ?? []).map {
+                $0.artwork?.image.managedPath
+            }
             let artworkID = ArtistPresentationPolicy.portraitArtworkID(
                 portrait: details?.portrait,
-                localArtworkIDs: orderedReleases.map(\.artworkId)
-                    + (discography?.items ?? []).map { $0.artwork?.image.managedPath }
+                localArtworkIDs: localArtworkIDs + catalogArtworkIDs
             )
             if let artworkID {
                 resolved[similar.id] = artworkID

@@ -141,6 +141,8 @@ pub struct ExternalReleaseArtwork {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ExternalReleaseGroup {
+    /// First artist in the release-group credit; absent in older cached data.
+    pub primary_artist_mbid: Option<String>,
     pub musicbrainz_id: String,
     pub title: String,
     pub primary_type: Option<String>,
@@ -254,7 +256,18 @@ pub struct ArtistFieldOverride {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SimilarArtist {
+    pub name: String,
+    pub musicbrainz_id: Option<String>,
+    pub lastfm_url: String,
+    pub match_score: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ArtistDetails {
+    pub similar_artists: Vec<SimilarArtist>,
+    pub similar_artists_fetched_at: Option<i64>,
     pub artist: Artist,
     pub identity_status: ArtistIdentityStatus,
     pub musicbrainz_id: Option<String>,
@@ -330,6 +343,7 @@ pub enum ArtistRefreshSection {
     Discography,
     Covers,
     PopularTracks,
+    SimilarArtists,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

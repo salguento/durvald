@@ -49,6 +49,7 @@ final class DurvaldCoreStoreTests: XCTestCase {
         ArtistDiscographyPage(
             artistId: 1, identityGeneration: 1, catalogGeneration: generation,
             items: [ExternalReleaseGroup(
+                primaryArtistMbid: nil,
                 musicbrainzId: id, title: id, primaryType: "Album", secondaryTypes: [],
                 firstReleaseDate: ArtistPartialDate(year: year, month: nil, day: nil),
                 localReleaseId: nil, artwork: nil,
@@ -479,6 +480,7 @@ final class LibraryNavigationHistoryTests: XCTestCase {
     func testExternalAlbumParticipatesInBackAndForwardHistory() {
         let artist = Artist(id: 7, name: "Artista")
         let release = ExternalReleaseGroup(
+            primaryArtistMbid: nil,
             musicbrainzId: "11111111-1111-4111-8111-111111111111",
             title: "Lançamento remoto",
             primaryType: "Album",

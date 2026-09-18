@@ -483,6 +483,13 @@ BEGIN
 END;
 "#;
 
+const ARTIST_SIMILAR_ARTISTS: &str = r#"
+ALTER TABLE artists ADD COLUMN similar_artists TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(similar_artists));
+ALTER TABLE artists ADD COLUMN similar_artists_generation INTEGER;
+ALTER TABLE artists ADD COLUMN similar_artists_fetched_at INTEGER;
+ALTER TABLE artists ADD COLUMN similar_artists_expires_at INTEGER;
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -503,6 +510,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (14, AGGREGATE_IDENTITY_INVALIDATION),
             (15, EXTERNAL_RELEASE_DETAILS_CACHE),
             (16, ARTIST_POPULAR_TRACKS),
+            (17, ARTIST_SIMILAR_ARTISTS),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -573,7 +581,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            16
+            17
         );
     }
 
@@ -688,7 +696,7 @@ mod tests {
                     (13, LOCAL_RELEASE_METADATA),
                     (14, AGGREGATE_IDENTITY_INVALIDATION),
                     (
-                        17,
+                        18,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -701,7 +709,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            16
+            17
         );
     }
 

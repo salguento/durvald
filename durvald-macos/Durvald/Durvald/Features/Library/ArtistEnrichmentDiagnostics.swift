@@ -2,7 +2,7 @@ import Foundation
 
 enum ArtistEnrichmentDiagnostics {
     static let orderedSections: [ArtistRefreshSection] = [
-        .profile, .portrait, .discography, .covers, .popularTracks
+        .profile, .portrait, .discography, .covers, .popularTracks, .similarArtists
     ]
 
     static func title(for section: ArtistRefreshSection) -> String {
@@ -12,6 +12,7 @@ enum ArtistEnrichmentDiagnostics {
         case .discography: "Discografia"
         case .covers: "Capas"
         case .popularTracks: "Mais populares"
+        case .similarArtists: "Artistas similares"
         }
     }
 
@@ -65,6 +66,7 @@ enum ArtistEnrichmentDiagnostics {
             case .discography: return "Nenhuma discografia remota foi encontrada."
             case .covers: return "Nenhuma capa foi encontrada para os itens consultados."
             case .popularTracks: return "Nenhuma faixa popular foi encontrada."
+            case .similarArtists: return "Nenhum artista similar foi encontrado."
             }
         case .needsIdentity:
             return "Confirme a identidade MusicBrainz do artista para atualizar esta seção."

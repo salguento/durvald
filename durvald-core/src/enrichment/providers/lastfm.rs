@@ -133,6 +133,31 @@ impl LastFm {
             .await
     }
 
+    pub async fn similar_artists(
+        &self,
+        artist_name: &str,
+    ) -> Result<Vec<crate::api::SimilarArtist>, TransportError> {
+        let response = self
+            .client
+            .get_metadata_json(
+                "artist.getSimilar",
+                &[
+                    ("artist", artist_name),
+                    ("limit", "20"),
+                    ("autocorrect", "0"),
+                ],
+                &CacheValidators::default(),
+            )
+            .await
+            .map_err(map_error)?;
+        match response {
+            LastFmMetadataResponse::Modified { body, .. } => {
+                normalize_similar_artists(body, artist_name)
+            }
+            LastFmMetadataResponse::NotModified { .. } => Err(TransportError::InvalidJson),
+        }
+    }
+
     pub async fn artist_info(
         &self,
         mbid: &str,
@@ -318,6 +343,64 @@ impl LastFm {
     pub(crate) fn metadata_query_count(&self) -> usize {
         self.client.metadata_query_count()
     }
+}
+
+fn normalize_similar_artists(
+    body: serde_json::Value,
+    artist_name: &str,
+) -> Result<Vec<crate::api::SimilarArtist>, TransportError> {
+    let root = body
+        .get("similarartists")
+        .and_then(serde_json::Value::as_object)
+        .ok_or(TransportError::InvalidJson)?;
+    let values = match root.get("artist") {
+        None | Some(serde_json::Value::Null) => Vec::new(),
+        Some(serde_json::Value::Array(items)) => items.clone(),
+        Some(item @ serde_json::Value::Object(_)) => vec![item.clone()],
+        _ => return Err(TransportError::InvalidJson),
+    };
+    let mut seen = std::collections::HashSet::new();
+    let mut items = Vec::new();
+    for value in values {
+        let name = value
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(TransportError::InvalidJson)?
+            .trim();
+        if name.is_empty() || name.len() > 500 {
+            return Err(TransportError::InvalidJson);
+        }
+        if name.eq_ignore_ascii_case(artist_name) || !seen.insert(name.to_lowercase()) {
+            continue;
+        }
+        let score = value
+            .get("match")
+            .and_then(|score| score.as_f64().or_else(|| score.as_str()?.parse().ok()))
+            .ok_or(TransportError::InvalidJson)?;
+        if !score.is_finite() || !(0.0..=1.0).contains(&score) {
+            return Err(TransportError::InvalidJson);
+        }
+        let url = normalize_catalog_url(
+            value
+                .get("url")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default(),
+            name,
+        )
+        .ok_or(TransportError::InvalidJson)?;
+        items.push(crate::api::SimilarArtist {
+            name: name.to_owned(),
+            musicbrainz_id: value
+                .get("mbid")
+                .and_then(serde_json::Value::as_str)
+                .and_then(crate::enrichment::identity::normalize_mbid),
+            lastfm_url: url,
+            match_score: score,
+        });
+    }
+    items.sort_by(|left, right| right.match_score.total_cmp(&left.match_score));
+    items.truncate(20);
+    Ok(items)
 }
 
 fn normalize_artist_info(
@@ -626,6 +709,33 @@ mod tests {
             cache_control: cache_control.map(str::to_owned),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn similar_artists_are_ranked_deduplicated_and_validated() {
+        let body = serde_json::json!({"similarartists":{"artist":[
+            {"name":"Guest", "match":"0.3", "mbid":"", "url":"https://www.last.fm/music/Guest"},
+            {"name":"Favorite", "match":0.9, "url":"https://www.last.fm/music/Favorite"},
+            {"name":"guest", "match":"0.2"},
+            {"name":"Source", "match":"1"}
+        ]}});
+        let items = normalize_similar_artists(body, "Source").unwrap();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].name, "Favorite");
+        assert!(items[1].musicbrainz_id.is_none());
+        assert!(
+            normalize_similar_artists(serde_json::json!({"similarartists":{}}), "Source")
+                .unwrap()
+                .is_empty()
+        );
+        assert!(normalize_similar_artists(serde_json::json!({}), "Source").is_err());
+        assert!(
+            normalize_similar_artists(
+                serde_json::json!({"similarartists":{"artist":{"name":"Bad","match":"NaN"}}}),
+                "Source"
+            )
+            .is_err()
+        );
     }
 
     #[test]

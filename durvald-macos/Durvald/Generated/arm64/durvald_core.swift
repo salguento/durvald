@@ -2876,6 +2876,8 @@ public func FfiConverterTypeArtist_lower(_ value: Artist) -> RustBuffer {
 
 
 public struct ArtistDetails {
+    public var similarArtists: [SimilarArtist]
+    public var similarArtistsFetchedAt: Int64?
     public var artist: Artist
     public var identityStatus: ArtistIdentityStatus
     public var musicbrainzId: String?
@@ -2890,10 +2892,12 @@ public struct ArtistDetails {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(artist: Artist, identityStatus: ArtistIdentityStatus, musicbrainzId: String?, identityGeneration: UInt64, requestedLanguage: String,
+    public init(similarArtists: [SimilarArtist], similarArtistsFetchedAt: Int64?, artist: Artist, identityStatus: ArtistIdentityStatus, musicbrainzId: String?, identityGeneration: UInt64, requestedLanguage: String,
         /**
          * Exact requested language plus "und"; language fallback arrives with providers.
          */sources: [ArtistProfileSource], portrait: ArtistImageReference?, overrides: [ArtistFieldOverride]) {
+        self.similarArtists = similarArtists
+        self.similarArtistsFetchedAt = similarArtistsFetchedAt
         self.artist = artist
         self.identityStatus = identityStatus
         self.musicbrainzId = musicbrainzId
@@ -2909,6 +2913,12 @@ public struct ArtistDetails {
 
 extension ArtistDetails: Equatable, Hashable {
     public static func ==(lhs: ArtistDetails, rhs: ArtistDetails) -> Bool {
+        if lhs.similarArtists != rhs.similarArtists {
+            return false
+        }
+        if lhs.similarArtistsFetchedAt != rhs.similarArtistsFetchedAt {
+            return false
+        }
         if lhs.artist != rhs.artist {
             return false
         }
@@ -2937,6 +2947,8 @@ extension ArtistDetails: Equatable, Hashable {
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(similarArtists)
+        hasher.combine(similarArtistsFetchedAt)
         hasher.combine(artist)
         hasher.combine(identityStatus)
         hasher.combine(musicbrainzId)
@@ -2953,6 +2965,8 @@ public struct FfiConverterTypeArtistDetails: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ArtistDetails {
         return
             try ArtistDetails(
+                similarArtists: FfiConverterSequenceTypeSimilarArtist.read(from: &buf),
+                similarArtistsFetchedAt: FfiConverterOptionInt64.read(from: &buf),
                 artist: FfiConverterTypeArtist.read(from: &buf),
                 identityStatus: FfiConverterTypeArtistIdentityStatus.read(from: &buf),
                 musicbrainzId: FfiConverterOptionString.read(from: &buf),
@@ -2965,6 +2979,8 @@ public struct FfiConverterTypeArtistDetails: FfiConverterRustBuffer {
     }
 
     public static func write(_ value: ArtistDetails, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeSimilarArtist.write(value.similarArtists, into: &buf)
+        FfiConverterOptionInt64.write(value.similarArtistsFetchedAt, into: &buf)
         FfiConverterTypeArtist.write(value.artist, into: &buf)
         FfiConverterTypeArtistIdentityStatus.write(value.identityStatus, into: &buf)
         FfiConverterOptionString.write(value.musicbrainzId, into: &buf)
@@ -5038,6 +5054,10 @@ public func FfiConverterTypeExternalReleaseDetails_lower(_ value: ExternalReleas
  * releases. `local_release_id` is present only after an identifier-based link.
  */
 public struct ExternalReleaseGroup {
+    /**
+     * First artist in the release-group credit; absent in older cached data.
+     */
+    public var primaryArtistMbid: String?
     public var musicbrainzId: String
     public var title: String
     public var primaryType: String?
@@ -5053,11 +5073,15 @@ public struct ExternalReleaseGroup {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(musicbrainzId: String, title: String, primaryType: String?, secondaryTypes: [String], firstReleaseDate: ArtistPartialDate?, localReleaseId: Int64?,
+    public init(
+        /**
+         * First artist in the release-group credit; absent in older cached data.
+         */primaryArtistMbid: String?, musicbrainzId: String, title: String, primaryType: String?, secondaryTypes: [String], firstReleaseDate: ArtistPartialDate?, localReleaseId: Int64?,
         /**
          * External fallback only. `None` also means a linked local release has
          * manual or embedded artwork with higher precedence.
          */artwork: ExternalReleaseArtwork?, attribution: EnrichmentAttribution) {
+        self.primaryArtistMbid = primaryArtistMbid
         self.musicbrainzId = musicbrainzId
         self.title = title
         self.primaryType = primaryType
@@ -5073,6 +5097,9 @@ public struct ExternalReleaseGroup {
 
 extension ExternalReleaseGroup: Equatable, Hashable {
     public static func ==(lhs: ExternalReleaseGroup, rhs: ExternalReleaseGroup) -> Bool {
+        if lhs.primaryArtistMbid != rhs.primaryArtistMbid {
+            return false
+        }
         if lhs.musicbrainzId != rhs.musicbrainzId {
             return false
         }
@@ -5101,6 +5128,7 @@ extension ExternalReleaseGroup: Equatable, Hashable {
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(primaryArtistMbid)
         hasher.combine(musicbrainzId)
         hasher.combine(title)
         hasher.combine(primaryType)
@@ -5117,6 +5145,7 @@ public struct FfiConverterTypeExternalReleaseGroup: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ExternalReleaseGroup {
         return
             try ExternalReleaseGroup(
+                primaryArtistMbid: FfiConverterOptionString.read(from: &buf),
                 musicbrainzId: FfiConverterString.read(from: &buf),
                 title: FfiConverterString.read(from: &buf),
                 primaryType: FfiConverterOptionString.read(from: &buf),
@@ -5129,6 +5158,7 @@ public struct FfiConverterTypeExternalReleaseGroup: FfiConverterRustBuffer {
     }
 
     public static func write(_ value: ExternalReleaseGroup, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.primaryArtistMbid, into: &buf)
         FfiConverterString.write(value.musicbrainzId, into: &buf)
         FfiConverterString.write(value.title, into: &buf)
         FfiConverterOptionString.write(value.primaryType, into: &buf)
@@ -6642,6 +6672,79 @@ public func FfiConverterTypeSettings_lower(_ value: Settings) -> RustBuffer {
 }
 
 
+public struct SimilarArtist {
+    public var name: String
+    public var musicbrainzId: String?
+    public var lastfmUrl: String
+    public var matchScore: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, musicbrainzId: String?, lastfmUrl: String, matchScore: Double) {
+        self.name = name
+        self.musicbrainzId = musicbrainzId
+        self.lastfmUrl = lastfmUrl
+        self.matchScore = matchScore
+    }
+}
+
+
+
+extension SimilarArtist: Equatable, Hashable {
+    public static func ==(lhs: SimilarArtist, rhs: SimilarArtist) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.musicbrainzId != rhs.musicbrainzId {
+            return false
+        }
+        if lhs.lastfmUrl != rhs.lastfmUrl {
+            return false
+        }
+        if lhs.matchScore != rhs.matchScore {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(musicbrainzId)
+        hasher.combine(lastfmUrl)
+        hasher.combine(matchScore)
+    }
+}
+
+
+public struct FfiConverterTypeSimilarArtist: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SimilarArtist {
+        return
+            try SimilarArtist(
+                name: FfiConverterString.read(from: &buf),
+                musicbrainzId: FfiConverterOptionString.read(from: &buf),
+                lastfmUrl: FfiConverterString.read(from: &buf),
+                matchScore: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SimilarArtist, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionString.write(value.musicbrainzId, into: &buf)
+        FfiConverterString.write(value.lastfmUrl, into: &buf)
+        FfiConverterDouble.write(value.matchScore, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeSimilarArtist_lift(_ buf: RustBuffer) throws -> SimilarArtist {
+    return try FfiConverterTypeSimilarArtist.lift(buf)
+}
+
+public func FfiConverterTypeSimilarArtist_lower(_ value: SimilarArtist) -> RustBuffer {
+    return FfiConverterTypeSimilarArtist.lower(value)
+}
+
+
 /**
  * Audio track DTO
  */
@@ -7571,6 +7674,7 @@ public enum ArtistRefreshSection {
     case discography
     case covers
     case popularTracks
+    case similarArtists
 }
 
 
@@ -7590,6 +7694,8 @@ public struct FfiConverterTypeArtistRefreshSection: FfiConverterRustBuffer {
         case 4: return .covers
 
         case 5: return .popularTracks
+
+        case 6: return .similarArtists
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -7617,6 +7723,10 @@ public struct FfiConverterTypeArtistRefreshSection: FfiConverterRustBuffer {
 
         case .popularTracks:
             writeInt(&buf, Int32(5))
+
+
+        case .similarArtists:
+            writeInt(&buf, Int32(6))
 
         }
     }
@@ -8828,6 +8938,28 @@ fileprivate struct FfiConverterSequenceTypeRelease: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeRelease.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeSimilarArtist: FfiConverterRustBuffer {
+    typealias SwiftType = [SimilarArtist]
+
+    public static func write(_ value: [SimilarArtist], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSimilarArtist.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SimilarArtist] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SimilarArtist]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSimilarArtist.read(from: &buf))
         }
         return seq
     }

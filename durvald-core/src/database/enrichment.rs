@@ -41,9 +41,8 @@ pub fn active_provider_failure(
         return Err(invalid("Invalid provider failure lookup"));
     }
     let generation = i64::try_from(identity_generation).map_err(storage)?;
-    let invalid_image_cutoff = now.saturating_sub(
-        crate::enrichment::policy::TRANSIENT_PROVIDER_FAILURE_TTL.as_secs() as i64,
-    );
+    let invalid_image_cutoff = now
+        .saturating_sub(crate::enrichment::policy::TRANSIENT_PROVIDER_FAILURE_TTL.as_secs() as i64);
     conn.query_row(
         "SELECT error_code, retry_after_seconds
          FROM enrichment_provider_failures
@@ -212,7 +211,11 @@ pub fn read_artist_details(
         .ok_or_else(|| CoreError::NotFound {
             message: format!("Artist {artist_id} not found"),
         })?;
+    let (similar_artists, similar_artists_fetched_at) =
+        read_similar_artists(&tx, artist_id, u64::try_from(row.3).map_err(storage)?)?;
     let mut details = ArtistDetails {
+        similar_artists,
+        similar_artists_fetched_at,
         artist: Artist {
             id: artist_id,
             name: row.0,
@@ -2772,6 +2775,7 @@ pub fn read_discography(
             None
         };
         items.push(ExternalReleaseGroup {
+            primary_artist_mbid: snapshot.primary_artist_mbid,
             musicbrainz_id: snapshot.musicbrainz_id,
             title: snapshot.title,
             primary_type: snapshot.primary_type,
@@ -2969,6 +2973,45 @@ pub fn store_external_release_details(
     .map_err(storage)?;
     tx.commit().map_err(storage)?;
     Ok(true)
+}
+
+pub fn read_similar_artists(
+    conn: &Connection,
+    artist_id: i64,
+    generation: u64,
+) -> CoreResult<(Vec<crate::api::SimilarArtist>, Option<i64>)> {
+    let cached: (String, Option<i64>, Option<i64>) = conn.query_row(
+        "SELECT similar_artists, similar_artists_generation, similar_artists_fetched_at FROM artists WHERE artist_id=?1",
+        [artist_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+    ).map_err(storage)?;
+    if cached.1 != Some(i64::try_from(generation).map_err(storage)?) {
+        return Ok((Vec::new(), None));
+    }
+    Ok((serde_json::from_str(&cached.0).map_err(storage)?, cached.2))
+}
+
+pub fn similar_artists_fresh(
+    conn: &Connection,
+    artist_id: i64,
+    generation: u64,
+    now: i64,
+) -> CoreResult<bool> {
+    conn.query_row("SELECT COALESCE(similar_artists_generation=?2 AND similar_artists_expires_at>?3, 0) FROM artists WHERE artist_id=?1",
+        params![artist_id, i64::try_from(generation).map_err(storage)?, now], |row| row.get(0)).map_err(storage)
+}
+
+pub fn store_similar_artists(
+    conn: &Connection,
+    artist_id: i64,
+    generation: u64,
+    items: &[crate::api::SimilarArtist],
+    now: i64,
+    expires_at: i64,
+) -> CoreResult<bool> {
+    let payload = serde_json::to_string(items).map_err(storage)?;
+    let generation = i64::try_from(generation).map_err(storage)?;
+    conn.execute("UPDATE artists SET similar_artists=?3, similar_artists_generation=?2, similar_artists_fetched_at=?4, similar_artists_expires_at=?5 WHERE artist_id=?1 AND EXISTS (SELECT 1 FROM artist_enrichment_state WHERE artist_id=?1 AND generation=?2 AND identity_status='resolved')",
+        params![artist_id, generation, payload, now, expires_at]).map(|count| count > 0).map_err(storage)
 }
 
 pub fn popular_tracks_snapshot(
@@ -3471,6 +3514,7 @@ mod tests {
 
     fn release_group(id: &str, title: &str, year: i32) -> ReleaseGroupSnapshot {
         ReleaseGroupSnapshot {
+            primary_artist_mbid: None,
             musicbrainz_id: id.into(),
             title: title.into(),
             primary_type: Some("Album".into()),

@@ -64,6 +64,8 @@ struct RemoteReleaseGroupsPage {
 
 #[derive(Deserialize)]
 struct RemoteReleaseGroup {
+    #[serde(default, rename = "artist-credit")]
+    artist_credit: Vec<RemoteArtistCredit>,
     id: String,
     title: String,
     #[serde(rename = "primary-type")]
@@ -567,7 +569,7 @@ impl MusicBrainz {
                 &[
                     ("artist", mbid),
                     ("fmt", "json"),
-                    ("inc", "genres+artist-rels"),
+                    ("inc", "genres+artist-rels+artist-credits"),
                     ("limit", &limit_text),
                     ("offset", &offset_text),
                 ],
@@ -905,7 +907,13 @@ impl RemoteReleaseGroup {
                 push_unique(&mut producers, name);
             }
         }
+        let primary_artist_mbid = self
+            .artist_credit
+            .first()
+            .map(|credit| normalize_mbid(&credit.artist.id).ok_or(TransportError::InvalidJson))
+            .transpose()?;
         Ok(ReleaseGroupSnapshot {
+            primary_artist_mbid,
             attribution: EnrichmentAttribution {
                 source_url: format!("https://musicbrainz.org/release-group/{musicbrainz_id}"),
                 author: Some("MusicBrainz contributors".into()),
@@ -1141,7 +1149,7 @@ mod tests {
                     "release-group-count":3,
                     "release-group-offset":0,
                     "release-groups":[
-                        {"id":"AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA","title":"  First   Album  ","primary-type":" Album ","secondary-types":[" Compilation ","compilation",""],"first-release-date":"1999"},
+                        {"id":"AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA","title":"  First   Album  ","artist-credit":[{"artist":{"id":"22222222-2222-4222-8222-222222222222","name":"Main"}},{"artist":{"id":"11111111-1111-4111-8111-111111111111","name":"Guest"}}],"primary-type":" Album ","secondary-types":[" Compilation ","compilation",""],"first-release-date":"1999"},
                         {"id":"BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB","title":"Second","primary-type":null,"secondary-types":[],"first-release-date":"2001-02"}
                     ]
                 }"#],
@@ -1184,6 +1192,12 @@ mod tests {
         let first = &batch.pages[0].groups[0];
         assert_eq!(first.musicbrainz_id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
         assert_eq!(first.title, "First Album");
+        assert_eq!(
+            first.primary_artist_mbid.as_deref(),
+            Some("22222222-2222-4222-8222-222222222222")
+        );
+        assert_eq!(batch.pages[0].groups[1].primary_artist_mbid, None);
+        assert!(mock.urls()[0].contains("artist-credits"));
         assert_eq!(first.primary_type.as_deref(), Some("Album"));
         assert_eq!(first.secondary_types, vec!["Compilation"]);
         assert_eq!(
@@ -1319,6 +1333,7 @@ mod tests {
             None,
         )]);
         let group = ReleaseGroupSnapshot {
+            primary_artist_mbid: None,
             musicbrainz_id: "33333333-3333-4333-8333-333333333333".into(),
             title: "Album".into(),
             primary_type: Some("Album".into()),

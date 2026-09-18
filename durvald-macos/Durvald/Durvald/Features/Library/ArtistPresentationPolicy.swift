@@ -21,7 +21,7 @@ struct ArtistBiographySelection {
 }
 
 enum ArtistDiscographyCategory: String, CaseIterable, Identifiable {
-    case album, singlesAndEPs, live, broadcast, other
+    case album, singlesAndEPs, live, broadcast, appearances, other
 
     var id: String { rawValue }
 
@@ -31,11 +31,16 @@ enum ArtistDiscographyCategory: String, CaseIterable, Identifiable {
         case .singlesAndEPs: "Singles & EPs"
         case .live: "Ao vivo"
         case .broadcast: "Broadcast"
+        case .appearances: "Participações / Feats"
         case .other: "Outros"
         }
     }
 
-    static func category(for release: ExternalReleaseGroup) -> Self {
+    static func category(for release: ExternalReleaseGroup, artistMBID: String? = nil) -> Self {
+        if let artistMBID, let primaryArtistMBID = release.primaryArtistMbid,
+           primaryArtistMBID.caseInsensitiveCompare(artistMBID) != .orderedSame {
+            return .appearances
+        }
         // Broadcasts may also be tagged live; keep them in their own section.
         if release.primaryType?.lowercased() == "broadcast" { return .broadcast }
         if release.secondaryTypes.contains(where: { $0.lowercased() == "live" }) { return .live }

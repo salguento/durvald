@@ -178,8 +178,7 @@ impl EnrichmentService {
                 match operation(&conn) {
                     Ok(value) => return Ok(value),
                     Err(error) => {
-                        let Some(_) = crate::database::sqlite_busy_extended_code(&error)
-                        else {
+                        let Some(_) = crate::database::sqlite_busy_extended_code(&error) else {
                             return Err(error);
                         };
                         if attempt + 1 == Self::SQLITE_WRITE_ATTEMPTS {
@@ -748,13 +747,19 @@ impl EnrichmentService {
                 request
                     .sections
                     .contains(&ArtistRefreshSection::PopularTracks),
-            ) << 4);
+            ) << 4)
+            | (u8::from(
+                request
+                    .sections
+                    .contains(&ArtistRefreshSection::SimilarArtists),
+            ) << 5);
         request.sections = [
             ArtistRefreshSection::Profile,
             ArtistRefreshSection::Portrait,
             ArtistRefreshSection::Discography,
             ArtistRefreshSection::Covers,
             ArtistRefreshSection::PopularTracks,
+            ArtistRefreshSection::SimilarArtists,
         ]
         .into_iter()
         .filter(|section| request.sections.contains(section))
@@ -997,6 +1002,25 @@ impl EnrichmentService {
                 diagnostic,
             ));
         }
+        if request
+            .sections
+            .contains(&ArtistRefreshSection::SimilarArtists)
+        {
+            let (status, retry, diagnostic) = match self
+                .refresh_similar_artists_once(&identity, request.force)
+                .await
+            {
+                Ok(status) => (status, None, None),
+                Err(error) => refresh_transport_error(&error),
+            };
+            results.push(refresh_section_result(
+                ArtistRefreshSection::SimilarArtists,
+                status,
+                retry,
+                None,
+                diagnostic,
+            ));
+        }
         self.prune_provider_snapshots(
             EnrichmentProvider::LastFm,
             super::policy::LASTFM_RETAINED_ARTISTS,
@@ -1006,6 +1030,67 @@ impl EnrichmentService {
             artist_id,
             identity_generation: identity.generation,
             sections: results,
+        })
+    }
+
+    async fn refresh_similar_artists_once(
+        &self,
+        identity: &ArtistIdentity,
+        force: bool,
+    ) -> Result<ArtistRefreshStatus, super::transport::TransportError> {
+        let artist_id = identity.artist_id;
+        let generation = identity.generation;
+        let now = chrono::Utc::now().timestamp();
+        if !force
+            && self
+                .database(move |conn| {
+                    enrichment::similar_artists_fresh(conn, artist_id, generation, now)
+                })
+                .await
+                .map_err(storage_transport)?
+        {
+            return Ok(ArtistRefreshStatus::Unchanged);
+        }
+        let name: String = self
+            .database(move |conn| {
+                conn.query_row(
+                    "SELECT name FROM artists WHERE artist_id=?1",
+                    [artist_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| crate::database::storage_error("Artist name", error))
+            })
+            .await
+            .map_err(storage_transport)?;
+        let resource_key =
+            provider_resource_key(&[identity.musicbrainz_id.as_deref().unwrap_or_default()]);
+        let items = self
+            .provider_request(
+                artist_id,
+                generation,
+                EnrichmentProvider::LastFm,
+                "similar_artists",
+                resource_key,
+                force,
+                self.lastfm.similar_artists(&name),
+            )
+            .await?;
+        let empty = items.is_empty();
+        let expires_at = now.saturating_add(7 * 24 * 60 * 60);
+        let stored = self
+            .write_database_idempotent("lastfm.similar_artists.store", move |conn| {
+                enrichment::store_similar_artists(
+                    conn, artist_id, generation, &items, now, expires_at,
+                )
+            })
+            .await
+            .map_err(storage_transport)?;
+        Ok(if !stored {
+            ArtistRefreshStatus::Superseded
+        } else if empty {
+            ArtistRefreshStatus::NotFound
+        } else {
+            ArtistRefreshStatus::Updated
         })
     }
 
@@ -2719,7 +2804,9 @@ fn refresh_section_result(
             ArtistRefreshSection::Portrait => EnrichmentProvider::Commons,
             ArtistRefreshSection::Discography => EnrichmentProvider::MusicBrainz,
             ArtistRefreshSection::Covers => EnrichmentProvider::CoverArtArchive,
-            ArtistRefreshSection::PopularTracks => EnrichmentProvider::LastFm,
+            ArtistRefreshSection::PopularTracks | ArtistRefreshSection::SimilarArtists => {
+                EnrichmentProvider::LastFm
+            }
         }),
     }
 }
@@ -3750,6 +3837,106 @@ mod tests {
         assert_eq!(renewed.managed_path, portrait.managed_path);
         assert_eq!(renewed.expires_at, expiry);
         assert_eq!((renewed.width, renewed.height), (Some(2), Some(2)));
+    }
+
+    #[tokio::test]
+    async fn similar_artists_are_stored_in_artist_row_cached_and_preserved_offline() {
+        let service = service_with_lastfm(test_lastfm_metadata_client(
+            serde_json::json!({"similarartists":{"artist":[{"name":"Similar","match":"0.8","url":"https://www.last.fm/music/Similar"}]}}),
+            None,
+        ));
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: false,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        service
+            .confirm_artist_identity(1, Some("11111111-1111-4111-8111-111111111111".into()))
+            .await
+            .unwrap();
+        let request = ArtistRefreshRequest {
+            sections: vec![ArtistRefreshSection::SimilarArtists],
+            language: "pt".into(),
+            force: false,
+        };
+        let first = service.refresh_artist(1, request.clone()).await.unwrap();
+        assert_eq!(first.sections[0].status, ArtistRefreshStatus::Updated);
+        let cached = service.artist_details(1, "pt".into()).await.unwrap();
+        assert_eq!(cached.similar_artists[0].name, "Similar");
+        assert!(cached.similar_artists_fetched_at.is_some());
+        let payload: String = service
+            .database(|conn| {
+                conn.query_row(
+                    "SELECT similar_artists FROM artists WHERE artist_id=1",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(|e| crate::database::storage_error("Similar artists", e))
+            })
+            .await
+            .unwrap();
+        assert!(payload.contains("Similar"));
+        let second = service.refresh_artist(1, request.clone()).await.unwrap();
+        assert_eq!(second.sections[0].status, ArtistRefreshStatus::Unchanged);
+        assert_eq!(service.lastfm.metadata_query_count(), 1);
+        let mut failed = service.clone();
+        failed.lastfm = Arc::new(super::super::providers::lastfm::LastFm::new(
+            test_lastfm_metadata_client(serde_json::json!({}), None),
+        ));
+        let failure = failed
+            .refresh_artist(
+                1,
+                ArtistRefreshRequest {
+                    force: true,
+                    ..request.clone()
+                },
+            )
+            .await
+            .unwrap();
+        assert_ne!(failure.sections[0].status, ArtistRefreshStatus::Updated);
+        assert_eq!(
+            failed
+                .artist_details(1, "pt".into())
+                .await
+                .unwrap()
+                .similar_artists,
+            cached.similar_artists
+        );
+        service
+            .configure(EnrichmentSettings {
+                enabled: true,
+                offline: true,
+                preferred_language: "pt".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            service.refresh_artist(1, request).await.unwrap().sections[0].status,
+            ArtistRefreshStatus::Offline
+        );
+        assert_eq!(
+            service
+                .artist_details(1, "pt".into())
+                .await
+                .unwrap()
+                .similar_artists,
+            cached.similar_artists
+        );
+        service
+            .confirm_artist_identity(1, Some("22222222-2222-4222-8222-222222222222".into()))
+            .await
+            .unwrap();
+        assert!(
+            service
+                .artist_details(1, "pt".into())
+                .await
+                .unwrap()
+                .similar_artists
+                .is_empty()
+        );
     }
 
     #[tokio::test]

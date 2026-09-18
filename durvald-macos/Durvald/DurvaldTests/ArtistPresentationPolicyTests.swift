@@ -28,8 +28,26 @@ final class ArtistPresentationPolicyTests: XCTestCase {
         XCTAssertNil(ArtistPresentationPolicy.latestRelease(in: [], today: today))
     }
 
+    func testGuestReleasesAppearOnlyInParticipations() {
+        let artistID = "11111111-1111-4111-8111-111111111111"
+        var item = release(id: "guest", date: nil)
+        item.primaryType = "Single"
+        item.primaryArtistMbid = "22222222-2222-4222-8222-222222222222"
+        XCTAssertEqual(ArtistDiscographyCategory.category(for: item, artistMBID: artistID), .appearances)
+        item.secondaryTypes = ["Live"]
+        XCTAssertEqual(ArtistDiscographyCategory.category(for: item, artistMBID: artistID), .appearances)
+        item.primaryArtistMbid = artistID
+        XCTAssertEqual(ArtistDiscographyCategory.category(for: item, artistMBID: artistID), .live)
+        item.secondaryTypes = []
+        XCTAssertEqual(ArtistDiscographyCategory.category(for: item, artistMBID: artistID), .singlesAndEPs)
+        item.primaryArtistMbid = nil
+        XCTAssertEqual(ArtistDiscographyCategory.category(for: item, artistMBID: artistID), .singlesAndEPs)
+        XCTAssertEqual(ArtistDiscographyCategory.category(for: item, artistMBID: nil), .singlesAndEPs)
+    }
+
     private func release(id: String, date: ArtistPartialDate?) -> ExternalReleaseGroup {
         ExternalReleaseGroup(
+            primaryArtistMbid: nil,
             musicbrainzId: id, title: id, primaryType: "Album", secondaryTypes: [],
             firstReleaseDate: date, localReleaseId: nil, artwork: nil,
             attribution: EnrichmentAttribution(sourceUrl: "https://musicbrainz.org/release-group/\(id)", author: nil, licenseName: nil, licenseUrl: nil, revision: nil)
