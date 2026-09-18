@@ -84,15 +84,7 @@ struct PlayerBar: View {
         let artist = store.artists.first { $0.id == track?.artistId }
 
         return HStack(alignment: .top, spacing: 8) {
-            Button {
-                if let album { onSelectAlbum(album) }
-            } label: {
-                ArtworkView(artworkID: track?.artworkId, size: 44)
-            }
-            .buttonStyle(.plain)
-            .disabled(album == nil)
-            .accessibilityLabel(album.map { "Abrir álbum \($0.title)" } ?? "Capa da faixa")
-            .accessibilityIdentifier("player.artwork")
+            playerArtwork(track, album: album)
 
             VStack(alignment: .leading, spacing: 0) {
                 trackMetadata(track, album: album, artist: artist)
@@ -102,6 +94,28 @@ struct PlayerBar: View {
                 playbackProgress
             }
             .frame(height: 44, alignment: .top)
+        }
+    }
+
+    @ViewBuilder
+    private func playerArtwork(_ track: Track?, album: Release?) -> some View {
+        let artwork = Button {
+            if let album { onSelectAlbum(album) }
+        } label: {
+            ArtworkView(artworkID: track?.artworkId, size: 44)
+        }
+        .buttonStyle(.plain)
+        .disabled(album == nil)
+        .accessibilityLabel(album.map { "Abrir álbum \($0.title)" } ?? "Capa da faixa")
+        .accessibilityIdentifier("player.artwork")
+
+        if let track {
+            artwork.trackContextMenu(
+                track: track,
+                onPlay: { Task { await store.play(trackID: track.id) } }
+            )
+        } else {
+            artwork
         }
     }
 

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct LibrarySidebarView: View {
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(\.appearsActive) private var appearsActive
 
     @Binding var section: SidebarSection
     @Binding var destination: LibraryDestination?
@@ -23,6 +24,7 @@ struct LibrarySidebarView: View {
     var body: some View {
         selectedSectionContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .foregroundStyle(appearsActive ? Color.primary : Color.secondary)
             // Keep controls fixed while the scroll view extends behind them.
             // The system supplies the backdrop and scroll-edge treatment.
             .safeAreaBar(edge: .top, spacing: 0) {
@@ -243,6 +245,7 @@ struct LibrarySidebarView: View {
 }
 
 private struct SidebarSectionTitle: View {
+    @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
     let title: String
 
@@ -250,13 +253,14 @@ private struct SidebarSectionTitle: View {
         Text(title)
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
-            .opacity(0.55)
+            .opacity(appearsActive ? 0.55 : 0.4)
             .blendMode(colorScheme == .dark ? .plusLighter : .plusDarker)
             .lineLimit(1)
     }
 }
 
 private struct SidebarNavigationButton: View {
+    @Environment(\.appearsActive) private var appearsActive
     let item: LibraryDestination
     @Binding var selection: LibraryDestination?
     let accessibilityIdentifier: String
@@ -265,7 +269,8 @@ private struct SidebarNavigationButton: View {
     private var isSelected: Bool { allowsSelectionHighlight && selection == item }
 
     private var textForeground: Color {
-        item == .search && !isSelected ? .secondary : .primary
+        guard appearsActive else { return Color(nsColor: .secondaryLabelColor) }
+        return item == .search && !isSelected ? .secondary : .primary
     }
 
     var body: some View {
@@ -276,7 +281,7 @@ private struct SidebarNavigationButton: View {
                 Image(systemName: item.icon)
                     .font(.system(size: 16, weight: .regular))
                     .symbolRenderingMode(.monochrome)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(appearsActive ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
                     .frame(width: 20)
 
                 Text(item.title)
@@ -300,7 +305,7 @@ private struct SidebarNavigationButton: View {
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color(nsColor: .labelColor).opacity(0.12))
+                    .fill(Color(nsColor: .labelColor).opacity(appearsActive ? 0.12 : 0.07))
             }
         }
         .help(item.title)
@@ -308,6 +313,7 @@ private struct SidebarNavigationButton: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(accessibilityIdentifier)
         .animation(.easeOut(duration: 0.15), value: isSelected)
+        .animation(.easeOut(duration: 0.15), value: appearsActive)
     }
 }
 
@@ -320,12 +326,13 @@ private struct SidebarPlaylistButton: View {
     let action: () -> Void
 
     private var foreground: Color {
-        isSelected ? Color.accentColor.opacity(appearsActive ? 1 : 0.63) : .primary
+        guard appearsActive else { return Color(nsColor: .secondaryLabelColor) }
+        return isSelected ? Color.accentColor : .primary
     }
 
     private var selectionBackgroundOpacity: Double {
         if colorScheme == .dark {
-            return appearsActive ? 0.08 : 0.10
+            return appearsActive ? 0.08 : 0.06
         }
         return appearsActive ? 0.10 : 0.06
     }
@@ -436,7 +443,7 @@ private struct SidebarSectionPicker: View {
                     .background {
                         if item == selection {
                             Capsule()
-                                .fill(Color(nsColor: .labelColor).opacity(0.12))
+                                .fill(Color(nsColor: .labelColor).opacity(appearsActive ? 0.12 : 0.07))
                         }
                     }
                 }

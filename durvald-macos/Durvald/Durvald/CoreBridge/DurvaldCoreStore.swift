@@ -1203,7 +1203,7 @@ final class DurvaldCoreStore {
     }
 
     func enqueueRelease(releaseID: Int64, playNext: Bool = false) async {
-        guard let core else { return }
+        guard core != nil else { return }
         do {
             let tracks = try await orderedReleaseTracks(releaseID)
             guard !tracks.isEmpty else {
@@ -1219,7 +1219,7 @@ final class DurvaldCoreStore {
 
     @discardableResult
     func addRelease(_ releaseID: Int64, to playlist: Playlist) async -> Bool {
-        guard let core else { return false }
+        guard core != nil else { return false }
         do {
             let tracks = try await orderedReleaseTracks(releaseID)
             guard !tracks.isEmpty else {

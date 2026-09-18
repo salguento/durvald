@@ -336,7 +336,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
                 guard let self, let current = try? await store.core?.release(releaseId: album.id),
                       !Task.isCancelled else { return }
                 self.album = current
-                rootMenu.items.first { $0.action == #selector(toggleFavorite) }?.title =
+                self.rootMenu.items.first { $0.action == #selector(self.toggleFavorite) }?.title =
                     current.isFavorite ? "Desfavoritar" : "Favoritar"
             }
             return
@@ -352,7 +352,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
                 guard let self else { return }
                 if let current = try? await store.core?.track(trackId: track.id), !Task.isCancelled {
                     self.track = current
-                    rootMenu.items.first { $0.action == #selector(toggleFavorite) }?.title =
+                    self.rootMenu.items.first { $0.action == #selector(self.toggleFavorite) }?.title =
                         current.isFavorite ? "Desfavoritar" : "Favoritar"
                 }
                 var containing: [Playlist] = []
