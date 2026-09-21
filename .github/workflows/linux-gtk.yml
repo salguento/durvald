@@ -1,10 +1,8 @@
 name: Linux GTK
 
+# Temporarily disabled: run manually only while CI is not required.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   gtk:
