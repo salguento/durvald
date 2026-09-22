@@ -76,6 +76,16 @@ impl TestFs {
         Ok(destination)
     }
 
+    pub fn remove_library_file(&self, relative_path: impl AsRef<Path>) -> io::Result<()> {
+        let relative_path = relative_path.as_ref();
+
+        validate_relative_path(relative_path)?;
+
+        let path = self.library_dir.join(relative_path);
+
+        fs::remove_file(path)
+    }
+
     pub fn root(&self) -> &Path {
         self.root.path()
     }

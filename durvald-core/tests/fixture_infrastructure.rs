@@ -192,3 +192,29 @@ fn core_configs_use_distinct_keychain_services() -> io::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn removes_file_from_temporary_library() -> io::Result<()> {
+    let files = TestFs::new()?;
+
+    let created = files.write_library_file("Artist/Album/remove-me.txt", b"temporary")?;
+
+    assert!(created.is_file());
+
+    files.remove_library_file("Artist/Album/remove-me.txt")?;
+
+    assert!(!created.exists());
+
+    Ok(())
+}
+
+#[test]
+fn rejects_removal_outside_temporary_library() -> io::Result<()> {
+    let files = TestFs::new()?;
+
+    let result = files.remove_library_file("../../outside.txt");
+
+    assert!(result.is_err());
+
+    Ok(())
+}

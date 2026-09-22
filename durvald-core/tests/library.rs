@@ -371,3 +371,110 @@ async fn reports_missing_track_id() -> Result<(), Box<dyn Error + Send + Sync>> 
 
     Ok(())
 }
+
+#[tokio::test]
+async fn rescan_does_not_duplicate_unchanged_track() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    test_core
+        .files()
+        .write_silent_wav("Artist/Album/unchanged.wav")?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let first_scan = test_core
+        .core()
+        .scan_library(vec![library_path.clone()])
+        .await?;
+
+    assert_eq!(first_scan.new_tracks_added, 1);
+    assert!(first_scan.errors.is_empty());
+
+    let first_tracks = test_core.core().tracks().await?;
+
+    assert_eq!(first_tracks.len(), 1);
+
+    let original_id = first_tracks[0].id;
+
+    let second_scan = test_core.core().scan_library(vec![library_path]).await?;
+
+    assert_eq!(second_scan.total_files_found, 1);
+    assert_eq!(second_scan.new_tracks_added, 0);
+    assert_eq!(second_scan.updated_tracks, 0);
+    assert!(second_scan.errors.is_empty());
+
+    let second_tracks = test_core.core().tracks().await?;
+
+    assert_eq!(second_tracks.len(), 1);
+    assert_eq!(second_tracks[0].id, original_id);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn complete_rescan_removes_missing_track() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let kept_path = test_core
+        .files()
+        .write_silent_wav("Artist/Album/01-kept.wav")?;
+
+    test_core
+        .files()
+        .write_silent_wav("Artist/Album/02-removed.wav")?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let first_scan = test_core
+        .core()
+        .scan_library(vec![library_path.clone()])
+        .await?;
+
+    assert_eq!(first_scan.new_tracks_added, 2);
+    assert!(first_scan.errors.is_empty());
+
+    let initial_tracks = test_core.core().tracks().await?;
+
+    assert_eq!(initial_tracks.len(), 2);
+
+    let removed_track = initial_tracks
+        .iter()
+        .find(|track| track.file_path.ends_with("02-removed.wav"))
+        .expect("removed fixture must be indexed");
+
+    let removed_track_id = removed_track.id;
+
+    test_core
+        .files()
+        .remove_library_file("Artist/Album/02-removed.wav")?;
+
+    let second_scan = test_core.core().scan_library(vec![library_path]).await?;
+
+    assert_eq!(second_scan.total_files_found, 1);
+    assert_eq!(second_scan.new_tracks_added, 0);
+    assert!(second_scan.errors.is_empty());
+
+    let remaining_tracks = test_core.core().tracks().await?;
+
+    assert_eq!(remaining_tracks.len(), 1);
+
+    let remaining_path = std::fs::canonicalize(Path::new(&remaining_tracks[0].file_path))?;
+
+    let expected_path = std::fs::canonicalize(kept_path)?;
+
+    assert_eq!(remaining_path, expected_path);
+
+    let removed_lookup = test_core.core().track(removed_track_id).await;
+
+    assert!(matches!(removed_lookup, Err(CoreError::NotFound { .. })));
+
+    Ok(())
+}
