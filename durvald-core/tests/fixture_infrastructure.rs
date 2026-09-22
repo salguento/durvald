@@ -152,3 +152,43 @@ fn rejects_fixture_copy_outside_temporary_library() -> io::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn builds_core_config_from_temporary_paths() -> io::Result<()> {
+    let files = TestFs::new()?;
+    let config = files.core_config();
+
+    assert_eq!(
+        config.database_path,
+        files.database_path().to_string_lossy(),
+    );
+
+    assert_eq!(
+        config.app_support_dir,
+        files.app_support_dir().to_string_lossy(),
+    );
+
+    assert_eq!(config.covers_dir, files.covers_dir().to_string_lossy(),);
+
+    assert!(config.keychain_service.starts_with("durvald-test-"));
+
+    Ok(())
+}
+
+#[test]
+fn core_configs_use_distinct_keychain_services() -> io::Result<()> {
+    let first = TestFs::new()?;
+    let second = TestFs::new()?;
+
+    let first_config = first.core_config();
+    let second_config = second.core_config();
+
+    assert_ne!(first_config.database_path, second_config.database_path,);
+
+    assert_ne!(
+        first_config.keychain_service,
+        second_config.keychain_service,
+    );
+
+    Ok(())
+}

@@ -1,3 +1,4 @@
+mod core;
 mod filesystem;
 mod fixtures;
 
