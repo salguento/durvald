@@ -145,3 +145,16 @@ async fn enrichment_settings_initialize_and_survive_restart()
 
     Ok(())
 }
+
+#[tokio::test]
+async fn lastfm_initializes_without_authenticated_session()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let status = test_core.core().lastfm_status().await?;
+
+    assert!(!status.connected);
+    assert_eq!(status.username, None);
+
+    Ok(())
+}
