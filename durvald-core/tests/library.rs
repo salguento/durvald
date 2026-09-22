@@ -755,3 +755,60 @@ async fn scan_keeps_valid_track_when_another_file_is_corrupt()
 
     Ok(())
 }
+
+#[tokio::test]
+async fn scans_all_configured_library_roots() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let first_audio = test_core
+        .files()
+        .write_silent_wav("First Library/Artist A/Album A/01.wav")?;
+
+    let second_audio = test_core
+        .files()
+        .write_silent_wav("Second Library/Artist B/Album B/02.wav")?;
+
+    let first_root = test_core.files().library_dir().join("First Library");
+
+    let second_root = test_core.files().library_dir().join("Second Library");
+
+    test_core
+        .core()
+        .add_library_path(first_root.to_string_lossy().into_owned())
+        .await?;
+
+    test_core
+        .core()
+        .add_library_path(second_root.to_string_lossy().into_owned())
+        .await?;
+
+    let configured = test_core.core().library_paths().await?;
+
+    assert_eq!(configured.len(), 2);
+
+    let result = test_core.core().scan_configured_library().await?;
+
+    assert_eq!(result.paths_scanned, 2);
+    assert_eq!(result.total_files_found, 2);
+    assert_eq!(result.new_tracks_added, 2);
+    assert_eq!(result.updated_tracks, 0);
+    assert!(result.errors.is_empty());
+
+    let tracks = test_core.core().tracks().await?;
+
+    assert_eq!(tracks.len(), 2);
+
+    let indexed_paths: Vec<_> = tracks
+        .iter()
+        .map(|track| std::fs::canonicalize(Path::new(&track.file_path)))
+        .collect::<Result<_, _>>()?;
+
+    let first_expected = std::fs::canonicalize(first_audio)?;
+
+    let second_expected = std::fs::canonicalize(second_audio)?;
+
+    assert!(indexed_paths.contains(&first_expected));
+    assert!(indexed_paths.contains(&second_expected));
+
+    Ok(())
+}
