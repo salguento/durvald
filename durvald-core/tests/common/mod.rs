@@ -1,5 +1,6 @@
 #![allow(dead_code, unused_imports)]
 
+mod audio;
 mod core;
 mod filesystem;
 mod fixtures;
