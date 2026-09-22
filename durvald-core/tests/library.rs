@@ -6,7 +6,7 @@ use std::error::Error;
 use std::path::Path;
 
 use common::TestCore;
-use durvald_core::CoreError;
+use durvald_core::{CoreError, ScanPhase};
 
 #[tokio::test]
 async fn scans_one_valid_audio_file() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -614,6 +614,90 @@ async fn scan_ignores_directory_symlink() -> Result<(), Box<dyn Error + Send + S
     let expected_path = std::fs::canonicalize(real_audio)?;
 
     assert_eq!(indexed_path, expected_path);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn scan_progress_is_empty_before_first_scan() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let progress = test_core.core().scan_progress()?;
+
+    assert_eq!(progress, None);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn completed_scan_publishes_final_progress() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    test_core
+        .files()
+        .write_silent_wav("Artist/Album/progress.wav")?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let result = test_core
+        .core()
+        .scan_library(vec![library_path.clone()])
+        .await?;
+
+    assert_eq!(result.paths_scanned, 1);
+    assert_eq!(result.total_files_found, 1);
+    assert_eq!(result.new_tracks_added, 1);
+    assert!(result.errors.is_empty());
+
+    let progress = test_core
+        .core()
+        .scan_progress()?
+        .expect("completed scan must publish progress");
+
+    assert_eq!(progress.phase, ScanPhase::Complete);
+    assert_eq!(progress.path, library_path);
+    assert_eq!(progress.total_files, 1);
+    assert_eq!(progress.processed_files, 1);
+    assert_eq!(progress.new_tracks, 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelling_without_active_scan_returns_not_found()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let result = test_core.core().cancel_library_scan();
+
+    assert!(matches!(result, Err(CoreError::NotFound { .. })));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn completed_scan_is_no_longer_cancellable() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    test_core
+        .files()
+        .write_silent_wav("Artist/Album/finished.wav")?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    test_core.core().scan_library(vec![library_path]).await?;
+
+    let result = test_core.core().cancel_library_scan();
+
+    assert!(matches!(result, Err(CoreError::NotFound { .. })));
 
     Ok(())
 }
