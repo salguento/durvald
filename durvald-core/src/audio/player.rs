@@ -91,14 +91,14 @@ pub enum AudioError {
     FailedToRemove,
     #[error("Database error: {0}")]
     Database(#[from] rusqlite::Error),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     #[error("Failed to initialize mock audio backend")]
     MockBackend,
 }
 
 enum PlayerBackend {
     Default(Box<AudioManager<DefaultBackend>>),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     Mock(Box<AudioManager<kira::backend::mock::MockBackend>>),
 }
 
@@ -142,7 +142,7 @@ impl AudioPlayer {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl AudioPlayer {
     pub(crate) fn new_mock() -> Result<Self, AudioError> {
         let manager = AudioManager::<kira::backend::mock::MockBackend>::new(AudioManagerSettings {
@@ -150,15 +150,21 @@ impl AudioPlayer {
             ..Default::default()
         })
         .map_err(|_| AudioError::MockBackend)?;
+
         Ok(Self::from_backend(PlayerBackend::Mock(Box::new(manager))))
     }
 
+    #[cfg(test)]
     pub(crate) fn process_mock_audio(&mut self, blocks: usize) {
         let manager = match &mut self.manager {
             PlayerBackend::Mock(manager) => manager,
-            PlayerBackend::Default(_) => panic!("mock processing requires a mock player"),
+            PlayerBackend::Default(_) => {
+                panic!("mock processing requires a mock player")
+            }
         };
+
         manager.backend_mut().on_start_processing();
+
         for _ in 0..blocks {
             manager.backend_mut().process();
             manager.backend_mut().on_start_processing();
@@ -277,7 +283,7 @@ impl AudioPlayer {
             PlayerBackend::Default(manager) => manager
                 .play(data)
                 .map_err(|e| AudioError::Kira(Box::new(e)))?,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "test-support"))]
             PlayerBackend::Mock(manager) => manager
                 .play(data)
                 .map_err(|e| AudioError::Kira(Box::new(e)))?,

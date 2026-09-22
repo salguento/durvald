@@ -29,3 +29,7 @@ pub use crate::audio::AudioPlayer;
 pub use crate::database::operations::*;
 pub use crate::lastfm::LastFmClient;
 pub use crate::secure_store::{SecureStore, SecureStoreError};
+
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod test_support;

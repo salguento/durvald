@@ -608,8 +608,8 @@ impl DurvaldCore {
         })?
     }
 
-    #[cfg(test)]
-    async fn open_with_mock_audio(config: CoreConfig) -> CoreResult<Arc<Self>> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) async fn open_with_mock_audio(config: CoreConfig) -> CoreResult<Arc<Self>> {
         Self::open_with_audio_player(config, crate::audio::AudioPlayer::new_mock).await
     }
 
