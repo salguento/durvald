@@ -4,7 +4,7 @@ mod common;
 
 use std::error::Error;
 
-use common::TestCore;
+use common::{TestCore, TestFs};
 
 #[tokio::test]
 async fn opens_new_core_in_isolated_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -83,6 +83,33 @@ async fn session_volume_survives_restart() -> Result<(), Box<dyn Error + Send + 
     let restored = test_core.core().last_session().await?;
 
     assert_eq!(restored.volume, 0.25);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn open_creates_missing_application_directories() -> Result<(), Box<dyn Error + Send + Sync>>
+{
+    let files = TestFs::new()?;
+
+    let app_support_dir = files.app_support_dir().to_path_buf();
+
+    let covers_dir = files.covers_dir().to_path_buf();
+
+    std::fs::remove_dir_all(&app_support_dir)?;
+    std::fs::remove_dir_all(&covers_dir)?;
+
+    assert!(!app_support_dir.exists());
+    assert!(!covers_dir.exists());
+
+    let test_core = TestCore::open_with_files(files).await?;
+
+    assert!(app_support_dir.is_dir());
+    assert!(covers_dir.is_dir());
+
+    assert_eq!(test_core.files().app_support_dir(), app_support_dir,);
+
+    assert_eq!(test_core.files().covers_dir(), covers_dir,);
 
     Ok(())
 }

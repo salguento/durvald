@@ -41,6 +41,11 @@ pub struct TestCore {
 impl TestCore {
     pub async fn open() -> Result<Self, Box<dyn Error + Send + Sync>> {
         let files = TestFs::new()?;
+
+        Self::open_with_files(files).await
+    }
+
+    pub async fn open_with_files(files: TestFs) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let config = files.core_config();
 
         let core = durvald_core::test_support::open_core(config).await?;
