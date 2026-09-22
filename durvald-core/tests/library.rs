@@ -191,3 +191,89 @@ async fn removes_configured_library_path() -> Result<(), Box<dyn Error + Send + 
 
     Ok(())
 }
+
+#[tokio::test]
+async fn paginates_tracks_with_stable_offsets() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    test_core.files().write_silent_wav("Artist/Album/01.wav")?;
+
+    test_core.files().write_silent_wav("Artist/Album/02.wav")?;
+
+    test_core.files().write_silent_wav("Artist/Album/03.wav")?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let scan = test_core.core().scan_library(vec![library_path]).await?;
+
+    assert_eq!(scan.total_files_found, 3);
+    assert_eq!(scan.new_tracks_added, 3);
+    assert!(scan.errors.is_empty());
+
+    let first_page = test_core.core().tracks_page(2, 0).await?;
+
+    assert_eq!(first_page.items.len(), 2);
+    assert_eq!(first_page.next_offset, Some(2));
+
+    let next_offset = first_page
+        .next_offset
+        .expect("first page must report another page");
+
+    let second_page = test_core.core().tracks_page(2, next_offset).await?;
+
+    assert_eq!(second_page.items.len(), 1);
+    assert_eq!(second_page.next_offset, None);
+
+    let first_ids: Vec<i64> = first_page.items.iter().map(|track| track.id).collect();
+
+    let second_ids: Vec<i64> = second_page.items.iter().map(|track| track.id).collect();
+
+    assert_eq!(first_ids.len(), 2);
+    assert_eq!(second_ids.len(), 1);
+
+    assert!(!first_ids.contains(&second_ids[0]));
+
+    let all_tracks = test_core.core().tracks().await?;
+
+    let all_ids: Vec<i64> = all_tracks.iter().map(|track| track.id).collect();
+
+    let paginated_ids: Vec<i64> = first_page
+        .items
+        .iter()
+        .chain(second_page.items.iter())
+        .map(|track| track.id)
+        .collect();
+
+    assert_eq!(paginated_ids, all_ids);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejects_zero_track_page_size() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let result = test_core.core().tracks_page(0, 0).await;
+
+    assert!(matches!(result, Err(CoreError::InvalidInput { .. })));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejects_track_page_offset_above_sqlite_limit() -> Result<(), Box<dyn Error + Send + Sync>>
+{
+    let test_core = TestCore::open().await?;
+
+    let invalid_offset = i64::MAX as u64 + 1;
+
+    let result = test_core.core().tracks_page(10, invalid_offset).await;
+
+    assert!(matches!(result, Err(CoreError::InvalidInput { .. })));
+
+    Ok(())
+}
