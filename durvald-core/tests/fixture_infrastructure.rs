@@ -2,7 +2,7 @@ mod common;
 
 use std::io;
 
-use common::TestFs;
+use common::{TestFs, fixture_path};
 
 #[test]
 fn creates_expected_directory_tree() -> io::Result<()> {
@@ -67,6 +67,88 @@ fn test_environments_do_not_share_state() -> io::Result<()> {
     assert_ne!(first.root(), second.root());
     assert!(first_file.exists());
     assert!(!equivalent_second_path.exists());
+
+    Ok(())
+}
+
+#[test]
+fn resolves_versioned_fixture() -> io::Result<()> {
+    let path = fixture_path("musicbrainz-homonyms.json")?;
+
+    assert!(path.is_file());
+    assert!(path.ends_with("tests/fixtures/musicbrainz-homonyms.json"));
+
+    Ok(())
+}
+
+#[test]
+fn reports_missing_fixture() {
+    let result = fixture_path("does-not-exist.json");
+
+    assert!(result.is_err());
+
+    let error = result.unwrap_err();
+
+    assert_eq!(error.kind(), io::ErrorKind::NotFound);
+}
+
+#[test]
+fn rejects_fixture_path_outside_fixture_directory() {
+    let result = fixture_path("../../Cargo.toml");
+
+    assert!(result.is_err());
+
+    let error = result.unwrap_err();
+
+    assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+}
+
+#[test]
+fn copies_fixture_to_temporary_library() -> io::Result<()> {
+    let files = TestFs::new()?;
+
+    let copied = files.copy_fixture_to_library(
+        "musicbrainz-homonyms.json",
+        "network/musicbrainz-homonyms.json",
+    )?;
+
+    let original = fixture_path("musicbrainz-homonyms.json")?;
+
+    assert!(copied.exists());
+    assert!(copied.starts_with(files.library_dir()));
+    assert_eq!(std::fs::read(copied)?, std::fs::read(original)?,);
+
+    Ok(())
+}
+
+#[test]
+fn changing_fixture_copy_does_not_change_original() -> io::Result<()> {
+    let files = TestFs::new()?;
+
+    let original = fixture_path("musicbrainz-homonyms.json")?;
+    let original_contents = std::fs::read(&original)?;
+
+    let copied = files.copy_fixture_to_library(
+        "musicbrainz-homonyms.json",
+        "mutable/musicbrainz-homonyms.json",
+    )?;
+
+    std::fs::write(&copied, b"changed temporary copy")?;
+
+    assert_eq!(std::fs::read(&original)?, original_contents,);
+
+    assert_ne!(std::fs::read(&copied)?, original_contents,);
+
+    Ok(())
+}
+
+#[test]
+fn rejects_fixture_copy_outside_temporary_library() -> io::Result<()> {
+    let files = TestFs::new()?;
+
+    let result = files.copy_fixture_to_library("musicbrainz-homonyms.json", "../../outside.json");
+
+    assert!(result.is_err());
 
     Ok(())
 }
