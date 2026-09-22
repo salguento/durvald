@@ -277,3 +277,97 @@ async fn rejects_track_page_offset_above_sqlite_limit() -> Result<(), Box<dyn Er
 
     Ok(())
 }
+
+#[tokio::test]
+async fn finds_scanned_track_by_id() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let audio_path = test_core
+        .files()
+        .write_silent_wav("Artist/Album/lookup.wav")?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let scan = test_core.core().scan_library(vec![library_path]).await?;
+
+    assert_eq!(scan.new_tracks_added, 1);
+    assert!(scan.errors.is_empty());
+
+    let tracks = test_core.core().tracks().await?;
+
+    assert_eq!(tracks.len(), 1);
+
+    let listed_track = &tracks[0];
+
+    let found = test_core.core().track(listed_track.id).await?;
+
+    assert_eq!(found.id, listed_track.id);
+    assert_eq!(found.title, listed_track.title);
+    assert_eq!(found.artist, listed_track.artist);
+    assert_eq!(found.release, listed_track.release);
+
+    let found_path = std::fs::canonicalize(Path::new(&found.file_path))?;
+
+    let expected_path = std::fs::canonicalize(audio_path)?;
+
+    assert_eq!(found_path, expected_path);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn finds_scanned_track_after_restart() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    test_core
+        .files()
+        .write_silent_wav("Artist/Album/persisted.wav")?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    test_core.core().scan_library(vec![library_path]).await?;
+
+    let tracks = test_core.core().tracks().await?;
+
+    assert_eq!(tracks.len(), 1);
+
+    let track_id = tracks[0].id;
+
+    let test_core = test_core.restart().await?;
+
+    let restored = test_core.core().track(track_id).await?;
+
+    assert_eq!(restored.id, track_id);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn rejects_negative_track_id() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let result = test_core.core().track(-1).await;
+
+    assert!(matches!(result, Err(CoreError::InvalidInput { .. })));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn reports_missing_track_id() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let result = test_core.core().track(i64::MAX).await;
+
+    assert!(matches!(result, Err(CoreError::NotFound { .. })));
+
+    Ok(())
+}
