@@ -478,3 +478,142 @@ async fn complete_rescan_removes_missing_track() -> Result<(), Box<dyn Error + S
 
     Ok(())
 }
+
+#[tokio::test]
+async fn scan_ignores_unsupported_file_extensions() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let expected_audio = test_core
+        .files()
+        .write_silent_wav("Artist/Album/accepted.WAV")?;
+
+    test_core
+        .files()
+        .write_library_file("Artist/Album/notes.txt", b"not audio")?;
+
+    test_core
+        .files()
+        .write_library_file("Artist/Album/cover.jpg", b"not an image fixture")?;
+
+    test_core
+        .files()
+        .write_library_file("Artist/Album/unsupported.aac", b"not supported")?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let scan = test_core.core().scan_library(vec![library_path]).await?;
+
+    assert_eq!(scan.paths_scanned, 1);
+    assert_eq!(scan.total_files_found, 1);
+    assert_eq!(scan.new_tracks_added, 1);
+    assert!(scan.errors.is_empty());
+
+    let tracks = test_core.core().tracks().await?;
+
+    assert_eq!(tracks.len(), 1);
+
+    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+
+    let expected_path = std::fs::canonicalize(expected_audio)?;
+
+    assert_eq!(indexed_path, expected_path);
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn scan_ignores_audio_file_symlink() -> Result<(), Box<dyn Error + Send + Sync>> {
+    use std::os::unix::fs::symlink;
+
+    let test_core = TestCore::open().await?;
+
+    let real_audio = test_core
+        .files()
+        .write_silent_wav("Artist/Album/real.wav")?;
+
+    let external_audio = test_core.files().app_support_dir().join("external.wav");
+
+    std::fs::copy(&real_audio, &external_audio)?;
+
+    let linked_audio = test_core
+        .files()
+        .library_dir()
+        .join("Artist/Album/linked.wav");
+
+    symlink(&external_audio, &linked_audio)?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let scan = test_core.core().scan_library(vec![library_path]).await?;
+
+    assert_eq!(scan.total_files_found, 1);
+    assert_eq!(scan.new_tracks_added, 1);
+    assert!(scan.errors.is_empty());
+
+    let tracks = test_core.core().tracks().await?;
+
+    assert_eq!(tracks.len(), 1);
+
+    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+
+    let expected_path = std::fs::canonicalize(real_audio)?;
+
+    assert_eq!(indexed_path, expected_path);
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn scan_ignores_directory_symlink() -> Result<(), Box<dyn Error + Send + Sync>> {
+    use std::os::unix::fs::symlink;
+
+    let test_core = TestCore::open().await?;
+
+    let real_audio = test_core
+        .files()
+        .write_silent_wav("Local/Album/local.wav")?;
+
+    let external_directory = test_core.files().app_support_dir().join("external-library");
+
+    std::fs::create_dir_all(&external_directory)?;
+
+    std::fs::copy(&real_audio, external_directory.join("external.wav"))?;
+
+    let directory_link = test_core.files().library_dir().join("linked-library");
+
+    symlink(&external_directory, &directory_link)?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let scan = test_core.core().scan_library(vec![library_path]).await?;
+
+    assert_eq!(scan.total_files_found, 1);
+    assert_eq!(scan.new_tracks_added, 1);
+    assert!(scan.errors.is_empty());
+
+    let tracks = test_core.core().tracks().await?;
+
+    assert_eq!(tracks.len(), 1);
+
+    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+
+    let expected_path = std::fs::canonicalize(real_audio)?;
+
+    assert_eq!(indexed_path, expected_path);
+
+    Ok(())
+}
