@@ -701,3 +701,57 @@ async fn completed_scan_is_no_longer_cancellable() -> Result<(), Box<dyn Error +
 
     Ok(())
 }
+
+#[tokio::test]
+async fn scan_keeps_valid_track_when_another_file_is_corrupt()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let valid_audio = test_core
+        .files()
+        .write_silent_wav("Artist/Album/valid.wav")?;
+
+    test_core
+        .files()
+        .write_library_file("Artist/Album/broken.mp3", b"this is not valid mp3 data")?;
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let result = test_core
+        .core()
+        .scan_library(vec![library_path.clone()])
+        .await?;
+
+    assert_eq!(result.paths_scanned, 1);
+    assert_eq!(result.total_files_found, 2);
+    assert_eq!(result.new_tracks_added, 1);
+    assert_eq!(result.updated_tracks, 0);
+    assert!(!result.errors.is_empty());
+
+    let tracks = test_core.core().tracks().await?;
+
+    assert_eq!(tracks.len(), 1);
+
+    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+
+    let expected_path = std::fs::canonicalize(valid_audio)?;
+
+    assert_eq!(indexed_path, expected_path);
+
+    let progress = test_core
+        .core()
+        .scan_progress()?
+        .expect("scan with partial errors must publish progress");
+
+    assert_eq!(progress.phase, ScanPhase::Complete);
+    assert_eq!(progress.path, library_path);
+    assert_eq!(progress.total_files, 2);
+    assert_eq!(progress.processed_files, 2);
+    assert_eq!(progress.new_tracks, 1);
+
+    Ok(())
+}
