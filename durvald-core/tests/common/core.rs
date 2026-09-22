@@ -55,4 +55,15 @@ impl TestCore {
     pub fn files(&self) -> &TestFs {
         &self.files
     }
+
+    pub async fn restart(self) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let Self { core, files } = self;
+
+        drop(core);
+
+        let config = files.core_config();
+        let core = durvald_core::test_support::open_core(config).await?;
+
+        Ok(Self { core, files })
+    }
 }
