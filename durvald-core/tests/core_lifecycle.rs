@@ -2,9 +2,9 @@
 
 mod common;
 
-use std::error::Error;
-
 use common::{TestCore, TestFs};
+use durvald_core::EnrichmentSettings;
+use std::error::Error;
 
 #[tokio::test]
 async fn opens_new_core_in_isolated_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -110,6 +110,38 @@ async fn open_creates_missing_application_directories() -> Result<(), Box<dyn Er
     assert_eq!(test_core.files().app_support_dir(), app_support_dir,);
 
     assert_eq!(test_core.files().covers_dir(), covers_dir,);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn enrichment_settings_initialize_and_survive_restart()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let initial = test_core.core().enrichment_settings().await?;
+
+    assert_eq!(initial, EnrichmentSettings::default(),);
+
+    let configured = EnrichmentSettings {
+        enabled: true,
+        offline: true,
+        preferred_language: "EN-us".into(),
+    };
+
+    test_core.core().configure_enrichment(configured).await?;
+
+    let persisted = test_core.core().enrichment_settings().await?;
+
+    assert!(persisted.enabled);
+    assert!(persisted.offline);
+    assert_eq!(persisted.preferred_language, "en-us",);
+
+    let test_core = test_core.restart().await?;
+
+    let restored = test_core.core().enrichment_settings().await?;
+
+    assert_eq!(restored, persisted);
 
     Ok(())
 }
