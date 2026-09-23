@@ -234,6 +234,11 @@ impl AudioPlayer {
         self.normalize_volume
     }
 
+    #[cfg(feature = "test-support")]
+    pub(crate) fn crossfade_duration_seconds(&self) -> Option<u64> {
+        self.crossfade_duration.map(|duration| duration.as_secs())
+    }
+
     fn play_prepared(&mut self, prepared: PreparedSound) -> Result<(), AudioError> {
         self.play_prepared_from(prepared, 0.0)
     }
