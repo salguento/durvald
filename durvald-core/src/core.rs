@@ -9,6 +9,8 @@ use crate::application::history::HistoryApplication;
 use crate::application::library::LibraryApplication;
 pub(crate) use crate::application::library::track_from_song;
 use crate::application::metadata::MetadataApplication;
+#[cfg(test)]
+use crate::application::metadata::artwork_path_in_covers_dir;
 use crate::application::playback::PlaybackApplication;
 #[cfg(test)]
 use crate::application::playback::scrobble_eligible;
@@ -113,19 +115,6 @@ impl DurvaldCore {
             Ok(())
         })
         .await
-    }
-
-    /// Runs non-database filesystem or parser work on Tokio's blocking pool.
-    async fn run_blocking<T, F>(operation_name: &'static str, operation: F) -> CoreResult<T>
-    where
-        T: Send + 'static,
-        F: FnOnce() -> CoreResult<T> + Send + 'static,
-    {
-        tokio::task::spawn_blocking(operation)
-            .await
-            .map_err(|error| CoreError::Storage {
-                message: format!("{operation_name} task failed: {error}"),
-            })?
     }
 }
 
@@ -239,32 +228,6 @@ fn lastfm_error(error: LastFmError) -> CoreError {
         LastFmError::SecureStore(_) => CoreError::Storage { message },
         _ => CoreError::Network { message },
     }
-}
-
-fn artwork_path_in_covers_dir(
-    covers_dir: &str,
-    artwork_id: &str,
-) -> CoreResult<Option<std::path::PathBuf>> {
-    if artwork_id.is_empty() {
-        return Ok(None);
-    }
-
-    let artwork_path = std::path::Path::new(artwork_id);
-    if !artwork_path.is_file() {
-        return Ok(None);
-    }
-    let covers_dir = std::fs::canonicalize(covers_dir).map_err(|e| CoreError::Storage {
-        message: format!("Unable to access covers directory: {e}"),
-    })?;
-    let artwork_path = std::fs::canonicalize(artwork_path).map_err(|e| CoreError::Storage {
-        message: format!("Unable to access artwork: {e}"),
-    })?;
-    if !artwork_path.starts_with(&covers_dir) {
-        return Err(CoreError::InvalidInput {
-            message: "Artwork must be inside the configured covers directory".to_string(),
-        });
-    }
-    Ok(Some(artwork_path))
 }
 
 impl DurvaldCore {
@@ -714,18 +677,7 @@ impl DurvaldCore {
     /// Loads persisted track or release artwork as bytes for Swift `Data`.
     /// The supplied artwork identifier must resolve inside the covers directory.
     pub async fn artwork_bytes(&self, artwork_id: String) -> CoreResult<Option<Vec<u8>>> {
-        let covers_dir = self.covers_dir.clone();
-        Self::run_blocking("Artwork read", move || {
-            let Some(path) = artwork_path_in_covers_dir(&covers_dir, &artwork_id)? else {
-                return Ok(None);
-            };
-            std::fs::read(path)
-                .map(Some)
-                .map_err(|error| CoreError::Storage {
-                    message: format!("Unable to read artwork: {error}"),
-                })
-        })
-        .await
+        self.metadata_application.artwork_bytes(artwork_id).await
     }
 
     /// Loads a playlist's artwork blob as bytes for Swift `Data`.

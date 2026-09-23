@@ -52,6 +52,24 @@ impl MetadataApplication {
         Ok(metadata_to_api(metadata))
     }
 
+    pub(crate) async fn artwork_bytes(&self, artwork_id: String) -> CoreResult<Option<Vec<u8>>> {
+        let covers_dir = self.covers_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            let Some(path) = artwork_path_in_covers_dir(&covers_dir, &artwork_id)? else {
+                return Ok(None);
+            };
+            std::fs::read(path)
+                .map(Some)
+                .map_err(|error| CoreError::Storage {
+                    message: format!("Unable to read artwork: {error}"),
+                })
+        })
+        .await
+        .map_err(|error| CoreError::Storage {
+            message: format!("Artwork read task failed: {error}"),
+        })?
+    }
+
     pub(crate) async fn save_track_metadata(
         &self,
         track_id: i64,
@@ -122,4 +140,30 @@ fn metadata_to_api(metadata: crate::metadata::AudioMetadata) -> AudioMetadata {
             .collect(),
         file_path: metadata.file_path,
     }
+}
+
+pub(crate) fn artwork_path_in_covers_dir(
+    covers_dir: &str,
+    artwork_id: &str,
+) -> CoreResult<Option<std::path::PathBuf>> {
+    if artwork_id.is_empty() {
+        return Ok(None);
+    }
+
+    let artwork_path = std::path::Path::new(artwork_id);
+    if !artwork_path.is_file() {
+        return Ok(None);
+    }
+    let covers_dir = std::fs::canonicalize(covers_dir).map_err(|error| CoreError::Storage {
+        message: format!("Unable to access covers directory: {error}"),
+    })?;
+    let artwork_path = std::fs::canonicalize(artwork_path).map_err(|error| CoreError::Storage {
+        message: format!("Unable to access artwork: {error}"),
+    })?;
+    if !artwork_path.starts_with(&covers_dir) {
+        return Err(CoreError::InvalidInput {
+            message: "Artwork must be inside the configured covers directory".to_string(),
+        });
+    }
+    Ok(Some(artwork_path))
 }
