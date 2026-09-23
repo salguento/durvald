@@ -643,3 +643,90 @@ async fn previous_track_reports_when_navigation_history_is_empty() -> TestResult
 
     Ok(())
 }
+
+#[tokio::test]
+async fn play_queue_item_starts_track_at_public_queue_position() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    let selected = test_core.core().play_queue_item(2).await?;
+    test_core.process_mock_audio(1).await;
+
+    assert_eq!(
+        selected.current_track.as_ref().map(|item| item.id),
+        Some(third.id),
+    );
+
+    assert!(selected.is_playing);
+    assert!(!selected.is_paused);
+
+    assert_eq!(selected.queue.len(), 1);
+    assert_eq!(selected.queue[0].track_id, third.id);
+    assert_eq!(selected.queue[0].position, 0);
+
+    let observed = test_core.core().playback().await;
+
+    assert_eq!(
+        observed.current_track.as_ref().map(|item| item.id),
+        Some(third.id),
+    );
+    assert_eq!(observed.queue, selected.queue);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(third.id));
+    assert_eq!(session.queue, vec![third.id]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn play_queue_item_rejects_active_and_out_of_bounds_positions() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    for invalid_position in [0, 3] {
+        let result = test_core.core().play_queue_item(invalid_position).await;
+
+        assert!(matches!(result, Err(CoreError::InvalidInput { .. })));
+    }
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(playback.is_playing);
+
+    assert_eq!(playback.queue.len(), 3);
+    assert_eq!(playback.queue[0].track_id, first.id);
+    assert_eq!(playback.queue[1].track_id, second.id);
+    assert_eq!(playback.queue[2].track_id, third.id);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.queue, vec![first.id, second.id, third.id]);
+
+    Ok(())
+}
