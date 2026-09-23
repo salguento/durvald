@@ -462,3 +462,82 @@ async fn add_to_empty_queue_starts_added_track() -> TestResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn next_track_advances_queue_and_persists_session() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    let advanced = test_core.core().next_track().await?;
+    test_core.process_mock_audio(1).await;
+
+    assert_eq!(
+        advanced.current_track.as_ref().map(|item| item.id),
+        Some(second.id),
+    );
+
+    assert!(advanced.is_playing);
+    assert!(!advanced.is_paused);
+
+    assert_eq!(advanced.queue.len(), 2);
+
+    assert_eq!(advanced.queue[0].track_id, second.id);
+    assert_eq!(advanced.queue[0].position, 0);
+
+    assert_eq!(advanced.queue[1].track_id, third.id);
+    assert_eq!(advanced.queue[1].position, 1);
+
+    let observed = test_core.core().playback().await;
+
+    assert_eq!(
+        observed.current_track.as_ref().map(|item| item.id),
+        Some(second.id),
+    );
+    assert_eq!(observed.queue, advanced.queue);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(second.id));
+    assert_eq!(session.queue, vec![second.id, third.id]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn next_track_reports_when_queue_has_no_upcoming_track() -> TestResult<()> {
+    let (test_core, track) = core_with_one_track().await?;
+
+    test_core.core().play(track.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    let result = test_core.core().next_track().await;
+
+    assert!(matches!(result, Err(CoreError::NotFound { .. })));
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(track.id),
+    );
+
+    assert!(playback.is_playing);
+    assert_eq!(playback.queue.len(), 1);
+    assert_eq!(playback.queue[0].track_id, track.id);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(track.id));
+    assert_eq!(session.queue, vec![track.id]);
+
+    Ok(())
+}
