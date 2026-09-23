@@ -1189,19 +1189,14 @@ impl DurvaldCore {
 
     /// Removes a single completed-playback event.
     pub async fn remove_playback_history_item(&self, history_id: i64) -> CoreResult<()> {
-        let history_id = non_negative_id(history_id, "Playback history ID")?;
-        self.run_entity_update("Playback history item", history_id, move |conn| {
-            crate::database::operations::remove_song_from_history(conn, history_id)
-        })
-        .await
+        self.history_application
+            .remove_playback_history_item(history_id)
+            .await
     }
 
     /// Deletes every completed-playback event and returns the number removed.
     pub async fn clear_playback_history(&self) -> CoreResult<u64> {
-        self.run_database(|conn| {
-            crate::database::operations::clear_play_history(conn).map_err(|error| error.to_string())
-        })
-        .await
+        self.history_application.clear_playback_history().await
     }
 
     /// Saves the current session state.

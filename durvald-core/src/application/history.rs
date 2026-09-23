@@ -43,6 +43,30 @@ impl HistoryApplication {
         Ok(PlaybackHistoryPage { items, next_offset })
     }
 
+    pub(crate) async fn remove_playback_history_item(&self, history_id: i64) -> CoreResult<()> {
+        let history_id = non_negative_id(history_id, "Playback history ID")?;
+        self.run_database_core(move |conn| {
+            let removed = crate::database::operations::remove_song_from_history(conn, history_id)
+                .map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })?;
+            if !removed {
+                return Err(CoreError::NotFound {
+                    message: format!("Playback history item {history_id} not found"),
+                });
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    pub(crate) async fn clear_playback_history(&self) -> CoreResult<u64> {
+        self.run_database(|conn| {
+            crate::database::operations::clear_play_history(conn).map_err(|error| error.to_string())
+        })
+        .await
+    }
+
     async fn run_database<T, F>(&self, operation: F) -> CoreResult<T>
     where
         T: Send + 'static,
@@ -58,6 +82,24 @@ impl HistoryApplication {
             message: format!("Blocking database task failed: {error}"),
         })?
         .map_err(|message| CoreError::Storage { message })
+    }
+
+    async fn run_database_core<T, F>(&self, operation: F) -> CoreResult<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
+    {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })?;
+            operation(&conn)
+        })
+        .await
+        .map_err(|error| CoreError::Storage {
+            message: format!("Blocking database task failed: {error}"),
+        })?
     }
 }
 
@@ -83,6 +125,12 @@ fn finish_page<T>(mut items: Vec<T>, page_size: usize, offset: u64) -> (Vec<T>, 
     items.truncate(page_size);
     let next_offset = has_more.then(|| offset.saturating_add(page_size as u64));
     (items, next_offset)
+}
+
+fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
+    u64::try_from(value).map_err(|_| CoreError::InvalidInput {
+        message: format!("{label} must not be negative"),
+    })
 }
 
 fn history_from_database(item: crate::database::models::PlayHistory) -> PlaybackHistoryItem {
