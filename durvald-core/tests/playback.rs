@@ -845,3 +845,102 @@ async fn remove_from_queue_rejects_out_of_bounds_position() -> TestResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn move_queue_item_reorders_future_tracks_and_persists_queue() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(4).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+    let fourth = &tracks[3];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+    test_core.core().add_to_queue(fourth.id).await?;
+
+    test_core.core().move_queue_item(3, 1).await?;
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(playback.is_playing);
+
+    assert_eq!(playback.queue.len(), 4);
+
+    assert_eq!(playback.queue[0].track_id, first.id);
+    assert_eq!(playback.queue[0].position, 0);
+
+    assert_eq!(playback.queue[1].track_id, fourth.id);
+    assert_eq!(playback.queue[1].position, 1);
+
+    assert_eq!(playback.queue[2].track_id, second.id);
+    assert_eq!(playback.queue[2].position, 2);
+
+    assert_eq!(playback.queue[3].track_id, third.id);
+    assert_eq!(playback.queue[3].position, 3);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(
+        session.queue,
+        vec![first.id, fourth.id, second.id, third.id],
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn move_queue_item_rejects_active_and_out_of_bounds_positions() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(4).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+    let fourth = &tracks[3];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+    test_core.core().add_to_queue(fourth.id).await?;
+
+    for (from, to) in [(0, 1), (1, 0), (4, 1), (1, 4)] {
+        let result = test_core.core().move_queue_item(from, to).await;
+
+        assert!(matches!(result, Err(CoreError::InvalidInput { .. })));
+    }
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(playback.is_playing);
+
+    assert_eq!(playback.queue.len(), 4);
+    assert_eq!(playback.queue[0].track_id, first.id);
+    assert_eq!(playback.queue[1].track_id, second.id);
+    assert_eq!(playback.queue[2].track_id, third.id);
+    assert_eq!(playback.queue[3].track_id, fourth.id);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(
+        session.queue,
+        vec![first.id, second.id, third.id, fourth.id],
+    );
+
+    Ok(())
+}
