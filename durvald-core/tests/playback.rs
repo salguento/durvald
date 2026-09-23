@@ -541,3 +541,105 @@ async fn next_track_reports_when_queue_has_no_upcoming_track() -> TestResult<()>
 
     Ok(())
 }
+
+#[tokio::test]
+async fn previous_track_restores_navigation_history_and_queue() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    test_core.core().next_track().await?;
+    test_core.process_mock_audio(1).await;
+
+    let before_previous = test_core.core().playback().await;
+
+    assert_eq!(
+        before_previous.current_track.as_ref().map(|item| item.id),
+        Some(second.id),
+    );
+    assert_eq!(before_previous.queue.len(), 2);
+    assert_eq!(before_previous.queue[0].track_id, second.id);
+    assert_eq!(before_previous.queue[1].track_id, third.id);
+
+    let returned = test_core.core().previous_track().await?;
+    test_core.process_mock_audio(1).await;
+
+    assert_eq!(
+        returned.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(returned.is_playing);
+    assert!(!returned.is_paused);
+
+    assert_eq!(returned.queue.len(), 3);
+
+    assert_eq!(returned.queue[0].track_id, first.id);
+    assert_eq!(returned.queue[0].position, 0);
+
+    assert_eq!(returned.queue[1].track_id, second.id);
+    assert_eq!(returned.queue[1].position, 1);
+
+    assert_eq!(returned.queue[2].track_id, third.id);
+    assert_eq!(returned.queue[2].position, 2);
+
+    let observed = test_core.core().playback().await;
+
+    assert_eq!(
+        observed.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+    assert_eq!(observed.queue, returned.queue);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.queue, vec![first.id, second.id, third.id]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn previous_track_reports_when_navigation_history_is_empty() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(2).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+
+    let result = test_core.core().previous_track().await;
+
+    assert!(matches!(result, Err(CoreError::NotFound { .. })));
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(playback.is_playing);
+
+    assert_eq!(playback.queue.len(), 2);
+    assert_eq!(playback.queue[0].track_id, first.id);
+    assert_eq!(playback.queue[1].track_id, second.id);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.queue, vec![first.id, second.id]);
+
+    Ok(())
+}
