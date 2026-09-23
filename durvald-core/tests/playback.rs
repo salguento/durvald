@@ -1022,3 +1022,63 @@ async fn clear_queue_is_idempotent_when_no_future_tracks_exist() -> TestResult<(
 
     Ok(())
 }
+
+#[tokio::test]
+async fn set_shuffle_enabled_updates_snapshot_without_reordering_queue() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    let before_shuffle = test_core.core().playback().await;
+
+    assert!(!before_shuffle.shuffle_enabled);
+
+    let enabled = test_core.core().set_shuffle_enabled(true).await?;
+
+    assert!(enabled.shuffle_enabled);
+
+    assert_eq!(
+        enabled.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(enabled.is_playing);
+    assert_eq!(enabled.queue, before_shuffle.queue);
+
+    let observed_enabled = test_core.core().playback().await;
+
+    assert!(observed_enabled.shuffle_enabled);
+    assert_eq!(observed_enabled.queue, before_shuffle.queue);
+
+    let enabled_session = test_core.core().last_session().await?;
+
+    assert!(enabled_session.shuffle_enabled);
+    assert_eq!(enabled_session.queue, vec![first.id, second.id, third.id],);
+
+    let disabled = test_core.core().set_shuffle_enabled(false).await?;
+
+    assert!(!disabled.shuffle_enabled);
+
+    assert_eq!(
+        disabled.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(disabled.is_playing);
+    assert_eq!(disabled.queue, before_shuffle.queue);
+
+    let disabled_session = test_core.core().last_session().await?;
+
+    assert!(!disabled_session.shuffle_enabled);
+    assert_eq!(disabled_session.queue, vec![first.id, second.id, third.id],);
+
+    Ok(())
+}
