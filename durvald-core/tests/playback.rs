@@ -1278,3 +1278,87 @@ async fn next_track_with_repeat_one_restarts_active_track() -> TestResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn next_track_with_repeat_all_restarts_complete_queue_cycle() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    test_core.core().set_repeat_mode(RepeatMode::All).await?;
+
+    let second_active = test_core.core().next_track().await?;
+    test_core.process_mock_audio(1).await;
+
+    assert_eq!(
+        second_active.current_track.as_ref().map(|item| item.id),
+        Some(second.id),
+    );
+
+    assert_eq!(second_active.repeat_mode, RepeatMode::All);
+    assert_eq!(second_active.queue.len(), 2);
+    assert_eq!(second_active.queue[0].track_id, second.id);
+    assert_eq!(second_active.queue[1].track_id, third.id);
+
+    let third_active = test_core.core().next_track().await?;
+    test_core.process_mock_audio(1).await;
+
+    assert_eq!(
+        third_active.current_track.as_ref().map(|item| item.id),
+        Some(third.id),
+    );
+
+    assert_eq!(third_active.repeat_mode, RepeatMode::All);
+    assert_eq!(third_active.queue.len(), 1);
+    assert_eq!(third_active.queue[0].track_id, third.id);
+
+    let restarted = test_core.core().next_track().await?;
+
+    assert_eq!(
+        restarted.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(restarted.is_playing);
+    assert!(!restarted.is_paused);
+    assert_eq!(restarted.repeat_mode, RepeatMode::All);
+    assert_eq!(restarted.position_seconds, 0.0);
+
+    assert_eq!(restarted.queue.len(), 3);
+
+    assert_eq!(restarted.queue[0].track_id, first.id);
+    assert_eq!(restarted.queue[0].position, 0);
+
+    assert_eq!(restarted.queue[1].track_id, second.id);
+    assert_eq!(restarted.queue[1].position, 1);
+
+    assert_eq!(restarted.queue[2].track_id, third.id);
+    assert_eq!(restarted.queue[2].position, 2);
+
+    test_core.process_mock_audio(1).await;
+
+    let observed = test_core.core().playback().await;
+
+    assert_eq!(
+        observed.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+    assert_eq!(observed.repeat_mode, RepeatMode::All);
+    assert_eq!(observed.queue, restarted.queue);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.repeat_mode, RepeatMode::All);
+    assert_eq!(session.queue, vec![first.id, second.id, third.id]);
+
+    Ok(())
+}
