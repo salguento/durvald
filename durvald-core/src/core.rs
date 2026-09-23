@@ -5,6 +5,7 @@
 //! the `DurvaldCore` facade in the `core` module.
 
 use crate::api::*;
+use crate::application::playback::{LastFmPlayback, PlaybackApplication};
 use crate::lastfm::{LastFmClient, LastFmError};
 use crate::secure_store::SecureStore;
 use base64::Engine;
@@ -20,8 +21,7 @@ use std::sync::{
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
-    audio_player: Arc<tokio::sync::Mutex<crate::audio::AudioPlayer>>,
-    playback_transition: tokio::sync::Mutex<()>,
+    playback_application: PlaybackApplication,
     metadata_edit_queue: tokio::sync::Mutex<()>,
     lastfm: Arc<LastFmClient>,
     enrichment: crate::enrichment::service::EnrichmentService,
@@ -29,18 +29,6 @@ pub struct DurvaldCore {
     scan_in_progress: Arc<AtomicBool>,
     scan_cancel_requested: Arc<AtomicBool>,
     scan_progress: Arc<std::sync::Mutex<Option<ScanProgress>>>,
-    lastfm_playback: tokio::sync::Mutex<Option<LastFmPlayback>>,
-}
-
-struct LastFmPlayback {
-    track_id: i64,
-    artist: String,
-    title: String,
-    release: String,
-    duration_seconds: u64,
-    started_at: u64,
-    active_since: Option<u64>,
-    played_seconds: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +44,7 @@ impl DurvaldCore {
     }
 
     pub fn audio_player(&self) -> &Arc<tokio::sync::Mutex<crate::audio::AudioPlayer>> {
-        &self.audio_player
+        self.playback_application.audio_player()
     }
 
     pub fn lastfm(&self) -> &Arc<LastFmClient> {
@@ -145,7 +133,7 @@ impl DurvaldCore {
 
     async fn persist_playback_session(&self) -> CoreResult<()> {
         let (current_song_id, progress_seconds, volume, shuffle_enabled, repeat_mode, queue) = {
-            let player = self.audio_player.lock().await;
+            let player = self.playback_application.audio_player().lock().await;
             (
                 player.get_current_song_id(),
                 player.get_position().as_secs_f64(),
@@ -215,7 +203,12 @@ impl DurvaldCore {
     }
 
     async fn prepare_sound(&self, path: String) -> CoreResult<crate::audio::player::PreparedSound> {
-        let normalize_volume = self.audio_player.lock().await.normalize_volume_enabled();
+        let normalize_volume = self
+            .playback_application
+            .audio_player()
+            .lock()
+            .await
+            .normalize_volume_enabled();
         crate::audio::AudioPlayer::prepare_sound(path, normalize_volume)
             .await
             .map_err(|error| CoreError::Playback {
@@ -259,13 +252,19 @@ impl DurvaldCore {
         let artist = playback.artist.clone();
         let title = playback.title.clone();
         let release = (!playback.release.is_empty()).then_some(playback.release.clone());
-        *self.lastfm_playback.lock().await = Some(playback);
+        *self.playback_application.lastfm_playback().lock().await = Some(playback);
         let _ = self.lastfm.update_now_playing(artist, title, release).await;
     }
 
     async fn pause_lastfm_playback(&self) {
         let now = unix_timestamp_seconds();
-        if let Some(playback) = self.lastfm_playback.lock().await.as_mut() {
+        if let Some(playback) = self
+            .playback_application
+            .lastfm_playback()
+            .lock()
+            .await
+            .as_mut()
+        {
             if let Some(active_since) = playback.active_since.take() {
                 playback.played_seconds += now.saturating_sub(active_since);
             }
@@ -273,7 +272,13 @@ impl DurvaldCore {
     }
 
     async fn resume_lastfm_playback(&self) {
-        if let Some(playback) = self.lastfm_playback.lock().await.as_mut() {
+        if let Some(playback) = self
+            .playback_application
+            .lastfm_playback()
+            .lock()
+            .await
+            .as_mut()
+        {
             if playback.active_since.is_none() {
                 playback.active_since = Some(unix_timestamp_seconds());
             }
@@ -281,7 +286,8 @@ impl DurvaldCore {
     }
 
     async fn is_tracking_lastfm_track(&self, track_id: i64) -> bool {
-        self.lastfm_playback
+        self.playback_application
+            .lastfm_playback()
             .lock()
             .await
             .as_ref()
@@ -290,7 +296,7 @@ impl DurvaldCore {
 
     async fn report_lastfm_track_completed(&self, track_id: i64) {
         let playback = {
-            let mut current = self.lastfm_playback.lock().await;
+            let mut current = self.playback_application.lastfm_playback().lock().await;
             match current
                 .take()
                 .filter(|playback| playback.track_id == track_id)
@@ -743,16 +749,18 @@ impl DurvaldCore {
                 config.covers_dir.clone(),
                 lastfm.clone(),
             ),
-            db_pool,
-            audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
-            playback_transition: tokio::sync::Mutex::new(()),
+            db_pool: db_pool.clone(),
+            playback_application: PlaybackApplication::new(
+                db_pool.clone(),
+                audio_player,
+                lastfm.clone(),
+            ),
             metadata_edit_queue: tokio::sync::Mutex::new(()),
             lastfm,
             covers_dir: config.covers_dir.clone(),
             scan_in_progress: Arc::new(AtomicBool::new(false)),
             scan_cancel_requested: Arc::new(AtomicBool::new(false)),
             scan_progress: Arc::new(std::sync::Mutex::new(None)),
-            lastfm_playback: tokio::sync::Mutex::new(None),
         };
 
         let core = Arc::new(core);
@@ -791,27 +799,33 @@ impl DurvaldCore {
                 };
 
                 let transitioned = {
-                    let _transition = core.playback_transition.lock().await;
+                    let _transition = core.playback_application.playback_transition().lock().await;
                     let gapless_plan = {
-                        let mut player = core.audio_player.lock().await;
+                        let mut player = core.playback_application.audio_player().lock().await;
                         player.synchronize_gapless();
                         player.gapless_plan()
                     };
                     if let Some(plan) = gapless_plan {
                         if let Ok(prepared) = core.prepare_sound(plan.path().to_string()).await {
                             let _ = core
-                                .audio_player
+                                .playback_application
+                                .audio_player()
                                 .lock()
                                 .await
                                 .schedule_gapless(plan, prepared);
                         }
                     }
-                    let completed = core.audio_player.lock().await.pop_completed_transition();
+                    let completed = core
+                        .playback_application
+                        .audio_player()
+                        .lock()
+                        .await
+                        .pop_completed_transition();
                     if let Some((previous, next)) = completed {
                         Some((previous, Some(next)))
                     } else {
                         let (completed_track_id, plan) = {
-                            let player = core.audio_player.lock().await;
+                            let player = core.playback_application.audio_player().lock().await;
                             (
                                 player.get_current_song_id(),
                                 player.completed_playback_plan(),
@@ -824,7 +838,7 @@ impl DurvaldCore {
                             continue;
                         };
                         let started_track_id = plan.song_id();
-                        let mut player = core.audio_player.lock().await;
+                        let mut player = core.playback_application.audio_player().lock().await;
                         match player.commit_plan(plan, prepared) {
                             Ok(()) => Some((completed_track_id, Some(started_track_id))),
                             Err(_) => None,
@@ -1761,9 +1775,9 @@ impl DurvaldCore {
 
         // Start the selected track. The player's queue represents upcoming
         // tracks, so playing directly must not append a duplicate entry.
-        let _transition = self.playback_transition.lock().await;
+        let _transition = self.playback_application.playback_transition().lock().await;
         let prepared = self.prepare_sound(track.file_path.clone()).await?;
-        let mut player = self.audio_player.lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player
             .play_song_prepared(track_id, prepared)
             .map_err(|e| CoreError::Playback {
@@ -1782,7 +1796,7 @@ impl DurvaldCore {
     /// Returns the current playback state.
     pub async fn playback(&self) -> PlaybackSnapshot {
         let playback_state = {
-            let mut player = self.audio_player.lock().await;
+            let mut player = self.playback_application.audio_player().lock().await;
             player.synchronize_gapless();
             playback_state_for_player(&player)
         };
@@ -1795,7 +1809,7 @@ impl DurvaldCore {
 #[cfg(feature = "test-support")]
 impl DurvaldCore {
     pub(crate) async fn process_mock_audio(&self, blocks: usize) {
-        let mut player = self.audio_player.lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player.process_mock_audio(blocks);
     }
 }
@@ -1880,7 +1894,7 @@ async fn playback_from_state(core: &DurvaldCore, state: PlaybackStateSnapshot) -
 impl DurvaldCore {
     /// Pauses playback.
     pub async fn pause(&self) -> CoreResult<()> {
-        let mut player = self.audio_player.lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player.pause();
         drop(player);
         self.pause_lastfm_playback().await;
@@ -1890,9 +1904,9 @@ impl DurvaldCore {
 
     /// Resumes playback.
     pub async fn resume(&self) -> CoreResult<()> {
-        let _transition = self.playback_transition.lock().await;
+        let _transition = self.playback_application.playback_transition().lock().await;
         let restored_track = {
-            let mut player = self.audio_player.lock().await;
+            let mut player = self.playback_application.audio_player().lock().await;
             let restored_track = player.restored_track();
             if restored_track.is_none() {
                 player.resume();
@@ -1901,14 +1915,19 @@ impl DurvaldCore {
         };
         if let Some((song_id, path, position)) = restored_track {
             let prepared = self.prepare_sound(path).await?;
-            let mut player = self.audio_player.lock().await;
+            let mut player = self.playback_application.audio_player().lock().await;
             player
                 .play_song_prepared_from(song_id, prepared, position)
                 .map_err(|e| CoreError::Playback {
                     message: e.to_string(),
                 })?;
         }
-        let current_track_id = self.audio_player.lock().await.get_current_song_id();
+        let current_track_id = self
+            .playback_application
+            .audio_player()
+            .lock()
+            .await
+            .get_current_song_id();
         drop(_transition);
         if let Some(track_id) = current_track_id {
             if self.is_tracking_lastfm_track(track_id).await {
@@ -1923,19 +1942,19 @@ impl DurvaldCore {
 
     /// Stops playback.
     pub async fn stop(&self) -> CoreResult<()> {
-        let _transition = self.playback_transition.lock().await;
-        let mut player = self.audio_player.lock().await;
+        let _transition = self.playback_application.playback_transition().lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player.stop();
         drop(player);
         drop(_transition);
-        *self.lastfm_playback.lock().await = None;
+        *self.playback_application.lastfm_playback().lock().await = None;
         self.persist_playback_session().await?;
         Ok(())
     }
 
     /// Seeks to a position in seconds.
     pub async fn seek(&self, seconds: u64) -> CoreResult<()> {
-        let mut player = self.audio_player.lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player
             .seek_to_position(seconds)
             .await
@@ -1953,7 +1972,7 @@ impl DurvaldCore {
                 message: "Volume must be a finite number between 0.0 and 1.0".to_string(),
             });
         }
-        let mut player = self.audio_player.lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player.set_volume(volume.clamp(0.0, 1.0));
         let volume = player.volume() as f64;
         drop(player);
@@ -1963,8 +1982,8 @@ impl DurvaldCore {
 
     /// Enables or disables randomized selection when advancing the queue.
     pub async fn set_shuffle_enabled(&self, enabled: bool) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_transition.lock().await;
-        let mut player = self.audio_player.lock().await;
+        let _transition = self.playback_application.playback_transition().lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player.set_shuffle_enabled(enabled);
         let playback_state = playback_state_for_player(&player);
         drop(player);
@@ -1976,8 +1995,8 @@ impl DurvaldCore {
 
     /// Sets whether playback stops, repeats one track, or repeats the queue.
     pub async fn set_repeat_mode(&self, mode: RepeatMode) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_transition.lock().await;
-        let mut player = self.audio_player.lock().await;
+        let _transition = self.playback_application.playback_transition().lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player.set_repeat_mode(mode);
         let playback_state = playback_state_for_player(&player);
         drop(player);
@@ -2052,7 +2071,7 @@ impl DurvaldCore {
             .disconnect_lastfm()
             .await
             .map_err(lastfm_error)?;
-        *self.lastfm_playback.lock().await = None;
+        *self.playback_application.lastfm_playback().lock().await = None;
         self.enrichment
             .clear_provider_data(EnrichmentProvider::LastFm)
             .await
@@ -2191,7 +2210,7 @@ impl DurvaldCore {
             minimize_on_close: settings.minimize_on_close,
             onboarding: !settings.onboarding_complete,
         };
-        let mut player = self.audio_player.lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player.set_crossfade(settings.cross_fade, settings.cross_fade_duration);
         player.set_volume_normalization(settings.normalize_volume);
         drop(player);
@@ -2206,14 +2225,19 @@ impl DurvaldCore {
     pub async fn add_to_queue(&self, track_id: i64) -> CoreResult<()> {
         non_negative_id(track_id, "Track ID")?;
         let track = self.track(track_id).await?;
-        let _transition = self.playback_transition.lock().await;
-        let starts_playback = self.audio_player.lock().await.should_start_queued_track();
+        let _transition = self.playback_application.playback_transition().lock().await;
+        let starts_playback = self
+            .playback_application
+            .audio_player()
+            .lock()
+            .await
+            .should_start_queued_track();
         let prepared = if starts_playback {
             Some(self.prepare_sound(track.file_path.clone()).await?)
         } else {
             None
         };
-        let mut player = self.audio_player.lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         if let Some(prepared) = prepared {
             player
                 .play_song_prepared(track_id, prepared)
@@ -2236,19 +2260,24 @@ impl DurvaldCore {
 
     /// Advances to the next queued track.
     pub async fn next_track(&self) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_transition.lock().await;
-        self.audio_player.lock().await.cancel_gapless_transition();
-        let plan =
-            self.audio_player
-                .lock()
-                .await
-                .plan_next()
-                .ok_or_else(|| CoreError::NotFound {
-                    message: "No next track in the queue".to_string(),
-                })?;
+        let _transition = self.playback_application.playback_transition().lock().await;
+        self.playback_application
+            .audio_player()
+            .lock()
+            .await
+            .cancel_gapless_transition();
+        let plan = self
+            .playback_application
+            .audio_player()
+            .lock()
+            .await
+            .plan_next()
+            .ok_or_else(|| CoreError::NotFound {
+                message: "No next track in the queue".to_string(),
+            })?;
         let prepared = self.prepare_sound(plan.path().to_string()).await?;
         let (started_track_id, playback_state) = {
-            let mut player = self.audio_player.lock().await;
+            let mut player = self.playback_application.audio_player().lock().await;
             let started_track_id = plan.song_id();
             player
                 .commit_plan(plan, prepared)
@@ -2269,10 +2298,15 @@ impl DurvaldCore {
 
     /// Returns to the previously played track, when one exists.
     pub async fn previous_track(&self) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_transition.lock().await;
-        self.audio_player.lock().await.cancel_gapless_transition();
+        let _transition = self.playback_application.playback_transition().lock().await;
+        self.playback_application
+            .audio_player()
+            .lock()
+            .await
+            .cancel_gapless_transition();
         let plan = self
-            .audio_player
+            .playback_application
+            .audio_player()
             .lock()
             .await
             .plan_previous()
@@ -2281,7 +2315,7 @@ impl DurvaldCore {
             })?;
         let prepared = self.prepare_sound(plan.path().to_string()).await?;
         let (started_track_id, playback_state) = {
-            let mut player = self.audio_player.lock().await;
+            let mut player = self.playback_application.audio_player().lock().await;
             let started_track_id = plan.song_id();
             player
                 .commit_plan(plan, prepared)
@@ -2302,10 +2336,14 @@ impl DurvaldCore {
 
     /// Starts the upcoming track at the given queue position.
     pub async fn play_queue_item(&self, position: u64) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_transition.lock().await;
-        self.audio_player.lock().await.cancel_gapless_transition();
+        let _transition = self.playback_application.playback_transition().lock().await;
+        self.playback_application
+            .audio_player()
+            .lock()
+            .await
+            .cancel_gapless_transition();
         let plan = {
-            let player = self.audio_player.lock().await;
+            let player = self.playback_application.audio_player().lock().await;
             let upcoming_position = if player.get_current_song_id().is_some() {
                 position
                     .checked_sub(1)
@@ -2323,7 +2361,7 @@ impl DurvaldCore {
         };
         let prepared = self.prepare_sound(plan.path().to_string()).await?;
         let (started_track_id, playback_state) = {
-            let mut player = self.audio_player.lock().await;
+            let mut player = self.playback_application.audio_player().lock().await;
             let started_track_id = plan.song_id();
             player
                 .commit_plan(plan, prepared)
@@ -2343,9 +2381,9 @@ impl DurvaldCore {
 
     /// Removes an upcoming queue item.
     pub async fn remove_from_queue(&self, position: u64) -> CoreResult<()> {
-        let _transition = self.playback_transition.lock().await;
+        let _transition = self.playback_application.playback_transition().lock().await;
         {
-            let mut player = self.audio_player.lock().await;
+            let mut player = self.playback_application.audio_player().lock().await;
             let upcoming_position = if player.get_current_song_id().is_some() {
                 position
                     .checked_sub(1)
@@ -2367,9 +2405,9 @@ impl DurvaldCore {
 
     /// Moves an upcoming queue item to a new queue position.
     pub async fn move_queue_item(&self, from: u64, to: u64) -> CoreResult<()> {
-        let _transition = self.playback_transition.lock().await;
+        let _transition = self.playback_application.playback_transition().lock().await;
         {
-            let mut player = self.audio_player.lock().await;
+            let mut player = self.playback_application.audio_player().lock().await;
             let (upcoming_from, upcoming_to) = if player.get_current_song_id().is_some() {
                 (
                     from.checked_sub(1).ok_or_else(|| CoreError::InvalidInput {
@@ -2394,9 +2432,9 @@ impl DurvaldCore {
 
     /// Clears every upcoming queue item while leaving the active track alone.
     pub async fn clear_queue(&self) -> CoreResult<()> {
-        let _transition = self.playback_transition.lock().await;
+        let _transition = self.playback_application.playback_transition().lock().await;
         {
-            let mut player = self.audio_player.lock().await;
+            let mut player = self.playback_application.audio_player().lock().await;
             player.clear_queue();
         }
         drop(_transition);
@@ -2405,7 +2443,7 @@ impl DurvaldCore {
 
     /// Returns the current queue.
     pub async fn queue(&self) -> CoreResult<Vec<QueueItem>> {
-        let mut player = self.audio_player.lock().await;
+        let mut player = self.playback_application.audio_player().lock().await;
         player.synchronize_gapless();
         let queue = player.get_playback_queue();
         let mut items: Vec<QueueItem> = Vec::new();
@@ -2597,7 +2635,7 @@ mod tests {
         core.configure_enrichment(settings).await.unwrap();
 
         // Cache reads must not touch the audio mutex, even while it is held.
-        let player = core.audio_player.lock().await;
+        let player = core.playback_application.audio_player().lock().await;
         let details = tokio::time::timeout(
             std::time::Duration::from_secs(2),
             core.artist_details(73, "en-US".into()),
@@ -2746,7 +2784,7 @@ mod tests {
         core.add_to_queue(tracks[1].id).await.unwrap();
 
         {
-            let mut player = core.audio_player.lock().await;
+            let mut player = core.playback_application.audio_player().lock().await;
             player.process_mock_audio(80);
         }
         tokio::time::sleep(std::time::Duration::from_millis(650)).await;
@@ -2754,7 +2792,7 @@ mod tests {
         let history = core.playback_history().await.unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].track_id, tracks[0].id);
-        let player = core.audio_player.lock().await;
+        let player = core.playback_application.audio_player().lock().await;
         assert_eq!(player.get_current_song_id(), Some(tracks[1].id));
         drop(player);
 
@@ -2782,7 +2820,7 @@ mod tests {
         core.set_repeat_mode(RepeatMode::One).await.unwrap();
 
         {
-            let mut player = core.audio_player.lock().await;
+            let mut player = core.playback_application.audio_player().lock().await;
             player.process_mock_audio(80);
         }
         tokio::time::sleep(std::time::Duration::from_millis(650)).await;
@@ -2790,7 +2828,7 @@ mod tests {
         let history = core.playback_history().await.unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].track_id, track_id);
-        let player = core.audio_player.lock().await;
+        let player = core.playback_application.audio_player().lock().await;
         assert_eq!(player.get_current_song_id(), Some(track_id));
         drop(player);
 
