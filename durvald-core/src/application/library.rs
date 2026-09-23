@@ -3,12 +3,16 @@
 //! Responsibilities move here incrementally while [`crate::core::DurvaldCore`]
 //! remains the stable public facade.
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use base64::Engine;
 
 use crate::api::{
-    Artist, CoreError, CoreResult, Playlist, Release, ReleasePage, SearchResults, Track, TrackPage,
+    Artist, CoreError, CoreResult, Playlist, Release, ReleasePage, ScanPhase, ScanProgress,
+    ScanResult, SearchResults, Track, TrackPage,
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -16,11 +20,246 @@ type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 /// Coordinates library use cases behind the public core facade.
 pub(crate) struct LibraryApplication {
     db_pool: Arc<DatabasePool>,
+    covers_dir: String,
+    metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
+    scan_in_progress: Arc<AtomicBool>,
+    scan_cancel_requested: Arc<AtomicBool>,
+    scan_progress: Arc<std::sync::Mutex<Option<ScanProgress>>>,
 }
 
 impl LibraryApplication {
-    pub(crate) fn new(db_pool: Arc<DatabasePool>) -> Self {
-        Self { db_pool }
+    pub(crate) fn new(
+        db_pool: Arc<DatabasePool>,
+        covers_dir: String,
+        metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
+    ) -> Self {
+        Self {
+            db_pool,
+            covers_dir,
+            metadata_edit_queue,
+            scan_in_progress: Arc::new(AtomicBool::new(false)),
+            scan_cancel_requested: Arc::new(AtomicBool::new(false)),
+            scan_progress: Arc::new(std::sync::Mutex::new(None)),
+        }
+    }
+
+    pub(crate) async fn scan_library(&self, paths: Vec<String>) -> CoreResult<ScanResult> {
+        if self
+            .scan_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(CoreError::InvalidInput {
+                message: "A library scan is already in progress".to_string(),
+            });
+        }
+        self.scan_cancel_requested.store(false, Ordering::Release);
+        let _metadata_lane = self.metadata_edit_queue.lock().await;
+
+        let mut total_files = 0_u64;
+        let mut new_tracks = 0_u64;
+        let mut updated_tracks = 0_u64;
+        let mut errors = Vec::new();
+        let mut paths_scanned = 0;
+
+        for path in &paths {
+            if self.scan_cancel_requested.load(Ordering::Acquire) {
+                errors.push("Library scan cancelled".to_string());
+                break;
+            }
+            paths_scanned += 1;
+            self.update_scan_progress(ScanProgress {
+                path: path.clone(),
+                phase: ScanPhase::Scanning,
+                total_files,
+                processed_files: 0,
+                new_tracks,
+            });
+
+            let db_pool = self.db_pool.clone();
+            let cancellation = self.scan_cancel_requested.clone();
+            let scan_path = path.clone();
+            let pending = tokio::task::spawn_blocking(move || {
+                let conn = db_pool.get().map_err(|error| error.to_string())?;
+                crate::database::operations::prepare_database_update_with_cancel(
+                    &conn,
+                    scan_path,
+                    Some(cancellation.as_ref()),
+                )
+                .map_err(|error| error.to_string())
+            })
+            .await;
+            let pending = match pending {
+                Ok(Ok(pending)) => pending,
+                Ok(Err(message)) => {
+                    errors.push(format!("{path}: {message}"));
+                    continue;
+                }
+                Err(error) => {
+                    errors.push(format!(
+                        "{path}: Library scan preparation task failed: {error}"
+                    ));
+                    continue;
+                }
+            };
+            let path_total = pending.total_files() as u64;
+            let (metadata_batches, reconciliation) = pending.into_metadata_batches();
+            self.update_scan_progress(ScanProgress {
+                path: path.clone(),
+                phase: ScanPhase::ExtractingMetadata,
+                total_files: path_total,
+                processed_files: 0,
+                new_tracks: 0,
+            });
+
+            let progress_state = self.scan_progress.clone();
+            let progress_path = path.clone();
+            let metadata_progress = move |processed_files: usize| {
+                if let Ok(mut progress) = progress_state.lock() {
+                    *progress = Some(ScanProgress {
+                        path: progress_path.clone(),
+                        phase: ScanPhase::ExtractingMetadata,
+                        total_files: path_total,
+                        processed_files: processed_files as u64,
+                        new_tracks: 0,
+                    });
+                }
+            };
+            let mut path_failed = false;
+            for batch in metadata_batches {
+                let mut extracted =
+                    crate::database::operations::extract_metadata_batch_with_cancel(
+                        batch,
+                        &std::path::PathBuf::from(&self.covers_dir),
+                        Some(self.scan_cancel_requested.clone()),
+                        Some(&metadata_progress),
+                    )
+                    .await;
+                errors.append(&mut extracted.errors);
+                if self.scan_cancel_requested.load(Ordering::Acquire) {
+                    break;
+                }
+                self.update_scan_progress(ScanProgress {
+                    path: path.clone(),
+                    phase: ScanPhase::WritingDatabase,
+                    total_files: path_total,
+                    processed_files: extracted.attempted_files as u64,
+                    new_tracks,
+                });
+
+                let db_pool = self.db_pool.clone();
+                let write_result = tokio::task::spawn_blocking(move || {
+                    let conn = db_pool.get().map_err(|error| error.to_string())?;
+                    crate::database::operations::persist_metadata_with_existing_ids(
+                        &conn,
+                        extracted.metadata,
+                        extracted.mtimes,
+                        extracted.existing_song_ids,
+                    )
+                    .map_err(|error| error.to_string())
+                })
+                .await;
+                match write_result {
+                    Ok(Ok(written)) => {
+                        new_tracks += written.added_tracks as u64;
+                        updated_tracks += written.updated_tracks as u64;
+                    }
+                    Ok(Err(error)) => {
+                        errors.push(format!("{path}: {error}"));
+                        path_failed = true;
+                        break;
+                    }
+                    Err(error) => {
+                        errors.push(format!(
+                            "{path}: Library database write task failed: {error}"
+                        ));
+                        path_failed = true;
+                        break;
+                    }
+                }
+            }
+
+            if self.scan_cancel_requested.load(Ordering::Acquire) {
+                errors.push("Library scan cancelled".to_string());
+                break;
+            }
+            if path_failed {
+                continue;
+            }
+
+            if let Some(reconciliation) = reconciliation {
+                let db_pool = self.db_pool.clone();
+                let reconcile_result = tokio::task::spawn_blocking(move || {
+                    let conn = db_pool.get().map_err(|error| error.to_string())?;
+                    crate::database::operations::remove_missing_songs_in_folder(
+                        &conn,
+                        reconciliation,
+                    )
+                    .map_err(|error| error.to_string())
+                })
+                .await;
+                if let Err(error) = reconcile_result
+                    .map_err(|error| error.to_string())
+                    .and_then(|result| result)
+                {
+                    errors.push(format!("{path}: {error}"));
+                    continue;
+                }
+            }
+            total_files += path_total;
+        }
+
+        self.scan_in_progress.store(false, Ordering::Release);
+        self.update_scan_progress(ScanProgress {
+            path: paths.last().cloned().unwrap_or_default(),
+            phase: ScanPhase::Complete,
+            total_files,
+            processed_files: total_files,
+            new_tracks,
+        });
+
+        Ok(ScanResult {
+            paths_scanned,
+            total_files_found: total_files,
+            new_tracks_added: new_tracks,
+            updated_tracks,
+            errors,
+        })
+    }
+
+    pub(crate) async fn scan_configured_library(&self) -> CoreResult<ScanResult> {
+        let paths = self.library_paths().await?;
+        if paths.is_empty() {
+            return Err(CoreError::InvalidInput {
+                message: "No library folders are configured".to_string(),
+            });
+        }
+        self.scan_library(paths).await
+    }
+
+    pub(crate) fn scan_progress(&self) -> CoreResult<Option<ScanProgress>> {
+        self.scan_progress
+            .lock()
+            .map(|progress| progress.clone())
+            .map_err(|_| CoreError::Storage {
+                message: "Library scan progress state is unavailable".to_string(),
+            })
+    }
+
+    pub(crate) fn cancel_library_scan(&self) -> CoreResult<()> {
+        if !self.scan_in_progress.load(Ordering::Acquire) {
+            return Err(CoreError::NotFound {
+                message: "No library scan is in progress".to_string(),
+            });
+        }
+        self.scan_cancel_requested.store(true, Ordering::Release);
+        Ok(())
+    }
+
+    fn update_scan_progress(&self, progress: ScanProgress) {
+        if let Ok(mut current) = self.scan_progress.lock() {
+            *current = Some(progress);
+        }
     }
 
     pub(crate) async fn add_library_path(&self, path: String) -> CoreResult<()> {

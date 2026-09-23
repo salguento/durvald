@@ -13,10 +13,7 @@ use crate::application::playback::scrobble_eligible;
 use crate::lastfm::{LastFmClient, LastFmError};
 use crate::secure_store::SecureStore;
 use base64::Engine;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
 
 /// Opaque core engine - the main entry point for all operations.
 ///
@@ -27,13 +24,10 @@ pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
     library_application: LibraryApplication,
     playback_application: Arc<PlaybackApplication>,
-    metadata_edit_queue: tokio::sync::Mutex<()>,
+    metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     lastfm: Arc<LastFmClient>,
     enrichment: crate::enrichment::service::EnrichmentService,
     covers_dir: String,
-    scan_in_progress: Arc<AtomicBool>,
-    scan_cancel_requested: Arc<AtomicBool>,
-    scan_progress: Arc<std::sync::Mutex<Option<ScanProgress>>>,
 }
 
 impl DurvaldCore {
@@ -128,12 +122,6 @@ impl DurvaldCore {
             .map_err(|error| CoreError::Storage {
                 message: format!("{operation_name} task failed: {error}"),
             })?
-    }
-
-    fn update_scan_progress(&self, progress: ScanProgress) {
-        if let Ok(mut current) = self.scan_progress.lock() {
-            *current = Some(progress);
-        }
     }
 }
 
@@ -472,6 +460,7 @@ impl DurvaldCore {
         );
 
         let db_pool = Arc::new(pool);
+        let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
         let core = Self {
             enrichment: crate::enrichment::service::EnrichmentService::new(
                 db_pool.clone(),
@@ -479,18 +468,19 @@ impl DurvaldCore {
                 lastfm.clone(),
             ),
             db_pool: db_pool.clone(),
-            library_application: LibraryApplication::new(db_pool.clone()),
+            library_application: LibraryApplication::new(
+                db_pool.clone(),
+                config.covers_dir.clone(),
+                metadata_edit_queue.clone(),
+            ),
             playback_application: Arc::new(PlaybackApplication::new(
                 db_pool.clone(),
                 audio_player,
                 lastfm.clone(),
             )),
-            metadata_edit_queue: tokio::sync::Mutex::new(()),
+            metadata_edit_queue,
             lastfm,
             covers_dir: config.covers_dir.clone(),
-            scan_in_progress: Arc::new(AtomicBool::new(false)),
-            scan_cancel_requested: Arc::new(AtomicBool::new(false)),
-            scan_progress: Arc::new(std::sync::Mutex::new(None)),
         };
 
         let core = Arc::new(core);
@@ -505,212 +495,17 @@ impl DurvaldCore {
 impl DurvaldCore {
     /// Scans the library at the given paths.
     pub async fn scan_library(&self, paths: Vec<String>) -> CoreResult<ScanResult> {
-        if self
-            .scan_in_progress
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return Err(CoreError::InvalidInput {
-                message: "A library scan is already in progress".to_string(),
-            });
-        }
-        self.scan_cancel_requested.store(false, Ordering::Release);
-        // Scans and edits share the same serial lane so extracted old tags
-        // cannot overwrite an edit after the file has been replaced.
-        let _metadata_lane = self.metadata_edit_queue.lock().await;
-
-        let mut total_files: u64 = 0;
-        let mut new_tracks: u64 = 0;
-        let mut updated_tracks: u64 = 0;
-        let mut errors = Vec::new();
-        let mut paths_scanned = 0;
-
-        for path in &paths {
-            if self.scan_cancel_requested.load(Ordering::Acquire) {
-                errors.push("Library scan cancelled".to_string());
-                break;
-            }
-            paths_scanned += 1;
-            self.update_scan_progress(ScanProgress {
-                path: path.clone(),
-                phase: ScanPhase::Scanning,
-                total_files,
-                processed_files: 0,
-                new_tracks,
-            });
-
-            let db_pool = self.db_pool.clone();
-            let cancellation = self.scan_cancel_requested.clone();
-            let scan_path = path.clone();
-            let pending = tokio::task::spawn_blocking(move || {
-                let conn = db_pool.get().map_err(|e| e.to_string())?;
-                crate::database::operations::prepare_database_update_with_cancel(
-                    &conn,
-                    scan_path,
-                    Some(cancellation.as_ref()),
-                )
-                .map_err(|e| e.to_string())
-            })
-            .await;
-            let pending = match pending {
-                Ok(Ok(pending)) => pending,
-                Ok(Err(message)) => {
-                    errors.push(format!("{}: {}", path, message));
-                    continue;
-                }
-                Err(error) => {
-                    errors.push(format!(
-                        "{}: Library scan preparation task failed: {}",
-                        path, error
-                    ));
-                    continue;
-                }
-            };
-            let path_total = pending.total_files() as u64;
-            let (metadata_batches, reconciliation) = pending.into_metadata_batches();
-            self.update_scan_progress(ScanProgress {
-                path: path.clone(),
-                phase: ScanPhase::ExtractingMetadata,
-                total_files: path_total,
-                processed_files: 0,
-                new_tracks: 0,
-            });
-
-            let progress_state = self.scan_progress.clone();
-            let progress_path = path.clone();
-            let metadata_progress = move |processed_files: usize| {
-                if let Ok(mut progress) = progress_state.lock() {
-                    *progress = Some(ScanProgress {
-                        path: progress_path.clone(),
-                        phase: ScanPhase::ExtractingMetadata,
-                        total_files: path_total,
-                        processed_files: processed_files as u64,
-                        new_tracks: 0,
-                    });
-                }
-            };
-            let mut path_failed = false;
-            for batch in metadata_batches {
-                let mut extracted =
-                    crate::database::operations::extract_metadata_batch_with_cancel(
-                        batch,
-                        &std::path::PathBuf::from(&self.covers_dir),
-                        Some(self.scan_cancel_requested.clone()),
-                        Some(&metadata_progress),
-                    )
-                    .await;
-                errors.append(&mut extracted.errors);
-                if self.scan_cancel_requested.load(Ordering::Acquire) {
-                    break;
-                }
-                self.update_scan_progress(ScanProgress {
-                    path: path.clone(),
-                    phase: ScanPhase::WritingDatabase,
-                    total_files: path_total,
-                    processed_files: extracted.attempted_files as u64,
-                    new_tracks,
-                });
-
-                let db_pool = self.db_pool.clone();
-                let write_result = tokio::task::spawn_blocking(move || {
-                    let conn = db_pool.get().map_err(|e| e.to_string())?;
-                    crate::database::operations::persist_metadata_with_existing_ids(
-                        &conn,
-                        extracted.metadata,
-                        extracted.mtimes,
-                        extracted.existing_song_ids,
-                    )
-                    .map_err(|e| e.to_string())
-                })
-                .await;
-                match write_result {
-                    Ok(Ok(written)) => {
-                        new_tracks += written.added_tracks as u64;
-                        updated_tracks += written.updated_tracks as u64;
-                    }
-                    Ok(Err(error)) => {
-                        errors.push(format!("{}: {}", path, error));
-                        path_failed = true;
-                        break;
-                    }
-                    Err(error) => {
-                        errors.push(format!(
-                            "{}: Library database write task failed: {}",
-                            path, error
-                        ));
-                        path_failed = true;
-                        break;
-                    }
-                }
-            }
-
-            if self.scan_cancel_requested.load(Ordering::Acquire) {
-                errors.push("Library scan cancelled".to_string());
-                break;
-            }
-            if path_failed {
-                continue;
-            }
-
-            if let Some(reconciliation) = reconciliation {
-                let db_pool = self.db_pool.clone();
-                let reconcile_result = tokio::task::spawn_blocking(move || {
-                    let conn = db_pool.get().map_err(|e| e.to_string())?;
-                    crate::database::operations::remove_missing_songs_in_folder(
-                        &conn,
-                        reconciliation,
-                    )
-                    .map_err(|e| e.to_string())
-                })
-                .await;
-                if let Err(error) = reconcile_result
-                    .map_err(|error| error.to_string())
-                    .and_then(|result| result)
-                {
-                    errors.push(format!("{}: {}", path, error));
-                    continue;
-                }
-            }
-            total_files += path_total;
-        }
-
-        self.scan_in_progress.store(false, Ordering::Release);
-        self.update_scan_progress(ScanProgress {
-            path: paths.last().cloned().unwrap_or_default(),
-            phase: ScanPhase::Complete,
-            total_files,
-            processed_files: total_files,
-            new_tracks,
-        });
-
-        Ok(ScanResult {
-            paths_scanned,
-            total_files_found: total_files,
-            new_tracks_added: new_tracks,
-            updated_tracks,
-            errors,
-        })
+        self.library_application.scan_library(paths).await
     }
 
     /// Returns phase-level progress for the current or most recent library scan.
     pub fn scan_progress(&self) -> CoreResult<Option<ScanProgress>> {
-        self.scan_progress
-            .lock()
-            .map(|progress| progress.clone())
-            .map_err(|_| CoreError::Storage {
-                message: "Library scan progress state is unavailable".to_string(),
-            })
+        self.library_application.scan_progress()
     }
 
     /// Requests cancellation of the active library scan.
     pub fn cancel_library_scan(&self) -> CoreResult<()> {
-        if !self.scan_in_progress.load(Ordering::Acquire) {
-            return Err(CoreError::NotFound {
-                message: "No library scan is in progress".to_string(),
-            });
-        }
-        self.scan_cancel_requested.store(true, Ordering::Release);
-        Ok(())
+        self.library_application.cancel_library_scan()
     }
 
     /// Adds an existing folder to the configured library locations.
@@ -725,13 +520,7 @@ impl DurvaldCore {
 
     /// Scans every configured library folder.
     pub async fn scan_configured_library(&self) -> CoreResult<ScanResult> {
-        let paths = self.library_paths().await?;
-        if paths.is_empty() {
-            return Err(CoreError::InvalidInput {
-                message: "No library folders are configured".to_string(),
-            });
-        }
-        self.scan_library(paths).await
+        self.library_application.scan_configured_library().await
     }
 
     /// Removes a configured library folder.
