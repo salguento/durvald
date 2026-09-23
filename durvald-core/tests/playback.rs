@@ -1137,3 +1137,82 @@ async fn set_repeat_mode_updates_snapshot_and_persisted_session() -> TestResult<
 
     Ok(())
 }
+
+#[tokio::test]
+async fn next_track_with_shuffle_consumes_exactly_one_future_track() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(4).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+    let fourth = &tracks[3];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+    test_core.core().add_to_queue(fourth.id).await?;
+
+    test_core.core().set_shuffle_enabled(true).await?;
+
+    let advanced = test_core.core().next_track().await?;
+    test_core.process_mock_audio(1).await;
+
+    assert!(advanced.shuffle_enabled);
+    assert!(advanced.is_playing);
+    assert!(!advanced.is_paused);
+
+    let selected_id = advanced
+        .current_track
+        .as_ref()
+        .map(|item| item.id)
+        .expect("shuffle navigation must select a current track");
+
+    let future_ids = vec![second.id, third.id, fourth.id];
+
+    assert!(future_ids.contains(&selected_id));
+
+    assert_eq!(advanced.queue.len(), 3);
+    assert_eq!(advanced.queue[0].track_id, selected_id);
+    assert_eq!(advanced.queue[0].position, 0);
+
+    let remaining_ids: Vec<i64> = advanced
+        .queue
+        .iter()
+        .skip(1)
+        .map(|item| item.track_id)
+        .collect();
+
+    assert_eq!(remaining_ids.len(), 2);
+    assert!(!remaining_ids.contains(&selected_id));
+    assert!(!remaining_ids.contains(&first.id));
+
+    let mut accounted_for = vec![selected_id];
+    accounted_for.extend(remaining_ids.iter().copied());
+    accounted_for.sort_unstable();
+
+    let mut expected_future_ids = future_ids;
+    expected_future_ids.sort_unstable();
+
+    assert_eq!(accounted_for, expected_future_ids);
+
+    let observed = test_core.core().playback().await;
+
+    assert_eq!(
+        observed.current_track.as_ref().map(|item| item.id),
+        Some(selected_id),
+    );
+    assert_eq!(observed.queue, advanced.queue);
+    assert!(observed.shuffle_enabled);
+
+    let session = test_core.core().last_session().await?;
+
+    let persisted_ids: Vec<i64> = advanced.queue.iter().map(|item| item.track_id).collect();
+
+    assert_eq!(session.current_track_id, Some(selected_id));
+    assert_eq!(session.queue, persisted_ids);
+    assert!(session.shuffle_enabled);
+
+    Ok(())
+}
