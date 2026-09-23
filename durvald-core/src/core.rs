@@ -502,16 +502,15 @@ impl DurvaldCore {
         artist_id: i64,
         musicbrainz_id: String,
     ) -> CoreResult<ArtistIdentity> {
-        self.enrichment
-            .confirm_artist_identity(artist_id, Some(musicbrainz_id))
+        self.enrichment_application
+            .confirm_artist_identity(artist_id, musicbrainz_id)
             .await
     }
 
     pub async fn clear_artist_identity(&self, artist_id: i64) -> CoreResult<()> {
-        self.enrichment
-            .confirm_artist_identity(artist_id, None)
+        self.enrichment_application
+            .clear_artist_identity(artist_id)
             .await
-            .map(|_| ())
     }
 
     pub async fn enrichment_settings(&self) -> CoreResult<EnrichmentSettings> {
@@ -557,7 +556,9 @@ impl DurvaldCore {
         artist_id: i64,
         value: ArtistFieldOverride,
     ) -> CoreResult<()> {
-        self.enrichment.set_artist_override(artist_id, value).await
+        self.enrichment_application
+            .set_artist_override(artist_id, value)
+            .await
     }
 
     pub async fn clear_artist_override(
@@ -566,7 +567,7 @@ impl DurvaldCore {
         field: ArtistProfileField,
         language: String,
     ) -> CoreResult<()> {
-        self.enrichment
+        self.enrichment_application
             .clear_artist_override(artist_id, field, language)
             .await
     }

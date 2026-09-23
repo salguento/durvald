@@ -1,8 +1,9 @@
 //! Enrichment use-case coordination.
 
 use crate::api::{
-    ArtistDetails, ArtistDiscographyPage, ArtistIdentity, ArtistIdentityCandidates,
-    ArtistPopularTracks, CoreError, CoreResult, EnrichmentSettings, ExternalReleaseDetails,
+    ArtistDetails, ArtistDiscographyPage, ArtistFieldOverride, ArtistIdentity,
+    ArtistIdentityCandidates, ArtistPopularTracks, ArtistProfileField, CoreError, CoreResult,
+    EnrichmentSettings, ExternalReleaseDetails,
 };
 use crate::enrichment::service::EnrichmentService;
 
@@ -66,6 +67,42 @@ impl EnrichmentApplication {
         artist_id: i64,
     ) -> CoreResult<ArtistIdentityCandidates> {
         self.service.resolve_artist_candidates(artist_id).await
+    }
+
+    pub(crate) async fn confirm_artist_identity(
+        &self,
+        artist_id: i64,
+        musicbrainz_id: String,
+    ) -> CoreResult<ArtistIdentity> {
+        self.service
+            .confirm_artist_identity(artist_id, Some(musicbrainz_id))
+            .await
+    }
+
+    pub(crate) async fn clear_artist_identity(&self, artist_id: i64) -> CoreResult<()> {
+        self.service
+            .confirm_artist_identity(artist_id, None)
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn set_artist_override(
+        &self,
+        artist_id: i64,
+        value: ArtistFieldOverride,
+    ) -> CoreResult<()> {
+        self.service.set_artist_override(artist_id, value).await
+    }
+
+    pub(crate) async fn clear_artist_override(
+        &self,
+        artist_id: i64,
+        field: ArtistProfileField,
+        language: String,
+    ) -> CoreResult<()> {
+        self.service
+            .clear_artist_override(artist_id, field, language)
+            .await
     }
 
     pub(crate) async fn settings(&self) -> CoreResult<EnrichmentSettings> {
