@@ -29,7 +29,6 @@ pub struct DurvaldCore {
     metadata_application: MetadataApplication,
     playback_application: Arc<PlaybackApplication>,
     playlist_application: PlaylistApplication,
-    metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     lastfm: Arc<LastFmClient>,
     enrichment: crate::enrichment::service::EnrichmentService,
     covers_dir: String,
@@ -431,6 +430,7 @@ impl DurvaldCore {
             metadata_application: MetadataApplication::new(
                 db_pool.clone(),
                 config.covers_dir.clone(),
+                metadata_edit_queue.clone(),
             ),
             playback_application: Arc::new(PlaybackApplication::new(
                 db_pool.clone(),
@@ -438,7 +438,6 @@ impl DurvaldCore {
                 lastfm.clone(),
             )),
             playlist_application: PlaylistApplication::new(db_pool.clone()),
-            metadata_edit_queue,
             lastfm,
             covers_dir: config.covers_dir.clone(),
         };
@@ -1146,20 +1145,14 @@ impl DurvaldCore {
         metadata: TrackMetadataEdit,
         write_to_file: bool,
     ) -> CoreResult<TrackInfo> {
-        non_negative_id(track_id, "Track ID")?;
-        let _queue = self.metadata_edit_queue.lock().await;
-        let backup_dir = std::path::PathBuf::from(&self.covers_dir).join("metadata-backups");
-        self.run_database_core(move |conn| {
-            crate::metadata_edit::ensure_cached(conn, track_id)?;
-            crate::metadata_edit::save(conn, track_id, metadata, write_to_file, &backup_dir)
-        })
-        .await
+        self.metadata_application
+            .save_track_metadata(track_id, metadata, write_to_file)
+            .await
     }
 
     pub async fn undo_track_metadata(&self, track_id: i64) -> CoreResult<TrackInfo> {
-        non_negative_id(track_id, "Track ID")?;
-        let _queue = self.metadata_edit_queue.lock().await;
-        self.run_database_core(move |conn| crate::metadata_edit::undo(conn, track_id))
+        self.metadata_application
+            .undo_track_metadata(track_id)
             .await
     }
 

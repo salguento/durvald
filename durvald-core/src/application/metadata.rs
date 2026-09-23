@@ -2,20 +2,28 @@
 
 use std::sync::Arc;
 
-use crate::api::{AudioMetadata, CoreError, CoreResult, KeyValuePair, TrackInfo};
+use crate::api::{
+    AudioMetadata, CoreError, CoreResult, KeyValuePair, TrackInfo, TrackMetadataEdit,
+};
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
 pub(crate) struct MetadataApplication {
     db_pool: Arc<DatabasePool>,
     covers_dir: String,
+    metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl MetadataApplication {
-    pub(crate) fn new(db_pool: Arc<DatabasePool>, covers_dir: String) -> Self {
+    pub(crate) fn new(
+        db_pool: Arc<DatabasePool>,
+        covers_dir: String,
+        metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
+    ) -> Self {
         Self {
             db_pool,
             covers_dir,
+            metadata_edit_queue,
         }
     }
 
@@ -42,6 +50,29 @@ impl MetadataApplication {
             message: format!("Metadata extraction task failed: {error}"),
         })??;
         Ok(metadata_to_api(metadata))
+    }
+
+    pub(crate) async fn save_track_metadata(
+        &self,
+        track_id: i64,
+        metadata: TrackMetadataEdit,
+        write_to_file: bool,
+    ) -> CoreResult<TrackInfo> {
+        non_negative_id(track_id, "Track ID")?;
+        let _queue = self.metadata_edit_queue.lock().await;
+        let backup_dir = std::path::PathBuf::from(&self.covers_dir).join("metadata-backups");
+        self.run_database_core(move |conn| {
+            crate::metadata_edit::ensure_cached(conn, track_id)?;
+            crate::metadata_edit::save(conn, track_id, metadata, write_to_file, &backup_dir)
+        })
+        .await
+    }
+
+    pub(crate) async fn undo_track_metadata(&self, track_id: i64) -> CoreResult<TrackInfo> {
+        non_negative_id(track_id, "Track ID")?;
+        let _queue = self.metadata_edit_queue.lock().await;
+        self.run_database_core(move |conn| crate::metadata_edit::undo(conn, track_id))
+            .await
     }
 
     async fn run_database_core<T, F>(&self, operation: F) -> CoreResult<T>
