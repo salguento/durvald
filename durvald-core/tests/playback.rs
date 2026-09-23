@@ -1082,3 +1082,58 @@ async fn set_shuffle_enabled_updates_snapshot_without_reordering_queue() -> Test
 
     Ok(())
 }
+
+#[tokio::test]
+async fn set_repeat_mode_updates_snapshot_and_persisted_session() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    let initial = test_core.core().playback().await;
+
+    assert_eq!(initial.repeat_mode, RepeatMode::None);
+
+    let expected_queue = initial.queue.clone();
+    let expected_ids = vec![first.id, second.id, third.id];
+
+    for mode in [RepeatMode::One, RepeatMode::All, RepeatMode::None] {
+        let returned = test_core.core().set_repeat_mode(mode).await?;
+
+        assert_eq!(returned.repeat_mode, mode);
+
+        assert_eq!(
+            returned.current_track.as_ref().map(|item| item.id),
+            Some(first.id),
+        );
+
+        assert!(returned.is_playing);
+        assert_eq!(returned.queue, expected_queue);
+
+        let observed = test_core.core().playback().await;
+
+        assert_eq!(observed.repeat_mode, mode);
+
+        assert_eq!(
+            observed.current_track.as_ref().map(|item| item.id),
+            Some(first.id),
+        );
+
+        assert_eq!(observed.queue, expected_queue);
+
+        let session = test_core.core().last_session().await?;
+
+        assert_eq!(session.repeat_mode, mode);
+        assert_eq!(session.current_track_id, Some(first.id));
+        assert_eq!(session.queue, expected_ids);
+    }
+
+    Ok(())
+}
