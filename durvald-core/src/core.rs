@@ -5,6 +5,7 @@
 //! the `DurvaldCore` facade in the `core` module.
 
 use crate::api::*;
+use crate::application::history::HistoryApplication;
 use crate::application::library::LibraryApplication;
 pub(crate) use crate::application::library::track_from_song;
 use crate::application::playback::PlaybackApplication;
@@ -22,6 +23,7 @@ use std::sync::Arc;
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
+    history_application: HistoryApplication,
     library_application: LibraryApplication,
     playback_application: Arc<PlaybackApplication>,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
@@ -169,20 +171,12 @@ fn pagination_window(page_size: u64, offset: u64) -> CoreResult<(u64, usize)> {
     Ok((page_size + 1, page_size as usize))
 }
 
+#[cfg(test)]
 fn finish_page<T>(mut items: Vec<T>, page_size: usize, offset: u64) -> (Vec<T>, Option<u64>) {
     let has_more = items.len() > page_size;
     items.truncate(page_size);
     let next_offset = has_more.then(|| offset.saturating_add(page_size as u64));
     (items, next_offset)
-}
-
-fn history_from_database(item: crate::database::models::PlayHistory) -> PlaybackHistoryItem {
-    PlaybackHistoryItem {
-        id: item.history_id as i64,
-        track_id: item.song_id as i64,
-        played_at: item.played_at,
-        duration_seconds: item.duration,
-    }
 }
 
 /// Converts legacy 0–100 persisted values and normalized API values to the
@@ -468,6 +462,7 @@ impl DurvaldCore {
                 lastfm.clone(),
             ),
             db_pool: db_pool.clone(),
+            history_application: HistoryApplication::new(db_pool.clone()),
             library_application: LibraryApplication::new(
                 db_pool.clone(),
                 config.covers_dir.clone(),
@@ -1178,12 +1173,7 @@ impl DurvaldCore {
 
     /// Returns completed playback events, newest-first as stored by the core.
     pub async fn playback_history(&self) -> CoreResult<Vec<PlaybackHistoryItem>> {
-        self.run_database(|conn| {
-            crate::database::operations::get_play_history(conn)
-                .map(|history| history.into_iter().map(history_from_database).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.history_application.playback_history().await
     }
 
     /// Returns a bounded page of completed playback events, newest first.
@@ -1192,18 +1182,9 @@ impl DurvaldCore {
         page_size: u64,
         offset: u64,
     ) -> CoreResult<PlaybackHistoryPage> {
-        let (fetch_size, page_size) = pagination_window(page_size, offset)?;
-        let history = self
-            .run_database(move |conn| {
-                crate::database::operations::get_play_history_page(conn, fetch_size, offset)
-                    .map_err(|error| error.to_string())
-            })
-            .await?
-            .into_iter()
-            .map(history_from_database)
-            .collect();
-        let (items, next_offset) = finish_page(history, page_size, offset);
-        Ok(PlaybackHistoryPage { items, next_offset })
+        self.history_application
+            .playback_history_page(page_size, offset)
+            .await
     }
 
     /// Removes a single completed-playback event.
