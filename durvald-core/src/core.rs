@@ -5,7 +5,9 @@
 //! the `DurvaldCore` facade in the `core` module.
 
 use crate::api::*;
-use crate::application::playback::{LastFmPlayback, PlaybackApplication};
+use crate::application::playback::PlaybackApplication;
+#[cfg(test)]
+use crate::application::playback::scrobble_eligible;
 use crate::lastfm::{LastFmClient, LastFmError};
 use crate::secure_store::SecureStore;
 use base64::Engine;
@@ -21,7 +23,7 @@ use std::sync::{
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
-    playback_application: PlaybackApplication,
+    playback_application: Arc<PlaybackApplication>,
     metadata_edit_queue: tokio::sync::Mutex<()>,
     lastfm: Arc<LastFmClient>,
     enrichment: crate::enrichment::service::EnrichmentService,
@@ -29,12 +31,6 @@ pub struct DurvaldCore {
     scan_in_progress: Arc<AtomicBool>,
     scan_cancel_requested: Arc<AtomicBool>,
     scan_progress: Arc<std::sync::Mutex<Option<ScanProgress>>>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct AutomaticPlaybackEvent {
-    completed_track_id: Option<i64>,
-    started_track_id: Option<i64>,
 }
 
 impl DurvaldCore {
@@ -131,112 +127,10 @@ impl DurvaldCore {
             })?
     }
 
-    async fn prepare_sound(&self, path: String) -> CoreResult<crate::audio::player::PreparedSound> {
-        let normalize_volume = self
-            .playback_application
-            .audio_player()
-            .lock()
-            .await
-            .normalize_volume_enabled();
-        crate::audio::AudioPlayer::prepare_sound(path, normalize_volume)
-            .await
-            .map_err(|error| CoreError::Playback {
-                message: error.to_string(),
-            })
-    }
-
     fn update_scan_progress(&self, progress: ScanProgress) {
         if let Ok(mut current) = self.scan_progress.lock() {
             *current = Some(progress);
         }
-    }
-
-    async fn report_lastfm_track_started(&self, track_id: i64) {
-        if !self.lastfm.is_connected().await {
-            return;
-        }
-        let track = self
-            .run_database(move |conn| {
-                crate::database::operations::get_song_by_id(conn, &track_id.to_string())
-                    .map(|tracks| tracks.into_iter().next())
-                    .map_err(|error| error.to_string())
-            })
-            .await
-            .ok()
-            .flatten();
-        let Some(track) = track else {
-            return;
-        };
-        let started_at = unix_timestamp_seconds();
-        let playback = LastFmPlayback {
-            track_id,
-            artist: track.artist_name,
-            title: track.title,
-            release: track.release_title,
-            duration_seconds: track.duration,
-            started_at,
-            active_since: Some(started_at),
-            played_seconds: 0,
-        };
-        let artist = playback.artist.clone();
-        let title = playback.title.clone();
-        let release = (!playback.release.is_empty()).then_some(playback.release.clone());
-        *self.playback_application.lastfm_playback().lock().await = Some(playback);
-        let _ = self.lastfm.update_now_playing(artist, title, release).await;
-    }
-
-    async fn report_lastfm_track_completed(&self, track_id: i64) {
-        let playback = {
-            let mut current = self.playback_application.lastfm_playback().lock().await;
-            match current
-                .take()
-                .filter(|playback| playback.track_id == track_id)
-            {
-                Some(mut playback) => {
-                    if let Some(active_since) = playback.active_since.take() {
-                        playback.played_seconds +=
-                            unix_timestamp_seconds().saturating_sub(active_since);
-                    }
-                    Some(playback)
-                }
-                None => None,
-            }
-        };
-        let Some(playback) = playback else {
-            return;
-        };
-        if !scrobble_eligible(playback.duration_seconds, playback.played_seconds) {
-            return;
-        }
-        let _ = self
-            .lastfm
-            .scrobble_track(
-                playback.artist,
-                playback.title,
-                (!playback.release.is_empty()).then_some(playback.release),
-                playback.started_at,
-            )
-            .await;
-    }
-
-    async fn record_completed_playback(&self, track_id: i64) {
-        let Ok(track_id) = u64::try_from(track_id) else {
-            return;
-        };
-        let db_pool = self.db_pool.clone();
-        let _ = tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| error.to_string())?;
-            let duration =
-                crate::database::operations::get_song_by_id(&conn, &track_id.to_string())
-                    .map_err(|error| error.to_string())?
-                    .into_iter()
-                    .next()
-                    .map(|track| track.duration)
-                    .unwrap_or_default();
-            crate::database::operations::record_completed_playback(&conn, track_id, duration)
-                .map_err(|error| error.to_string())
-        })
-        .await;
     }
 }
 
@@ -449,19 +343,6 @@ fn lastfm_error(error: LastFmError) -> CoreError {
     }
 }
 
-/// Last.fm accepts a scrobble after at least half the track or four minutes,
-/// whichever is sooner, and never for tracks shorter than 30 seconds.
-fn scrobble_eligible(duration_seconds: u64, played_seconds: u64) -> bool {
-    duration_seconds >= 30 && played_seconds >= (duration_seconds / 2).min(240)
-}
-
-fn unix_timestamp_seconds() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
 fn artwork_path_in_covers_dir(
     covers_dir: &str,
     artwork_id: &str,
@@ -641,11 +522,11 @@ impl DurvaldCore {
                 lastfm.clone(),
             ),
             db_pool: db_pool.clone(),
-            playback_application: PlaybackApplication::new(
+            playback_application: Arc::new(PlaybackApplication::new(
                 db_pool.clone(),
                 audio_player,
                 lastfm.clone(),
-            ),
+            )),
             metadata_edit_queue: tokio::sync::Mutex::new(()),
             lastfm,
             covers_dir: config.covers_dir.clone(),
@@ -656,95 +537,7 @@ impl DurvaldCore {
 
         let core = Arc::new(core);
 
-        // Keep completion bookkeeping and Last.fm I/O strictly outside the
-        // preloader. A single consumer preserves event order without allowing
-        // a slow scrobble or now-playing request to delay the next decode.
-        let (playback_event_sender, mut playback_event_receiver) =
-            tokio::sync::mpsc::unbounded_channel::<AutomaticPlaybackEvent>();
-        let reporting_core = Arc::downgrade(&core);
-        tokio::spawn(async move {
-            while let Some(event) = playback_event_receiver.recv().await {
-                let Some(core) = reporting_core.upgrade() else {
-                    break;
-                };
-                if let Some(track_id) = event.completed_track_id {
-                    core.record_completed_playback(track_id).await;
-                    core.report_lastfm_track_completed(track_id).await;
-                }
-                if let Some(track_id) = event.started_track_id {
-                    core.report_lastfm_track_started(track_id).await;
-                }
-                let _ = core.playback_application.persist_session().await;
-            }
-        });
-
-        // Prepare the successor while the current track plays. The audio
-        // renderer switches streams; this worker only preloads and reconciles
-        // queue state, so database and network latency cannot insert gaps.
-        let weak_core = Arc::downgrade(&core);
-        tokio::spawn(async move {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                let Some(core) = weak_core.upgrade() else {
-                    break;
-                };
-
-                let transitioned = {
-                    let _transition = core.playback_application.playback_transition().lock().await;
-                    let gapless_plan = {
-                        let mut player = core.playback_application.audio_player().lock().await;
-                        player.synchronize_gapless();
-                        player.gapless_plan()
-                    };
-                    if let Some(plan) = gapless_plan {
-                        if let Ok(prepared) = core.prepare_sound(plan.path().to_string()).await {
-                            let _ = core
-                                .playback_application
-                                .audio_player()
-                                .lock()
-                                .await
-                                .schedule_gapless(plan, prepared);
-                        }
-                    }
-                    let completed = core
-                        .playback_application
-                        .audio_player()
-                        .lock()
-                        .await
-                        .pop_completed_transition();
-                    if let Some((previous, next)) = completed {
-                        Some((previous, Some(next)))
-                    } else {
-                        let (completed_track_id, plan) = {
-                            let player = core.playback_application.audio_player().lock().await;
-                            (
-                                player.get_current_song_id(),
-                                player.completed_playback_plan(),
-                            )
-                        };
-                        let Some(plan) = plan else {
-                            continue;
-                        };
-                        let Ok(prepared) = core.prepare_sound(plan.path().to_string()).await else {
-                            continue;
-                        };
-                        let started_track_id = plan.song_id();
-                        let mut player = core.playback_application.audio_player().lock().await;
-                        match player.commit_plan(plan, prepared) {
-                            Ok(()) => Some((completed_track_id, Some(started_track_id))),
-                            Err(_) => None,
-                        }
-                    }
-                };
-
-                if let Some((completed_track_id, started_track_id)) = transitioned {
-                    let _ = playback_event_sender.send(AutomaticPlaybackEvent {
-                        completed_track_id,
-                        started_track_id,
-                    });
-                }
-            }
-        });
+        core.playback_application.start_automatic_coordination();
 
         Ok(core)
     }
@@ -1767,7 +1560,7 @@ impl DurvaldCore {
             .disconnect_lastfm()
             .await
             .map_err(lastfm_error)?;
-        *self.playback_application.lastfm_playback().lock().await = None;
+        self.playback_application.clear_lastfm_tracking().await;
         self.enrichment
             .clear_provider_data(EnrichmentProvider::LastFm)
             .await

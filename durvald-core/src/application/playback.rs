@@ -13,15 +13,21 @@ use crate::{
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
-pub(crate) struct LastFmPlayback {
-    pub(crate) track_id: i64,
-    pub(crate) artist: String,
-    pub(crate) title: String,
-    pub(crate) release: String,
-    pub(crate) duration_seconds: u64,
-    pub(crate) started_at: u64,
-    pub(crate) active_since: Option<u64>,
-    pub(crate) played_seconds: u64,
+struct LastFmPlayback {
+    track_id: i64,
+    artist: String,
+    title: String,
+    release: String,
+    duration_seconds: u64,
+    started_at: u64,
+    active_since: Option<u64>,
+    played_seconds: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AutomaticPlaybackEvent {
+    completed_track_id: Option<i64>,
+    started_track_id: Option<i64>,
 }
 
 /// Coordinates playback use cases behind the public core facade.
@@ -56,12 +62,47 @@ impl PlaybackApplication {
         &self.audio_player
     }
 
-    pub(crate) fn playback_transition(&self) -> &tokio::sync::Mutex<()> {
-        &self.playback_transition
+    pub(crate) async fn clear_lastfm_tracking(&self) {
+        *self.lastfm_playback.lock().await = None;
     }
 
-    pub(crate) fn lastfm_playback(&self) -> &tokio::sync::Mutex<Option<LastFmPlayback>> {
-        &self.lastfm_playback
+    pub(crate) fn start_automatic_coordination(self: &Arc<Self>) {
+        let (event_sender, mut event_receiver) =
+            tokio::sync::mpsc::unbounded_channel::<AutomaticPlaybackEvent>();
+        let reporting_application = Arc::downgrade(self);
+        tokio::spawn(async move {
+            while let Some(event) = event_receiver.recv().await {
+                let Some(application) = reporting_application.upgrade() else {
+                    break;
+                };
+                if let Some(track_id) = event.completed_track_id {
+                    application.record_completed_playback(track_id).await;
+                    application.report_track_completed(track_id).await;
+                }
+                if let Some(track_id) = event.started_track_id {
+                    application.report_track_started(track_id).await;
+                }
+                let _ = application.persist_session().await;
+            }
+        });
+
+        let playback_application = Arc::downgrade(self);
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                let Some(application) = playback_application.upgrade() else {
+                    break;
+                };
+                if let Some((completed_track_id, started_track_id)) =
+                    application.process_automatic_transition().await
+                {
+                    let _ = event_sender.send(AutomaticPlaybackEvent {
+                        completed_track_id,
+                        started_track_id,
+                    });
+                }
+            }
+        });
     }
 
     pub(crate) async fn play(&self, track_id: i64) -> CoreResult<PlaybackSnapshot> {
@@ -399,6 +440,44 @@ impl PlaybackApplication {
             })
     }
 
+    async fn process_automatic_transition(&self) -> Option<(Option<i64>, Option<i64>)> {
+        let _transition = self.playback_transition.lock().await;
+        let gapless_plan = {
+            let mut player = self.audio_player.lock().await;
+            player.synchronize_gapless();
+            player.gapless_plan()
+        };
+        if let Some(plan) = gapless_plan
+            && let Ok(prepared) = self.prepare_sound(plan.path().to_string()).await
+        {
+            let _ = self
+                .audio_player
+                .lock()
+                .await
+                .schedule_gapless(plan, prepared);
+        }
+        if let Some((previous, next)) = self.audio_player.lock().await.pop_completed_transition() {
+            return Some((previous, Some(next)));
+        }
+
+        let (completed_track_id, plan) = {
+            let player = self.audio_player.lock().await;
+            (
+                player.get_current_song_id(),
+                player.completed_playback_plan(),
+            )
+        };
+        let plan = plan?;
+        let prepared = self.prepare_sound(plan.path().to_string()).await.ok()?;
+        let started_track_id = plan.song_id();
+        self.audio_player
+            .lock()
+            .await
+            .commit_plan(plan, prepared)
+            .ok()?;
+        Some((completed_track_id, Some(started_track_id)))
+    }
+
     pub(crate) async fn persist_session(&self) -> CoreResult<()> {
         let (current_song_id, progress_seconds, volume, shuffle_enabled, repeat_mode, queue) = {
             let player = self.audio_player.lock().await;
@@ -588,6 +667,58 @@ impl PlaybackApplication {
         let _ = self.lastfm.update_now_playing(artist, title, release).await;
     }
 
+    async fn report_track_completed(&self, track_id: i64) {
+        let playback = {
+            let mut current = self.lastfm_playback.lock().await;
+            match current
+                .take()
+                .filter(|playback| playback.track_id == track_id)
+            {
+                Some(mut playback) => {
+                    if let Some(active_since) = playback.active_since.take() {
+                        playback.played_seconds +=
+                            unix_timestamp_seconds().saturating_sub(active_since);
+                    }
+                    Some(playback)
+                }
+                None => None,
+            }
+        };
+        let Some(playback) = playback else { return };
+        if !scrobble_eligible(playback.duration_seconds, playback.played_seconds) {
+            return;
+        }
+        let _ = self
+            .lastfm
+            .scrobble_track(
+                playback.artist,
+                playback.title,
+                (!playback.release.is_empty()).then_some(playback.release),
+                playback.started_at,
+            )
+            .await;
+    }
+
+    async fn record_completed_playback(&self, track_id: i64) {
+        let Ok(track_id) = u64::try_from(track_id) else {
+            return;
+        };
+        let db_pool = self.db_pool.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            let duration =
+                crate::database::operations::get_song_by_id(&conn, &track_id.to_string())
+                    .map_err(|error| error.to_string())?
+                    .into_iter()
+                    .next()
+                    .map(|track| track.duration)
+                    .unwrap_or_default();
+            crate::database::operations::record_completed_playback(&conn, track_id, duration)
+                .map_err(|error| error.to_string())
+        })
+        .await;
+    }
+
     async fn pause_lastfm(&self) {
         let now = unix_timestamp_seconds();
         if let Some(playback) = self.lastfm_playback.lock().await.as_mut()
@@ -690,6 +821,10 @@ fn normalized_volume(volume: f64) -> f32 {
     } else {
         1.0
     }
+}
+
+pub(crate) fn scrobble_eligible(duration_seconds: u64, played_seconds: u64) -> bool {
+    duration_seconds >= 30 && played_seconds >= (duration_seconds / 2).min(240)
 }
 
 fn public_to_upcoming_position(
