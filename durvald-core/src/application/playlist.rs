@@ -105,6 +105,30 @@ impl PlaylistApplication {
         .await
     }
 
+    pub(crate) async fn set_playlist_favorite(
+        &self,
+        playlist_id: i64,
+        favorite: bool,
+    ) -> CoreResult<()> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        self.run_entity_update("Playlist", playlist_id, move |conn| {
+            crate::database::operations::set_playlist_favorite(conn, playlist_id, favorite)
+        })
+        .await
+    }
+
+    pub(crate) async fn set_playlist_suggest_less(
+        &self,
+        playlist_id: i64,
+        suggest_less: bool,
+    ) -> CoreResult<()> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        self.run_entity_update("Playlist", playlist_id, move |conn| {
+            crate::database::operations::set_playlist_suggest_less(conn, playlist_id, suggest_less)
+        })
+        .await
+    }
+
     pub(crate) async fn playlist_tracks(&self, playlist_id: i64) -> CoreResult<Vec<Track>> {
         let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
         self.run_database(move |conn| {

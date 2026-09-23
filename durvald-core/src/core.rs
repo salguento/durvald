@@ -818,11 +818,9 @@ impl DurvaldCore {
 
     /// Sets whether a playlist is favorited.
     pub async fn set_playlist_favorite(&self, playlist_id: i64, favorite: bool) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        self.run_entity_update("Playlist", playlist_id, move |conn| {
-            crate::database::operations::set_playlist_favorite(conn, playlist_id, favorite)
-        })
-        .await
+        self.playlist_application
+            .set_playlist_favorite(playlist_id, favorite)
+            .await
     }
 
     /// Sets whether recommendations should de-emphasize a playlist.
@@ -831,11 +829,9 @@ impl DurvaldCore {
         playlist_id: i64,
         suggest_less: bool,
     ) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        self.run_entity_update("Playlist", playlist_id, move |conn| {
-            crate::database::operations::set_playlist_suggest_less(conn, playlist_id, suggest_less)
-        })
-        .await
+        self.playlist_application
+            .set_playlist_suggest_less(playlist_id, suggest_less)
+            .await
     }
 
     /// Sets or clears a track rating on the 0–5 scale.
