@@ -8,6 +8,7 @@ use crate::api::*;
 use crate::application::history::HistoryApplication;
 use crate::application::library::LibraryApplication;
 pub(crate) use crate::application::library::track_from_song;
+use crate::application::metadata::MetadataApplication;
 use crate::application::playback::PlaybackApplication;
 #[cfg(test)]
 use crate::application::playback::scrobble_eligible;
@@ -25,6 +26,7 @@ pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
     history_application: HistoryApplication,
     library_application: LibraryApplication,
+    metadata_application: MetadataApplication,
     playback_application: Arc<PlaybackApplication>,
     playlist_application: PlaylistApplication,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
@@ -130,30 +132,6 @@ impl DurvaldCore {
 
 /// Type alias for the core handle used in UniFFI
 pub type DurvaldCoreHandle = Arc<DurvaldCore>;
-
-fn metadata_to_api(meta: crate::metadata::AudioMetadata) -> AudioMetadata {
-    AudioMetadata {
-        title: meta.title,
-        artist: meta.artist,
-        release: meta.release,
-        genre: meta.genre,
-        year: meta.year,
-        track: meta.track,
-        disc: meta.disc,
-        duration_seconds: meta.duration,
-        bitrate: meta.bitrate,
-        sample_rate: meta.sample_rate,
-        bit_depth: meta.bit_depth,
-        channels: meta.channels,
-        cover_artwork_id: meta.cover_path,
-        all_fields: meta
-            .all_fields
-            .into_iter()
-            .map(|(key, value)| KeyValuePair { key, value })
-            .collect(),
-        file_path: meta.file_path,
-    }
-}
 
 const MAX_LIBRARY_PAGE_SIZE: u64 = 200;
 
@@ -449,6 +427,10 @@ impl DurvaldCore {
                 db_pool.clone(),
                 config.covers_dir.clone(),
                 metadata_edit_queue.clone(),
+            ),
+            metadata_application: MetadataApplication::new(
+                db_pool.clone(),
+                config.covers_dir.clone(),
             ),
             playback_application: Arc::new(PlaybackApplication::new(
                 db_pool.clone(),
@@ -1155,12 +1137,7 @@ impl DurvaldCore {
 
     /// Reads indexed metadata, backfilling older libraries once when necessary.
     pub async fn track_info(&self, track_id: i64) -> CoreResult<TrackInfo> {
-        non_negative_id(track_id, "Track ID")?;
-        self.run_database_core(move |conn| {
-            crate::metadata_edit::ensure_cached(conn, track_id)?;
-            crate::metadata_edit::info(conn, track_id)
-        })
-        .await
+        self.metadata_application.track_info(track_id).await
     }
 
     pub async fn save_track_metadata(
@@ -1198,16 +1175,7 @@ impl DurvaldCore {
 
     /// Extracts metadata from an audio file (for preview/import).
     pub async fn extract_metadata(&self, file_path: String) -> CoreResult<AudioMetadata> {
-        let covers_dir = std::path::PathBuf::from(&self.covers_dir);
-        let meta = Self::run_blocking("Metadata extraction", move || {
-            crate::metadata::extract_metadata_blocking(&file_path, &covers_dir).map_err(|error| {
-                CoreError::Storage {
-                    message: error.to_string(),
-                }
-            })
-        })
-        .await?;
-        Ok(metadata_to_api(meta))
+        self.metadata_application.extract_metadata(file_path).await
     }
 }
 
