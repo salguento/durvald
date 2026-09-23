@@ -254,3 +254,51 @@ async fn stop_clears_active_playback_and_persists_session() -> TestResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn seek_updates_position_without_resuming_paused_track() -> TestResult<()> {
+    let (test_core, track) = core_with_one_track().await?;
+
+    test_core.core().play(track.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().pause().await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().seek(1).await?;
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(track.id),
+    );
+    assert_eq!(playback.position_seconds, 1.0);
+    assert!(!playback.is_playing);
+    assert!(playback.is_paused);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(track.id));
+    assert_eq!(session.progress_seconds, 1.0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn seek_reports_when_no_track_is_loaded() -> TestResult<()> {
+    let test_core = TestCore::open().await?;
+
+    let result = test_core.core().seek(1).await;
+
+    assert!(matches!(result, Err(CoreError::Playback { .. })));
+
+    let playback = test_core.core().playback().await;
+
+    assert!(playback.current_track.is_none());
+    assert_eq!(playback.position_seconds, 0.0);
+    assert!(!playback.is_playing);
+    assert!(!playback.is_paused);
+
+    Ok(())
+}
