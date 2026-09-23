@@ -5,6 +5,7 @@
 //! the `DurvaldCore` facade in the `core` module.
 
 use crate::api::*;
+use crate::application::enrichment::EnrichmentApplication;
 use crate::application::history::HistoryApplication;
 use crate::application::library::LibraryApplication;
 pub(crate) use crate::application::library::track_from_song;
@@ -28,6 +29,7 @@ use std::sync::Arc;
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
+    enrichment_application: EnrichmentApplication,
     history_application: HistoryApplication,
     library_application: LibraryApplication,
     metadata_application: MetadataApplication,
@@ -105,8 +107,10 @@ impl DurvaldCore {
 /// Type alias for the core handle used in UniFFI
 pub type DurvaldCoreHandle = Arc<DurvaldCore>;
 
+#[cfg(test)]
 const MAX_LIBRARY_PAGE_SIZE: u64 = 200;
 
+#[cfg(test)]
 fn pagination_window(page_size: u64, offset: u64) -> CoreResult<(u64, usize)> {
     if page_size == 0 {
         return Err(CoreError::InvalidInput {
@@ -321,12 +325,14 @@ impl DurvaldCore {
             audio_player,
             lastfm.clone(),
         ));
+        let enrichment = crate::enrichment::service::EnrichmentService::new(
+            db_pool.clone(),
+            config.covers_dir.clone(),
+            lastfm.clone(),
+        );
         let core = Self {
-            enrichment: crate::enrichment::service::EnrichmentService::new(
-                db_pool.clone(),
-                config.covers_dir.clone(),
-                lastfm.clone(),
-            ),
+            enrichment_application: EnrichmentApplication::new(enrichment.clone()),
+            enrichment,
             db_pool: db_pool.clone(),
             history_application: HistoryApplication::new(db_pool.clone()),
             library_application: LibraryApplication::new(
@@ -440,7 +446,9 @@ impl DurvaldCore {
         artist_id: i64,
         language: String,
     ) -> CoreResult<ArtistDetails> {
-        self.enrichment.artist_details(artist_id, language).await
+        self.enrichment_application
+            .artist_details(artist_id, language)
+            .await
     }
 
     /// Reads one network-free page of the locally persisted external catalog.
@@ -450,10 +458,8 @@ impl DurvaldCore {
         page_size: u64,
         offset: u64,
     ) -> CoreResult<ArtistDiscographyPage> {
-        non_negative_id(artist_id, "Artist ID")?;
-        let (_, page_size) = pagination_window(page_size, offset)?;
-        self.enrichment
-            .artist_discography(artist_id, page_size as u64, offset)
+        self.enrichment_application
+            .artist_discography(artist_id, page_size, offset)
             .await
     }
 
@@ -462,8 +468,9 @@ impl DurvaldCore {
         &self,
         artist_id: i64,
     ) -> CoreResult<Option<ArtistPopularTracks>> {
-        non_negative_id(artist_id, "Artist ID")?;
-        self.enrichment.artist_popular_tracks(artist_id).await
+        self.enrichment_application
+            .artist_popular_tracks(artist_id)
+            .await
     }
 
     /// Loads track and edition metadata for one online-only MusicBrainz item.
@@ -472,21 +479,22 @@ impl DurvaldCore {
         artist_id: i64,
         release_group_mbid: String,
     ) -> CoreResult<ExternalReleaseDetails> {
-        non_negative_id(artist_id, "Artist ID")?;
-        self.enrichment
+        self.enrichment_application
             .external_release_details(artist_id, release_group_mbid)
             .await
     }
 
     pub async fn artist_identity(&self, artist_id: i64) -> CoreResult<ArtistIdentity> {
-        self.enrichment.artist_identity(artist_id).await
+        self.enrichment_application.artist_identity(artist_id).await
     }
 
     pub async fn resolve_artist_candidates(
         &self,
         artist_id: i64,
     ) -> CoreResult<ArtistIdentityCandidates> {
-        self.enrichment.resolve_artist_candidates(artist_id).await
+        self.enrichment_application
+            .resolve_artist_candidates(artist_id)
+            .await
     }
 
     pub async fn confirm_artist_identity(
@@ -507,7 +515,7 @@ impl DurvaldCore {
     }
 
     pub async fn enrichment_settings(&self) -> CoreResult<EnrichmentSettings> {
-        self.enrichment.settings().await
+        self.enrichment_application.settings().await
     }
 
     /// Persists optional enrichment preferences; does not start network work.
