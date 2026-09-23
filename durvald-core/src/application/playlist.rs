@@ -5,7 +5,7 @@ use std::sync::Arc;
 use base64::Engine;
 
 use crate::{
-    api::{CoreError, CoreResult, Playlist, Track},
+    api::{CoreError, CoreResult, Playlist, PlaylistTrack, Track},
     application::library::track_from_song,
 };
 
@@ -110,6 +110,66 @@ impl PlaylistApplication {
         self.run_database(move |conn| {
             crate::database::operations::get_playlist_tracks(conn, playlist_id)
                 .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+                .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    pub(crate) async fn add_track_to_playlist(
+        &self,
+        playlist_id: i64,
+        track_id: i64,
+        position: u64,
+    ) -> CoreResult<PlaylistTrack> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        let track_id = non_negative_id(track_id, "Track ID")?;
+        self.run_database(move |conn| {
+            crate::database::operations::add_track_to_playlist_songs(
+                conn,
+                playlist_id,
+                track_id,
+                position,
+            )
+            .map(|entry| PlaylistTrack {
+                playlist_id: entry.playlist_id as i64,
+                track_id: entry.song_id as i64,
+                position: entry.position,
+                added_at: entry.added_at,
+            })
+            .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    pub(crate) async fn remove_track_from_playlist(
+        &self,
+        playlist_id: i64,
+        track_id: i64,
+        position: u64,
+    ) -> CoreResult<()> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        let track_id = non_negative_id(track_id, "Track ID")?;
+        self.run_database(move |conn| {
+            crate::database::operations::remove_track_from_playlist(
+                conn,
+                playlist_id,
+                track_id,
+                position,
+            )
+            .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    pub(crate) async fn move_playlist_track(
+        &self,
+        playlist_id: i64,
+        from: u64,
+        to: u64,
+    ) -> CoreResult<()> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        self.run_database(move |conn| {
+            crate::database::operations::move_playlist_track(conn, playlist_id, from, to)
                 .map_err(|error| error.to_string())
         })
         .await

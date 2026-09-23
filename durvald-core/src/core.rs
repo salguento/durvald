@@ -865,24 +865,9 @@ impl DurvaldCore {
         track_id: i64,
         position: u64,
     ) -> CoreResult<PlaylistTrack> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_database(move |conn| {
-            crate::database::operations::add_track_to_playlist_songs(
-                conn,
-                playlist_id,
-                track_id,
-                position,
-            )
-            .map(|entry| PlaylistTrack {
-                playlist_id: entry.playlist_id as i64,
-                track_id: entry.song_id as i64,
-                position: entry.position,
-                added_at: entry.added_at,
-            })
-            .map_err(|error| error.to_string())
-        })
-        .await
+        self.playlist_application
+            .add_track_to_playlist(playlist_id, track_id, position)
+            .await
     }
 
     /// Removes a track entry at a playlist position.
@@ -892,18 +877,9 @@ impl DurvaldCore {
         track_id: i64,
         position: u64,
     ) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_database(move |conn| {
-            crate::database::operations::remove_track_from_playlist(
-                conn,
-                playlist_id,
-                track_id,
-                position,
-            )
-            .map_err(|error| error.to_string())
-        })
-        .await
+        self.playlist_application
+            .remove_track_from_playlist(playlist_id, track_id, position)
+            .await
     }
 
     /// Moves a track entry to another zero-based playlist position.
@@ -913,12 +889,9 @@ impl DurvaldCore {
         from: u64,
         to: u64,
     ) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        self.run_database(move |conn| {
-            crate::database::operations::move_playlist_track(conn, playlist_id, from, to)
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.playlist_application
+            .move_playlist_track(playlist_id, from, to)
+            .await
     }
 
     /// Starts playback of a track.
