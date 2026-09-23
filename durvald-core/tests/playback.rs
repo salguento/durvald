@@ -153,3 +153,68 @@ async fn play_reports_missing_track_id() -> TestResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn pause_preserves_active_track_and_updates_state() -> TestResult<()> {
+    let (test_core, track) = core_with_one_track().await?;
+
+    test_core.core().play(track.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().pause().await?;
+    test_core.process_mock_audio(1).await;
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(track.id),
+    );
+
+    assert!(!playback.is_playing);
+    assert!(playback.is_paused);
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(track.id),
+    );
+    assert_eq!(playback.queue.len(), 1);
+    assert_eq!(playback.queue[0].track_id, track.id);
+    assert_eq!(playback.queue[0].position, 0);
+    assert_eq!(playback.queue_position, 0);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(track.id),);
+
+    assert_eq!(session.queue, vec![track.id]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn resume_continues_paused_track() -> TestResult<()> {
+    let (test_core, track) = core_with_one_track().await?;
+
+    test_core.core().play(track.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().pause().await?;
+    test_core.process_mock_audio(1).await;
+
+    let paused = test_core.core().playback().await;
+    assert!(paused.is_paused);
+    assert!(!paused.is_playing);
+
+    test_core.core().resume().await?;
+    test_core.process_mock_audio(1).await;
+
+    let resumed = test_core.core().playback().await;
+    assert!(resumed.is_playing);
+    assert!(!resumed.is_paused);
+    assert_eq!(
+        resumed.current_track.as_ref().map(|item| item.id),
+        Some(track.id),
+    );
+
+    Ok(())
+}

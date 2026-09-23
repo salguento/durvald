@@ -1788,6 +1788,12 @@ impl DurvaldCore {
         };
         playback_from_state(self, playback_state).await
     }
+
+    #[cfg(feature = "test-support")]
+    pub(crate) async fn process_mock_audio(&self, blocks: usize) {
+        let mut player = self.audio_player.lock().await;
+        player.process_mock_audio(blocks);
+    }
 }
 
 struct PlaybackStateSnapshot {

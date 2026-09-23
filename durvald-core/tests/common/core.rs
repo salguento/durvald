@@ -71,4 +71,8 @@ impl TestCore {
 
         Ok(Self { core, files })
     }
+
+    pub async fn process_mock_audio(&self, blocks: usize) {
+        durvald_core::test_support::process_mock_audio(self.core.as_ref(), blocks).await;
+    }
 }

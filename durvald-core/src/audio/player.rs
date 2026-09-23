@@ -154,7 +154,7 @@ impl AudioPlayer {
         Ok(Self::from_backend(PlayerBackend::Mock(Box::new(manager))))
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn process_mock_audio(&mut self, blocks: usize) {
         let manager = match &mut self.manager {
             PlayerBackend::Mock(manager) => manager,
