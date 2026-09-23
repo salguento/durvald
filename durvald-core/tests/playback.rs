@@ -1216,3 +1216,65 @@ async fn next_track_with_shuffle_consumes_exactly_one_future_track() -> TestResu
 
     Ok(())
 }
+
+#[tokio::test]
+async fn next_track_with_repeat_one_restarts_active_track() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    let configured = test_core.core().set_repeat_mode(RepeatMode::One).await?;
+
+    let expected_queue = configured.queue.clone();
+
+    let repeated = test_core.core().next_track().await?;
+
+    assert_eq!(
+        repeated.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(repeated.is_playing);
+    assert!(!repeated.is_paused);
+    assert_eq!(repeated.repeat_mode, RepeatMode::One);
+    assert_eq!(repeated.position_seconds, 0.0);
+
+    assert_eq!(repeated.queue, expected_queue);
+    assert_eq!(repeated.queue.len(), 3);
+
+    assert_eq!(repeated.queue[0].track_id, first.id);
+    assert_eq!(repeated.queue[1].track_id, second.id);
+    assert_eq!(repeated.queue[2].track_id, third.id);
+
+    test_core.process_mock_audio(1).await;
+
+    let observed = test_core.core().playback().await;
+
+    assert_eq!(
+        observed.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+    assert_eq!(observed.repeat_mode, RepeatMode::One);
+    assert_eq!(observed.queue, expected_queue);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.progress_seconds, 0.0);
+    assert_eq!(session.repeat_mode, RepeatMode::One);
+    assert_eq!(session.queue, vec![first.id, second.id, third.id]);
+
+    let previous_result = test_core.core().previous_track().await;
+
+    assert!(matches!(previous_result, Err(CoreError::NotFound { .. })));
+
+    Ok(())
+}
