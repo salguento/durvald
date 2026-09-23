@@ -5,6 +5,7 @@
 //! the `DurvaldCore` facade in the `core` module.
 
 use crate::api::*;
+use crate::application::library::LibraryApplication;
 use crate::application::playback::PlaybackApplication;
 #[cfg(test)]
 use crate::application::playback::scrobble_eligible;
@@ -23,6 +24,7 @@ use std::sync::{
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
+    library_application: LibraryApplication,
     playback_application: Arc<PlaybackApplication>,
     metadata_edit_queue: tokio::sync::Mutex<()>,
     lastfm: Arc<LastFmClient>,
@@ -522,6 +524,7 @@ impl DurvaldCore {
                 lastfm.clone(),
             ),
             db_pool: db_pool.clone(),
+            library_application: LibraryApplication::new(db_pool.clone()),
             playback_application: Arc::new(PlaybackApplication::new(
                 db_pool.clone(),
                 audio_player,
@@ -757,29 +760,12 @@ impl DurvaldCore {
 
     /// Adds an existing folder to the configured library locations.
     pub async fn add_library_path(&self, path: String) -> CoreResult<()> {
-        self.run_database_core(move |conn| {
-            if !std::path::Path::new(&path).is_dir() {
-                return Err(CoreError::InvalidInput {
-                    message: format!("Library path is not a directory: {path}"),
-                });
-            }
-            crate::database::operations::add_library_path(conn, path).map_err(|error| {
-                CoreError::Storage {
-                    message: error.to_string(),
-                }
-            })
-        })
-        .await
+        self.library_application.add_library_path(path).await
     }
 
     /// Lists configured library folders.
     pub async fn library_paths(&self) -> CoreResult<Vec<String>> {
-        self.run_database(|conn| {
-            crate::database::operations::get_library_paths(conn)
-                .map(|paths| paths.into_iter().map(|path| path.path).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.library_application.library_paths().await
     }
 
     /// Scans every configured library folder.
@@ -795,21 +781,7 @@ impl DurvaldCore {
 
     /// Removes a configured library folder.
     pub async fn remove_library_path(&self, path: String) -> CoreResult<()> {
-        self.run_database_core(move |conn| {
-            let removed =
-                crate::database::operations::remove_library_path(conn, &path).map_err(|error| {
-                    CoreError::Storage {
-                        message: error.to_string(),
-                    }
-                })?;
-            if !removed {
-                return Err(CoreError::NotFound {
-                    message: format!("Library path is not configured: {path}"),
-                });
-            }
-            Ok(())
-        })
-        .await
+        self.library_application.remove_library_path(path).await
     }
 
     /// Searches tracks, releases, artists, and playlists by text.
