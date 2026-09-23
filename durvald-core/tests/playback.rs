@@ -1362,3 +1362,85 @@ async fn next_track_with_repeat_all_restarts_complete_queue_cycle() -> TestResul
 
     Ok(())
 }
+
+#[tokio::test]
+async fn playback_session_is_restored_after_core_restart() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    test_core.core().pause().await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().seek(1).await?;
+    test_core.core().set_volume(0.25).await?;
+    test_core.core().set_shuffle_enabled(true).await?;
+    test_core.core().set_repeat_mode(RepeatMode::All).await?;
+
+    let before_restart = test_core.core().playback().await;
+
+    assert_eq!(
+        before_restart.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert_eq!(before_restart.position_seconds, 1.0);
+    assert_eq!(before_restart.volume, 0.25);
+    assert!(!before_restart.is_playing);
+    assert!(before_restart.is_paused);
+    assert!(before_restart.shuffle_enabled);
+    assert_eq!(before_restart.repeat_mode, RepeatMode::All);
+
+    assert_eq!(before_restart.queue.len(), 3);
+    assert_eq!(before_restart.queue[0].track_id, first.id);
+    assert_eq!(before_restart.queue[1].track_id, second.id);
+    assert_eq!(before_restart.queue[2].track_id, third.id);
+
+    let test_core = test_core.restart().await?;
+
+    let restored = test_core.core().playback().await;
+
+    assert_eq!(
+        restored.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert_eq!(restored.position_seconds, 1.0);
+    assert_eq!(restored.volume, 0.25);
+
+    assert!(!restored.is_playing);
+    assert!(restored.is_paused);
+
+    assert!(restored.shuffle_enabled);
+    assert_eq!(restored.repeat_mode, RepeatMode::All);
+
+    assert_eq!(restored.queue.len(), 3);
+
+    assert_eq!(restored.queue[0].track_id, first.id);
+    assert_eq!(restored.queue[0].position, 0);
+
+    assert_eq!(restored.queue[1].track_id, second.id);
+    assert_eq!(restored.queue[1].position, 1);
+
+    assert_eq!(restored.queue[2].track_id, third.id);
+    assert_eq!(restored.queue[2].position, 2);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.progress_seconds, 1.0);
+    assert_eq!(session.volume, 0.25);
+    assert!(session.shuffle_enabled);
+    assert_eq!(session.repeat_mode, RepeatMode::All);
+    assert_eq!(session.queue, vec![first.id, second.id, third.id]);
+
+    Ok(())
+}
