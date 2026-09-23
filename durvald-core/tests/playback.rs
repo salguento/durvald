@@ -36,6 +36,35 @@ async fn core_with_one_track() -> TestResult<(TestCore, Track)> {
     Ok((test_core, track))
 }
 
+async fn core_with_tracks(count: usize) -> TestResult<(TestCore, Vec<Track>)> {
+    let test_core = TestCore::open().await?;
+
+    for index in 1..=count {
+        let relative_path = format!("Artist/Album/{index:02}.wav");
+
+        test_core.files().write_silent_wav(relative_path)?;
+    }
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let scan = test_core.core().scan_library(vec![library_path]).await?;
+
+    assert_eq!(scan.new_tracks_added, count as u64);
+    assert!(scan.errors.is_empty());
+
+    let mut tracks = test_core.core().tracks().await?;
+
+    assert_eq!(tracks.len(), count);
+
+    tracks.sort_by_key(|track| track.id);
+
+    Ok((test_core, tracks))
+}
+
 #[tokio::test]
 async fn plays_valid_track_without_adding_it_to_queue() -> TestResult<()> {
     let (test_core, track) = core_with_one_track().await?;
@@ -362,6 +391,74 @@ async fn set_volume_rejects_non_finite_values() -> TestResult<()> {
     let session = test_core.core().last_session().await?;
 
     assert_eq!(session.volume, initial.volume);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn add_to_queue_appends_track_after_active_track() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(2).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert_eq!(playback.queue.len(), 2);
+
+    assert_eq!(playback.queue[0].track_id, first.id);
+    assert_eq!(playback.queue[0].position, 0);
+
+    assert_eq!(playback.queue[1].track_id, second.id);
+    assert_eq!(playback.queue[1].position, 1);
+
+    let queue = test_core.core().queue().await?;
+
+    assert_eq!(queue, playback.queue);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.queue, vec![first.id, second.id]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn add_to_empty_queue_starts_added_track() -> TestResult<()> {
+    let (test_core, track) = core_with_one_track().await?;
+
+    test_core.core().add_to_queue(track.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(track.id),
+    );
+
+    assert!(playback.is_playing);
+    assert!(!playback.is_paused);
+
+    assert_eq!(playback.queue.len(), 1);
+    assert_eq!(playback.queue[0].track_id, track.id);
+    assert_eq!(playback.queue[0].position, 0);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(track.id));
+    assert_eq!(session.queue, vec![track.id]);
 
     Ok(())
 }
