@@ -5,3 +5,4 @@ pub(crate) mod library;
 pub(crate) mod metadata;
 pub(crate) mod playback;
 pub(crate) mod playlist;
+pub(crate) mod settings;
