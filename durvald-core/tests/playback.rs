@@ -730,3 +730,118 @@ async fn play_queue_item_rejects_active_and_out_of_bounds_positions() -> TestRes
 
     Ok(())
 }
+
+#[tokio::test]
+async fn remove_from_queue_removes_future_track_and_reindexes_queue() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(4).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+    let fourth = &tracks[3];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+    test_core.core().add_to_queue(fourth.id).await?;
+
+    test_core.core().remove_from_queue(2).await?;
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(playback.is_playing);
+
+    assert_eq!(playback.queue.len(), 3);
+
+    assert_eq!(playback.queue[0].track_id, first.id);
+    assert_eq!(playback.queue[0].position, 0);
+
+    assert_eq!(playback.queue[1].track_id, second.id);
+    assert_eq!(playback.queue[1].position, 1);
+
+    assert_eq!(playback.queue[2].track_id, fourth.id);
+    assert_eq!(playback.queue[2].position, 2);
+
+    assert!(playback.queue.iter().all(|item| item.track_id != third.id));
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.queue, vec![first.id, second.id, fourth.id]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn remove_from_queue_rejects_active_track_position() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(2).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+
+    let result = test_core.core().remove_from_queue(0).await;
+
+    assert!(matches!(result, Err(CoreError::InvalidInput { .. })));
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert!(playback.is_playing);
+
+    assert_eq!(playback.queue.len(), 2);
+    assert_eq!(playback.queue[0].track_id, first.id);
+    assert_eq!(playback.queue[1].track_id, second.id);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.queue, vec![first.id, second.id]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn remove_from_queue_rejects_out_of_bounds_position() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(2).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    test_core.core().add_to_queue(second.id).await?;
+
+    let result = test_core.core().remove_from_queue(2).await;
+
+    assert!(matches!(result, Err(CoreError::InvalidInput { .. })));
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(
+        playback.current_track.as_ref().map(|item| item.id),
+        Some(first.id),
+    );
+
+    assert_eq!(playback.queue.len(), 2);
+    assert_eq!(playback.queue[0].track_id, first.id);
+    assert_eq!(playback.queue[1].track_id, second.id);
+
+    Ok(())
+}
