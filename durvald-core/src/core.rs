@@ -1708,82 +1708,6 @@ impl DurvaldCore {
     }
 }
 
-struct PlaybackStateSnapshot {
-    current_track_id: Option<i64>,
-    position_seconds: f64,
-    duration_seconds: Option<f64>,
-    volume: f32,
-    is_playing: bool,
-    is_paused: bool,
-    queue: Vec<QueueItem>,
-    shuffle_enabled: bool,
-    repeat_mode: RepeatMode,
-}
-
-fn playback_state_for_player(player: &crate::audio::AudioPlayer) -> PlaybackStateSnapshot {
-    let (position, duration) = player.get_progress();
-    let current_track_id = player.get_current_song_id();
-    let queue = player.get_playback_queue();
-    let volume = player.volume();
-    let is_paused = player.is_paused();
-    let is_empty = player.is_empty();
-    let shuffle_enabled = player.shuffle_enabled();
-    let repeat_mode = player.repeat_mode();
-
-    let queue = queue
-        .into_iter()
-        .enumerate()
-        .map(|(position, (track_id, _))| QueueItem {
-            track_id,
-            position: position as u64,
-        })
-        .collect();
-
-    PlaybackStateSnapshot {
-        current_track_id,
-        position_seconds: position.as_secs_f64(),
-        duration_seconds: duration.map(|duration| duration.as_secs_f64()),
-        volume,
-        is_playing: !is_paused && !is_empty,
-        is_paused,
-        queue,
-        shuffle_enabled,
-        repeat_mode,
-    }
-}
-
-async fn playback_from_state(core: &DurvaldCore, state: PlaybackStateSnapshot) -> PlaybackSnapshot {
-    let current_track = if let Some(id) = state.current_track_id {
-        core.run_database(move |conn| {
-            crate::database::operations::get_song_by_id(conn, &id.to_string())
-                .map(|tracks| tracks.into_iter().next())
-                .map_err(|error| error.to_string())
-        })
-        .await
-        .ok()
-        .flatten()
-        .map(track_from_song)
-    } else {
-        None
-    };
-
-    PlaybackSnapshot {
-        current_track,
-        position_seconds: state.position_seconds,
-        duration_seconds: state.duration_seconds,
-        volume: state.volume,
-        is_playing: state.is_playing,
-        is_paused: state.is_paused,
-        queue: state.queue,
-        // Presentation queues always place the active track first. When
-        // there is no active track, callers should use `current_track` to
-        // determine that this sentinel position has no selected item.
-        queue_position: 0,
-        shuffle_enabled: state.shuffle_enabled,
-        repeat_mode: state.repeat_mode,
-    }
-}
-
 #[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 impl DurvaldCore {
     /// Pauses playback.
@@ -1813,28 +1737,12 @@ impl DurvaldCore {
 
     /// Enables or disables randomized selection when advancing the queue.
     pub async fn set_shuffle_enabled(&self, enabled: bool) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        let mut player = self.playback_application.audio_player().lock().await;
-        player.set_shuffle_enabled(enabled);
-        let playback_state = playback_state_for_player(&player);
-        drop(player);
-        drop(_transition);
-        let snapshot = playback_from_state(self, playback_state).await;
-        self.persist_playback_session().await?;
-        Ok(snapshot)
+        self.playback_application.set_shuffle_enabled(enabled).await
     }
 
     /// Sets whether playback stops, repeats one track, or repeats the queue.
     pub async fn set_repeat_mode(&self, mode: RepeatMode) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        let mut player = self.playback_application.audio_player().lock().await;
-        player.set_repeat_mode(mode);
-        let playback_state = playback_state_for_player(&player);
-        drop(player);
-        drop(_transition);
-        let snapshot = playback_from_state(self, playback_state).await;
-        self.persist_playback_session().await?;
-        Ok(snapshot)
+        self.playback_application.set_repeat_mode(mode).await
     }
 
     /// Returns Last.fm connection status.
@@ -2054,237 +1962,42 @@ impl DurvaldCore {
 
     /// Adds a track to the playback queue.
     pub async fn add_to_queue(&self, track_id: i64) -> CoreResult<()> {
-        non_negative_id(track_id, "Track ID")?;
-        let track = self.track(track_id).await?;
-        let _transition = self.playback_application.playback_transition().lock().await;
-        let starts_playback = self
-            .playback_application
-            .audio_player()
-            .lock()
-            .await
-            .should_start_queued_track();
-        let prepared = if starts_playback {
-            Some(self.prepare_sound(track.file_path.clone()).await?)
-        } else {
-            None
-        };
-        let mut player = self.playback_application.audio_player().lock().await;
-        if let Some(prepared) = prepared {
-            player
-                .play_song_prepared(track_id, prepared)
-                .map_err(|e| CoreError::Playback {
-                    message: e.to_string(),
-                })?;
-        } else {
-            player.enqueue(track_id, track.file_path.clone());
-        }
-
-        drop(player);
-        drop(_transition);
-        self.persist_playback_session().await?;
-        if starts_playback {
-            self.report_lastfm_track_started(track_id).await;
-        }
-
-        Ok(())
+        self.playback_application.add_to_queue(track_id).await
     }
 
     /// Advances to the next queued track.
     pub async fn next_track(&self) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        self.playback_application
-            .audio_player()
-            .lock()
-            .await
-            .cancel_gapless_transition();
-        let plan = self
-            .playback_application
-            .audio_player()
-            .lock()
-            .await
-            .plan_next()
-            .ok_or_else(|| CoreError::NotFound {
-                message: "No next track in the queue".to_string(),
-            })?;
-        let prepared = self.prepare_sound(plan.path().to_string()).await?;
-        let (started_track_id, playback_state) = {
-            let mut player = self.playback_application.audio_player().lock().await;
-            let started_track_id = plan.song_id();
-            player
-                .commit_plan(plan, prepared)
-                .map_err(|e| CoreError::Playback {
-                    message: e.to_string(),
-                })?;
-            (Some(started_track_id), playback_state_for_player(&player))
-        };
-        drop(_transition);
-        let snapshot = playback_from_state(self, playback_state).await;
-        self.persist_playback_session().await?;
-
-        if let Some(track_id) = started_track_id {
-            self.report_lastfm_track_started(track_id).await;
-        }
-        Ok(snapshot)
+        self.playback_application.next_track().await
     }
 
     /// Returns to the previously played track, when one exists.
     pub async fn previous_track(&self) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        self.playback_application
-            .audio_player()
-            .lock()
-            .await
-            .cancel_gapless_transition();
-        let plan = self
-            .playback_application
-            .audio_player()
-            .lock()
-            .await
-            .plan_previous()
-            .ok_or_else(|| CoreError::NotFound {
-                message: "No previously played track".to_string(),
-            })?;
-        let prepared = self.prepare_sound(plan.path().to_string()).await?;
-        let (started_track_id, playback_state) = {
-            let mut player = self.playback_application.audio_player().lock().await;
-            let started_track_id = plan.song_id();
-            player
-                .commit_plan(plan, prepared)
-                .map_err(|e| CoreError::Playback {
-                    message: e.to_string(),
-                })?;
-            (Some(started_track_id), playback_state_for_player(&player))
-        };
-        drop(_transition);
-        let snapshot = playback_from_state(self, playback_state).await;
-        self.persist_playback_session().await?;
-
-        if let Some(track_id) = started_track_id {
-            self.report_lastfm_track_started(track_id).await;
-        }
-        Ok(snapshot)
+        self.playback_application.previous_track().await
     }
 
     /// Starts the upcoming track at the given queue position.
     pub async fn play_queue_item(&self, position: u64) -> CoreResult<PlaybackSnapshot> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        self.playback_application
-            .audio_player()
-            .lock()
-            .await
-            .cancel_gapless_transition();
-        let plan = {
-            let player = self.playback_application.audio_player().lock().await;
-            let upcoming_position = if player.get_current_song_id().is_some() {
-                position
-                    .checked_sub(1)
-                    .ok_or_else(|| CoreError::InvalidInput {
-                        message: "The active track is already playing".to_string(),
-                    })?
-            } else {
-                position
-            };
-            player
-                .plan_skip(upcoming_position as usize)
-                .map_err(|e| CoreError::InvalidInput {
-                    message: e.to_string(),
-                })?
-        };
-        let prepared = self.prepare_sound(plan.path().to_string()).await?;
-        let (started_track_id, playback_state) = {
-            let mut player = self.playback_application.audio_player().lock().await;
-            let started_track_id = plan.song_id();
-            player
-                .commit_plan(plan, prepared)
-                .map_err(|e| CoreError::Playback {
-                    message: e.to_string(),
-                })?;
-            (Some(started_track_id), playback_state_for_player(&player))
-        };
-        drop(_transition);
-        let snapshot = playback_from_state(self, playback_state).await;
-        self.persist_playback_session().await?;
-        if let Some(track_id) = started_track_id {
-            self.report_lastfm_track_started(track_id).await;
-        }
-        Ok(snapshot)
+        self.playback_application.play_queue_item(position).await
     }
 
     /// Removes an upcoming queue item.
     pub async fn remove_from_queue(&self, position: u64) -> CoreResult<()> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        {
-            let mut player = self.playback_application.audio_player().lock().await;
-            let upcoming_position = if player.get_current_song_id().is_some() {
-                position
-                    .checked_sub(1)
-                    .ok_or_else(|| CoreError::InvalidInput {
-                        message: "The active track cannot be removed from the queue".to_string(),
-                    })?
-            } else {
-                position
-            };
-            player
-                .remove_from_queue(upcoming_position as usize)
-                .map_err(|e| CoreError::InvalidInput {
-                    message: e.to_string(),
-                })?;
-        }
-        drop(_transition);
-        self.persist_playback_session().await
+        self.playback_application.remove_from_queue(position).await
     }
 
     /// Moves an upcoming queue item to a new queue position.
     pub async fn move_queue_item(&self, from: u64, to: u64) -> CoreResult<()> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        {
-            let mut player = self.playback_application.audio_player().lock().await;
-            let (upcoming_from, upcoming_to) = if player.get_current_song_id().is_some() {
-                (
-                    from.checked_sub(1).ok_or_else(|| CoreError::InvalidInput {
-                        message: "The active track cannot be moved".to_string(),
-                    })?,
-                    to.checked_sub(1).ok_or_else(|| CoreError::InvalidInput {
-                        message: "The active track cannot be moved".to_string(),
-                    })?,
-                )
-            } else {
-                (from, to)
-            };
-            player
-                .move_in_queue(upcoming_from as usize, upcoming_to as usize)
-                .map_err(|e| CoreError::InvalidInput {
-                    message: e.to_string(),
-                })?;
-        }
-        drop(_transition);
-        self.persist_playback_session().await
+        self.playback_application.move_queue_item(from, to).await
     }
 
     /// Clears every upcoming queue item while leaving the active track alone.
     pub async fn clear_queue(&self) -> CoreResult<()> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        {
-            let mut player = self.playback_application.audio_player().lock().await;
-            player.clear_queue();
-        }
-        drop(_transition);
-        self.persist_playback_session().await
+        self.playback_application.clear_queue().await
     }
 
     /// Returns the current queue.
     pub async fn queue(&self) -> CoreResult<Vec<QueueItem>> {
-        let mut player = self.playback_application.audio_player().lock().await;
-        player.synchronize_gapless();
-        let queue = player.get_playback_queue();
-        let mut items: Vec<QueueItem> = Vec::new();
-        for (pos, (id, _)) in queue.iter().enumerate() {
-            items.push(QueueItem {
-                track_id: *id,
-                position: pos as u64,
-            });
-        }
-        Ok(items)
+        self.playback_application.queue().await
     }
 
     /// Gets a track by ID.

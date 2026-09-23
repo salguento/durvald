@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use crate::{
-    api::{CoreError, CoreResult, PlaybackSnapshot, QueueItem, Track},
+    api::{CoreError, CoreResult, PlaybackSnapshot, QueueItem, RepeatMode, Track},
     audio::AudioPlayer,
     lastfm::LastFmClient,
 };
@@ -188,6 +188,206 @@ impl PlaybackApplication {
             player.volume() as f64
         };
         self.persist_volume(volume).await
+    }
+
+    pub(crate) async fn set_shuffle_enabled(&self, enabled: bool) -> CoreResult<PlaybackSnapshot> {
+        let _transition = self.playback_transition.lock().await;
+        let state = {
+            let mut player = self.audio_player.lock().await;
+            player.set_shuffle_enabled(enabled);
+            PlaybackStateSnapshot::from_player(&player)
+        };
+        drop(_transition);
+        let snapshot = self.snapshot_from_state(state).await;
+        self.persist_session().await?;
+        Ok(snapshot)
+    }
+
+    pub(crate) async fn set_repeat_mode(&self, mode: RepeatMode) -> CoreResult<PlaybackSnapshot> {
+        let _transition = self.playback_transition.lock().await;
+        let state = {
+            let mut player = self.audio_player.lock().await;
+            player.set_repeat_mode(mode);
+            PlaybackStateSnapshot::from_player(&player)
+        };
+        drop(_transition);
+        let snapshot = self.snapshot_from_state(state).await;
+        self.persist_session().await?;
+        Ok(snapshot)
+    }
+
+    pub(crate) async fn add_to_queue(&self, track_id: i64) -> CoreResult<()> {
+        let track = self.find_track(track_id).await?;
+        let _transition = self.playback_transition.lock().await;
+        let starts_playback = self.audio_player.lock().await.should_start_queued_track();
+        let prepared = if starts_playback {
+            Some(self.prepare_sound(track.file_path.clone()).await?)
+        } else {
+            None
+        };
+        let mut player = self.audio_player.lock().await;
+        if let Some(prepared) = prepared {
+            player
+                .play_song_prepared(track_id, prepared)
+                .map_err(|error| CoreError::Playback {
+                    message: error.to_string(),
+                })?;
+        } else {
+            player.enqueue(track_id, track.file_path);
+        }
+        drop(player);
+        drop(_transition);
+        self.persist_session().await?;
+        if starts_playback {
+            self.report_track_started(track_id).await;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn next_track(&self) -> CoreResult<PlaybackSnapshot> {
+        let _transition = self.playback_transition.lock().await;
+        let plan = {
+            let mut player = self.audio_player.lock().await;
+            player.cancel_gapless_transition();
+            player.plan_next().ok_or_else(|| CoreError::NotFound {
+                message: "No next track in the queue".to_string(),
+            })?
+        };
+        self.commit_navigation_plan(plan).await
+    }
+
+    pub(crate) async fn previous_track(&self) -> CoreResult<PlaybackSnapshot> {
+        let _transition = self.playback_transition.lock().await;
+        let plan = {
+            let mut player = self.audio_player.lock().await;
+            player.cancel_gapless_transition();
+            player.plan_previous().ok_or_else(|| CoreError::NotFound {
+                message: "No previously played track".to_string(),
+            })?
+        };
+        self.commit_navigation_plan(plan).await
+    }
+
+    pub(crate) async fn play_queue_item(&self, position: u64) -> CoreResult<PlaybackSnapshot> {
+        let _transition = self.playback_transition.lock().await;
+        let plan = {
+            let mut player = self.audio_player.lock().await;
+            player.cancel_gapless_transition();
+            let upcoming_position = if player.get_current_song_id().is_some() {
+                position
+                    .checked_sub(1)
+                    .ok_or_else(|| CoreError::InvalidInput {
+                        message: "The active track is already playing".to_string(),
+                    })?
+            } else {
+                position
+            };
+            player
+                .plan_skip(upcoming_position as usize)
+                .map_err(|error| CoreError::InvalidInput {
+                    message: error.to_string(),
+                })?
+        };
+        self.commit_navigation_plan(plan).await
+    }
+
+    pub(crate) async fn remove_from_queue(&self, position: u64) -> CoreResult<()> {
+        let _transition = self.playback_transition.lock().await;
+        let mut player = self.audio_player.lock().await;
+        let position = public_to_upcoming_position(&player, position, "removed from the queue")?;
+        player
+            .remove_from_queue(position)
+            .map_err(|error| CoreError::InvalidInput {
+                message: error.to_string(),
+            })?;
+        drop(player);
+        drop(_transition);
+        self.persist_session().await
+    }
+
+    pub(crate) async fn move_queue_item(&self, from: u64, to: u64) -> CoreResult<()> {
+        let _transition = self.playback_transition.lock().await;
+        let mut player = self.audio_player.lock().await;
+        let from = public_to_upcoming_position(&player, from, "moved")?;
+        let to = public_to_upcoming_position(&player, to, "moved")?;
+        player
+            .move_in_queue(from, to)
+            .map_err(|error| CoreError::InvalidInput {
+                message: error.to_string(),
+            })?;
+        drop(player);
+        drop(_transition);
+        self.persist_session().await
+    }
+
+    pub(crate) async fn clear_queue(&self) -> CoreResult<()> {
+        let _transition = self.playback_transition.lock().await;
+        self.audio_player.lock().await.clear_queue();
+        drop(_transition);
+        self.persist_session().await
+    }
+
+    pub(crate) async fn queue(&self) -> CoreResult<Vec<QueueItem>> {
+        let mut player = self.audio_player.lock().await;
+        player.synchronize_gapless();
+        Ok(player
+            .get_playback_queue()
+            .into_iter()
+            .enumerate()
+            .map(|(position, (track_id, _))| QueueItem {
+                track_id,
+                position: position as u64,
+            })
+            .collect())
+    }
+
+    async fn commit_navigation_plan(
+        &self,
+        plan: crate::audio::player::PlaybackPlan,
+    ) -> CoreResult<PlaybackSnapshot> {
+        let prepared = self.prepare_sound(plan.path().to_string()).await?;
+        let track_id = plan.song_id();
+        let state = {
+            let mut player = self.audio_player.lock().await;
+            player
+                .commit_plan(plan, prepared)
+                .map_err(|error| CoreError::Playback {
+                    message: error.to_string(),
+                })?;
+            PlaybackStateSnapshot::from_player(&player)
+        };
+        let snapshot = self.snapshot_from_state(state).await;
+        self.persist_session().await?;
+        self.report_track_started(track_id).await;
+        Ok(snapshot)
+    }
+
+    async fn find_track(&self, track_id: i64) -> CoreResult<Track> {
+        if track_id < 0 {
+            return Err(CoreError::InvalidInput {
+                message: "Track ID must not be negative".to_string(),
+            });
+        }
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })?;
+            crate::database::operations::get_song_by_id(&conn, &track_id.to_string())
+                .map_err(|error| CoreError::Storage {
+                    message: error.to_string(),
+                })?
+                .into_iter()
+                .next()
+                .map(track_from_song)
+                .ok_or_else(|| CoreError::NotFound {
+                    message: format!("Track {track_id} not found"),
+                })
+        })
+        .await
+        .map_err(|error| CoreError::Storage {
+            message: format!("Blocking database task failed: {error}"),
+        })?
     }
 
     async fn prepare_sound(&self, path: String) -> CoreResult<crate::audio::player::PreparedSound> {
@@ -428,4 +628,21 @@ fn unix_timestamp_seconds() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn public_to_upcoming_position(
+    player: &AudioPlayer,
+    position: u64,
+    action: &str,
+) -> CoreResult<usize> {
+    let position = if player.get_current_song_id().is_some() {
+        position
+            .checked_sub(1)
+            .ok_or_else(|| CoreError::InvalidInput {
+                message: format!("The active track cannot be {action}"),
+            })?
+    } else {
+        position
+    };
+    Ok(position as usize)
 }
