@@ -174,34 +174,6 @@ impl DurvaldCore {
         .map_err(|message| CoreError::Storage { message })
     }
 
-    async fn persist_session_progress(&self, progress_seconds: f64) -> CoreResult<()> {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|e| e.to_string())?;
-            crate::database::operations::update_session_progress(&conn, progress_seconds)
-                .map_err(|e| e.to_string())
-        })
-        .await
-        .map_err(|e| CoreError::Storage {
-            message: format!("Session progress persistence task failed: {e}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })
-    }
-
-    async fn persist_session_volume(&self, volume: f64) -> CoreResult<()> {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|e| e.to_string())?;
-            crate::database::operations::update_session_volume(&conn, volume)
-                .map_err(|e| e.to_string())
-        })
-        .await
-        .map_err(|e| CoreError::Storage {
-            message: format!("Session volume persistence task failed: {e}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })
-    }
-
     async fn prepare_sound(&self, path: String) -> CoreResult<crate::audio::player::PreparedSound> {
         let normalize_volume = self
             .playback_application
@@ -254,44 +226,6 @@ impl DurvaldCore {
         let release = (!playback.release.is_empty()).then_some(playback.release.clone());
         *self.playback_application.lastfm_playback().lock().await = Some(playback);
         let _ = self.lastfm.update_now_playing(artist, title, release).await;
-    }
-
-    async fn pause_lastfm_playback(&self) {
-        let now = unix_timestamp_seconds();
-        if let Some(playback) = self
-            .playback_application
-            .lastfm_playback()
-            .lock()
-            .await
-            .as_mut()
-        {
-            if let Some(active_since) = playback.active_since.take() {
-                playback.played_seconds += now.saturating_sub(active_since);
-            }
-        }
-    }
-
-    async fn resume_lastfm_playback(&self) {
-        if let Some(playback) = self
-            .playback_application
-            .lastfm_playback()
-            .lock()
-            .await
-            .as_mut()
-        {
-            if playback.active_since.is_none() {
-                playback.active_since = Some(unix_timestamp_seconds());
-            }
-        }
-    }
-
-    async fn is_tracking_lastfm_track(&self, track_id: i64) -> bool {
-        self.playback_application
-            .lastfm_playback()
-            .lock()
-            .await
-            .as_ref()
-            .is_some_and(|playback| playback.track_id == track_id)
     }
 
     async fn report_lastfm_track_completed(&self, track_id: i64) {
@@ -1755,52 +1689,12 @@ impl DurvaldCore {
 
     /// Starts playback of a track.
     pub async fn play(&self, track_id: i64) -> CoreResult<PlaybackSnapshot> {
-        non_negative_id(track_id, "Track ID")?;
-        // Get track info
-        let track = self
-            .run_database_core(move |conn| {
-                let track =
-                    crate::database::operations::get_song_by_id(conn, &track_id.to_string())
-                        .map_err(|error| CoreError::Storage {
-                            message: error.to_string(),
-                        })?
-                        .into_iter()
-                        .next()
-                        .ok_or_else(|| CoreError::NotFound {
-                            message: format!("Track {} not found", track_id),
-                        })?;
-                Ok(track)
-            })
-            .await?;
-
-        // Start the selected track. The player's queue represents upcoming
-        // tracks, so playing directly must not append a duplicate entry.
-        let _transition = self.playback_application.playback_transition().lock().await;
-        let prepared = self.prepare_sound(track.file_path.clone()).await?;
-        let mut player = self.playback_application.audio_player().lock().await;
-        player
-            .play_song_prepared(track_id, prepared)
-            .map_err(|e| CoreError::Playback {
-                message: e.to_string(),
-            })?;
-
-        let playback_state = playback_state_for_player(&player);
-        drop(player);
-        drop(_transition);
-        let snapshot = playback_from_state(self, playback_state).await;
-        self.persist_playback_session().await?;
-        self.report_lastfm_track_started(track_id).await;
-        Ok(snapshot)
+        self.playback_application.play(track_id).await
     }
 
     /// Returns the current playback state.
     pub async fn playback(&self) -> PlaybackSnapshot {
-        let playback_state = {
-            let mut player = self.playback_application.audio_player().lock().await;
-            player.synchronize_gapless();
-            playback_state_for_player(&player)
-        };
-        playback_from_state(self, playback_state).await
+        self.playback_application.playback().await
     }
 }
 
@@ -1894,90 +1788,27 @@ async fn playback_from_state(core: &DurvaldCore, state: PlaybackStateSnapshot) -
 impl DurvaldCore {
     /// Pauses playback.
     pub async fn pause(&self) -> CoreResult<()> {
-        let mut player = self.playback_application.audio_player().lock().await;
-        player.pause();
-        drop(player);
-        self.pause_lastfm_playback().await;
-        self.persist_playback_session().await?;
-        Ok(())
+        self.playback_application.pause().await
     }
 
     /// Resumes playback.
     pub async fn resume(&self) -> CoreResult<()> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        let restored_track = {
-            let mut player = self.playback_application.audio_player().lock().await;
-            let restored_track = player.restored_track();
-            if restored_track.is_none() {
-                player.resume();
-            }
-            restored_track
-        };
-        if let Some((song_id, path, position)) = restored_track {
-            let prepared = self.prepare_sound(path).await?;
-            let mut player = self.playback_application.audio_player().lock().await;
-            player
-                .play_song_prepared_from(song_id, prepared, position)
-                .map_err(|e| CoreError::Playback {
-                    message: e.to_string(),
-                })?;
-        }
-        let current_track_id = self
-            .playback_application
-            .audio_player()
-            .lock()
-            .await
-            .get_current_song_id();
-        drop(_transition);
-        if let Some(track_id) = current_track_id {
-            if self.is_tracking_lastfm_track(track_id).await {
-                self.resume_lastfm_playback().await;
-            } else {
-                self.report_lastfm_track_started(track_id).await;
-            }
-        }
-        self.persist_playback_session().await?;
-        Ok(())
+        self.playback_application.resume().await
     }
 
     /// Stops playback.
     pub async fn stop(&self) -> CoreResult<()> {
-        let _transition = self.playback_application.playback_transition().lock().await;
-        let mut player = self.playback_application.audio_player().lock().await;
-        player.stop();
-        drop(player);
-        drop(_transition);
-        *self.playback_application.lastfm_playback().lock().await = None;
-        self.persist_playback_session().await?;
-        Ok(())
+        self.playback_application.stop().await
     }
 
     /// Seeks to a position in seconds.
     pub async fn seek(&self, seconds: u64) -> CoreResult<()> {
-        let mut player = self.playback_application.audio_player().lock().await;
-        player
-            .seek_to_position(seconds)
-            .await
-            .map_err(|e| CoreError::Playback {
-                message: e.to_string(),
-            })?;
-        drop(player);
-        self.persist_session_progress(seconds as f64).await
+        self.playback_application.seek(seconds).await
     }
 
     /// Sets volume (0.0 - 1.0).
     pub async fn set_volume(&self, volume: f32) -> CoreResult<()> {
-        if !volume.is_finite() {
-            return Err(CoreError::InvalidInput {
-                message: "Volume must be a finite number between 0.0 and 1.0".to_string(),
-            });
-        }
-        let mut player = self.playback_application.audio_player().lock().await;
-        player.set_volume(volume.clamp(0.0, 1.0));
-        let volume = player.volume() as f64;
-        drop(player);
-        self.persist_session_volume(volume).await?;
-        Ok(())
+        self.playback_application.set_volume(volume).await
     }
 
     /// Enables or disables randomized selection when advancing the queue.
