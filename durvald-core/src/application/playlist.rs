@@ -1,0 +1,152 @@
+//! Playlist use-case coordination.
+
+use std::sync::Arc;
+
+use base64::Engine;
+
+use crate::{
+    api::{CoreError, CoreResult, Playlist, Track},
+    application::library::track_from_song,
+};
+
+type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
+
+pub(crate) struct PlaylistApplication {
+    db_pool: Arc<DatabasePool>,
+}
+
+impl PlaylistApplication {
+    pub(crate) fn new(db_pool: Arc<DatabasePool>) -> Self {
+        Self { db_pool }
+    }
+
+    pub(crate) async fn playlists(&self) -> CoreResult<Vec<Playlist>> {
+        self.run_database(|conn| {
+            let summaries = crate::database::operations::get_all_playlists_with_track_counts(conn)
+                .map_err(|error| error.to_string())?;
+            Ok(summaries
+                .into_iter()
+                .map(|summary| playlist_from_database(summary.playlist, summary.track_count))
+                .collect())
+        })
+        .await
+    }
+
+    pub(crate) async fn playlist(&self, playlist_id: i64) -> CoreResult<Playlist> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        self.run_database_core(move |conn| {
+            let playlist = crate::database::operations::get_playlist_by_id(conn, playlist_id)
+                .map_err(|error| lookup_error(error, "Playlist", playlist_id))?;
+            let track_count =
+                crate::database::operations::get_playlist_track_count(conn, playlist_id).map_err(
+                    |error| CoreError::Storage {
+                        message: error.to_string(),
+                    },
+                )?;
+            Ok(playlist_from_database(playlist, track_count))
+        })
+        .await
+    }
+
+    pub(crate) async fn playlist_tracks(&self, playlist_id: i64) -> CoreResult<Vec<Track>> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        self.run_database(move |conn| {
+            crate::database::operations::get_playlist_tracks(conn, playlist_id)
+                .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+                .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    pub(crate) async fn playlist_artwork_bytes(
+        &self,
+        playlist_id: i64,
+    ) -> CoreResult<Option<Vec<u8>>> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        self.run_database(move |conn| {
+            crate::database::operations::get_playlist_by_id(conn, playlist_id)
+                .map(|playlist| playlist.cover)
+                .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
+    async fn run_database<T, F>(&self, operation: F) -> CoreResult<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&rusqlite::Connection) -> Result<T, String> + Send + 'static,
+    {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            operation(&conn)
+        })
+        .await
+        .map_err(|error| CoreError::Storage {
+            message: format!("Blocking database task failed: {error}"),
+        })?
+        .map_err(|message| CoreError::Storage { message })
+    }
+
+    async fn run_database_core<T, F>(&self, operation: F) -> CoreResult<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
+    {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })?;
+            operation(&conn)
+        })
+        .await
+        .map_err(|error| CoreError::Storage {
+            message: format!("Blocking database task failed: {error}"),
+        })?
+    }
+}
+
+fn playlist_from_database(
+    playlist: crate::database::models::Playlist,
+    track_count: u64,
+) -> Playlist {
+    Playlist {
+        id: playlist.id as i64,
+        name: playlist.name,
+        description: playlist.description,
+        artwork_id: playlist
+            .cover
+            .map(|cover| base64::engine::general_purpose::STANDARD.encode(cover)),
+        is_favorite: playlist.is_favorite,
+        suggest_less: playlist.suggest_less,
+        track_count,
+        created_at: playlist.created_at,
+        updated_at: playlist.updated_at,
+    }
+}
+
+fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
+    u64::try_from(value).map_err(|_| CoreError::InvalidInput {
+        message: format!("{label} must not be negative"),
+    })
+}
+
+fn lookup_error(
+    error: crate::database::operations::DatabaseError,
+    resource: &str,
+    id: u64,
+) -> CoreError {
+    if matches!(
+        &error,
+        crate::database::operations::DatabaseError::Rusqlite(rusqlite::Error::QueryReturnedNoRows)
+    ) {
+        CoreError::NotFound {
+            message: format!("{resource} {id} not found"),
+        }
+    } else {
+        CoreError::Storage {
+            message: error.to_string(),
+        }
+    }
+}

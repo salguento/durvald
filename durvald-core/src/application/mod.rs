@@ -3,3 +3,4 @@
 pub(crate) mod history;
 pub(crate) mod library;
 pub(crate) mod playback;
+pub(crate) mod playlist;

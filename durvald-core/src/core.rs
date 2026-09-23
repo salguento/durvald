@@ -11,6 +11,7 @@ pub(crate) use crate::application::library::track_from_song;
 use crate::application::playback::PlaybackApplication;
 #[cfg(test)]
 use crate::application::playback::scrobble_eligible;
+use crate::application::playlist::PlaylistApplication;
 use crate::lastfm::{LastFmClient, LastFmError};
 use crate::secure_store::SecureStore;
 use base64::Engine;
@@ -26,6 +27,7 @@ pub struct DurvaldCore {
     history_application: HistoryApplication,
     library_application: LibraryApplication,
     playback_application: Arc<PlaybackApplication>,
+    playlist_application: PlaylistApplication,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     lastfm: Arc<LastFmClient>,
     enrichment: crate::enrichment::service::EnrichmentService,
@@ -251,25 +253,6 @@ fn repeat_mode_from_string(mode: &str) -> RepeatMode {
     }
 }
 
-fn lookup_error(
-    error: crate::database::operations::DatabaseError,
-    resource: &str,
-    id: u64,
-) -> CoreError {
-    if matches!(
-        &error,
-        crate::database::operations::DatabaseError::Rusqlite(rusqlite::Error::QueryReturnedNoRows)
-    ) {
-        CoreError::NotFound {
-            message: format!("{resource} {id} not found"),
-        }
-    } else {
-        CoreError::Storage {
-            message: error.to_string(),
-        }
-    }
-}
-
 fn lastfm_error(error: LastFmError) -> CoreError {
     let message = error.to_string();
     match error {
@@ -473,6 +456,7 @@ impl DurvaldCore {
                 audio_player,
                 lastfm.clone(),
             )),
+            playlist_application: PlaylistApplication::new(db_pool.clone()),
             metadata_edit_queue,
             lastfm,
             covers_dir: config.covers_dir.clone(),
@@ -704,30 +688,7 @@ impl DurvaldCore {
 
     /// Returns all playlists.
     pub async fn playlists(&self) -> CoreResult<Vec<Playlist>> {
-        self.run_database(|conn| {
-            let db_playlists =
-                crate::database::operations::get_all_playlists_with_track_counts(conn)
-                    .map_err(|error| error.to_string())?;
-            let mut playlists = Vec::with_capacity(db_playlists.len());
-            for summary in db_playlists {
-                let playlist = summary.playlist;
-                playlists.push(Playlist {
-                    id: playlist.id as i64,
-                    name: playlist.name,
-                    description: playlist.description,
-                    artwork_id: playlist
-                        .cover
-                        .map(|cover| base64::engine::general_purpose::STANDARD.encode(cover)),
-                    is_favorite: playlist.is_favorite,
-                    suggest_less: playlist.suggest_less,
-                    track_count: summary.track_count,
-                    created_at: playlist.created_at,
-                    updated_at: playlist.updated_at,
-                });
-            }
-            Ok(playlists)
-        })
-        .await
+        self.playlist_application.playlists().await
     }
 
     /// Creates a playlist. Artwork is optional base64 or a data URL.
@@ -769,31 +730,7 @@ impl DurvaldCore {
 
     /// Gets one playlist by ID.
     pub async fn playlist(&self, playlist_id: i64) -> CoreResult<Playlist> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        self.run_database_core(move |conn| {
-            let playlist = crate::database::operations::get_playlist_by_id(conn, playlist_id)
-                .map_err(|error| lookup_error(error, "Playlist", playlist_id))?;
-            let track_count =
-                crate::database::operations::get_playlist_track_count(conn, playlist_id).map_err(
-                    |error| CoreError::Storage {
-                        message: error.to_string(),
-                    },
-                )?;
-            Ok(Playlist {
-                id: playlist.id as i64,
-                name: playlist.name,
-                description: playlist.description,
-                artwork_id: playlist
-                    .cover
-                    .map(|cover| base64::engine::general_purpose::STANDARD.encode(cover)),
-                is_favorite: playlist.is_favorite,
-                suggest_less: playlist.suggest_less,
-                track_count,
-                created_at: playlist.created_at,
-                updated_at: playlist.updated_at,
-            })
-        })
-        .await
+        self.playlist_application.playlist(playlist_id).await
     }
 
     /// Updates a playlist's name, description, and optional artwork.
@@ -833,13 +770,7 @@ impl DurvaldCore {
 
     /// Returns tracks in playlist order.
     pub async fn playlist_tracks(&self, playlist_id: i64) -> CoreResult<Vec<Track>> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        self.run_database(move |conn| {
-            crate::database::operations::get_playlist_tracks(conn, playlist_id)
-                .map(|tracks| tracks.into_iter().map(track_from_song).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.playlist_application.playlist_tracks(playlist_id).await
     }
 
     /// Loads persisted track or release artwork as bytes for Swift `Data`.
@@ -861,13 +792,9 @@ impl DurvaldCore {
 
     /// Loads a playlist's artwork blob as bytes for Swift `Data`.
     pub async fn playlist_artwork_bytes(&self, playlist_id: i64) -> CoreResult<Option<Vec<u8>>> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        self.run_database(move |conn| {
-            crate::database::operations::get_playlist_by_id(conn, playlist_id)
-                .map(|playlist| playlist.cover)
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.playlist_application
+            .playlist_artwork_bytes(playlist_id)
+            .await
     }
 
     /// Sets whether a track is favorited.
