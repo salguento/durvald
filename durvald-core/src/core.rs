@@ -5,8 +5,8 @@
 //! the `DurvaldCore` facade in the `core` module.
 
 use crate::api::*;
+use crate::application::library::LibraryApplication;
 pub(crate) use crate::application::library::track_from_song;
-use crate::application::library::{LibraryApplication, release_from_database};
 use crate::application::playback::PlaybackApplication;
 #[cfg(test)]
 use crate::application::playback::scrobble_eligible;
@@ -741,53 +741,7 @@ impl DurvaldCore {
 
     /// Searches tracks, releases, artists, and playlists by text.
     pub async fn search(&self, query: String) -> CoreResult<SearchResults> {
-        if query.trim().is_empty() {
-            return Err(CoreError::InvalidInput {
-                message: "Search query cannot be empty".to_string(),
-            });
-        }
-
-        let query = query.trim().to_owned();
-        let results = self
-            .run_database(move |conn| {
-                crate::database::operations::search_library(conn, &query)
-                    .map_err(|error| error.to_string())
-            })
-            .await?;
-
-        Ok(SearchResults {
-            tracks: results.tracks.into_iter().map(track_from_song).collect(),
-            releases: results
-                .releases
-                .into_iter()
-                .map(release_from_database)
-                .collect(),
-            artists: results
-                .artists
-                .into_iter()
-                .map(|artist| Artist {
-                    id: artist.artist_id as i64,
-                    name: artist.artist_name,
-                })
-                .collect(),
-            playlists: results
-                .playlists
-                .into_iter()
-                .map(|playlist| Playlist {
-                    id: playlist.id as i64,
-                    name: playlist.name,
-                    description: playlist.description,
-                    artwork_id: playlist
-                        .cover
-                        .map(|cover| base64::engine::general_purpose::STANDARD.encode(cover)),
-                    is_favorite: playlist.is_favorite,
-                    suggest_less: playlist.suggest_less,
-                    track_count: 0,
-                    created_at: playlist.created_at,
-                    updated_at: playlist.updated_at,
-                })
-                .collect(),
-        })
+        self.library_application.search(query).await
     }
 
     /// Returns all tracks in the library.

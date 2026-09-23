@@ -5,7 +5,11 @@
 
 use std::sync::Arc;
 
-use crate::api::{Artist, CoreError, CoreResult, Release, ReleasePage, Track, TrackPage};
+use base64::Engine;
+
+use crate::api::{
+    Artist, CoreError, CoreResult, Playlist, Release, ReleasePage, SearchResults, Track, TrackPage,
+};
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
@@ -60,6 +64,56 @@ impl LibraryApplication {
             Ok(())
         })
         .await
+    }
+
+    pub(crate) async fn search(&self, query: String) -> CoreResult<SearchResults> {
+        if query.trim().is_empty() {
+            return Err(CoreError::InvalidInput {
+                message: "Search query cannot be empty".to_string(),
+            });
+        }
+
+        let query = query.trim().to_owned();
+        let results = self
+            .run_database(move |conn| {
+                crate::database::operations::search_library(conn, &query)
+                    .map_err(|error| error.to_string())
+            })
+            .await?;
+
+        Ok(SearchResults {
+            tracks: results.tracks.into_iter().map(track_from_song).collect(),
+            releases: results
+                .releases
+                .into_iter()
+                .map(release_from_database)
+                .collect(),
+            artists: results
+                .artists
+                .into_iter()
+                .map(|artist| Artist {
+                    id: artist.artist_id as i64,
+                    name: artist.artist_name,
+                })
+                .collect(),
+            playlists: results
+                .playlists
+                .into_iter()
+                .map(|playlist| Playlist {
+                    id: playlist.id as i64,
+                    name: playlist.name,
+                    description: playlist.description,
+                    artwork_id: playlist
+                        .cover
+                        .map(|cover| base64::engine::general_purpose::STANDARD.encode(cover)),
+                    is_favorite: playlist.is_favorite,
+                    suggest_less: playlist.suggest_less,
+                    track_count: 0,
+                    created_at: playlist.created_at,
+                    updated_at: playlist.updated_at,
+                })
+                .collect(),
+        })
     }
 
     pub(crate) async fn tracks(&self) -> CoreResult<Vec<Track>> {
@@ -311,7 +365,7 @@ pub(crate) fn track_from_song(track: crate::database::models::SongItem) -> Track
     }
 }
 
-pub(crate) fn release_from_database(release: crate::database::models::Releases) -> Release {
+fn release_from_database(release: crate::database::models::Releases) -> Release {
     Release {
         id: release.release_id as i64,
         title: release.title,
