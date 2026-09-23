@@ -218,3 +218,39 @@ async fn resume_continues_paused_track() -> TestResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn stop_clears_active_playback_and_persists_session() -> TestResult<()> {
+    let (test_core, track) = core_with_one_track().await?;
+
+    test_core.core().play(track.id).await?;
+    test_core.process_mock_audio(1).await;
+
+    let playing = test_core.core().playback().await;
+
+    assert_eq!(
+        playing.current_track.as_ref().map(|item| item.id),
+        Some(track.id),
+    );
+    assert!(playing.is_playing);
+
+    test_core.core().stop().await?;
+    test_core.process_mock_audio(1).await;
+
+    let stopped = test_core.core().playback().await;
+
+    assert!(stopped.current_track.is_none());
+    assert!(!stopped.is_playing);
+    assert!(!stopped.is_paused);
+    assert_eq!(stopped.position_seconds, 0.0);
+    assert!(stopped.duration_seconds.is_none());
+    assert!(stopped.queue.is_empty());
+
+    let session = test_core.core().last_session().await?;
+
+    assert!(session.current_track_id.is_none());
+    assert_eq!(session.progress_seconds, 0.0);
+    assert!(session.queue.is_empty());
+
+    Ok(())
+}
