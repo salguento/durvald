@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use crate::{
-    api::{CoreError, CoreResult, PlaybackSnapshot, QueueItem, RepeatMode, Track},
+    api::{CoreError, CoreResult, LastSession, PlaybackSnapshot, QueueItem, RepeatMode, Track},
     audio::AudioPlayer,
     lastfm::LastFmClient,
 };
@@ -399,7 +399,7 @@ impl PlaybackApplication {
             })
     }
 
-    async fn persist_session(&self) -> CoreResult<()> {
+    pub(crate) async fn persist_session(&self) -> CoreResult<()> {
         let (current_song_id, progress_seconds, volume, shuffle_enabled, repeat_mode, queue) = {
             let player = self.audio_player.lock().await;
             (
@@ -465,6 +465,60 @@ impl PlaybackApplication {
         .await
         .map_err(|error| CoreError::Storage {
             message: format!("Session volume persistence task failed: {error}"),
+        })?
+        .map_err(|message| CoreError::Storage { message })
+    }
+
+    pub(crate) async fn last_session(&self) -> CoreResult<LastSession> {
+        let db_pool = self.db_pool.clone();
+        let session = tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::get_last_session(&conn).map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| CoreError::Storage {
+            message: format!("Last-session query task failed: {error}"),
+        })?
+        .map_err(|message| CoreError::Storage { message })?;
+
+        Ok(LastSession {
+            current_track_id: session.current_song_id,
+            progress_seconds: session.progress_seconds,
+            volume: normalized_volume(session.volume),
+            shuffle_enabled: session.shuffle_enabled,
+            repeat_mode: match session.repeat_mode.as_str() {
+                "one" => RepeatMode::One,
+                "all" => RepeatMode::All,
+                _ => RepeatMode::None,
+            },
+            queue: serde_json::from_str(&session.queue_snapshot).unwrap_or_default(),
+            queue_position: session.queue_position as u64,
+            source_context: session.source_context,
+            updated_at: session.updated_at,
+        })
+    }
+
+    pub(crate) async fn save_session(&self, session: LastSession) -> CoreResult<()> {
+        let db_session = crate::database::models::LastSession {
+            current_song_id: session.current_track_id,
+            progress_seconds: session.progress_seconds,
+            volume: normalized_volume(session.volume as f64) as f64,
+            shuffle_enabled: session.shuffle_enabled,
+            repeat_mode: format!("{:?}", session.repeat_mode).to_lowercase(),
+            queue_snapshot: serde_json::to_string(&session.queue).unwrap_or_default(),
+            queue_position: session.queue_position as i64,
+            source_context: session.source_context,
+            updated_at: String::new(),
+        };
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::save_last_session(&conn, &db_session)
+                .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| CoreError::Storage {
+            message: format!("Session persistence task failed: {error}"),
         })?
         .map_err(|message| CoreError::Storage { message })
     }
@@ -628,6 +682,14 @@ fn unix_timestamp_seconds() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+fn normalized_volume(volume: f64) -> f32 {
+    if volume.is_finite() {
+        volume.clamp(0.0, 1.0) as f32
+    } else {
+        1.0
+    }
 }
 
 fn public_to_upcoming_position(

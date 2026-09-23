@@ -131,49 +131,6 @@ impl DurvaldCore {
             })?
     }
 
-    async fn persist_playback_session(&self) -> CoreResult<()> {
-        let (current_song_id, progress_seconds, volume, shuffle_enabled, repeat_mode, queue) = {
-            let player = self.playback_application.audio_player().lock().await;
-            (
-                player.get_current_song_id(),
-                player.get_position().as_secs_f64(),
-                player.volume() as f64,
-                player.shuffle_enabled(),
-                player.repeat_mode(),
-                player
-                    .get_playback_queue()
-                    .into_iter()
-                    .map(|(song_id, _)| song_id)
-                    .collect::<Vec<_>>(),
-            )
-        };
-        let db_pool = self.db_pool.clone();
-
-        tokio::task::spawn_blocking(move || -> Result<(), String> {
-            let conn = db_pool.get().map_err(|e| e.to_string())?;
-            let previous =
-                crate::database::operations::get_last_session(&conn).map_err(|e| e.to_string())?;
-            let session = crate::database::models::LastSession {
-                current_song_id,
-                progress_seconds,
-                volume,
-                shuffle_enabled,
-                repeat_mode: format!("{repeat_mode:?}").to_lowercase(),
-                queue_snapshot: serde_json::to_string(&queue).map_err(|e| e.to_string())?,
-                queue_position: 0,
-                source_context: previous.source_context,
-                updated_at: String::new(),
-            };
-            crate::database::operations::save_last_session(&conn, &session)
-                .map_err(|e| e.to_string())
-        })
-        .await
-        .map_err(|e| CoreError::Storage {
-            message: format!("Session persistence task failed: {e}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })
-    }
-
     async fn prepare_sound(&self, path: String) -> CoreResult<crate::audio::player::PreparedSound> {
         let normalize_volume = self
             .playback_application
@@ -717,7 +674,7 @@ impl DurvaldCore {
                 if let Some(track_id) = event.started_track_id {
                     core.report_lastfm_track_started(track_id).await;
                 }
-                let _ = core.persist_playback_session().await;
+                let _ = core.playback_application.persist_session().await;
             }
         });
 
@@ -1818,28 +1775,7 @@ impl DurvaldCore {
 
     /// Returns the last session state.
     pub async fn last_session(&self) -> CoreResult<LastSession> {
-        let session = self
-            .run_database(|conn| {
-                crate::database::operations::get_last_session(conn)
-                    .map_err(|error| error.to_string())
-            })
-            .await?;
-
-        Ok(LastSession {
-            current_track_id: session.current_song_id,
-            progress_seconds: session.progress_seconds,
-            volume: normalized_volume(session.volume),
-            shuffle_enabled: session.shuffle_enabled,
-            repeat_mode: match session.repeat_mode.as_str() {
-                "one" => RepeatMode::One,
-                "all" => RepeatMode::All,
-                _ => RepeatMode::None,
-            },
-            queue: serde_json::from_str(&session.queue_snapshot).unwrap_or_default(),
-            queue_position: session.queue_position as u64,
-            source_context: session.source_context,
-            updated_at: session.updated_at,
-        })
+        self.playback_application.last_session().await
     }
 
     /// Returns completed playback events, newest-first as stored by the core.
@@ -1891,22 +1827,7 @@ impl DurvaldCore {
 
     /// Saves the current session state.
     pub async fn save_session(&self, session: LastSession) -> CoreResult<()> {
-        let db_session = crate::database::models::LastSession {
-            current_song_id: session.current_track_id,
-            progress_seconds: session.progress_seconds,
-            volume: normalized_volume(session.volume as f64) as f64,
-            shuffle_enabled: session.shuffle_enabled,
-            repeat_mode: format!("{:?}", session.repeat_mode).to_lowercase(),
-            queue_snapshot: serde_json::to_string(&session.queue).unwrap_or_default(),
-            queue_position: session.queue_position as i64,
-            source_context: session.source_context,
-            updated_at: String::new(),
-        };
-        self.run_database(move |conn| {
-            crate::database::operations::save_last_session(conn, &db_session)
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.playback_application.save_session(session).await
     }
 
     /// Returns application settings.
