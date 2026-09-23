@@ -3,13 +3,13 @@ use std::path::{Path, PathBuf};
 
 use super::filesystem::TestFs;
 
-fn one_second_silent_wav() -> Vec<u8> {
+fn silent_wav(duration_seconds: u32) -> Vec<u8> {
     let sample_rate = 8_000u32;
     let channels = 1u16;
     let bits_per_sample = 16u16;
     let bytes_per_sample = u32::from(bits_per_sample / 8);
 
-    let data_len = sample_rate * u32::from(channels) * bytes_per_sample;
+    let data_len = sample_rate * u32::from(channels) * bytes_per_sample * duration_seconds;
 
     let byte_rate = sample_rate * u32::from(channels) * bytes_per_sample;
 
@@ -40,6 +40,14 @@ fn one_second_silent_wav() -> Vec<u8> {
 
 impl TestFs {
     pub fn write_silent_wav(&self, relative_path: impl AsRef<Path>) -> io::Result<PathBuf> {
-        self.write_library_file(relative_path, &one_second_silent_wav())
+        self.write_silent_wav_with_duration(relative_path, 1)
+    }
+
+    pub fn write_silent_wav_with_duration(
+        &self,
+        relative_path: impl AsRef<Path>,
+        duration_seconds: u32,
+    ) -> io::Result<PathBuf> {
+        self.write_library_file(relative_path, &silent_wav(duration_seconds))
     }
 }

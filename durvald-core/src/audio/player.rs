@@ -235,6 +235,14 @@ impl AudioPlayer {
     }
 
     fn play_prepared(&mut self, prepared: PreparedSound) -> Result<(), AudioError> {
+        self.play_prepared_from(prepared, 0.0)
+    }
+
+    fn play_prepared_from(
+        &mut self,
+        prepared: PreparedSound,
+        start_position: f64,
+    ) -> Result<(), AudioError> {
         let PreparedSound {
             path,
             decoder,
@@ -243,7 +251,8 @@ impl AudioPlayer {
             tail,
             gain_db,
         } = prepared;
-        let sound_data = StreamingSoundData::from_decoder(decoder);
+        let sound_data =
+            StreamingSoundData::from_decoder(decoder).start_position(start_position.max(0.0));
 
         let crossfade_duration = self
             .crossfade_duration
@@ -317,6 +326,17 @@ impl AudioPlayer {
         prepared: PreparedSound,
     ) -> Result<(), AudioError> {
         self.play_prepared(prepared)?;
+        self.current_song_id = Some(song_id);
+        Ok(())
+    }
+
+    pub(crate) fn play_song_prepared_from(
+        &mut self,
+        song_id: i64,
+        prepared: PreparedSound,
+        start_position: f64,
+    ) -> Result<(), AudioError> {
+        self.play_prepared_from(prepared, start_position)?;
         self.current_song_id = Some(song_id);
         Ok(())
     }

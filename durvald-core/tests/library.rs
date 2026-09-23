@@ -703,6 +703,66 @@ async fn completed_scan_is_no_longer_cancellable() -> Result<(), Box<dyn Error +
 }
 
 #[tokio::test]
+async fn cancelling_active_rescan_preserves_previously_indexed_tracks()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+
+    let indexed_file = test_core
+        .files()
+        .write_silent_wav("Artist/Album/already-indexed.wav")?;
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+
+    let initial = test_core
+        .core()
+        .scan_library(vec![library_path.clone()])
+        .await?;
+    assert_eq!(initial.new_tracks_added, 1);
+
+    std::fs::remove_file(indexed_file)?;
+    for index in 0..200 {
+        test_core
+            .files()
+            .write_silent_wav(format!("Pending/Album/{index:03}.wav"))?;
+    }
+
+    let core = test_core.core().clone();
+    let scan = tokio::spawn({
+        let core = core.clone();
+        async move { core.scan_library(vec![library_path]).await }
+    });
+
+    loop {
+        match core.cancel_library_scan() {
+            Ok(()) => break,
+            Err(CoreError::NotFound { .. }) => tokio::task::yield_now().await,
+            Err(error) => return Err(error.into()),
+        }
+    }
+
+    let result = scan.await??;
+    assert!(
+        result
+            .errors
+            .iter()
+            .any(|error| error.contains("Library scan cancelled")),
+    );
+
+    let tracks = test_core.core().tracks().await?;
+    assert!(
+        tracks
+            .iter()
+            .any(|track| track.file_path.ends_with("already-indexed.wav")),
+        "a cancelled rescan must not reconcile away prior records",
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn scan_keeps_valid_track_when_another_file_is_corrupt()
 -> Result<(), Box<dyn Error + Send + Sync>> {
     let test_core = TestCore::open().await?;

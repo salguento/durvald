@@ -100,9 +100,10 @@ impl Voice {
         target_volume_db: f32,
     ) -> Result<(Self, StreamHandle), FromFileError> {
         let (sound, handle) = data.into_sound()?;
+        let initial_position = handle.position();
         let control = Arc::new(Control {
             state: AtomicU64::new(0),
-            position: AtomicU64::new(0),
+            position: AtomicU64::new(initial_position.to_bits()),
             volume: AtomicU64::new(f64::NAN.to_bits()),
             seek: AtomicU64::new(f64::NAN.to_bits()),
             action: AtomicU64::new(0),

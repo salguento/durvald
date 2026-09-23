@@ -1899,18 +1899,10 @@ impl DurvaldCore {
             let prepared = self.prepare_sound(path).await?;
             let mut player = self.audio_player.lock().await;
             player
-                .play_song_prepared(song_id, prepared)
+                .play_song_prepared_from(song_id, prepared, position)
                 .map_err(|e| CoreError::Playback {
                     message: e.to_string(),
                 })?;
-            if position > 0.0 {
-                player
-                    .seek_to_position(position as u64)
-                    .await
-                    .map_err(|e| CoreError::Playback {
-                        message: e.to_string(),
-                    })?;
-            }
         }
         let current_track_id = self.audio_player.lock().await.get_current_song_id();
         drop(_transition);

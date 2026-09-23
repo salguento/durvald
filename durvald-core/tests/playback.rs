@@ -1444,3 +1444,184 @@ async fn playback_session_is_restored_after_core_restart() -> TestResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn resume_continues_restored_session_without_changing_queue_modes() -> TestResult<()> {
+    let test_core = TestCore::open().await?;
+
+    for index in 1..=3 {
+        test_core
+            .files()
+            .write_silent_wav_with_duration(format!("Artist/Album/{index:02}.wav"), 3)?;
+    }
+
+    let library_path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+    let scan = test_core.core().scan_library(vec![library_path]).await?;
+    assert_eq!(scan.new_tracks_added, 3);
+
+    let mut tracks = test_core.core().tracks().await?;
+    tracks.sort_by_key(|track| track.id);
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+    test_core.core().pause().await?;
+    test_core.process_mock_audio(1).await;
+    test_core.core().seek(1).await?;
+    test_core.core().set_shuffle_enabled(true).await?;
+    test_core.core().set_repeat_mode(RepeatMode::All).await?;
+
+    let test_core = test_core.restart().await?;
+
+    let restored = test_core.core().playback().await;
+    assert_eq!(
+        restored.current_track.as_ref().map(|track| track.id),
+        Some(first.id),
+    );
+    assert_eq!(restored.position_seconds, 1.0);
+    assert!(!restored.is_playing);
+    assert!(restored.is_paused);
+
+    let expected_queue = restored.queue.clone();
+
+    test_core.core().resume().await?;
+    test_core.process_mock_audio(1).await;
+
+    let resumed = test_core.core().playback().await;
+    assert_eq!(
+        resumed.current_track.as_ref().map(|track| track.id),
+        Some(first.id),
+    );
+    assert!(
+        (1.0..1.1).contains(&resumed.position_seconds),
+        "restored position was {}",
+        resumed.position_seconds,
+    );
+    assert!(resumed.is_playing);
+    assert!(!resumed.is_paused);
+    assert_eq!(resumed.queue, expected_queue);
+    assert!(resumed.shuffle_enabled);
+    assert_eq!(resumed.repeat_mode, RepeatMode::All);
+
+    let session = test_core.core().last_session().await?;
+    assert_eq!(session.current_track_id, Some(first.id));
+    assert_eq!(session.progress_seconds, 1.0);
+    assert_eq!(session.queue, vec![first.id, second.id, third.id]);
+    assert!(session.shuffle_enabled);
+    assert_eq!(session.repeat_mode, RepeatMode::All);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn completed_track_advances_and_persists_without_playback_polling() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(2).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+    test_core.core().add_to_queue(second.id).await?;
+
+    // Drive the mock renderer past the end without calling `playback()` or
+    // another public command to provoke the transition.
+    test_core.process_mock_audio(80).await;
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    let advanced = test_core.core().playback().await;
+    assert_eq!(
+        advanced.current_track.as_ref().map(|track| track.id),
+        Some(second.id),
+    );
+    assert!(advanced.is_playing);
+    assert!(!advanced.is_paused);
+    assert_eq!(advanced.queue.len(), 1);
+    assert_eq!(advanced.queue[0].track_id, second.id);
+
+    let session = test_core.core().last_session().await?;
+    assert_eq!(session.current_track_id, Some(second.id));
+    assert_eq!(session.queue, vec![second.id]);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn navigation_does_not_modify_completed_playback_history() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+
+    let first = &tracks[0];
+    let second = &tracks[1];
+    let third = &tracks[2];
+
+    test_core.core().play(first.id).await?;
+    test_core.process_mock_audio(1).await;
+    test_core.core().add_to_queue(second.id).await?;
+    test_core.core().add_to_queue(third.id).await?;
+
+    test_core.process_mock_audio(80).await;
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    let completed_history = test_core.core().playback_history().await?;
+    assert_eq!(completed_history.len(), 1);
+    assert_eq!(completed_history[0].track_id, first.id);
+
+    let advanced = test_core.core().next_track().await?;
+    assert_eq!(
+        advanced.current_track.as_ref().map(|track| track.id),
+        Some(third.id),
+    );
+    assert_eq!(
+        test_core.core().playback_history().await?,
+        completed_history
+    );
+
+    let returned = test_core.core().previous_track().await?;
+    assert_eq!(
+        returned.current_track.as_ref().map(|track| track.id),
+        Some(second.id),
+    );
+    assert_eq!(
+        test_core.core().playback_history().await?,
+        completed_history
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn repeat_one_records_each_natural_completion() -> TestResult<()> {
+    let (test_core, track) = core_with_one_track().await?;
+
+    test_core.core().play(track.id).await?;
+    test_core.process_mock_audio(1).await;
+    test_core.core().set_repeat_mode(RepeatMode::One).await?;
+
+    for expected_completions in 1..=2 {
+        test_core.process_mock_audio(80).await;
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+        let playback = test_core.core().playback().await;
+        assert_eq!(
+            playback.current_track.as_ref().map(|item| item.id),
+            Some(track.id),
+        );
+        assert!(playback.is_playing);
+        assert_eq!(playback.repeat_mode, RepeatMode::One);
+
+        let history = test_core.core().playback_history().await?;
+        assert_eq!(history.len(), expected_completions);
+        assert!(history.iter().all(|item| item.track_id == track.id));
+    }
+
+    Ok(())
+}
