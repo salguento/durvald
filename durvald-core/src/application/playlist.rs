@@ -32,6 +32,30 @@ impl PlaylistApplication {
         .await
     }
 
+    pub(crate) async fn create_playlist(
+        &self,
+        name: String,
+        description: String,
+        artwork_base64: Option<String>,
+    ) -> CoreResult<Playlist> {
+        if name.trim().is_empty() {
+            return Err(CoreError::InvalidInput {
+                message: "Playlist name cannot be empty".to_string(),
+            });
+        }
+        self.run_database(move |conn| {
+            crate::database::operations::create_playlist(
+                conn,
+                name,
+                artwork_base64.unwrap_or_default(),
+                description,
+            )
+            .map(|playlist| playlist_from_database(playlist, 0))
+            .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
     pub(crate) async fn playlist(&self, playlist_id: i64) -> CoreResult<Playlist> {
         let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
         self.run_database_core(move |conn| {
@@ -44,6 +68,39 @@ impl PlaylistApplication {
                     },
                 )?;
             Ok(playlist_from_database(playlist, track_count))
+        })
+        .await
+    }
+
+    pub(crate) async fn update_playlist(
+        &self,
+        playlist_id: i64,
+        name: String,
+        description: String,
+        artwork_base64: Option<String>,
+    ) -> CoreResult<()> {
+        if name.trim().is_empty() {
+            return Err(CoreError::InvalidInput {
+                message: "Playlist name cannot be empty".to_string(),
+            });
+        }
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        self.run_entity_update("Playlist", playlist_id, move |conn| {
+            crate::database::operations::update_playlist(
+                conn,
+                playlist_id,
+                name,
+                description,
+                artwork_base64.unwrap_or_default(),
+            )
+        })
+        .await
+    }
+
+    pub(crate) async fn delete_playlist(&self, playlist_id: i64) -> CoreResult<()> {
+        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        self.run_entity_update("Playlist", playlist_id, move |conn| {
+            crate::database::operations::delete_playlist(conn, playlist_id)
         })
         .await
     }
@@ -104,6 +161,30 @@ impl PlaylistApplication {
         .map_err(|error| CoreError::Storage {
             message: format!("Blocking database task failed: {error}"),
         })?
+    }
+
+    async fn run_entity_update<F>(
+        &self,
+        entity: &'static str,
+        id: u64,
+        operation: F,
+    ) -> CoreResult<()>
+    where
+        F: FnOnce(&rusqlite::Connection) -> crate::database::operations::DatabaseResult<bool>
+            + Send
+            + 'static,
+    {
+        self.run_database_core(move |conn| {
+            if !operation(conn).map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })? {
+                return Err(CoreError::NotFound {
+                    message: format!("{entity} {id} not found"),
+                });
+            }
+            Ok(())
+        })
+        .await
     }
 }
 

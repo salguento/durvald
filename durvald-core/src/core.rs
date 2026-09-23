@@ -14,7 +14,6 @@ use crate::application::playback::scrobble_eligible;
 use crate::application::playlist::PlaylistApplication;
 use crate::lastfm::{LastFmClient, LastFmError};
 use crate::secure_store::SecureStore;
-use base64::Engine;
 use std::sync::Arc;
 
 /// Opaque core engine - the main entry point for all operations.
@@ -698,34 +697,9 @@ impl DurvaldCore {
         description: String,
         artwork_base64: Option<String>,
     ) -> CoreResult<Playlist> {
-        if name.trim().is_empty() {
-            return Err(CoreError::InvalidInput {
-                message: "Playlist name cannot be empty".to_string(),
-            });
-        }
-        self.run_database(move |conn| {
-            crate::database::operations::create_playlist(
-                conn,
-                name,
-                artwork_base64.unwrap_or_default(),
-                description,
-            )
-            .map(|playlist| Playlist {
-                id: playlist.id as i64,
-                name: playlist.name,
-                description: playlist.description,
-                artwork_id: playlist
-                    .cover
-                    .map(|cover| base64::engine::general_purpose::STANDARD.encode(cover)),
-                is_favorite: playlist.is_favorite,
-                suggest_less: playlist.suggest_less,
-                track_count: 0,
-                created_at: playlist.created_at,
-                updated_at: playlist.updated_at,
-            })
-            .map_err(|error| error.to_string())
-        })
-        .await
+        self.playlist_application
+            .create_playlist(name, description, artwork_base64)
+            .await
     }
 
     /// Gets one playlist by ID.
@@ -741,31 +715,14 @@ impl DurvaldCore {
         description: String,
         artwork_base64: Option<String>,
     ) -> CoreResult<()> {
-        if name.trim().is_empty() {
-            return Err(CoreError::InvalidInput {
-                message: "Playlist name cannot be empty".to_string(),
-            });
-        }
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        self.run_entity_update("Playlist", playlist_id, move |conn| {
-            crate::database::operations::update_playlist(
-                conn,
-                playlist_id,
-                name,
-                description,
-                artwork_base64.unwrap_or_default(),
-            )
-        })
-        .await
+        self.playlist_application
+            .update_playlist(playlist_id, name, description, artwork_base64)
+            .await
     }
 
     /// Deletes a playlist and its track entries.
     pub async fn delete_playlist(&self, playlist_id: i64) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        self.run_entity_update("Playlist", playlist_id, move |conn| {
-            crate::database::operations::delete_playlist(conn, playlist_id)
-        })
-        .await
+        self.playlist_application.delete_playlist(playlist_id).await
     }
 
     /// Returns tracks in playlist order.
