@@ -302,3 +302,66 @@ async fn seek_reports_when_no_track_is_loaded() -> TestResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn set_volume_updates_playback_and_session() -> TestResult<()> {
+    let test_core = TestCore::open().await?;
+
+    test_core.core().set_volume(0.25).await?;
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(playback.volume, 0.25);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.volume, 0.25);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_volume_clamps_finite_values_to_supported_range() -> TestResult<()> {
+    let test_core = TestCore::open().await?;
+
+    test_core.core().set_volume(-0.5).await?;
+
+    let minimum = test_core.core().playback().await;
+
+    assert_eq!(minimum.volume, 0.0);
+
+    test_core.core().set_volume(1.5).await?;
+
+    let maximum = test_core.core().playback().await;
+
+    assert_eq!(maximum.volume, 1.0);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.volume, 1.0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn set_volume_rejects_non_finite_values() -> TestResult<()> {
+    let test_core = TestCore::open().await?;
+
+    let initial = test_core.core().playback().await;
+
+    for invalid_volume in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let result = test_core.core().set_volume(invalid_volume).await;
+
+        assert!(matches!(result, Err(CoreError::InvalidInput { .. })));
+    }
+
+    let playback = test_core.core().playback().await;
+
+    assert_eq!(playback.volume, initial.volume);
+
+    let session = test_core.core().last_session().await?;
+
+    assert_eq!(session.volume, initial.volume);
+
+    Ok(())
+}
