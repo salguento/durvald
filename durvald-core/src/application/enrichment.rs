@@ -3,7 +3,7 @@
 use crate::api::{
     ArtistDetails, ArtistDiscographyPage, ArtistFieldOverride, ArtistIdentity,
     ArtistIdentityCandidates, ArtistPopularTracks, ArtistProfileField, CoreError, CoreResult,
-    EnrichmentSettings, ExternalReleaseDetails,
+    EnrichmentProvider, EnrichmentSettings, ExternalReleaseDetails,
 };
 use crate::enrichment::service::EnrichmentService;
 
@@ -107,6 +107,14 @@ impl EnrichmentApplication {
 
     pub(crate) async fn settings(&self) -> CoreResult<EnrichmentSettings> {
         self.service.settings().await
+    }
+
+    pub(crate) async fn configure(&self, settings: EnrichmentSettings) -> CoreResult<()> {
+        self.service.configure(settings).await
+    }
+
+    pub(crate) async fn clear_provider_data(&self, provider: EnrichmentProvider) -> CoreResult<()> {
+        self.service.clear_provider_data(provider).await
     }
 }
 

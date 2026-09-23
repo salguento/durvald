@@ -519,7 +519,7 @@ impl DurvaldCore {
 
     /// Persists optional enrichment preferences; does not start network work.
     pub async fn configure_enrichment(&self, settings: EnrichmentSettings) -> CoreResult<()> {
-        self.enrichment.configure(settings).await
+        self.enrichment_application.configure(settings).await
     }
 
     /// Removes only the selected provider's cached enrichment snapshots,
@@ -528,7 +528,9 @@ impl DurvaldCore {
         &self,
         provider: EnrichmentProvider,
     ) -> CoreResult<()> {
-        self.enrichment.clear_provider_data(provider).await
+        self.enrichment_application
+            .clear_provider_data(provider)
+            .await
     }
 
     /// Explicitly refreshes the requested remote sections. Local reads remain
