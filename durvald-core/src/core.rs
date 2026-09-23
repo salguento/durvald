@@ -5,7 +5,8 @@
 //! the `DurvaldCore` facade in the `core` module.
 
 use crate::api::*;
-use crate::application::library::LibraryApplication;
+pub(crate) use crate::application::library::track_from_song;
+use crate::application::library::{LibraryApplication, release_from_database};
 use crate::application::playback::PlaybackApplication;
 #[cfg(test)]
 use crate::application::playback::scrobble_eligible;
@@ -185,52 +186,6 @@ fn finish_page<T>(mut items: Vec<T>, page_size: usize, offset: u64) -> (Vec<T>, 
     items.truncate(page_size);
     let next_offset = has_more.then(|| offset.saturating_add(page_size as u64));
     (items, next_offset)
-}
-
-pub(crate) fn track_from_song(track: crate::database::models::SongItem) -> Track {
-    Track {
-        id: track.song_id as i64,
-        title: track.title,
-        artist: track.artist_name,
-        artist_id: track.artist_id as i64,
-        release: track.release_title,
-        release_id: track.release_id as i64,
-        track_number: track.track_number,
-        disc_number: track.disc_number,
-        duration_seconds: track.duration as f64,
-        file_path: track.file_path,
-        artwork_id: (!track.artwork.is_empty()).then_some(track.artwork),
-        bitrate: track.bitrate,
-        sample_rate: track.sample_rate,
-        bit_depth: track.bit_depth,
-        play_count: track.play_count,
-        last_played: track.last_played,
-        rating: track.rating,
-        is_favorite: track.is_favorite,
-        is_hidden: track.is_hidden,
-        suggest_less: track.suggest_less,
-    }
-}
-
-fn release_from_database(release: crate::database::models::Releases) -> Release {
-    Release {
-        id: release.release_id as i64,
-        title: release.title,
-        artist: release.artist_name,
-        artist_id: release.artist_id as i64,
-        release_date: (!release.release_date.is_empty()).then_some(release.release_date),
-        genres: release.genres,
-        composers: release.composers,
-        producers: release.producers,
-        total_tracks: release.total_tracks,
-        total_discs: release.total_discs,
-        duration_seconds: release.duration,
-        artwork_id: (!release.artwork.is_empty()).then_some(release.artwork),
-        is_favorite: release.is_favorite,
-        is_hidden: release.is_hidden,
-        suggest_less: release.suggest_less,
-        rating: release.rating,
-    }
 }
 
 fn history_from_database(item: crate::database::models::PlayHistory) -> PlaybackHistoryItem {
@@ -837,89 +792,36 @@ impl DurvaldCore {
 
     /// Returns all tracks in the library.
     pub async fn tracks(&self) -> CoreResult<Vec<Track>> {
-        let db_tracks = self
-            .run_database(|conn| {
-                crate::database::operations::get_all_tracks(conn).map_err(|error| error.to_string())
-            })
-            .await?;
-
-        Ok(db_tracks.into_iter().map(track_from_song).collect())
+        self.library_application.tracks().await
     }
 
     /// Returns a bounded page of tracks ordered by their stable database ID.
     pub async fn tracks_page(&self, page_size: u64, offset: u64) -> CoreResult<TrackPage> {
-        let (fetch_size, page_size) = pagination_window(page_size, offset)?;
-        let tracks = self
-            .run_database(move |conn| {
-                crate::database::operations::get_tracks_page(conn, fetch_size, offset)
-                    .map_err(|error| error.to_string())
-            })
-            .await?
-            .into_iter()
-            .map(track_from_song)
-            .collect();
-        let (items, next_offset) = finish_page(tracks, page_size, offset);
-        Ok(TrackPage { items, next_offset })
+        self.library_application
+            .tracks_page(page_size, offset)
+            .await
     }
 
     /// Returns all releases in the library.
     pub async fn releases(&self) -> CoreResult<Vec<Release>> {
-        let db_releases = self
-            .run_database(|conn| {
-                crate::database::operations::get_all_releases(conn)
-                    .map_err(|error| error.to_string())
-            })
-            .await?;
-
-        Ok(db_releases.into_iter().map(release_from_database).collect())
+        self.library_application.releases().await
     }
 
     /// Returns a bounded page of releases ordered by their stable database ID.
     pub async fn releases_page(&self, page_size: u64, offset: u64) -> CoreResult<ReleasePage> {
-        let (fetch_size, page_size) = pagination_window(page_size, offset)?;
-        let releases = self
-            .run_database(move |conn| {
-                crate::database::operations::get_releases_page(conn, fetch_size, offset)
-                    .map_err(|error| error.to_string())
-            })
-            .await?
-            .into_iter()
-            .map(release_from_database)
-            .collect();
-        let (items, next_offset) = finish_page(releases, page_size, offset);
-        Ok(ReleasePage { items, next_offset })
+        self.library_application
+            .releases_page(page_size, offset)
+            .await
     }
 
     /// Returns all artists in the library.
     pub async fn artists(&self) -> CoreResult<Vec<Artist>> {
-        let db_artists = self
-            .run_database(|conn| {
-                crate::database::operations::get_all_artists(conn)
-                    .map_err(|error| error.to_string())
-            })
-            .await?;
-
-        Ok(db_artists
-            .into_iter()
-            .map(|a| Artist {
-                id: a.artist_id as i64,
-                name: a.artist_name,
-            })
-            .collect())
+        self.library_application.artists().await
     }
 
     /// Gets an artist by ID.
     pub async fn artist(&self, artist_id: i64) -> CoreResult<Artist> {
-        let artist_id = non_negative_id(artist_id, "Artist ID")?;
-        self.run_database_core(move |conn| {
-            crate::database::operations::get_artist_by_id(conn, &artist_id.to_string())
-                .map(|artist| Artist {
-                    id: artist.artist_id as i64,
-                    name: artist.artist_name,
-                })
-                .map_err(|error| lookup_error(error, "Artist", artist_id))
-        })
-        .await
+        self.library_application.artist(artist_id).await
     }
 
     /// Reads the local enrichment cache, even when enrichment is disabled/offline.
@@ -1054,24 +956,12 @@ impl DurvaldCore {
 
     /// Returns releases by an artist.
     pub async fn artist_releases(&self, artist_id: i64) -> CoreResult<Vec<Release>> {
-        let artist_id = non_negative_id(artist_id, "Artist ID")?;
-        self.run_database(move |conn| {
-            crate::database::operations::get_releases_by_artist_id(conn, &artist_id.to_string())
-                .map(|releases| releases.into_iter().map(release_from_database).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.library_application.artist_releases(artist_id).await
     }
 
     /// Returns tracks by an artist.
     pub async fn artist_tracks(&self, artist_id: i64) -> CoreResult<Vec<Track>> {
-        let artist_id = non_negative_id(artist_id, "Artist ID")?;
-        self.run_database(move |conn| {
-            crate::database::operations::get_songs_by_artist_id(conn, &artist_id.to_string())
-                .map(|tracks| tracks.into_iter().map(track_from_song).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.library_application.artist_tracks(artist_id).await
     }
 
     /// Returns all playlists.
@@ -1688,20 +1578,7 @@ impl DurvaldCore {
 
     /// Gets a track by ID.
     pub async fn track(&self, track_id: i64) -> CoreResult<Track> {
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_database_core(move |conn| {
-            crate::database::operations::get_song_by_id(conn, &track_id.to_string())
-                .map_err(|error| CoreError::Storage {
-                    message: error.to_string(),
-                })?
-                .into_iter()
-                .next()
-                .map(track_from_song)
-                .ok_or_else(|| CoreError::NotFound {
-                    message: format!("Track {track_id} not found"),
-                })
-        })
-        .await
+        self.library_application.track(track_id).await
     }
 
     /// Reads indexed metadata, backfilling older libraries once when necessary.
@@ -1739,24 +1616,12 @@ impl DurvaldCore {
 
     /// Gets a release by ID.
     pub async fn release(&self, release_id: i64) -> CoreResult<Release> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_database_core(move |conn| {
-            crate::database::operations::get_release_by_id(conn, &release_id.to_string())
-                .map(release_from_database)
-                .map_err(|error| lookup_error(error, "Release", release_id))
-        })
-        .await
+        self.library_application.release(release_id).await
     }
 
     /// Gets tracks for a release.
     pub async fn release_tracks(&self, release_id: i64) -> CoreResult<Vec<Track>> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_database(move |conn| {
-            crate::database::operations::get_songs_by_release_id(conn, &release_id.to_string())
-                .map(|tracks| tracks.into_iter().map(track_from_song).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.library_application.release_tracks(release_id).await
     }
 
     /// Extracts metadata from an audio file (for preview/import).
