@@ -129,10 +129,8 @@ fn cache_error(error: crate::enrichment::transport::TransportError) -> LastFmErr
 
 pub(crate) fn page_image(html: &str) -> Option<String> {
     let document = scraper::Html::parse_document(html);
-    let metadata = scraper::Selector::parse(
-        "meta[property='og:image'], meta[name='twitter:image']",
-    )
-    .ok()?;
+    let metadata =
+        scraper::Selector::parse("meta[property='og:image'], meta[name='twitter:image']").ok()?;
     let gallery = scraper::Selector::parse(
         "a[href*='/+images/'] img, a[href$='/+images'] img, img.image-list-image",
     )
@@ -499,6 +497,11 @@ struct TestTransport {
 }
 
 impl LastFmClient {
+    pub fn open(data_dir: std::path::PathBuf, keychain_service: String) -> LastFmResult<Self> {
+        let secure_store = SecureStore::new(data_dir, keychain_service)?;
+        Self::new(Arc::new(Mutex::new(secure_store)))
+    }
+
     pub fn new(secure_store: Arc<Mutex<SecureStore>>) -> LastFmResult<Self> {
         Ok(Self {
             secure_store,

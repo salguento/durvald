@@ -19,13 +19,12 @@ use crate::application::settings::{SettingsApplication, normalized_cross_fade_du
 #[cfg(test)]
 use crate::application::settings::{normalized_audio_quality, validate_settings};
 use crate::lastfm::{LastFmClient, LastFmError};
-use crate::secure_store::SecureStore;
 use std::sync::Arc;
 
 /// Opaque core engine - the main entry point for all operations.
 ///
-/// Internally owns the database pool, audio player, secure storage,
-/// and Last.fm client. All state is encapsulated here.
+/// Internally owns the application services and integration clients that back
+/// the public API. All state is encapsulated behind this facade.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
@@ -306,19 +305,13 @@ impl DurvaldCore {
             saved_session.shuffle_enabled,
             repeat_mode_from_string(&saved_session.repeat_mode),
         );
-        // Initialize secure store
-        let secure_store = SecureStore::new(
-            config.app_support_dir.clone().into(),
-            config.keychain_service.clone(),
-        )
-        .map_err(|e| CoreError::Storage {
-            message: e.to_string(),
-        })?;
-
-        // Initialize Last.fm client (clones the secure store)
+        // Secure storage remains an implementation detail of the Last.fm client.
         let lastfm = Arc::new(
-            LastFmClient::new(Arc::new(tokio::sync::Mutex::new(secure_store.clone())))
-                .map_err(lastfm_error)?,
+            LastFmClient::open(
+                config.app_support_dir.clone().into(),
+                config.keychain_service.clone(),
+            )
+            .map_err(lastfm_error)?,
         );
 
         let db_pool = Arc::new(pool);
