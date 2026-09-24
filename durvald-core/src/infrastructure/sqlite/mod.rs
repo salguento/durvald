@@ -1,5 +1,6 @@
 //! SQLite-backed adapters.
 
+pub(crate) mod catalog_artist;
 pub(crate) mod catalog_preferences;
 pub(crate) mod catalog_release;
 pub(crate) mod catalog_track;

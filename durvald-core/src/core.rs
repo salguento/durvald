@@ -8,8 +8,8 @@ use crate::api::*;
 use crate::application::enrichment::EnrichmentApplication;
 use crate::application::history::HistoryApplication;
 use crate::application::lastfm::{LastFmApplication, lastfm_error};
-use crate::application::library::LibraryApplication;
 pub(crate) use crate::application::library::track_from_song;
+use crate::application::library::{LibraryApplication, LibraryPersistence};
 use crate::application::metadata::MetadataApplication;
 #[cfg(test)]
 use crate::application::metadata::artwork_path_in_covers_dir;
@@ -23,6 +23,7 @@ use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
+use crate::infrastructure::sqlite::catalog_artist::SqliteCatalogArtistQuery;
 use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
 use crate::infrastructure::sqlite::catalog_release::SqliteCatalogReleaseQuery;
 use crate::infrastructure::sqlite::catalog_track::SqliteCatalogTrackQuery;
@@ -304,10 +305,13 @@ impl DurvaldCore {
         );
         let library_application = Arc::new(LibraryApplication::new(
             db_pool.clone(),
-            SqliteCatalogPreferencesRepository::new(db_pool.clone()),
-            SqliteCatalogReleaseQuery::new(db_pool.clone()),
-            SqliteCatalogTrackQuery::new(db_pool.clone()),
-            SqliteLibraryPathsRepository::new(db_pool.clone()),
+            LibraryPersistence::new(
+                SqliteCatalogArtistQuery::new(db_pool.clone()),
+                SqliteCatalogPreferencesRepository::new(db_pool.clone()),
+                SqliteCatalogReleaseQuery::new(db_pool.clone()),
+                SqliteCatalogTrackQuery::new(db_pool.clone()),
+                SqliteLibraryPathsRepository::new(db_pool.clone()),
+            ),
             config.covers_dir.clone(),
             metadata_edit_queue.clone(),
         ));

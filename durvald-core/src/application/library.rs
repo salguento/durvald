@@ -15,6 +15,9 @@ use crate::api::{
     ScanResult, SearchResults, Track, TrackPage,
 };
 use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
+use crate::infrastructure::sqlite::catalog_artist::{
+    CatalogArtistLookupError, SqliteCatalogArtistQuery,
+};
 use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
 use crate::infrastructure::sqlite::catalog_release::{
     CatalogReleaseLookupError, SqliteCatalogReleaseQuery,
@@ -29,10 +32,7 @@ type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 /// Coordinates library use cases behind the public core facade.
 pub(crate) struct LibraryApplication {
     db_pool: Arc<DatabasePool>,
-    catalog_preferences_repository: SqliteCatalogPreferencesRepository,
-    catalog_release_query: SqliteCatalogReleaseQuery,
-    catalog_track_query: SqliteCatalogTrackQuery,
-    library_paths_repository: SqliteLibraryPathsRepository,
+    persistence: LibraryPersistence,
     covers_dir: String,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     scan_in_progress: Arc<AtomicBool>,
@@ -40,22 +40,42 @@ pub(crate) struct LibraryApplication {
     scan_progress: Arc<std::sync::Mutex<Option<ScanProgress>>>,
 }
 
-impl LibraryApplication {
+pub(crate) struct LibraryPersistence {
+    catalog_artist_query: SqliteCatalogArtistQuery,
+    catalog_preferences_repository: SqliteCatalogPreferencesRepository,
+    catalog_release_query: SqliteCatalogReleaseQuery,
+    catalog_track_query: SqliteCatalogTrackQuery,
+    library_paths_repository: SqliteLibraryPathsRepository,
+}
+
+impl LibraryPersistence {
     pub(crate) fn new(
-        db_pool: Arc<DatabasePool>,
+        catalog_artist_query: SqliteCatalogArtistQuery,
         catalog_preferences_repository: SqliteCatalogPreferencesRepository,
         catalog_release_query: SqliteCatalogReleaseQuery,
         catalog_track_query: SqliteCatalogTrackQuery,
         library_paths_repository: SqliteLibraryPathsRepository,
+    ) -> Self {
+        Self {
+            catalog_artist_query,
+            catalog_preferences_repository,
+            catalog_release_query,
+            catalog_track_query,
+            library_paths_repository,
+        }
+    }
+}
+
+impl LibraryApplication {
+    pub(crate) fn new(
+        db_pool: Arc<DatabasePool>,
+        persistence: LibraryPersistence,
         covers_dir: String,
         metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
         Self {
             db_pool,
-            catalog_preferences_repository,
-            catalog_release_query,
-            catalog_track_query,
-            library_paths_repository,
+            persistence,
             covers_dir,
             metadata_edit_queue,
             scan_in_progress: Arc::new(AtomicBool::new(false)),
@@ -289,14 +309,16 @@ impl LibraryApplication {
                 message: format!("Library path is not a directory: {path}"),
             });
         }
-        self.library_paths_repository
+        self.persistence
+            .library_paths_repository
             .add(path)
             .await
             .map_err(storage_error)
     }
 
     pub(crate) async fn library_paths(&self) -> CoreResult<Vec<String>> {
-        self.library_paths_repository
+        self.persistence
+            .library_paths_repository
             .all()
             .await
             .map_err(storage_error)
@@ -304,6 +326,7 @@ impl LibraryApplication {
 
     pub(crate) async fn remove_library_path(&self, path: String) -> CoreResult<()> {
         let removed = self
+            .persistence
             .library_paths_repository
             .remove(path.clone())
             .await
@@ -436,15 +459,20 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn artist(&self, artist_id: ArtistId) -> CoreResult<Artist> {
-        self.run_database_core(move |conn| {
-            crate::database::operations::get_artist_by_id(conn, &artist_id.get().to_string())
-                .map(|artist| Artist {
-                    id: artist.artist_id as i64,
-                    name: artist.artist_name,
-                })
-                .map_err(|error| lookup_error(error, "Artist", artist_id.get()))
-        })
-        .await
+        self.persistence
+            .catalog_artist_query
+            .find(artist_id)
+            .await
+            .map(|artist| Artist {
+                id: artist.artist_id as i64,
+                name: artist.artist_name,
+            })
+            .map_err(|error| match error {
+                CatalogArtistLookupError::NotFound => CoreError::NotFound {
+                    message: format!("Artist {} not found", artist_id.get()),
+                },
+                CatalogArtistLookupError::Storage(message) => CoreError::Storage { message },
+            })
     }
 
     pub(crate) async fn artist_releases(&self, artist_id: ArtistId) -> CoreResult<Vec<Release>> {
@@ -469,7 +497,8 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn track(&self, track_id: TrackId) -> CoreResult<Track> {
-        self.catalog_track_query
+        self.persistence
+            .catalog_track_query
             .find(track_id)
             .await
             .map(track_from_song)
@@ -482,7 +511,8 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn release(&self, release_id: ReleaseId) -> CoreResult<Release> {
-        self.catalog_release_query
+        self.persistence
+            .catalog_release_query
             .find(release_id)
             .await
             .map(release_from_database)
@@ -512,7 +542,8 @@ impl LibraryApplication {
         favorite: bool,
     ) -> CoreResult<()> {
         entity_update_result(
-            self.catalog_preferences_repository
+            self.persistence
+                .catalog_preferences_repository
                 .set_track_favorite(track_id, favorite)
                 .await,
             "Track",
@@ -526,7 +557,8 @@ impl LibraryApplication {
         favorite: bool,
     ) -> CoreResult<()> {
         entity_update_result(
-            self.catalog_preferences_repository
+            self.persistence
+                .catalog_preferences_repository
                 .set_release_favorite(release_id, favorite)
                 .await,
             "Release",
@@ -536,7 +568,8 @@ impl LibraryApplication {
 
     pub(crate) async fn set_track_hidden(&self, track_id: TrackId, hidden: bool) -> CoreResult<()> {
         entity_update_result(
-            self.catalog_preferences_repository
+            self.persistence
+                .catalog_preferences_repository
                 .set_track_hidden(track_id, hidden)
                 .await,
             "Track",
@@ -550,7 +583,8 @@ impl LibraryApplication {
         hidden: bool,
     ) -> CoreResult<()> {
         entity_update_result(
-            self.catalog_preferences_repository
+            self.persistence
+                .catalog_preferences_repository
                 .set_release_hidden(release_id, hidden)
                 .await,
             "Release",
@@ -564,7 +598,8 @@ impl LibraryApplication {
         suggest_less: bool,
     ) -> CoreResult<()> {
         entity_update_result(
-            self.catalog_preferences_repository
+            self.persistence
+                .catalog_preferences_repository
                 .set_track_suggest_less(track_id, suggest_less)
                 .await,
             "Track",
@@ -578,7 +613,8 @@ impl LibraryApplication {
         suggest_less: bool,
     ) -> CoreResult<()> {
         entity_update_result(
-            self.catalog_preferences_repository
+            self.persistence
+                .catalog_preferences_repository
                 .set_release_suggest_less(release_id, suggest_less)
                 .await,
             "Release",
@@ -593,7 +629,8 @@ impl LibraryApplication {
     ) -> CoreResult<()> {
         validate_rating(rating)?;
         entity_update_result(
-            self.catalog_preferences_repository
+            self.persistence
+                .catalog_preferences_repository
                 .set_track_rating(track_id, rating)
                 .await,
             "Track",
@@ -608,7 +645,8 @@ impl LibraryApplication {
     ) -> CoreResult<()> {
         validate_rating(rating)?;
         entity_update_result(
-            self.catalog_preferences_repository
+            self.persistence
+                .catalog_preferences_repository
                 .set_release_rating(release_id, rating)
                 .await,
             "Release",
@@ -631,24 +669,6 @@ impl LibraryApplication {
             message: format!("Blocking database task failed: {error}"),
         })?
         .map_err(|message| CoreError::Storage { message })
-    }
-
-    async fn run_database_core<T, F>(&self, operation: F) -> CoreResult<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
-    {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })?;
-            operation(&conn)
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Blocking database task failed: {error}"),
-        })?
     }
 }
 
@@ -696,25 +716,6 @@ fn entity_update_result(result: Result<bool, String>, entity: &str, id: u64) -> 
         });
     }
     Ok(())
-}
-
-fn lookup_error(
-    error: crate::database::operations::DatabaseError,
-    resource: &str,
-    id: u64,
-) -> CoreError {
-    if matches!(
-        &error,
-        crate::database::operations::DatabaseError::Rusqlite(rusqlite::Error::QueryReturnedNoRows)
-    ) {
-        CoreError::NotFound {
-            message: format!("{resource} {id} not found"),
-        }
-    } else {
-        CoreError::Storage {
-            message: error.to_string(),
-        }
-    }
 }
 
 pub(crate) fn track_from_song(track: crate::database::models::SongItem) -> Track {
