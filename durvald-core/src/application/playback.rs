@@ -392,31 +392,14 @@ impl PlaybackApplication {
     }
 
     async fn find_track(&self, track_id: i64) -> CoreResult<Track> {
-        if track_id < 0 {
-            return Err(CoreError::InvalidInput {
-                message: "Track ID must not be negative".to_string(),
-            });
-        }
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })?;
-            crate::database::operations::get_song_by_id(&conn, &track_id.to_string())
-                .map_err(|error| CoreError::Storage {
-                    message: error.to_string(),
-                })?
-                .into_iter()
-                .next()
-                .map(track_from_song)
-                .ok_or_else(|| CoreError::NotFound {
-                    message: format!("Track {track_id} not found"),
-                })
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Blocking database task failed: {error}"),
-        })?
+        let track_id = TrackId::try_from(track_id).map_err(|_| CoreError::InvalidInput {
+            message: "Track ID must not be negative".to_string(),
+        })?;
+        self.track_query
+            .find(track_id)
+            .await
+            .map(track_from_song)
+            .map_err(|error| playback_track_error(error, track_id))
     }
 
     async fn prepare_sound(&self, path: String) -> CoreResult<crate::audio::player::PreparedSound> {
