@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `47ca7e7 refactor(core): isolate playback history sqlite`
+Commit de referência: `e1f5a9f refactor(core): isolate settings sqlite`
 
-Estado adicional: adapter SQLite de settings implementado e ainda não commitado
+Estado adicional: leitura inicial de settings migrada para o adapter e ainda não commitada
 
 ## Visão geral
 
@@ -257,4 +257,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `2ff6571` | Introdução de `PlaybackHistoryId` na remoção de histórico |
 | 23/09/2026 | `ca94106` | Extensão de `ArtistId` às entradas de enrichment |
 | 23/09/2026 | `47ca7e7` | Primeiro adapter SQLite e modelo de domínio para histórico |
-| 23/09/2026 | estado não commitado | Adapter SQLite e modelo de domínio para settings |
+| 23/09/2026 | `e1f5a9f` | Adapter SQLite e modelo de domínio para settings |
+| 23/09/2026 | estado não commitado | Leitura inicial de settings redirecionada ao adapter SQLite |

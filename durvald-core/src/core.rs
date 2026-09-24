@@ -17,9 +17,11 @@ use crate::application::playback::PlaybackApplication;
 #[cfg(test)]
 use crate::application::playback::scrobble_eligible;
 use crate::application::playlist::PlaylistApplication;
-use crate::application::settings::{SettingsApplication, normalized_cross_fade_duration};
+use crate::application::settings::SettingsApplication;
 #[cfg(test)]
-use crate::application::settings::{normalized_audio_quality, validate_settings};
+use crate::application::settings::{
+    normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
+};
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
@@ -197,7 +199,7 @@ impl DurvaldCore {
             message: e.to_string(),
         })?;
 
-        let (saved_session, crossfade, current_track, upcoming_tracks) = {
+        let (saved_session, current_track, upcoming_tracks) = {
             // Create tables and resolve the saved queue while the connection
             // is scoped to this synchronous initialization block.
             let mut conn = pool.get().map_err(|e| CoreError::Storage {
@@ -227,11 +229,6 @@ impl DurvaldCore {
                         message: e.to_string(),
                     }
                 })?;
-            let settings = crate::database::operations::get_settings(&conn).map_err(|e| {
-                CoreError::Storage {
-                    message: e.to_string(),
-                }
-            })?;
             let queue_ids =
                 serde_json::from_str::<Vec<i64>>(&saved_session.queue_snapshot).unwrap_or_default();
             let song_path = |song_id: i64| {
@@ -253,25 +250,26 @@ impl DurvaldCore {
                     }
                 })
                 .collect();
-            (
-                saved_session,
-                (
-                    settings.cross_fade,
-                    normalized_cross_fade_duration(settings.cross_fade_duration),
-                    settings.normalize_volume,
-                ),
-                current_track,
-                upcoming_tracks,
-            )
+            (saved_session, current_track, upcoming_tracks)
         };
+
+        let db_pool = Arc::new(pool);
+        let settings_repository = SqliteSettingsRepository::new(db_pool.clone());
+        let persisted_settings = settings_repository
+            .get()
+            .await
+            .map_err(|message| CoreError::Storage { message })?;
 
         // Initialize audio player
         let mut audio_player = create_audio_player().map_err(|e| CoreError::Playback {
             message: e.to_string(),
         })?;
         audio_player.set_volume(normalized_volume(saved_session.volume));
-        audio_player.set_crossfade(crossfade.0, crossfade.1);
-        audio_player.set_volume_normalization(crossfade.2);
+        audio_player.set_crossfade(
+            persisted_settings.cross_fade,
+            persisted_settings.cross_fade_duration,
+        );
+        audio_player.set_volume_normalization(persisted_settings.normalize_volume);
         audio_player.restore_session(
             current_track,
             upcoming_tracks,
@@ -288,7 +286,6 @@ impl DurvaldCore {
             .map_err(lastfm_error)?,
         );
 
-        let db_pool = Arc::new(pool);
         let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
         let playback_application = Arc::new(PlaybackApplication::new(
             db_pool.clone(),
@@ -327,7 +324,7 @@ impl DurvaldCore {
                 metadata_edit_queue.clone(),
             ),
             settings_application: SettingsApplication::new(
-                SqliteSettingsRepository::new(db_pool.clone()),
+                settings_repository,
                 playback_application.audio_player().clone(),
             ),
             playback_application,

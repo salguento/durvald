@@ -97,6 +97,7 @@ pub(crate) fn validate_settings(settings: &Settings) -> CoreResult<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn normalized_cross_fade_duration(value: i32) -> u32 {
     crate::domain::settings::normalized_cross_fade_duration(value)
 }
