@@ -3,11 +3,12 @@
 use std::sync::Arc;
 
 use crate::{
-    database::models::Playlist,
     domain::catalog::{CatalogArtist, CatalogRelease, CatalogTrack},
+    domain::playlist::PlaylistDetails,
     infrastructure::sqlite::catalog_artist::artist_from_row,
     infrastructure::sqlite::catalog_release::release_from_row,
     infrastructure::sqlite::catalog_track::track_from_row,
+    infrastructure::sqlite::playlists::playlist_from_row,
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -16,7 +17,7 @@ pub(crate) struct CatalogSearchResults {
     pub(crate) tracks: Vec<CatalogTrack>,
     pub(crate) releases: Vec<CatalogRelease>,
     pub(crate) artists: Vec<CatalogArtist>,
-    pub(crate) playlists: Vec<Playlist>,
+    pub(crate) playlists: Vec<PlaylistDetails>,
 }
 
 pub(crate) struct SqliteCatalogSearchQuery {
@@ -37,7 +38,11 @@ impl SqliteCatalogSearchQuery {
                     tracks: results.tracks.into_iter().map(track_from_row).collect(),
                     releases: results.releases.into_iter().map(release_from_row).collect(),
                     artists: results.artists.into_iter().map(artist_from_row).collect(),
-                    playlists: results.playlists,
+                    playlists: results
+                        .playlists
+                        .into_iter()
+                        .map(playlist_from_row)
+                        .collect(),
                 })
                 .map_err(|error| error.to_string())
         })

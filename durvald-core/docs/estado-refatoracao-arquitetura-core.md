@@ -269,8 +269,10 @@ Já foi concluído:
   adapter SQLite;
 - consultas individual e completa de artistas convertidas para `CatalogArtist`
   no adapter SQLite;
-- artistas dos resultados de busca convertidos para `CatalogArtist` no working
-  tree.
+- artistas dos resultados de busca convertidos para `CatalogArtist` no adapter
+  SQLite;
+- playlists dos resultados de busca convertidas para `PlaylistDetails`,
+  concluindo a retirada de rows do retorno do adapter de busca, no working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -306,9 +308,9 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a conversão dos artistas da busca atualmente no working
+1. registrar em commit a conversão das playlists da busca atualmente no working
    tree;
-2. converter as playlists dos resultados de busca para o modelo de domínio;
+2. auditar o fechamento das fronteiras do Marco 6 e a necessidade real de ports;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
 4. criar ports somente nas dependências com necessidade real de substituição;
@@ -394,4 +396,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `84b5567` | Releases por artista convertidos para modelo de domínio |
 | 24/09/2026 | `2ec8417` | Releases da busca convertidos para modelo de domínio |
 | 24/09/2026 | `0962a2c` | Consultas de artista convertidas para modelo de domínio |
-| 24/09/2026 | estado não commitado | Artistas da busca convertidos para modelo de domínio |
+| 24/09/2026 | `7de6227` | Artistas da busca convertidos para modelo de domínio |
+| 24/09/2026 | estado não commitado | Playlists da busca convertidas para modelo de domínio |

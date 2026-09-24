@@ -348,11 +348,11 @@ impl LibraryApplication {
                 .playlists
                 .into_iter()
                 .map(|playlist| Playlist {
-                    id: playlist.id as i64,
+                    id: playlist.id.get() as i64,
                     name: playlist.name,
                     description: playlist.description,
                     artwork_id: playlist
-                        .cover
+                        .artwork
                         .map(|cover| base64::engine::general_purpose::STANDARD.encode(cover)),
                     is_favorite: playlist.is_favorite,
                     suggest_less: playlist.suggest_less,

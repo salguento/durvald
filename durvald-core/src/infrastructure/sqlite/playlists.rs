@@ -306,7 +306,7 @@ impl SqlitePlaylistRepository {
     }
 }
 
-fn playlist_from_row(row: Playlist) -> PlaylistDetails {
+pub(crate) fn playlist_from_row(row: Playlist) -> PlaylistDetails {
     PlaylistDetails {
         id: PlaylistId::from_persisted(row.id),
         name: row.name,
