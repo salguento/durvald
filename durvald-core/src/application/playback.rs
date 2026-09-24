@@ -496,17 +496,10 @@ impl PlaybackApplication {
     }
 
     async fn persist_volume(&self, volume: f64) -> CoreResult<()> {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| error.to_string())?;
-            crate::database::operations::update_session_volume(&conn, volume)
-                .map_err(|error| error.to_string())
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Session volume persistence task failed: {error}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })
+        self.session_repository
+            .update_volume(volume)
+            .await
+            .map_err(|message| CoreError::Storage { message })
     }
 
     pub(crate) async fn last_session(&self) -> CoreResult<LastSession> {

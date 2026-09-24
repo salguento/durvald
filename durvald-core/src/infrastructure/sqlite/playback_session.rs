@@ -52,4 +52,15 @@ impl SqlitePlaybackSessionRepository {
         .await
         .map_err(|error| format!("Session progress persistence task failed: {error}"))?
     }
+
+    pub(crate) async fn update_volume(&self, volume: f64) -> Result<(), String> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::update_session_volume(&conn, volume)
+                .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| format!("Session volume persistence task failed: {error}"))?
+    }
 }
