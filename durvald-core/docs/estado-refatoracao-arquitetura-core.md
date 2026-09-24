@@ -239,7 +239,8 @@ Já foi concluído:
 - criação de playlist isolada no adapter SQLite;
 - atualização de playlist isolada no adapter SQLite;
 - exclusão de playlist isolada no adapter SQLite;
-- preferência de favorito de playlist isolada no adapter SQLite no working tree.
+- preferência de favorito de playlist isolada no adapter SQLite;
+- preferência `suggest_less` de playlist isolada no adapter SQLite no working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -247,7 +248,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
 | `PlaybackApplication` | 0 | catálogo, sessão e histórico acessados por adapters dedicados |
-| `PlaylistApplication` | 5 | `suggest_less` e mutações de tracks |
+| `PlaylistApplication` | 3 | mutações de tracks |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
 Ainda falta:
@@ -275,7 +276,7 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a preferência de favorito atualmente no working tree;
+1. registrar em commit a preferência `suggest_less` atualmente no working tree;
 2. continuar o adapter pelas demais mutações de playlist e de suas faixas;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
@@ -346,4 +347,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `738eb32` | Criação de playlist isolada em adapter SQLite |
 | 24/09/2026 | `de80601` | Atualização de playlist isolada em adapter SQLite |
 | 24/09/2026 | `6078256` | Exclusão de playlist isolada em adapter SQLite |
-| 24/09/2026 | estado não commitado | Preferência de favorito de playlist isolada em adapter SQLite |
+| 24/09/2026 | `f40a587` | Preferência de favorito de playlist isolada em adapter SQLite |
+| 24/09/2026 | estado não commitado | Preferência `suggest_less` de playlist isolada em adapter SQLite |

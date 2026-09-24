@@ -135,6 +135,33 @@ impl SqlitePlaylistRepository {
         })?
     }
 
+    pub(crate) async fn set_suggest_less(
+        &self,
+        playlist_id: PlaylistId,
+        suggest_less: bool,
+    ) -> Result<(), PlaylistMutationError> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool
+                .get()
+                .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            let updated = crate::database::operations::set_playlist_suggest_less(
+                &conn,
+                playlist_id.get(),
+                suggest_less,
+            )
+            .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            if !updated {
+                return Err(PlaylistMutationError::NotFound);
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|error| {
+            PlaylistMutationError::Storage(format!("Playlist suggest-less task failed: {error}"))
+        })?
+    }
+
     pub(crate) async fn find(
         &self,
         playlist_id: PlaylistId,

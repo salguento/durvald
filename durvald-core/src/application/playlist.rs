@@ -113,11 +113,10 @@ impl PlaylistApplication {
         playlist_id: PlaylistId,
         suggest_less: bool,
     ) -> CoreResult<()> {
-        let playlist_id = playlist_id.get();
-        self.run_entity_update("Playlist", playlist_id, move |conn| {
-            crate::database::operations::set_playlist_suggest_less(conn, playlist_id, suggest_less)
-        })
-        .await
+        self.repository
+            .set_suggest_less(playlist_id, suggest_less)
+            .await
+            .map_err(|error| playlist_mutation_error(error, playlist_id))
     }
 
     pub(crate) async fn playlist_tracks(&self, playlist_id: PlaylistId) -> CoreResult<Vec<Track>> {
@@ -213,48 +212,6 @@ impl PlaylistApplication {
             message: format!("Blocking database task failed: {error}"),
         })?
         .map_err(|message| CoreError::Storage { message })
-    }
-
-    async fn run_database_core<T, F>(&self, operation: F) -> CoreResult<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
-    {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })?;
-            operation(&conn)
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Blocking database task failed: {error}"),
-        })?
-    }
-
-    async fn run_entity_update<F>(
-        &self,
-        entity: &'static str,
-        id: u64,
-        operation: F,
-    ) -> CoreResult<()>
-    where
-        F: FnOnce(&rusqlite::Connection) -> crate::database::operations::DatabaseResult<bool>
-            + Send
-            + 'static,
-    {
-        self.run_database_core(move |conn| {
-            if !operation(conn).map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })? {
-                return Err(CoreError::NotFound {
-                    message: format!("{entity} {id} not found"),
-                });
-            }
-            Ok(())
-        })
-        .await
     }
 }
 
