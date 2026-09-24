@@ -525,15 +525,17 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn release_tracks(&self, release_id: ReleaseId) -> CoreResult<Vec<Track>> {
-        self.run_database(move |conn| {
-            crate::database::operations::get_songs_by_release_id(
-                conn,
-                &release_id.get().to_string(),
-            )
+        self.persistence
+            .catalog_release_query
+            .tracks(release_id)
+            .await
             .map(|tracks| tracks.into_iter().map(track_from_song).collect())
-            .map_err(|error| error.to_string())
-        })
-        .await
+            .map_err(|error| match error {
+                CatalogReleaseLookupError::NotFound => CoreError::NotFound {
+                    message: format!("Release {} not found", release_id.get()),
+                },
+                CatalogReleaseLookupError::Storage(message) => CoreError::Storage { message },
+            })
     }
 
     pub(crate) async fn set_track_favorite(

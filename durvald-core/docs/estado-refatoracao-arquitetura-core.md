@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `ec3dfce refactor(core): isolate catalog release lookup`
+Commit de referência: `14b2169 refactor(core): isolate catalog artist lookup`
 
-Estado adicional: consulta individual de artista isolada e ainda não commitada
+Estado adicional: consulta de faixas por lançamento isolada e ainda não commitada
 
 ## Visão geral
 
@@ -201,7 +201,8 @@ Já foi concluído:
 - retirada de pool e conexão SQLite de `MetadataApplication`;
 - extração incremental da persistência de paths de `LibraryApplication`;
 - extração das mutações de preferências de tracks e releases;
-- conclusão da extração das consultas individuais de faixa, lançamento e artista.
+- conclusão da extração das consultas individuais de faixa, lançamento e artista;
+- início das consultas relacionais com as faixas de um lançamento.
 
 Ainda falta:
 
@@ -268,4 +269,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `fa8c335` | Preferências de catálogo isoladas em adapter SQLite |
 | 23/09/2026 | `255587e` | Consulta individual de faixa isolada em adapter SQLite |
 | 23/09/2026 | `ec3dfce` | Consulta individual de lançamento isolada em adapter SQLite |
-| 23/09/2026 | estado não commitado | Consulta individual de artista isolada em adapter SQLite |
+| 23/09/2026 | `14b2169` | Consulta individual de artista isolada em adapter SQLite |
+| 23/09/2026 | estado não commitado | Consulta de faixas por lançamento isolada em adapter SQLite |
