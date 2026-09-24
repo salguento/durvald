@@ -2,9 +2,9 @@
 
 Última atualização: 24 de setembro de 2026
 
-Commit de referência: `c4fb369 refactor(core): isolate completed playback recording`
+Commit de referência: `3968e15 refactor(core): isolate playlist listing`
 
-Estado adicional: listagem de playlists isolada e ainda não commitada
+Estado adicional: consulta individual de playlist isolada e ainda não commitada
 
 ## Visão geral
 
@@ -64,7 +64,8 @@ concretos:
 - preparação, persistência dos lotes e reconciliação SQLite do scan da
   biblioteca;
 - sessão de playback completamente isolada;
-- playlists, com a listagem agregada ainda não commitada.
+- playlists, com listagem agregada commitada e consulta individual ainda não
+  commitada.
 
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
@@ -242,7 +243,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
 | `PlaybackApplication` | 0 | catálogo, sessão e histórico acessados por adapters dedicados |
-| `PlaylistApplication` | 15 | consultas restantes, CRUD, preferências, tracks e classificação de erro |
+| `PlaylistApplication` | 11 | consultas restantes, CRUD, preferências e tracks |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
 Ainda falta:
@@ -270,8 +271,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a listagem de playlists atualmente no working tree;
-2. continuar o adapter SQLite de playlists pelas consultas antes das mutações;
+1. registrar em commit a consulta individual de playlist atualmente no working tree;
+2. continuar o adapter SQLite de playlists pelas consultas restantes antes das mutações;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
 4. criar ports somente nas dependências com necessidade real de substituição;
@@ -334,4 +335,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `f3f427f` | Update de volume da sessão isolado em adapter SQLite |
 | 24/09/2026 | `87e4765` | Escrita pública da última sessão isolada em adapter SQLite |
 | 24/09/2026 | `c4fb369` | Registro de conclusão isolado no adapter de histórico |
-| 24/09/2026 | estado não commitado | Listagem agregada de playlists isolada em adapter SQLite |
+| 24/09/2026 | `3968e15` | Listagem agregada de playlists isolada em adapter SQLite |
+| 24/09/2026 | estado não commitado | Consulta individual de playlist isolada em adapter SQLite |

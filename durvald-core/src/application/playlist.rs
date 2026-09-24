@@ -8,7 +8,7 @@ use crate::{
     api::{CoreError, CoreResult, Playlist, PlaylistTrack, Track},
     application::library::track_from_song,
     domain::ids::{PlaylistId, TrackId},
-    infrastructure::sqlite::playlists::SqlitePlaylistRepository,
+    infrastructure::sqlite::playlists::{PlaylistLookupError, SqlitePlaylistRepository},
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -64,19 +64,11 @@ impl PlaylistApplication {
     }
 
     pub(crate) async fn playlist(&self, playlist_id: PlaylistId) -> CoreResult<Playlist> {
-        let playlist_id = playlist_id.get();
-        self.run_database_core(move |conn| {
-            let playlist = crate::database::operations::get_playlist_by_id(conn, playlist_id)
-                .map_err(|error| lookup_error(error, "Playlist", playlist_id))?;
-            let track_count =
-                crate::database::operations::get_playlist_track_count(conn, playlist_id).map_err(
-                    |error| CoreError::Storage {
-                        message: error.to_string(),
-                    },
-                )?;
-            Ok(playlist_from_database(playlist, track_count))
-        })
-        .await
+        self.repository
+            .find(playlist_id)
+            .await
+            .map(|summary| playlist_from_database(summary.playlist, summary.track_count))
+            .map_err(|error| playlist_lookup_error(error, playlist_id))
     }
 
     pub(crate) async fn update_playlist(
@@ -298,21 +290,11 @@ fn playlist_from_database(
     }
 }
 
-fn lookup_error(
-    error: crate::database::operations::DatabaseError,
-    resource: &str,
-    id: u64,
-) -> CoreError {
-    if matches!(
-        &error,
-        crate::database::operations::DatabaseError::Rusqlite(rusqlite::Error::QueryReturnedNoRows)
-    ) {
-        CoreError::NotFound {
-            message: format!("{resource} {id} not found"),
-        }
-    } else {
-        CoreError::Storage {
-            message: error.to_string(),
-        }
+fn playlist_lookup_error(error: PlaylistLookupError, playlist_id: PlaylistId) -> CoreError {
+    match error {
+        PlaylistLookupError::NotFound => CoreError::NotFound {
+            message: format!("Playlist {} not found", playlist_id.get()),
+        },
+        PlaylistLookupError::Storage(message) => CoreError::Storage { message },
     }
 }
