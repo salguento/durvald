@@ -390,12 +390,12 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn tracks(&self) -> CoreResult<Vec<Track>> {
-        self.run_database(|conn| {
-            crate::database::operations::get_all_tracks(conn)
-                .map(|tracks| tracks.into_iter().map(track_from_song).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.persistence
+            .catalog_track_query
+            .all()
+            .await
+            .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+            .map_err(catalog_track_storage_error)
     }
 
     pub(crate) async fn tracks_page(&self, page_size: u64, offset: u64) -> CoreResult<TrackPage> {
@@ -494,12 +494,7 @@ impl LibraryApplication {
             .find(track_id)
             .await
             .map(track_from_song)
-            .map_err(|error| match error {
-                CatalogTrackLookupError::NotFound => CoreError::NotFound {
-                    message: format!("Track {} not found", track_id.get()),
-                },
-                CatalogTrackLookupError::Storage(message) => CoreError::Storage { message },
-            })
+            .map_err(|error| catalog_track_error(error, track_id))
     }
 
     pub(crate) async fn release(&self, release_id: ReleaseId) -> CoreResult<Release> {
@@ -709,6 +704,24 @@ fn catalog_artist_error(error: CatalogArtistLookupError, artist_id: ArtistId) ->
             message: format!("Artist {} not found", artist_id.get()),
         },
         CatalogArtistLookupError::Storage(message) => CoreError::Storage { message },
+    }
+}
+
+fn catalog_track_error(error: CatalogTrackLookupError, track_id: TrackId) -> CoreError {
+    match error {
+        CatalogTrackLookupError::NotFound => CoreError::NotFound {
+            message: format!("Track {} not found", track_id.get()),
+        },
+        CatalogTrackLookupError::Storage(message) => CoreError::Storage { message },
+    }
+}
+
+fn catalog_track_storage_error(error: CatalogTrackLookupError) -> CoreError {
+    match error {
+        CatalogTrackLookupError::NotFound => CoreError::Storage {
+            message: "Unexpected missing track while listing catalog".to_string(),
+        },
+        CatalogTrackLookupError::Storage(message) => CoreError::Storage { message },
     }
 }
 
