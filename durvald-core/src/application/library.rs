@@ -453,7 +453,7 @@ impl LibraryApplication {
             .catalog_artist_query
             .releases(artist_id)
             .await
-            .map(|releases| releases.into_iter().map(release_from_database).collect())
+            .map(|releases| releases.into_iter().map(release_from_catalog).collect())
             .map_err(|error| catalog_artist_error(error, artist_id))
     }
 
@@ -758,7 +758,7 @@ fn release_from_database(release: crate::database::models::Releases) -> Release 
     }
 }
 
-fn release_from_catalog(release: crate::domain::catalog::CatalogRelease) -> Release {
+pub(crate) fn release_from_catalog(release: crate::domain::catalog::CatalogRelease) -> Release {
     Release {
         id: release.id.get() as i64,
         title: release.title,
