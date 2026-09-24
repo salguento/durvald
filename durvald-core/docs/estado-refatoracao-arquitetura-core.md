@@ -2,9 +2,9 @@
 
 Última atualização: 24 de setembro de 2026
 
-Commit de referência: `90498bf refactor(core): isolate session progress persistence`
+Commit de referência: `f3f427f refactor(core): isolate session volume persistence`
 
-Estado adicional: update de volume da sessão isolado e ainda não commitado
+Estado adicional: escrita pública da sessão isolada e ainda não commitada
 
 ## Visão geral
 
@@ -63,8 +63,8 @@ concretos:
 - busca agregada de catálogo;
 - preparação, persistência dos lotes e reconciliação SQLite do scan da
   biblioteca;
-- sessão de playback, com leitura, persistência automática e progresso
-  commitados; update de volume ainda não commitado.
+- sessão de playback, com leitura, persistência automática, progresso e volume
+  commitados; escrita pública ainda não commitada.
 
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
@@ -241,7 +241,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | Serviço | Referências diretas | Escopo restante |
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
-| `PlaybackApplication` | 2 | escrita pública de sessão e registro de conclusão |
+| `PlaybackApplication` | 1 | registro de conclusão |
 | `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
@@ -271,15 +271,14 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit o update de volume da sessão atualmente no working tree;
-2. concluir no novo adapter a escrita pública da última sessão;
-3. extrair o registro de conclusão;
-4. criar o adapter SQLite de playlists, começando pelas consultas antes das
+1. registrar em commit a escrita pública da sessão atualmente no working tree;
+2. extrair o registro de conclusão;
+3. criar o adapter SQLite de playlists, começando pelas consultas antes das
    mutações;
-5. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
+4. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
-6. criar ports somente nas dependências com necessidade real de substituição;
-7. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
+5. criar ports somente nas dependências com necessidade real de substituição;
+6. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
    checkpoint do Marco 6.
 
 ## Resumo executivo
@@ -335,4 +334,5 @@ separação entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `5afd7f0` | Leitura pública da última sessão isolada em adapter SQLite |
 | 24/09/2026 | `296b1db` | Persistência automática da sessão isolada em adapter SQLite |
 | 24/09/2026 | `90498bf` | Update de progresso da sessão isolado em adapter SQLite |
-| 24/09/2026 | estado não commitado | Update de volume da sessão isolado em adapter SQLite |
+| 24/09/2026 | `f3f427f` | Update de volume da sessão isolado em adapter SQLite |
+| 24/09/2026 | estado não commitado | Escrita pública da última sessão isolada em adapter SQLite |

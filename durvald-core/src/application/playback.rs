@@ -538,17 +538,10 @@ impl PlaybackApplication {
             source_context: session.source_context,
             updated_at: String::new(),
         };
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| error.to_string())?;
-            crate::database::operations::save_last_session(&conn, &db_session)
-                .map_err(|error| error.to_string())
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Session persistence task failed: {error}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })
+        self.session_repository
+            .save(db_session)
+            .await
+            .map_err(|message| CoreError::Storage { message })
     }
 
     async fn snapshot_from_state(&self, state: PlaybackStateSnapshot) -> PlaybackSnapshot {
