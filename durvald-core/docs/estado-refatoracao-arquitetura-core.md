@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `90fa77e refactor(core): type playlist domain ids`
+Commit de referência: `2ff6571 refactor(core): type playback history ids`
 
-Estado adicional: introdução de `PlaybackHistoryId` implementada e ainda não commitada
+Estado adicional: extensão de `ArtistId` a enrichment implementada e ainda não commitada
 
 ## Visão geral
 
@@ -251,4 +251,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `345a2a1` | Extensão inicial de `TrackId` às entradas de playback |
 | 23/09/2026 | `1734345` | Extensão de `TrackId` às entradas de metadata |
 | 23/09/2026 | `90fa77e` | Introdução de `PlaylistId` nas operações de playlist |
-| 23/09/2026 | estado não commitado | Introdução de `PlaybackHistoryId` na remoção de histórico |
+| 23/09/2026 | `2ff6571` | Introdução de `PlaybackHistoryId` na remoção de histórico |
+| 23/09/2026 | estado não commitado | Extensão de `ArtistId` às entradas de enrichment |

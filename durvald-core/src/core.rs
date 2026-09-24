@@ -426,7 +426,7 @@ impl DurvaldCore {
         language: String,
     ) -> CoreResult<ArtistDetails> {
         self.enrichment_application
-            .artist_details(artist_id, language)
+            .artist_details(artist_id_from_api(artist_id)?, language)
             .await
     }
 
@@ -438,7 +438,7 @@ impl DurvaldCore {
         offset: u64,
     ) -> CoreResult<ArtistDiscographyPage> {
         self.enrichment_application
-            .artist_discography(artist_id, page_size, offset)
+            .artist_discography(artist_id_from_api(artist_id)?, page_size, offset)
             .await
     }
 
@@ -448,7 +448,7 @@ impl DurvaldCore {
         artist_id: i64,
     ) -> CoreResult<Option<ArtistPopularTracks>> {
         self.enrichment_application
-            .artist_popular_tracks(artist_id)
+            .artist_popular_tracks(artist_id_from_api(artist_id)?)
             .await
     }
 
@@ -459,12 +459,14 @@ impl DurvaldCore {
         release_group_mbid: String,
     ) -> CoreResult<ExternalReleaseDetails> {
         self.enrichment_application
-            .external_release_details(artist_id, release_group_mbid)
+            .external_release_details(artist_id_from_api(artist_id)?, release_group_mbid)
             .await
     }
 
     pub async fn artist_identity(&self, artist_id: i64) -> CoreResult<ArtistIdentity> {
-        self.enrichment_application.artist_identity(artist_id).await
+        self.enrichment_application
+            .artist_identity(artist_id_from_api(artist_id)?)
+            .await
     }
 
     pub async fn resolve_artist_candidates(
@@ -472,7 +474,7 @@ impl DurvaldCore {
         artist_id: i64,
     ) -> CoreResult<ArtistIdentityCandidates> {
         self.enrichment_application
-            .resolve_artist_candidates(artist_id)
+            .resolve_artist_candidates(artist_id_from_api(artist_id)?)
             .await
     }
 
@@ -482,13 +484,13 @@ impl DurvaldCore {
         musicbrainz_id: String,
     ) -> CoreResult<ArtistIdentity> {
         self.enrichment_application
-            .confirm_artist_identity(artist_id, musicbrainz_id)
+            .confirm_artist_identity(artist_id_from_api(artist_id)?, musicbrainz_id)
             .await
     }
 
     pub async fn clear_artist_identity(&self, artist_id: i64) -> CoreResult<()> {
         self.enrichment_application
-            .clear_artist_identity(artist_id)
+            .clear_artist_identity(artist_id_from_api(artist_id)?)
             .await
     }
 
@@ -520,7 +522,7 @@ impl DurvaldCore {
         request: ArtistRefreshRequest,
     ) -> CoreResult<ArtistRefreshResult> {
         self.enrichment_application
-            .refresh_artist(artist_id, request)
+            .refresh_artist(artist_id_from_api(artist_id)?, request)
             .await
     }
 
@@ -528,7 +530,7 @@ impl DurvaldCore {
     /// releases and returns the refreshed local collection without network I/O.
     pub async fn sync_artist_release_metadata(&self, artist_id: i64) -> CoreResult<Vec<Release>> {
         self.enrichment_application
-            .sync_artist_release_metadata(artist_id)
+            .sync_artist_release_metadata(artist_id_from_api(artist_id)?)
             .await
     }
 
@@ -538,7 +540,7 @@ impl DurvaldCore {
         value: ArtistFieldOverride,
     ) -> CoreResult<()> {
         self.enrichment_application
-            .set_artist_override(artist_id, value)
+            .set_artist_override(artist_id_from_api(artist_id)?, value)
             .await
     }
 
@@ -549,7 +551,7 @@ impl DurvaldCore {
         language: String,
     ) -> CoreResult<()> {
         self.enrichment_application
-            .clear_artist_override(artist_id, field, language)
+            .clear_artist_override(artist_id_from_api(artist_id)?, field, language)
             .await
     }
 

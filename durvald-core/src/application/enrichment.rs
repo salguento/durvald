@@ -26,88 +26,93 @@ impl EnrichmentApplication {
 
     pub(crate) async fn artist_details(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
         language: String,
     ) -> CoreResult<ArtistDetails> {
-        self.service.artist_details(artist_id, language).await
+        self.service
+            .artist_details(artist_id.get() as i64, language)
+            .await
     }
 
     pub(crate) async fn artist_discography(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
         page_size: u64,
         offset: u64,
     ) -> CoreResult<ArtistDiscographyPage> {
-        non_negative_id(artist_id, "Artist ID")?;
         let page_size = bounded_page_size(page_size, offset)?;
         self.service
-            .artist_discography(artist_id, page_size, offset)
+            .artist_discography(artist_id.get() as i64, page_size, offset)
             .await
     }
 
     pub(crate) async fn artist_popular_tracks(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
     ) -> CoreResult<Option<ArtistPopularTracks>> {
-        non_negative_id(artist_id, "Artist ID")?;
-        self.service.artist_popular_tracks(artist_id).await
+        self.service
+            .artist_popular_tracks(artist_id.get() as i64)
+            .await
     }
 
     pub(crate) async fn external_release_details(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
         release_group_mbid: String,
     ) -> CoreResult<ExternalReleaseDetails> {
-        non_negative_id(artist_id, "Artist ID")?;
         self.service
-            .external_release_details(artist_id, release_group_mbid)
+            .external_release_details(artist_id.get() as i64, release_group_mbid)
             .await
     }
 
-    pub(crate) async fn artist_identity(&self, artist_id: i64) -> CoreResult<ArtistIdentity> {
-        self.service.artist_identity(artist_id).await
+    pub(crate) async fn artist_identity(&self, artist_id: ArtistId) -> CoreResult<ArtistIdentity> {
+        self.service.artist_identity(artist_id.get() as i64).await
     }
 
     pub(crate) async fn resolve_artist_candidates(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
     ) -> CoreResult<ArtistIdentityCandidates> {
-        self.service.resolve_artist_candidates(artist_id).await
+        self.service
+            .resolve_artist_candidates(artist_id.get() as i64)
+            .await
     }
 
     pub(crate) async fn confirm_artist_identity(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
         musicbrainz_id: String,
     ) -> CoreResult<ArtistIdentity> {
         self.service
-            .confirm_artist_identity(artist_id, Some(musicbrainz_id))
+            .confirm_artist_identity(artist_id.get() as i64, Some(musicbrainz_id))
             .await
     }
 
-    pub(crate) async fn clear_artist_identity(&self, artist_id: i64) -> CoreResult<()> {
+    pub(crate) async fn clear_artist_identity(&self, artist_id: ArtistId) -> CoreResult<()> {
         self.service
-            .confirm_artist_identity(artist_id, None)
+            .confirm_artist_identity(artist_id.get() as i64, None)
             .await
             .map(|_| ())
     }
 
     pub(crate) async fn set_artist_override(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
         value: ArtistFieldOverride,
     ) -> CoreResult<()> {
-        self.service.set_artist_override(artist_id, value).await
+        self.service
+            .set_artist_override(artist_id.get() as i64, value)
+            .await
     }
 
     pub(crate) async fn clear_artist_override(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
         field: ArtistProfileField,
         language: String,
     ) -> CoreResult<()> {
         self.service
-            .clear_artist_override(artist_id, field, language)
+            .clear_artist_override(artist_id.get() as i64, field, language)
             .await
     }
 
@@ -125,30 +130,23 @@ impl EnrichmentApplication {
 
     pub(crate) async fn refresh_artist(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
         request: ArtistRefreshRequest,
     ) -> CoreResult<ArtistRefreshResult> {
-        self.service.refresh_artist(artist_id, request).await
+        self.service
+            .refresh_artist(artist_id.get() as i64, request)
+            .await
     }
 
     pub(crate) async fn sync_artist_release_metadata(
         &self,
-        artist_id: i64,
+        artist_id: ArtistId,
     ) -> CoreResult<Vec<Release>> {
-        let artist_id = ArtistId::try_from(artist_id).map_err(|_| CoreError::InvalidInput {
-            message: "Artist ID must not be negative".to_string(),
-        })?;
         self.service
             .sync_local_release_metadata(artist_id.get() as i64)
             .await?;
         self.library.artist_releases(artist_id).await
     }
-}
-
-fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
-    u64::try_from(value).map_err(|_| CoreError::InvalidInput {
-        message: format!("{label} must not be negative"),
-    })
 }
 
 fn bounded_page_size(page_size: u64, offset: u64) -> CoreResult<u64> {
