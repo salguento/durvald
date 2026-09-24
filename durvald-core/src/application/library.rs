@@ -16,6 +16,9 @@ use crate::api::{
 };
 use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
 use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
+use crate::infrastructure::sqlite::catalog_track::{
+    CatalogTrackLookupError, SqliteCatalogTrackQuery,
+};
 use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -24,6 +27,7 @@ type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 pub(crate) struct LibraryApplication {
     db_pool: Arc<DatabasePool>,
     catalog_preferences_repository: SqliteCatalogPreferencesRepository,
+    catalog_track_query: SqliteCatalogTrackQuery,
     library_paths_repository: SqliteLibraryPathsRepository,
     covers_dir: String,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
@@ -36,6 +40,7 @@ impl LibraryApplication {
     pub(crate) fn new(
         db_pool: Arc<DatabasePool>,
         catalog_preferences_repository: SqliteCatalogPreferencesRepository,
+        catalog_track_query: SqliteCatalogTrackQuery,
         library_paths_repository: SqliteLibraryPathsRepository,
         covers_dir: String,
         metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
@@ -43,6 +48,7 @@ impl LibraryApplication {
         Self {
             db_pool,
             catalog_preferences_repository,
+            catalog_track_query,
             library_paths_repository,
             covers_dir,
             metadata_edit_queue,
@@ -457,19 +463,16 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn track(&self, track_id: TrackId) -> CoreResult<Track> {
-        self.run_database_core(move |conn| {
-            crate::database::operations::get_song_by_id(conn, &track_id.get().to_string())
-                .map_err(|error| CoreError::Storage {
-                    message: error.to_string(),
-                })?
-                .into_iter()
-                .next()
-                .map(track_from_song)
-                .ok_or_else(|| CoreError::NotFound {
+        self.catalog_track_query
+            .find(track_id)
+            .await
+            .map(track_from_song)
+            .map_err(|error| match error {
+                CatalogTrackLookupError::NotFound => CoreError::NotFound {
                     message: format!("Track {} not found", track_id.get()),
-                })
-        })
-        .await
+                },
+                CatalogTrackLookupError::Storage(message) => CoreError::Storage { message },
+            })
     }
 
     pub(crate) async fn release(&self, release_id: ReleaseId) -> CoreResult<Release> {

@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `9b8ddaa refactor(core): isolate library path persistence`
+Commit de referência: `fa8c335 refactor(core): isolate catalog preference persistence`
 
-Estado adicional: preferências de catálogo isoladas em adapter e ainda não commitadas
+Estado adicional: consulta individual de faixa isolada e ainda não commitada
 
 ## Visão geral
 
@@ -200,7 +200,8 @@ Já foi concluído:
 - aplicação do mesmo corte arquitetural à persistência de settings;
 - retirada de pool e conexão SQLite de `MetadataApplication`;
 - extração incremental da persistência de paths de `LibraryApplication`;
-- extração das mutações de preferências de tracks e releases.
+- extração das mutações de preferências de tracks e releases;
+- início da extração das consultas de catálogo pela consulta individual de faixa.
 
 Ainda falta:
 
@@ -264,4 +265,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `5b58adf` | Leitura inicial de settings redirecionada ao adapter SQLite |
 | 23/09/2026 | `c1a0596` | Persistência de metadata isolada em adapter SQLite |
 | 23/09/2026 | `9b8ddaa` | Persistência de paths da biblioteca isolada em adapter SQLite |
-| 23/09/2026 | estado não commitado | Preferências de catálogo isoladas em adapter SQLite |
+| 23/09/2026 | `fa8c335` | Preferências de catálogo isoladas em adapter SQLite |
+| 23/09/2026 | estado não commitado | Consulta individual de faixa isolada em adapter SQLite |
