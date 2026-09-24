@@ -606,17 +606,10 @@ impl PlaybackApplication {
         if !self.lastfm.is_connected().await {
             return;
         }
-        let db_pool = self.db_pool.clone();
-        let track = tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().ok()?;
-            crate::database::operations::get_song_by_id(&conn, &track_id.to_string())
-                .ok()?
-                .into_iter()
-                .next()
-        })
-        .await
-        .ok()
-        .flatten();
+        let Some(typed_track_id) = TrackId::try_from(track_id).ok() else {
+            return;
+        };
+        let track = self.track_query.find(typed_track_id).await.ok();
         let Some(track) = track else { return };
         let started_at = unix_timestamp_seconds();
         let playback = LastFmPlayback {
