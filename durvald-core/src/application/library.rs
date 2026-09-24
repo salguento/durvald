@@ -442,20 +442,20 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn artists(&self) -> CoreResult<Vec<Artist>> {
-        self.run_database(|conn| {
-            crate::database::operations::get_all_artists(conn)
-                .map(|artists| {
-                    artists
-                        .into_iter()
-                        .map(|artist| Artist {
-                            id: artist.artist_id as i64,
-                            name: artist.artist_name,
-                        })
-                        .collect()
-                })
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.persistence
+            .catalog_artist_query
+            .all()
+            .await
+            .map(|artists| {
+                artists
+                    .into_iter()
+                    .map(|artist| Artist {
+                        id: artist.artist_id as i64,
+                        name: artist.artist_name,
+                    })
+                    .collect()
+            })
+            .map_err(catalog_artist_storage_error)
     }
 
     pub(crate) async fn artist(&self, artist_id: ArtistId) -> CoreResult<Artist> {
@@ -692,6 +692,15 @@ fn catalog_artist_error(error: CatalogArtistLookupError, artist_id: ArtistId) ->
     match error {
         CatalogArtistLookupError::NotFound => CoreError::NotFound {
             message: format!("Artist {} not found", artist_id.get()),
+        },
+        CatalogArtistLookupError::Storage(message) => CoreError::Storage { message },
+    }
+}
+
+fn catalog_artist_storage_error(error: CatalogArtistLookupError) -> CoreError {
+    match error {
+        CatalogArtistLookupError::NotFound => CoreError::Storage {
+            message: "Unexpected missing artist while listing catalog".to_string(),
         },
         CatalogArtistLookupError::Storage(message) => CoreError::Storage { message },
     }

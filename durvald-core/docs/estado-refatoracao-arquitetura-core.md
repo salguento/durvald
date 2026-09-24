@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `fc3e232 refactor(core): isolate catalog release listing`
+Commit de referência: `d43aa85 refactor(core): isolate catalog release pagination`
 
-Estado adicional: paginação de lançamentos isolada e ainda não commitada
+Estado adicional: listagem completa de artistas isolada e ainda não commitada
 
 ## Visão geral
 
@@ -204,7 +204,8 @@ Já foi concluído:
 - conclusão da extração das consultas individuais de faixa, lançamento e artista;
 - conclusão das consultas relacionais por lançamento e artista;
 - extração das consultas completa e paginada da coleção de faixas;
-- extração das consultas completa e paginada da coleção de lançamentos.
+- extração das consultas completa e paginada da coleção de lançamentos;
+- extração da listagem completa da coleção de artistas.
 
 Ainda falta:
 
@@ -277,4 +278,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `3e024dc` | Listagem completa de faixas isolada em adapter SQLite |
 | 23/09/2026 | `59e11f4` | Paginação de faixas isolada em adapter SQLite |
 | 23/09/2026 | `fc3e232` | Listagem completa de lançamentos isolada em adapter SQLite |
-| 23/09/2026 | estado não commitado | Paginação de lançamentos isolada em adapter SQLite |
+| 23/09/2026 | `d43aa85` | Paginação de lançamentos isolada em adapter SQLite |
+| 23/09/2026 | estado não commitado | Listagem completa de artistas isolada em adapter SQLite |

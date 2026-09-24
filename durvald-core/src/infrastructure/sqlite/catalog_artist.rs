@@ -90,4 +90,19 @@ impl SqliteCatalogArtistQuery {
             CatalogArtistLookupError::Storage(format!("Blocking database task failed: {error}"))
         })?
     }
+
+    pub(crate) async fn all(&self) -> Result<Vec<ArtistItem>, CatalogArtistLookupError> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool
+                .get()
+                .map_err(|error| CatalogArtistLookupError::Storage(error.to_string()))?;
+            crate::database::operations::get_all_artists(&conn)
+                .map_err(|error| CatalogArtistLookupError::Storage(error.to_string()))
+        })
+        .await
+        .map_err(|error| {
+            CatalogArtistLookupError::Storage(format!("Blocking database task failed: {error}"))
+        })?
+    }
 }
