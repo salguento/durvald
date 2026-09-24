@@ -15,6 +15,7 @@ use crate::api::{
     ScanResult, SearchResults, Track, TrackPage,
 };
 use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
+use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
 use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -22,6 +23,7 @@ type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 /// Coordinates library use cases behind the public core facade.
 pub(crate) struct LibraryApplication {
     db_pool: Arc<DatabasePool>,
+    catalog_preferences_repository: SqliteCatalogPreferencesRepository,
     library_paths_repository: SqliteLibraryPathsRepository,
     covers_dir: String,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
@@ -33,12 +35,14 @@ pub(crate) struct LibraryApplication {
 impl LibraryApplication {
     pub(crate) fn new(
         db_pool: Arc<DatabasePool>,
+        catalog_preferences_repository: SqliteCatalogPreferencesRepository,
         library_paths_repository: SqliteLibraryPathsRepository,
         covers_dir: String,
         metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
         Self {
             db_pool,
+            catalog_preferences_repository,
             library_paths_repository,
             covers_dir,
             metadata_edit_queue,
@@ -494,10 +498,13 @@ impl LibraryApplication {
         track_id: TrackId,
         favorite: bool,
     ) -> CoreResult<()> {
-        self.run_entity_update("Track", track_id.get(), move |conn| {
-            crate::database::operations::set_track_favorite(conn, track_id.get(), favorite)
-        })
-        .await
+        entity_update_result(
+            self.catalog_preferences_repository
+                .set_track_favorite(track_id, favorite)
+                .await,
+            "Track",
+            track_id.get(),
+        )
     }
 
     pub(crate) async fn set_release_favorite(
@@ -505,17 +512,23 @@ impl LibraryApplication {
         release_id: ReleaseId,
         favorite: bool,
     ) -> CoreResult<()> {
-        self.run_entity_update("Release", release_id.get(), move |conn| {
-            crate::database::operations::set_release_favorite(conn, release_id.get(), favorite)
-        })
-        .await
+        entity_update_result(
+            self.catalog_preferences_repository
+                .set_release_favorite(release_id, favorite)
+                .await,
+            "Release",
+            release_id.get(),
+        )
     }
 
     pub(crate) async fn set_track_hidden(&self, track_id: TrackId, hidden: bool) -> CoreResult<()> {
-        self.run_entity_update("Track", track_id.get(), move |conn| {
-            crate::database::operations::set_track_hidden(conn, track_id.get(), hidden)
-        })
-        .await
+        entity_update_result(
+            self.catalog_preferences_repository
+                .set_track_hidden(track_id, hidden)
+                .await,
+            "Track",
+            track_id.get(),
+        )
     }
 
     pub(crate) async fn set_release_hidden(
@@ -523,10 +536,13 @@ impl LibraryApplication {
         release_id: ReleaseId,
         hidden: bool,
     ) -> CoreResult<()> {
-        self.run_entity_update("Release", release_id.get(), move |conn| {
-            crate::database::operations::set_release_hidden(conn, release_id.get(), hidden)
-        })
-        .await
+        entity_update_result(
+            self.catalog_preferences_repository
+                .set_release_hidden(release_id, hidden)
+                .await,
+            "Release",
+            release_id.get(),
+        )
     }
 
     pub(crate) async fn set_track_suggest_less(
@@ -534,10 +550,13 @@ impl LibraryApplication {
         track_id: TrackId,
         suggest_less: bool,
     ) -> CoreResult<()> {
-        self.run_entity_update("Track", track_id.get(), move |conn| {
-            crate::database::operations::set_track_suggest_less(conn, track_id.get(), suggest_less)
-        })
-        .await
+        entity_update_result(
+            self.catalog_preferences_repository
+                .set_track_suggest_less(track_id, suggest_less)
+                .await,
+            "Track",
+            track_id.get(),
+        )
     }
 
     pub(crate) async fn set_release_suggest_less(
@@ -545,14 +564,13 @@ impl LibraryApplication {
         release_id: ReleaseId,
         suggest_less: bool,
     ) -> CoreResult<()> {
-        self.run_entity_update("Release", release_id.get(), move |conn| {
-            crate::database::operations::set_release_suggest_less(
-                conn,
-                release_id.get(),
-                suggest_less,
-            )
-        })
-        .await
+        entity_update_result(
+            self.catalog_preferences_repository
+                .set_release_suggest_less(release_id, suggest_less)
+                .await,
+            "Release",
+            release_id.get(),
+        )
     }
 
     pub(crate) async fn set_track_rating(
@@ -561,10 +579,13 @@ impl LibraryApplication {
         rating: Option<u8>,
     ) -> CoreResult<()> {
         validate_rating(rating)?;
-        self.run_entity_update("Track", track_id.get(), move |conn| {
-            crate::database::operations::set_track_rating(conn, track_id.get(), rating)
-        })
-        .await
+        entity_update_result(
+            self.catalog_preferences_repository
+                .set_track_rating(track_id, rating)
+                .await,
+            "Track",
+            track_id.get(),
+        )
     }
 
     pub(crate) async fn set_release_rating(
@@ -573,34 +594,13 @@ impl LibraryApplication {
         rating: Option<u8>,
     ) -> CoreResult<()> {
         validate_rating(rating)?;
-        self.run_entity_update("Release", release_id.get(), move |conn| {
-            crate::database::operations::set_release_rating(conn, release_id.get(), rating)
-        })
-        .await
-    }
-
-    async fn run_entity_update<F>(
-        &self,
-        entity: &'static str,
-        id: u64,
-        operation: F,
-    ) -> CoreResult<()>
-    where
-        F: FnOnce(&rusqlite::Connection) -> crate::database::operations::DatabaseResult<bool>
-            + Send
-            + 'static,
-    {
-        self.run_database_core(move |conn| {
-            if !operation(conn).map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })? {
-                return Err(CoreError::NotFound {
-                    message: format!("{entity} {id} not found"),
-                });
-            }
-            Ok(())
-        })
-        .await
+        entity_update_result(
+            self.catalog_preferences_repository
+                .set_release_rating(release_id, rating)
+                .await,
+            "Release",
+            release_id.get(),
+        )
     }
 
     async fn run_database<T, F>(&self, operation: F) -> CoreResult<T>
@@ -674,6 +674,15 @@ fn validate_rating(rating: Option<u8>) -> CoreResult<()> {
 
 fn storage_error(message: String) -> CoreError {
     CoreError::Storage { message }
+}
+
+fn entity_update_result(result: Result<bool, String>, entity: &str, id: u64) -> CoreResult<()> {
+    if !result.map_err(storage_error)? {
+        return Err(CoreError::NotFound {
+            message: format!("{entity} {id} not found"),
+        });
+    }
+    Ok(())
 }
 
 fn lookup_error(
