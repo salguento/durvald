@@ -6,6 +6,7 @@ use crate::{
     api::{CoreError, CoreResult, Playlist, PlaylistTrack, Track},
     application::library::track_from_song,
     domain::ids::{PlaylistId, TrackId},
+    domain::playlist::PlaylistDetails,
     infrastructure::sqlite::playlists::{
         PlaylistLookupError, PlaylistMutationError, SqlitePlaylistRepository,
     },
@@ -27,7 +28,7 @@ impl PlaylistApplication {
             .map(|summaries| {
                 summaries
                     .into_iter()
-                    .map(|summary| playlist_from_database(summary.playlist, summary.track_count))
+                    .map(|summary| playlist_from_domain(summary.playlist, summary.track_count))
                     .collect()
             })
             .map_err(|message| CoreError::Storage { message })
@@ -47,7 +48,7 @@ impl PlaylistApplication {
         self.repository
             .create(name, artwork_base64.unwrap_or_default(), description)
             .await
-            .map(|playlist| playlist_from_database(playlist, 0))
+            .map(|playlist| playlist_from_domain(playlist, 0))
             .map_err(|message| CoreError::Storage { message })
     }
 
@@ -55,7 +56,7 @@ impl PlaylistApplication {
         self.repository
             .find(playlist_id)
             .await
-            .map(|summary| playlist_from_database(summary.playlist, summary.track_count))
+            .map(|summary| playlist_from_domain(summary.playlist, summary.track_count))
             .map_err(|error| playlist_lookup_error(error, playlist_id))
     }
 
@@ -172,16 +173,13 @@ impl PlaylistApplication {
     }
 }
 
-fn playlist_from_database(
-    playlist: crate::database::models::Playlist,
-    track_count: u64,
-) -> Playlist {
+fn playlist_from_domain(playlist: PlaylistDetails, track_count: u64) -> Playlist {
     Playlist {
-        id: playlist.id as i64,
+        id: playlist.id.get() as i64,
         name: playlist.name,
         description: playlist.description,
         artwork_id: playlist
-            .cover
+            .artwork
             .map(|cover| base64::engine::general_purpose::STANDARD.encode(cover)),
         is_favorite: playlist.is_favorite,
         suggest_less: playlist.suggest_less,

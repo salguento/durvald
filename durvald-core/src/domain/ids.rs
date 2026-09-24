@@ -36,6 +36,12 @@ impl PlaybackHistoryId {
     }
 }
 
+impl PlaylistId {
+    pub(crate) fn from_persisted(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 impl TrackId {
     pub(crate) fn from_persisted(value: u64) -> Self {
         Self(value)

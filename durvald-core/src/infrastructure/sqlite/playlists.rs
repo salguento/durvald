@@ -3,9 +3,12 @@
 use std::sync::Arc;
 
 use crate::{
-    database::models::{Playlist, PlaylistWithTrackCount, SongItem},
+    database::models::{Playlist, SongItem},
     domain::ids::PlaylistId,
-    domain::{ids::TrackId, playlist::PlaylistTrackEntry},
+    domain::{
+        ids::TrackId,
+        playlist::{PlaylistDetails, PlaylistSummary, PlaylistTrackEntry},
+    },
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -29,11 +32,19 @@ impl SqlitePlaylistRepository {
         Self { db_pool }
     }
 
-    pub(crate) async fn all(&self) -> Result<Vec<PlaylistWithTrackCount>, String> {
+    pub(crate) async fn all(&self) -> Result<Vec<PlaylistSummary>, String> {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
             crate::database::operations::get_all_playlists_with_track_counts(&conn)
+                .map(|rows| {
+                    rows.into_iter()
+                        .map(|row| PlaylistSummary {
+                            playlist: playlist_from_row(row.playlist),
+                            track_count: row.track_count,
+                        })
+                        .collect()
+                })
                 .map_err(|error| error.to_string())
         })
         .await
@@ -45,11 +56,12 @@ impl SqlitePlaylistRepository {
         name: String,
         artwork_base64: String,
         description: String,
-    ) -> Result<Playlist, String> {
+    ) -> Result<PlaylistDetails, String> {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
             crate::database::operations::create_playlist(&conn, name, artwork_base64, description)
+                .map(playlist_from_row)
                 .map_err(|error| error.to_string())
         })
         .await
@@ -230,7 +242,7 @@ impl SqlitePlaylistRepository {
     pub(crate) async fn find(
         &self,
         playlist_id: PlaylistId,
-    ) -> Result<PlaylistWithTrackCount, PlaylistLookupError> {
+    ) -> Result<PlaylistSummary, PlaylistLookupError> {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool
@@ -253,8 +265,8 @@ impl SqlitePlaylistRepository {
             let track_count =
                 crate::database::operations::get_playlist_track_count(&conn, playlist_id)
                     .map_err(|error| PlaylistLookupError::Storage(error.to_string()))?;
-            Ok(PlaylistWithTrackCount {
-                playlist,
+            Ok(PlaylistSummary {
+                playlist: playlist_from_row(playlist),
                 track_count,
             })
         })
@@ -285,5 +297,18 @@ impl SqlitePlaylistRepository {
         })
         .await
         .map_err(|error| format!("Playlist artwork query task failed: {error}"))?
+    }
+}
+
+fn playlist_from_row(row: Playlist) -> PlaylistDetails {
+    PlaylistDetails {
+        id: PlaylistId::from_persisted(row.id),
+        name: row.name,
+        artwork: row.cover,
+        description: row.description,
+        is_favorite: row.is_favorite,
+        suggest_less: row.suggest_less,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
     }
 }
