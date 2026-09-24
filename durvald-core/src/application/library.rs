@@ -22,6 +22,7 @@ use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferences
 use crate::infrastructure::sqlite::catalog_release::{
     CatalogReleaseLookupError, SqliteCatalogReleaseQuery,
 };
+use crate::infrastructure::sqlite::catalog_search::SqliteCatalogSearchQuery;
 use crate::infrastructure::sqlite::catalog_track::{
     CatalogTrackLookupError, SqliteCatalogTrackQuery,
 };
@@ -44,6 +45,7 @@ pub(crate) struct LibraryPersistence {
     catalog_artist_query: SqliteCatalogArtistQuery,
     catalog_preferences_repository: SqliteCatalogPreferencesRepository,
     catalog_release_query: SqliteCatalogReleaseQuery,
+    catalog_search_query: SqliteCatalogSearchQuery,
     catalog_track_query: SqliteCatalogTrackQuery,
     library_paths_repository: SqliteLibraryPathsRepository,
 }
@@ -53,6 +55,7 @@ impl LibraryPersistence {
         catalog_artist_query: SqliteCatalogArtistQuery,
         catalog_preferences_repository: SqliteCatalogPreferencesRepository,
         catalog_release_query: SqliteCatalogReleaseQuery,
+        catalog_search_query: SqliteCatalogSearchQuery,
         catalog_track_query: SqliteCatalogTrackQuery,
         library_paths_repository: SqliteLibraryPathsRepository,
     ) -> Self {
@@ -60,6 +63,7 @@ impl LibraryPersistence {
             catalog_artist_query,
             catalog_preferences_repository,
             catalog_release_query,
+            catalog_search_query,
             catalog_track_query,
             library_paths_repository,
         }
@@ -348,11 +352,11 @@ impl LibraryApplication {
 
         let query = query.trim().to_owned();
         let results = self
-            .run_database(move |conn| {
-                crate::database::operations::search_library(conn, &query)
-                    .map_err(|error| error.to_string())
-            })
-            .await?;
+            .persistence
+            .catalog_search_query
+            .search(query)
+            .await
+            .map_err(storage_error)?;
 
         Ok(SearchResults {
             tracks: results.tracks.into_iter().map(track_from_song).collect(),
@@ -631,23 +635,6 @@ impl LibraryApplication {
             "Release",
             release_id.get(),
         )
-    }
-
-    async fn run_database<T, F>(&self, operation: F) -> CoreResult<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(&rusqlite::Connection) -> Result<T, String> + Send + 'static,
-    {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| error.to_string())?;
-            operation(&conn)
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Blocking database task failed: {error}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })
     }
 }
 

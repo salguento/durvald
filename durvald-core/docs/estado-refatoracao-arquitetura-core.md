@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `d43aa85 refactor(core): isolate catalog release pagination`
+Commit de referência: `9bee74c refactor(core): isolate catalog artist listing`
 
-Estado adicional: listagem completa de artistas isolada e ainda não commitada
+Estado adicional: busca de catálogo isolada e ainda não commitada
 
 ## Visão geral
 
@@ -23,7 +23,7 @@ O roteiro de referência permanece em
 | 3 — `PlaybackApplication` | Concluído | Coordenação completa de playback removida da fachada |
 | 4 — `LibraryApplication` | Concluído | Scan, paths, catálogo, busca e consultas migrados |
 | 5 — Fachada por domínio | Concluído | History, playlists, metadata/artwork, settings, enrichment, Last.fm e preferências extraídos |
-| 6 — Modelos e infraestrutura | Em andamento | IDs de domínio de catálogo introduzidos; SQLite, rows, ports e adapters ainda pendentes |
+| 6 — Modelos e infraestrutura | Em andamento | IDs de domínio introduzidos e adapters SQLite consolidados para settings, history, metadata e leituras/mutações de catálogo |
 | 7 — Composição e redução da API | Não iniciado | `DurvaldCore::open`, accessors e exports legados ainda precisam ser tratados |
 
 ## Estrutura implementada
@@ -39,8 +39,8 @@ O diretório `src/application/` contém oito serviços:
 - `EnrichmentApplication`;
 - `LastFmApplication`.
 
-Durante a extração, `src/core.rs` caiu de aproximadamente 2.903 para 1.349
-linhas, uma redução próxima de 54%, mantendo 89 operações assíncronas
+Durante a extração, `src/core.rs` caiu de aproximadamente 2.903 para 1.404
+linhas, uma redução próxima de 52%, mantendo 89 operações assíncronas
 públicas. A API foi preservada enquanto a implementação interna foi deslocada
 para serviços de aplicação.
 
@@ -48,6 +48,23 @@ O Marco 6 também introduziu `src/domain/ids.rs`, com `TrackId`, `ReleaseId`,
 `ArtistId`, `PlaylistId` e `PlaybackHistoryId`. A fachada converte os valores
 `i64` da API pública e
 as operações de catálogo migradas recebem apenas IDs já validados.
+
+O diretório `src/infrastructure/sqlite/` contém atualmente nove adapters
+concretos:
+
+- histórico de reprodução;
+- settings;
+- persistência de metadata de faixa;
+- paths da biblioteca;
+- preferências de catálogo;
+- consultas de faixas;
+- consultas de lançamentos;
+- consultas de artistas;
+- busca agregada de catálogo, ainda não commitada.
+
+Com a extração da busca, o helper genérico `LibraryApplication::run_database`
+deixou de ter consumidores e foi removido. As leituras de catálogo não
+relacionadas ao scan já não chamam `database::operations` diretamente.
 
 ## Implementações concluídas
 
@@ -205,7 +222,17 @@ Já foi concluído:
 - conclusão das consultas relacionais por lançamento e artista;
 - extração das consultas completa e paginada da coleção de faixas;
 - extração das consultas completa e paginada da coleção de lançamentos;
-- extração da listagem completa da coleção de artistas.
+- extração da listagem completa da coleção de artistas;
+- extração da busca agregada de catálogo.
+
+Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
+
+| Serviço | Referências diretas | Escopo restante |
+| --- | ---: | --- |
+| `LibraryApplication` | 4 | preparação, extração, persistência e remoção durante scan |
+| `PlaybackApplication` | 12 | resolução de faixas, sessão e registro de conclusão |
+| `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
+| Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
 Ainda falta:
 
@@ -230,25 +257,30 @@ Ainda falta:
 - validar Swift e GTK;
 - consolidar a documentação arquitetural final.
 
-## Próximo passo recomendado
+## Próximos passos recomendados
 
-Continuar a introdução gradual de IDs de domínio nas áreas já estabilizadas:
-
-1. concluir `ArtistId` nas consultas de catálogo e sua ponte com enrichment — **concluído**;
-2. levar `TrackId` às entradas de playback e metadata — **concluído**;
-3. introduzir `PlaylistId` nas operações de playlist — **concluído**;
-4. manter a conversão de `i64` concentrada na fachada pública;
-5. somente depois separar rows SQLite dos DTOs públicos de uma área pequena;
-6. extrair adapters adicionais em `infrastructure/sqlite`, sem reescrever queries;
-7. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do checkpoint.
+1. registrar em commit o adapter de busca agregada atualmente no working tree;
+2. isolar o ciclo de persistência do scan em um adapter dedicado, mantendo
+   cancelamento, progresso e coordenação em `LibraryApplication`;
+3. extrair de `PlaybackApplication` a resolução SQLite de faixas e a
+   persistência da última sessão;
+4. criar o adapter SQLite de playlists, começando pelas consultas antes das
+   mutações;
+5. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
+   de rows de `database::models` fora da infraestrutura;
+6. criar ports somente nas dependências com necessidade real de substituição;
+7. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
+   checkpoint do Marco 6.
 
 ## Resumo executivo
 
 O padrão arquitetural foi replicado em oito serviços e o Marco 5 foi concluído.
 A fachada pública está reduzida principalmente à delegação, composição e
-conversão de fronteira. O Marco 6 começou pela tipagem dos IDs de catálogo; os
-próximos blocos são ampliar essa tipagem e iniciar a separação controlada entre
-DTOs públicos, modelos de domínio e rows SQLite.
+conversão de fronteira. No Marco 6, a tipagem dos IDs foi estabelecida e todas
+as consultas comuns de catálogo foram deslocadas para adapters SQLite. O foco
+agora passa a ser retirar os três blocos restantes de acesso direto ao banco —
+scan, playback/sessão e playlists — e aprofundar a separação entre DTOs
+públicos, modelos de domínio e rows SQLite.
 
 ## Histórico de atualizações
 
@@ -279,4 +311,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `59e11f4` | Paginação de faixas isolada em adapter SQLite |
 | 23/09/2026 | `fc3e232` | Listagem completa de lançamentos isolada em adapter SQLite |
 | 23/09/2026 | `d43aa85` | Paginação de lançamentos isolada em adapter SQLite |
-| 23/09/2026 | estado não commitado | Listagem completa de artistas isolada em adapter SQLite |
+| 23/09/2026 | `9bee74c` | Listagem completa de artistas isolada em adapter SQLite |
+| 23/09/2026 | estado não commitado | Busca agregada de catálogo isolada em adapter SQLite |
