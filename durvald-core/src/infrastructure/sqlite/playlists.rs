@@ -86,6 +86,28 @@ impl SqlitePlaylistRepository {
         })?
     }
 
+    pub(crate) async fn delete(
+        &self,
+        playlist_id: PlaylistId,
+    ) -> Result<(), PlaylistMutationError> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool
+                .get()
+                .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            let deleted = crate::database::operations::delete_playlist(&conn, playlist_id.get())
+                .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            if !deleted {
+                return Err(PlaylistMutationError::NotFound);
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|error| {
+            PlaylistMutationError::Storage(format!("Playlist deletion task failed: {error}"))
+        })?
+    }
+
     pub(crate) async fn find(
         &self,
         playlist_id: PlaylistId,

@@ -91,11 +91,10 @@ impl PlaylistApplication {
     }
 
     pub(crate) async fn delete_playlist(&self, playlist_id: PlaylistId) -> CoreResult<()> {
-        let playlist_id = playlist_id.get();
-        self.run_entity_update("Playlist", playlist_id, move |conn| {
-            crate::database::operations::delete_playlist(conn, playlist_id)
-        })
-        .await
+        self.repository
+            .delete(playlist_id)
+            .await
+            .map_err(|error| playlist_mutation_error(error, playlist_id))
     }
 
     pub(crate) async fn set_playlist_favorite(
