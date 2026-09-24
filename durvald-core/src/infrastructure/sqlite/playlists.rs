@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::{
     database::models::{Playlist, PlaylistWithTrackCount, SongItem},
     domain::ids::PlaylistId,
+    domain::{ids::TrackId, playlist::PlaylistTrackEntry},
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -160,6 +161,33 @@ impl SqlitePlaylistRepository {
         .map_err(|error| {
             PlaylistMutationError::Storage(format!("Playlist suggest-less task failed: {error}"))
         })?
+    }
+
+    pub(crate) async fn add_track(
+        &self,
+        playlist_id: PlaylistId,
+        track_id: TrackId,
+        position: u64,
+    ) -> Result<PlaylistTrackEntry, String> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::add_track_to_playlist_songs(
+                &conn,
+                playlist_id.get(),
+                track_id.get(),
+                position,
+            )
+            .map(|entry| PlaylistTrackEntry {
+                playlist_id,
+                track_id,
+                position: entry.position,
+                added_at: entry.added_at,
+            })
+            .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| format!("Playlist track insertion task failed: {error}"))?
     }
 
     pub(crate) async fn find(
