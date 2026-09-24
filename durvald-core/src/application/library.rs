@@ -333,7 +333,7 @@ impl LibraryApplication {
             .map_err(storage_error)?;
 
         Ok(SearchResults {
-            tracks: results.tracks.into_iter().map(track_from_song).collect(),
+            tracks: results.tracks.into_iter().map(track_from_catalog).collect(),
             releases: results
                 .releases
                 .into_iter()
