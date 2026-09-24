@@ -8,7 +8,6 @@ use crate::api::*;
 use crate::application::enrichment::EnrichmentApplication;
 use crate::application::history::HistoryApplication;
 use crate::application::lastfm::{LastFmApplication, lastfm_error};
-pub(crate) use crate::application::library::track_from_song;
 use crate::application::library::{LibraryApplication, LibraryPersistence};
 use crate::application::metadata::MetadataApplication;
 #[cfg(test)]

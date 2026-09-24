@@ -225,7 +225,9 @@ pub(crate) fn info(conn: &Connection, id: i64) -> CoreResult<TrackInfo> {
     let can_undo = conn.query_row("SELECT EXISTS(SELECT 1 FROM track_metadata_changes WHERE song_id=?1 AND status='applied')",
         [id], |r| r.get(0)).map_err(storage)?;
     Ok(TrackInfo {
-        track: crate::core::track_from_song(song),
+        track: crate::application::library::track_from_catalog(
+            crate::infrastructure::sqlite::catalog_track::track_from_row(song),
+        ),
         metadata,
         can_undo,
     })

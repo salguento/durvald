@@ -3,12 +3,14 @@
 use std::sync::Arc;
 
 use crate::{
-    database::models::{Playlist, SongItem},
+    database::models::Playlist,
+    domain::catalog::CatalogTrack,
     domain::ids::PlaylistId,
     domain::{
         ids::TrackId,
         playlist::{PlaylistDetails, PlaylistSummary, PlaylistTrackEntry},
     },
+    infrastructure::sqlite::catalog_track::track_from_row,
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -276,11 +278,15 @@ impl SqlitePlaylistRepository {
         })?
     }
 
-    pub(crate) async fn tracks(&self, playlist_id: PlaylistId) -> Result<Vec<SongItem>, String> {
+    pub(crate) async fn tracks(
+        &self,
+        playlist_id: PlaylistId,
+    ) -> Result<Vec<CatalogTrack>, String> {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
             crate::database::operations::get_playlist_tracks(&conn, playlist_id.get())
+                .map(|tracks| tracks.into_iter().map(track_from_row).collect())
                 .map_err(|error| error.to_string())
         })
         .await

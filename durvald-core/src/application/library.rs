@@ -712,31 +712,6 @@ fn entity_update_result(result: Result<bool, String>, entity: &str, id: u64) -> 
     Ok(())
 }
 
-pub(crate) fn track_from_song(track: crate::database::models::SongItem) -> Track {
-    Track {
-        id: track.song_id as i64,
-        title: track.title,
-        artist: track.artist_name,
-        artist_id: track.artist_id as i64,
-        release: track.release_title,
-        release_id: track.release_id as i64,
-        track_number: track.track_number,
-        disc_number: track.disc_number,
-        duration_seconds: track.duration as f64,
-        file_path: track.file_path,
-        artwork_id: (!track.artwork.is_empty()).then_some(track.artwork),
-        bitrate: track.bitrate,
-        sample_rate: track.sample_rate,
-        bit_depth: track.bit_depth,
-        play_count: track.play_count,
-        last_played: track.last_played,
-        rating: track.rating,
-        is_favorite: track.is_favorite,
-        is_hidden: track.is_hidden,
-        suggest_less: track.suggest_less,
-    }
-}
-
 pub(crate) fn track_from_catalog(track: crate::domain::catalog::CatalogTrack) -> Track {
     Track {
         id: track.id.get() as i64,

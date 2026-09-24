@@ -257,7 +257,9 @@ Já foi concluído:
 - consulta de faixas por release convertida para o mesmo modelo de domínio no
   adapter SQLite;
 - faixas do resultado agregado de busca convertidas para o mesmo modelo de
-  domínio no working tree.
+  domínio no adapter SQLite;
+- faixas de playlist convertidas para o mesmo modelo de domínio, removendo o
+  último uso de `SongItem` em `application`, no working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -293,9 +295,9 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a conversão das faixas da busca atualmente no working
+1. registrar em commit a conversão das faixas de playlist atualmente no working
    tree;
-2. estender a conversão de faixa à consulta de playlist;
+2. introduzir o modelo de domínio de release nas consultas de catálogo;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
 4. criar ports somente nas dependências com necessidade real de substituição;
@@ -375,4 +377,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `d0e0ba5` | Consultas principais de faixa convertidas para modelo de domínio |
 | 24/09/2026 | `7da46dc` | Faixas por artista convertidas para modelo de domínio |
 | 24/09/2026 | `0010feb` | Faixas por release convertidas para modelo de domínio |
-| 24/09/2026 | estado não commitado | Faixas da busca convertidas para modelo de domínio |
+| 24/09/2026 | `8123c98` | Faixas da busca convertidas para modelo de domínio |
+| 24/09/2026 | estado não commitado | Faixas de playlist convertidas para modelo de domínio |

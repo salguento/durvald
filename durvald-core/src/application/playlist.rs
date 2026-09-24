@@ -4,7 +4,7 @@ use base64::Engine;
 
 use crate::{
     api::{CoreError, CoreResult, Playlist, PlaylistTrack, Track},
-    application::library::track_from_song,
+    application::library::track_from_catalog,
     domain::ids::{PlaylistId, TrackId},
     domain::playlist::PlaylistDetails,
     infrastructure::sqlite::playlists::{
@@ -116,7 +116,7 @@ impl PlaylistApplication {
         self.repository
             .tracks(playlist_id)
             .await
-            .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+            .map(|tracks| tracks.into_iter().map(track_from_catalog).collect())
             .map_err(|message| CoreError::Storage { message })
     }
 
