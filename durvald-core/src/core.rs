@@ -298,8 +298,8 @@ impl DurvaldCore {
 
         let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
         let playback_application = Arc::new(PlaybackApplication::new(
-            db_pool.clone(),
             SqliteCatalogTrackQuery::new(db_pool.clone()),
+            SqlitePlaybackHistoryRepository::new(db_pool.clone()),
             SqlitePlaybackSessionRepository::new(db_pool.clone()),
             audio_player,
             lastfm.clone(),

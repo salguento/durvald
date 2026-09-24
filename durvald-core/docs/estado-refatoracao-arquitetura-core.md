@@ -2,9 +2,9 @@
 
 Última atualização: 24 de setembro de 2026
 
-Commit de referência: `f3f427f refactor(core): isolate session volume persistence`
+Commit de referência: `87e4765 refactor(core): isolate public session persistence`
 
-Estado adicional: escrita pública da sessão isolada e ainda não commitada
+Estado adicional: registro de conclusão isolado e ainda não commitado
 
 ## Visão geral
 
@@ -63,8 +63,8 @@ concretos:
 - busca agregada de catálogo;
 - preparação, persistência dos lotes e reconciliação SQLite do scan da
   biblioteca;
-- sessão de playback, com leitura, persistência automática, progresso e volume
-  commitados; escrita pública ainda não commitada.
+- sessão de playback completamente isolada;
+- registro de conclusão no histórico ainda não commitado.
 
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
@@ -241,7 +241,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | Serviço | Referências diretas | Escopo restante |
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
-| `PlaybackApplication` | 1 | registro de conclusão |
+| `PlaybackApplication` | 0 | catálogo, sessão e histórico acessados por adapters dedicados |
 | `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
@@ -253,9 +253,8 @@ Ainda falta:
 - ports pequenos para dependências substituíveis;
 - retirada das chamadas diretas a `database::operations` dos serviços de aplicação.
 
-`PlaybackApplication` e `PlaylistApplication` ainda recebem o pool SQLite
-diretamente. Os outros seis serviços de aplicação já não o recebem. Isso é
-deliberado e compatível com a etapa atual do roteiro.
+Somente `PlaylistApplication` ainda recebe o pool SQLite diretamente. Os outros
+sete serviços de aplicação já não o recebem.
 
 ### Marco 7
 
@@ -271,14 +270,13 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a escrita pública da sessão atualmente no working tree;
-2. extrair o registro de conclusão;
-3. criar o adapter SQLite de playlists, começando pelas consultas antes das
+1. registrar em commit o registro de conclusão atualmente no working tree;
+2. criar o adapter SQLite de playlists, começando pelas consultas antes das
    mutações;
-4. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
+3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
-5. criar ports somente nas dependências com necessidade real de substituição;
-6. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
+4. criar ports somente nas dependências com necessidade real de substituição;
+5. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
    checkpoint do Marco 6.
 
 ## Resumo executivo
@@ -287,9 +285,9 @@ O padrão arquitetural foi replicado em oito serviços e o Marco 5 foi concluíd
 A fachada pública está reduzida principalmente à delegação, composição e
 conversão de fronteira. No Marco 6, a tipagem dos IDs foi estabelecida, todas
 as consultas comuns de catálogo foram deslocadas para adapters SQLite e o ciclo
-de scan foi isolado. O foco agora passa a ser retirar os dois blocos restantes
-de acesso direto ao banco — playback/sessão e playlists — e aprofundar a
-separação entre DTOs públicos, modelos de domínio e rows SQLite.
+de scan e o playback foram isolados. O único serviço ainda com acesso direto ao
+banco é playlists; em paralelo, permanece necessário aprofundar a separação
+entre DTOs públicos, modelos de domínio e rows SQLite.
 
 ## Histórico de atualizações
 
@@ -335,4 +333,5 @@ separação entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `296b1db` | Persistência automática da sessão isolada em adapter SQLite |
 | 24/09/2026 | `90498bf` | Update de progresso da sessão isolado em adapter SQLite |
 | 24/09/2026 | `f3f427f` | Update de volume da sessão isolado em adapter SQLite |
-| 24/09/2026 | estado não commitado | Escrita pública da última sessão isolada em adapter SQLite |
+| 24/09/2026 | `87e4765` | Escrita pública da última sessão isolada em adapter SQLite |
+| 24/09/2026 | estado não commitado | Registro de conclusão isolado no adapter de histórico |

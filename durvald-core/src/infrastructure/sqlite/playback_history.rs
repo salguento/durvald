@@ -55,6 +55,22 @@ impl SqlitePlaybackHistoryRepository {
         .await
     }
 
+    pub(crate) async fn record_completed(
+        &self,
+        track_id: TrackId,
+        duration_seconds: u64,
+    ) -> Result<bool, String> {
+        self.run(move |conn| {
+            crate::database::operations::record_completed_playback(
+                conn,
+                track_id.get(),
+                duration_seconds,
+            )
+            .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
     async fn run<T, F>(&self, operation: F) -> Result<T, String>
     where
         T: Send + 'static,
