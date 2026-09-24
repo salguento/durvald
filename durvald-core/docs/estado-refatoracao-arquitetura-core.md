@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `ca94106 refactor(core): type enrichment artist inputs`
+Commit de referência: `47ca7e7 refactor(core): isolate playback history sqlite`
 
-Estado adicional: primeiro adapter em `infrastructure/sqlite` implementado e ainda não commitado
+Estado adicional: adapter SQLite de settings implementado e ainda não commitado
 
 ## Visão geral
 
@@ -196,7 +196,8 @@ Já foi concluído:
 - uso de IDs tipados nas mutações e consultas de catálogo;
 - remoção da validação primitiva duplicada dos serviços migrados;
 - criação inicial de `infrastructure/sqlite` para histórico de reprodução;
-- separação entre row SQLite, modelo de domínio e DTO público nessa primeira área.
+- separação entre row SQLite, modelo de domínio e DTO público em histórico;
+- aplicação do mesmo corte arquitetural à persistência de settings.
 
 Ainda falta:
 
@@ -255,4 +256,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `90fa77e` | Introdução de `PlaylistId` nas operações de playlist |
 | 23/09/2026 | `2ff6571` | Introdução de `PlaybackHistoryId` na remoção de histórico |
 | 23/09/2026 | `ca94106` | Extensão de `ArtistId` às entradas de enrichment |
-| 23/09/2026 | estado não commitado | Primeiro adapter SQLite e modelo de domínio para histórico |
+| 23/09/2026 | `47ca7e7` | Primeiro adapter SQLite e modelo de domínio para histórico |
+| 23/09/2026 | estado não commitado | Adapter SQLite e modelo de domínio para settings |

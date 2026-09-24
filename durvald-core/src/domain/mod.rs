@@ -2,3 +2,4 @@
 
 pub(crate) mod ids;
 pub(crate) mod playback_history;
+pub(crate) mod settings;
