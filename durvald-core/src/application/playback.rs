@@ -469,30 +469,23 @@ impl PlaybackApplication {
                     .collect::<Vec<_>>(),
             )
         };
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || -> Result<(), String> {
-            let conn = db_pool.get().map_err(|error| error.to_string())?;
-            let previous = crate::database::operations::get_last_session(&conn)
-                .map_err(|error| error.to_string())?;
-            let session = crate::database::models::LastSession {
-                current_song_id,
-                progress_seconds,
-                volume,
-                shuffle_enabled,
-                repeat_mode: format!("{repeat_mode:?}").to_lowercase(),
-                queue_snapshot: serde_json::to_string(&queue).map_err(|error| error.to_string())?,
-                queue_position: 0,
-                source_context: previous.source_context,
-                updated_at: String::new(),
-            };
-            crate::database::operations::save_last_session(&conn, &session)
-                .map_err(|error| error.to_string())
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Session persistence task failed: {error}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })
+        let session = crate::database::models::LastSession {
+            current_song_id,
+            progress_seconds,
+            volume,
+            shuffle_enabled,
+            repeat_mode: format!("{repeat_mode:?}").to_lowercase(),
+            queue_snapshot: serde_json::to_string(&queue).map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })?,
+            queue_position: 0,
+            source_context: String::new(),
+            updated_at: String::new(),
+        };
+        self.session_repository
+            .save_preserving_source_context(session)
+            .await
+            .map_err(|message| CoreError::Storage { message })
     }
 
     async fn persist_progress(&self, progress_seconds: f64) -> CoreResult<()> {

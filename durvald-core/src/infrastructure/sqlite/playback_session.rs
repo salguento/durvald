@@ -24,4 +24,21 @@ impl SqlitePlaybackSessionRepository {
         .await
         .map_err(|error| format!("Last-session query task failed: {error}"))?
     }
+
+    pub(crate) async fn save_preserving_source_context(
+        &self,
+        mut session: LastSession,
+    ) -> Result<(), String> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            let previous = crate::database::operations::get_last_session(&conn)
+                .map_err(|error| error.to_string())?;
+            session.source_context = previous.source_context;
+            crate::database::operations::save_last_session(&conn, &session)
+                .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| format!("Session persistence task failed: {error}"))?
+    }
 }
