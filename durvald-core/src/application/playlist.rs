@@ -129,13 +129,11 @@ impl PlaylistApplication {
     }
 
     pub(crate) async fn playlist_tracks(&self, playlist_id: PlaylistId) -> CoreResult<Vec<Track>> {
-        let playlist_id = playlist_id.get();
-        self.run_database(move |conn| {
-            crate::database::operations::get_playlist_tracks(conn, playlist_id)
-                .map(|tracks| tracks.into_iter().map(track_from_song).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.repository
+            .tracks(playlist_id)
+            .await
+            .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+            .map_err(|message| CoreError::Storage { message })
     }
 
     pub(crate) async fn add_track_to_playlist(

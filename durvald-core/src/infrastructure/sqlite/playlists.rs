@@ -2,7 +2,10 @@
 
 use std::sync::Arc;
 
-use crate::database::models::PlaylistWithTrackCount;
+use crate::{
+    database::models::{PlaylistWithTrackCount, SongItem},
+    domain::ids::PlaylistId,
+};
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
@@ -33,7 +36,7 @@ impl SqlitePlaylistRepository {
 
     pub(crate) async fn find(
         &self,
-        playlist_id: crate::domain::ids::PlaylistId,
+        playlist_id: PlaylistId,
     ) -> Result<PlaylistWithTrackCount, PlaylistLookupError> {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
@@ -66,5 +69,16 @@ impl SqlitePlaylistRepository {
         .map_err(|error| {
             PlaylistLookupError::Storage(format!("Playlist query task failed: {error}"))
         })?
+    }
+
+    pub(crate) async fn tracks(&self, playlist_id: PlaylistId) -> Result<Vec<SongItem>, String> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::get_playlist_tracks(&conn, playlist_id.get())
+                .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| format!("Playlist tracks query task failed: {error}"))?
     }
 }
