@@ -23,6 +23,7 @@ use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
+use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
 use crate::infrastructure::sqlite::catalog_artist::SqliteCatalogArtistQuery;
 use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
 use crate::infrastructure::sqlite::catalog_release::SqliteCatalogReleaseQuery;
@@ -315,6 +316,7 @@ impl DurvaldCore {
                 SqliteLibraryPathsRepository::new(db_pool.clone()),
                 SqliteLibraryScanRepository::new(db_pool.clone()),
             ),
+            LocalMetadataExtractor::new(),
             config.covers_dir.clone(),
             metadata_edit_queue.clone(),
         ));

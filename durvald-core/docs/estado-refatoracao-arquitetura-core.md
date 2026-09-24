@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `14bfedf refactor(core): isolate library scan writes`
+Commit de referência: `3eb964c refactor(core): isolate library scan reconciliation`
 
-Estado adicional: reconciliação SQLite do scan isolada e ainda não commitada
+Estado adicional: extração local de metadata isolada e ainda não commitada
 
 ## Visão geral
 
@@ -67,6 +67,8 @@ concretos:
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
 relacionadas ao scan já não chamam `database::operations` diretamente.
+Após a extração do ciclo de scan, `LibraryApplication` também deixou de receber
+o pool SQLite diretamente.
 
 ## Implementações concluídas
 
@@ -231,7 +233,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
 | Serviço | Referências diretas | Escopo restante |
 | --- | ---: | --- |
-| `LibraryApplication` | 1 | extração assíncrona de metadata, que não usa SQLite |
+| `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
 | `PlaybackApplication` | 12 | resolução de faixas, sessão e registro de conclusão |
 | `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
@@ -261,17 +263,15 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a reconciliação do scan atualmente no working tree;
-2. separar a extração de metadata do namespace legado `database::operations`,
-   mantendo cancelamento, progresso e coordenação em `LibraryApplication`;
-3. extrair de `PlaybackApplication` a resolução SQLite de faixas e a
+1. registrar em commit o adapter local de extração de metadata atualmente no working tree;
+2. extrair de `PlaybackApplication` a resolução SQLite de faixas e a
    persistência da última sessão;
-4. criar o adapter SQLite de playlists, começando pelas consultas antes das
+3. criar o adapter SQLite de playlists, começando pelas consultas antes das
    mutações;
-5. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
+4. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
-6. criar ports somente nas dependências com necessidade real de substituição;
-7. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
+5. criar ports somente nas dependências com necessidade real de substituição;
+6. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
    checkpoint do Marco 6.
 
 ## Resumo executivo
@@ -317,4 +317,5 @@ públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `3d366ac` | Busca agregada de catálogo isolada em adapter SQLite |
 | 23/09/2026 | `c804cb2` | Preparação do scan isolada em adapter SQLite |
 | 23/09/2026 | `14bfedf` | Persistência dos lotes do scan isolada em adapter SQLite |
-| 23/09/2026 | estado não commitado | Reconciliação SQLite do scan isolada em adapter SQLite |
+| 23/09/2026 | `3eb964c` | Reconciliação SQLite do scan isolada em adapter SQLite |
+| 23/09/2026 | estado não commitado | Extração local de metadata isolada do namespace de banco |

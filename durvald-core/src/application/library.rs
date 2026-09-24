@@ -15,6 +15,7 @@ use crate::api::{
     ScanResult, SearchResults, Track, TrackPage,
 };
 use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
+use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
 use crate::infrastructure::sqlite::catalog_artist::{
     CatalogArtistLookupError, SqliteCatalogArtistQuery,
 };
@@ -32,6 +33,7 @@ use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 /// Coordinates library use cases behind the public core facade.
 pub(crate) struct LibraryApplication {
     persistence: LibraryPersistence,
+    metadata_extractor: LocalMetadataExtractor,
     covers_dir: String,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     scan_in_progress: Arc<AtomicBool>,
@@ -74,11 +76,13 @@ impl LibraryPersistence {
 impl LibraryApplication {
     pub(crate) fn new(
         persistence: LibraryPersistence,
+        metadata_extractor: LocalMetadataExtractor,
         covers_dir: String,
         metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
         Self {
             persistence,
+            metadata_extractor,
             covers_dir,
             metadata_edit_queue,
             scan_in_progress: Arc::new(AtomicBool::new(false)),
@@ -159,11 +163,12 @@ impl LibraryApplication {
             };
             let mut path_failed = false;
             for batch in metadata_batches {
-                let mut extracted =
-                    crate::database::operations::extract_metadata_batch_with_cancel(
+                let mut extracted = self
+                    .metadata_extractor
+                    .extract(
                         batch,
-                        &std::path::PathBuf::from(&self.covers_dir),
-                        Some(self.scan_cancel_requested.clone()),
+                        std::path::Path::new(&self.covers_dir),
+                        self.scan_cancel_requested.clone(),
                         Some(&metadata_progress),
                     )
                     .await;
