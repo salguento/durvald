@@ -55,4 +55,23 @@ impl SqliteCatalogTrackQuery {
             CatalogTrackLookupError::Storage(format!("Blocking database task failed: {error}"))
         })?
     }
+
+    pub(crate) async fn page(
+        &self,
+        fetch_size: u64,
+        offset: u64,
+    ) -> Result<Vec<SongItem>, CatalogTrackLookupError> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool
+                .get()
+                .map_err(|error| CatalogTrackLookupError::Storage(error.to_string()))?;
+            crate::database::operations::get_tracks_page(&conn, fetch_size, offset)
+                .map_err(|error| CatalogTrackLookupError::Storage(error.to_string()))
+        })
+        .await
+        .map_err(|error| {
+            CatalogTrackLookupError::Storage(format!("Blocking database task failed: {error}"))
+        })?
+    }
 }

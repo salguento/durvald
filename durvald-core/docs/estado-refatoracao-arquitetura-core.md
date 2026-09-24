@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `e171c1a refactor(core): isolate artist relation queries`
+Commit de referência: `3e024dc refactor(core): isolate catalog track listing`
 
-Estado adicional: listagem completa de faixas isolada e ainda não commitada
+Estado adicional: paginação de faixas isolada e ainda não commitada
 
 ## Visão geral
 
@@ -203,7 +203,7 @@ Já foi concluído:
 - extração das mutações de preferências de tracks e releases;
 - conclusão da extração das consultas individuais de faixa, lançamento e artista;
 - conclusão das consultas relacionais por lançamento e artista;
-- início da extração das consultas de coleção com a listagem completa de faixas.
+- extração das consultas completa e paginada da coleção de faixas.
 
 Ainda falta:
 
@@ -273,4 +273,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `14b2169` | Consulta individual de artista isolada em adapter SQLite |
 | 23/09/2026 | `0b34097` | Consulta de faixas por lançamento isolada em adapter SQLite |
 | 23/09/2026 | `e171c1a` | Consultas de lançamentos e faixas por artista isoladas em adapter SQLite |
-| 23/09/2026 | estado não commitado | Listagem completa de faixas isolada em adapter SQLite |
+| 23/09/2026 | `3e024dc` | Listagem completa de faixas isolada em adapter SQLite |
+| 23/09/2026 | estado não commitado | Paginação de faixas isolada em adapter SQLite |

@@ -401,11 +401,11 @@ impl LibraryApplication {
     pub(crate) async fn tracks_page(&self, page_size: u64, offset: u64) -> CoreResult<TrackPage> {
         let (fetch_size, page_size) = pagination_window(page_size, offset)?;
         let tracks = self
-            .run_database(move |conn| {
-                crate::database::operations::get_tracks_page(conn, fetch_size, offset)
-                    .map_err(|error| error.to_string())
-            })
-            .await?
+            .persistence
+            .catalog_track_query
+            .page(fetch_size, offset)
+            .await
+            .map_err(catalog_track_storage_error)?
             .into_iter()
             .map(track_from_song)
             .collect();
