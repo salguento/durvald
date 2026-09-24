@@ -236,7 +236,8 @@ Já foi concluído:
 - retirada de todas as resoluções diretas de faixa de `PlaybackApplication`;
 - conclusão do adapter de sessão e retirada do pool de `PlaybackApplication`;
 - consultas de playlist, suas faixas e artwork isoladas no adapter SQLite;
-- início da extração das mutações de playlist com a criação no working tree.
+- criação de playlist isolada no adapter SQLite;
+- atualização de playlist isolada no adapter SQLite no working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -244,7 +245,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
 | `PlaybackApplication` | 0 | catálogo, sessão e histórico acessados por adapters dedicados |
-| `PlaylistApplication` | 8 | update/delete, preferências e mutações de tracks |
+| `PlaylistApplication` | 7 | delete, preferências e mutações de tracks |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
 Ainda falta:
@@ -272,7 +273,7 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a criação de playlist atualmente no working tree;
+1. registrar em commit a atualização de playlist atualmente no working tree;
 2. continuar o adapter pelas demais mutações de playlist e de suas faixas;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
@@ -340,4 +341,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `534198a` | Consulta individual de playlist isolada em adapter SQLite |
 | 24/09/2026 | `baeae60` | Consulta de faixas da playlist isolada em adapter SQLite |
 | 24/09/2026 | `571dd1c` | Consulta de artwork da playlist isolada em adapter SQLite |
-| 24/09/2026 | estado não commitado | Criação de playlist isolada em adapter SQLite |
+| 24/09/2026 | `738eb32` | Criação de playlist isolada em adapter SQLite |
+| 24/09/2026 | estado não commitado | Atualização de playlist isolada em adapter SQLite |

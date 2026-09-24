@@ -8,7 +8,9 @@ use crate::{
     api::{CoreError, CoreResult, Playlist, PlaylistTrack, Track},
     application::library::track_from_song,
     domain::ids::{PlaylistId, TrackId},
-    infrastructure::sqlite::playlists::{PlaylistLookupError, SqlitePlaylistRepository},
+    infrastructure::sqlite::playlists::{
+        PlaylistLookupError, PlaylistMutationError, SqlitePlaylistRepository,
+    },
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -77,17 +79,15 @@ impl PlaylistApplication {
                 message: "Playlist name cannot be empty".to_string(),
             });
         }
-        let playlist_id = playlist_id.get();
-        self.run_entity_update("Playlist", playlist_id, move |conn| {
-            crate::database::operations::update_playlist(
-                conn,
+        self.repository
+            .update(
                 playlist_id,
                 name,
                 description,
                 artwork_base64.unwrap_or_default(),
             )
-        })
-        .await
+            .await
+            .map_err(|error| playlist_mutation_error(error, playlist_id))
     }
 
     pub(crate) async fn delete_playlist(&self, playlist_id: PlaylistId) -> CoreResult<()> {
@@ -285,5 +285,14 @@ fn playlist_lookup_error(error: PlaylistLookupError, playlist_id: PlaylistId) ->
             message: format!("Playlist {} not found", playlist_id.get()),
         },
         PlaylistLookupError::Storage(message) => CoreError::Storage { message },
+    }
+}
+
+fn playlist_mutation_error(error: PlaylistMutationError, playlist_id: PlaylistId) -> CoreError {
+    match error {
+        PlaylistMutationError::NotFound => CoreError::NotFound {
+            message: format!("Playlist {} not found", playlist_id.get()),
+        },
+        PlaylistMutationError::Storage(message) => CoreError::Storage { message },
     }
 }

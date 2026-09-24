@@ -14,6 +14,11 @@ pub(crate) enum PlaylistLookupError {
     Storage(String),
 }
 
+pub(crate) enum PlaylistMutationError {
+    NotFound,
+    Storage(String),
+}
+
 pub(crate) struct SqlitePlaylistRepository {
     db_pool: Arc<DatabasePool>,
 }
@@ -48,6 +53,37 @@ impl SqlitePlaylistRepository {
         })
         .await
         .map_err(|error| format!("Playlist creation task failed: {error}"))?
+    }
+
+    pub(crate) async fn update(
+        &self,
+        playlist_id: PlaylistId,
+        name: String,
+        description: String,
+        artwork_base64: String,
+    ) -> Result<(), PlaylistMutationError> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool
+                .get()
+                .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            let updated = crate::database::operations::update_playlist(
+                &conn,
+                playlist_id.get(),
+                name,
+                description,
+                artwork_base64,
+            )
+            .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            if !updated {
+                return Err(PlaylistMutationError::NotFound);
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|error| {
+            PlaylistMutationError::Storage(format!("Playlist update task failed: {error}"))
+        })?
     }
 
     pub(crate) async fn find(
