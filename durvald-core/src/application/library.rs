@@ -462,7 +462,7 @@ impl LibraryApplication {
             .catalog_artist_query
             .tracks(artist_id)
             .await
-            .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+            .map(|tracks| tracks.into_iter().map(track_from_catalog).collect())
             .map_err(|error| catalog_artist_error(error, artist_id))
     }
 

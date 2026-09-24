@@ -85,7 +85,7 @@ impl SqliteCatalogTrackQuery {
     }
 }
 
-fn track_from_row(row: SongItem) -> CatalogTrack {
+pub(crate) fn track_from_row(row: SongItem) -> CatalogTrack {
     CatalogTrack {
         id: TrackId::from_persisted(row.song_id),
         title: row.title,
