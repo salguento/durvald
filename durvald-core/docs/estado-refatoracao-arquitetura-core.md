@@ -2,9 +2,9 @@
 
 Última atualização: 24 de setembro de 2026
 
-Commit de referência: `c7ff0bd refactor(core): resolve playback snapshot through catalog`
+Commit de referência: `915f6a8 refactor(core): resolve lastfm tracking through catalog`
 
-Estado adicional: faixa do tracking Last.fm isolada e ainda não commitada
+Estado adicional: faixa da conclusão de playback isolada e ainda não commitada
 
 ## Visão geral
 
@@ -234,7 +234,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | Serviço | Referências diretas | Escopo restante |
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
-| `PlaybackApplication` | 8 | resolução de faixas, sessão e registro de conclusão |
+| `PlaybackApplication` | 7 | sessão e registro de conclusão; resoluções de faixa já isoladas |
 | `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
@@ -263,10 +263,9 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a resolução de faixa do tracking Last.fm atualmente no working tree;
-2. concluir em `PlaybackApplication` as resoluções SQLite usadas por
-   restauração, relatórios e conclusão, além da
-   persistência da última sessão;
+1. registrar em commit a resolução de faixa da conclusão atualmente no working tree;
+2. extrair de `PlaybackApplication` a persistência da última sessão e o
+   registro de conclusão;
 3. criar o adapter SQLite de playlists, começando pelas consultas antes das
    mutações;
 4. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
@@ -323,4 +322,5 @@ públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `1f53002` | Resolução inicial de faixa do playback redirecionada ao adapter de catálogo |
 | 24/09/2026 | `71b8fee` | Helper interno de faixa do playback redirecionado ao adapter de catálogo |
 | 24/09/2026 | `c7ff0bd` | Resolução da faixa atual do snapshot redirecionada ao adapter de catálogo |
-| 24/09/2026 | estado não commitado | Resolução da faixa do tracking Last.fm redirecionada ao adapter de catálogo |
+| 24/09/2026 | `915f6a8` | Resolução da faixa do tracking Last.fm redirecionada ao adapter de catálogo |
+| 24/09/2026 | estado não commitado | Resolução da duração na conclusão redirecionada ao adapter de catálogo |

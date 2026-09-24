@@ -662,19 +662,18 @@ impl PlaybackApplication {
     }
 
     async fn record_completed_playback(&self, track_id: i64) {
-        let Ok(track_id) = u64::try_from(track_id) else {
+        let Ok(typed_track_id) = TrackId::try_from(track_id) else {
             return;
         };
+        let duration = match self.track_query.find(typed_track_id).await {
+            Ok(track) => track.duration,
+            Err(CatalogTrackLookupError::NotFound) => 0,
+            Err(CatalogTrackLookupError::Storage(_)) => return,
+        };
+        let track_id = typed_track_id.get();
         let db_pool = self.db_pool.clone();
         let _ = tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
-            let duration =
-                crate::database::operations::get_song_by_id(&conn, &track_id.to_string())
-                    .map_err(|error| error.to_string())?
-                    .into_iter()
-                    .next()
-                    .map(|track| track.duration)
-                    .unwrap_or_default();
             crate::database::operations::record_completed_playback(&conn, track_id, duration)
                 .map_err(|error| error.to_string())
         })
