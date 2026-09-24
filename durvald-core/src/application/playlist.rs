@@ -102,11 +102,10 @@ impl PlaylistApplication {
         playlist_id: PlaylistId,
         favorite: bool,
     ) -> CoreResult<()> {
-        let playlist_id = playlist_id.get();
-        self.run_entity_update("Playlist", playlist_id, move |conn| {
-            crate::database::operations::set_playlist_favorite(conn, playlist_id, favorite)
-        })
-        .await
+        self.repository
+            .set_favorite(playlist_id, favorite)
+            .await
+            .map_err(|error| playlist_mutation_error(error, playlist_id))
     }
 
     pub(crate) async fn set_playlist_suggest_less(

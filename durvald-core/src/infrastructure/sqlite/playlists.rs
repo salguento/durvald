@@ -108,6 +108,33 @@ impl SqlitePlaylistRepository {
         })?
     }
 
+    pub(crate) async fn set_favorite(
+        &self,
+        playlist_id: PlaylistId,
+        favorite: bool,
+    ) -> Result<(), PlaylistMutationError> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool
+                .get()
+                .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            let updated = crate::database::operations::set_playlist_favorite(
+                &conn,
+                playlist_id.get(),
+                favorite,
+            )
+            .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            if !updated {
+                return Err(PlaylistMutationError::NotFound);
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|error| {
+            PlaylistMutationError::Storage(format!("Playlist favorite task failed: {error}"))
+        })?
+    }
+
     pub(crate) async fn find(
         &self,
         playlist_id: PlaylistId,
