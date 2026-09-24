@@ -530,6 +530,56 @@ impl LibraryApplication {
         .await
     }
 
+    pub(crate) async fn set_track_suggest_less(
+        &self,
+        track_id: i64,
+        suggest_less: bool,
+    ) -> CoreResult<()> {
+        let track_id = non_negative_id(track_id, "Track ID")?;
+        self.run_entity_update("Track", track_id, move |conn| {
+            crate::database::operations::set_track_suggest_less(conn, track_id, suggest_less)
+        })
+        .await
+    }
+
+    pub(crate) async fn set_release_suggest_less(
+        &self,
+        release_id: i64,
+        suggest_less: bool,
+    ) -> CoreResult<()> {
+        let release_id = non_negative_id(release_id, "Release ID")?;
+        self.run_entity_update("Release", release_id, move |conn| {
+            crate::database::operations::set_release_suggest_less(conn, release_id, suggest_less)
+        })
+        .await
+    }
+
+    pub(crate) async fn set_track_rating(
+        &self,
+        track_id: i64,
+        rating: Option<u8>,
+    ) -> CoreResult<()> {
+        validate_rating(rating)?;
+        let track_id = non_negative_id(track_id, "Track ID")?;
+        self.run_entity_update("Track", track_id, move |conn| {
+            crate::database::operations::set_track_rating(conn, track_id, rating)
+        })
+        .await
+    }
+
+    pub(crate) async fn set_release_rating(
+        &self,
+        release_id: i64,
+        rating: Option<u8>,
+    ) -> CoreResult<()> {
+        validate_rating(rating)?;
+        let release_id = non_negative_id(release_id, "Release ID")?;
+        self.run_entity_update("Release", release_id, move |conn| {
+            crate::database::operations::set_release_rating(conn, release_id, rating)
+        })
+        .await
+    }
+
     async fn run_entity_update<F>(
         &self,
         entity: &'static str,
@@ -618,6 +668,15 @@ fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
     u64::try_from(value).map_err(|_| CoreError::InvalidInput {
         message: format!("{label} must not be negative"),
     })
+}
+
+fn validate_rating(rating: Option<u8>) -> CoreResult<()> {
+    if rating.is_some_and(|value| value > 5) {
+        return Err(CoreError::InvalidInput {
+            message: "Rating must be between 0 and 5".to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn lookup_error(

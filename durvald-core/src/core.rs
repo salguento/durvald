@@ -59,50 +59,6 @@ impl DurvaldCore {
     pub fn covers_dir(&self) -> &String {
         &self.covers_dir
     }
-
-    /// Variant for queries that need to preserve domain errors such as
-    /// `NotFound` instead of flattening every failure into `Storage`.
-    async fn run_database_core<T, F>(&self, operation: F) -> CoreResult<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
-    {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })?;
-            operation(&conn)
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Blocking database task failed: {error}"),
-        })?
-    }
-
-    async fn run_entity_update<F>(
-        &self,
-        entity: &'static str,
-        id: u64,
-        operation: F,
-    ) -> CoreResult<()>
-    where
-        F: FnOnce(&rusqlite::Connection) -> crate::database::operations::DatabaseResult<bool>
-            + Send
-            + 'static,
-    {
-        self.run_database_core(move |conn| {
-            if !operation(conn).map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })? {
-                return Err(CoreError::NotFound {
-                    message: format!("{entity} {id} not found"),
-                });
-            }
-            Ok(())
-        })
-        .await
-    }
 }
 
 /// Type alias for the core handle used in UniFFI
@@ -145,19 +101,11 @@ fn normalized_volume(volume: f64) -> f32 {
     normalized.clamp(0.0, 1.0) as f32
 }
 
+#[cfg(test)]
 fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
     u64::try_from(value).map_err(|_| CoreError::InvalidInput {
         message: format!("{label} must not be negative"),
     })
-}
-
-fn validate_rating(rating: Option<u8>) -> CoreResult<()> {
-    if rating.is_some_and(|value| value > 5) {
-        return Err(CoreError::InvalidInput {
-            message: "Rating must be between 0 and 5".to_string(),
-        });
-    }
-    Ok(())
 }
 
 fn repeat_mode_from_string(mode: &str) -> RepeatMode {
@@ -674,11 +622,9 @@ impl DurvaldCore {
         track_id: i64,
         suggest_less: bool,
     ) -> CoreResult<()> {
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_entity_update("Track", track_id, move |conn| {
-            crate::database::operations::set_track_suggest_less(conn, track_id, suggest_less)
-        })
-        .await
+        self.library_application
+            .set_track_suggest_less(track_id, suggest_less)
+            .await
     }
 
     /// Sets whether recommendations should de-emphasize a release.
@@ -687,11 +633,9 @@ impl DurvaldCore {
         release_id: i64,
         suggest_less: bool,
     ) -> CoreResult<()> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_entity_update("Release", release_id, move |conn| {
-            crate::database::operations::set_release_suggest_less(conn, release_id, suggest_less)
-        })
-        .await
+        self.library_application
+            .set_release_suggest_less(release_id, suggest_less)
+            .await
     }
 
     /// Sets whether a playlist is favorited.
@@ -714,22 +658,16 @@ impl DurvaldCore {
 
     /// Sets or clears a track rating on the 0–5 scale.
     pub async fn set_track_rating(&self, track_id: i64, rating: Option<u8>) -> CoreResult<()> {
-        validate_rating(rating)?;
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_entity_update("Track", track_id, move |conn| {
-            crate::database::operations::set_track_rating(conn, track_id, rating)
-        })
-        .await
+        self.library_application
+            .set_track_rating(track_id, rating)
+            .await
     }
 
     /// Sets or clears a release rating on the 0–5 scale.
     pub async fn set_release_rating(&self, release_id: i64, rating: Option<u8>) -> CoreResult<()> {
-        validate_rating(rating)?;
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_entity_update("Release", release_id, move |conn| {
-            crate::database::operations::set_release_rating(conn, release_id, rating)
-        })
-        .await
+        self.library_application
+            .set_release_rating(release_id, rating)
+            .await
     }
 
     /// Adds a track at a playlist position.
