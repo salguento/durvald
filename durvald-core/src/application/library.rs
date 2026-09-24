@@ -429,11 +429,11 @@ impl LibraryApplication {
     ) -> CoreResult<ReleasePage> {
         let (fetch_size, page_size) = pagination_window(page_size, offset)?;
         let releases = self
-            .run_database(move |conn| {
-                crate::database::operations::get_releases_page(conn, fetch_size, offset)
-                    .map_err(|error| error.to_string())
-            })
-            .await?
+            .persistence
+            .catalog_release_query
+            .page(fetch_size, offset)
+            .await
+            .map_err(catalog_release_storage_error)?
             .into_iter()
             .map(release_from_database)
             .collect();

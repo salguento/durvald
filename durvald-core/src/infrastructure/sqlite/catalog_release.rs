@@ -87,4 +87,23 @@ impl SqliteCatalogReleaseQuery {
             CatalogReleaseLookupError::Storage(format!("Blocking database task failed: {error}"))
         })?
     }
+
+    pub(crate) async fn page(
+        &self,
+        fetch_size: u64,
+        offset: u64,
+    ) -> Result<Vec<Releases>, CatalogReleaseLookupError> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool
+                .get()
+                .map_err(|error| CatalogReleaseLookupError::Storage(error.to_string()))?;
+            crate::database::operations::get_releases_page(&conn, fetch_size, offset)
+                .map_err(|error| CatalogReleaseLookupError::Storage(error.to_string()))
+        })
+        .await
+        .map_err(|error| {
+            CatalogReleaseLookupError::Storage(format!("Blocking database task failed: {error}"))
+        })?
+    }
 }
