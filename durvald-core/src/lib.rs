@@ -17,6 +17,7 @@ pub mod core;
 pub mod database;
 mod domain;
 pub mod enrichment;
+mod infrastructure;
 pub mod lastfm;
 pub mod metadata;
 mod metadata_edit;

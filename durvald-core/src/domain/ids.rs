@@ -30,6 +30,18 @@ domain_id!(PlaylistId);
 domain_id!(TrackId);
 domain_id!(ReleaseId);
 
+impl PlaybackHistoryId {
+    pub(crate) fn from_persisted(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl TrackId {
+    pub(crate) fn from_persisted(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};

@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `2ff6571 refactor(core): type playback history ids`
+Commit de referência: `ca94106 refactor(core): type enrichment artist inputs`
 
-Estado adicional: extensão de `ArtistId` a enrichment implementada e ainda não commitada
+Estado adicional: primeiro adapter em `infrastructure/sqlite` implementado e ainda não commitado
 
 ## Visão geral
 
@@ -194,13 +194,15 @@ Já foi concluído:
 - introdução de `TrackId`, `ReleaseId`, `ArtistId`, `PlaylistId` e `PlaybackHistoryId`;
 - conversão de IDs na fronteira pública das operações migradas;
 - uso de IDs tipados nas mutações e consultas de catálogo;
-- remoção da validação primitiva duplicada de `LibraryApplication`.
+- remoção da validação primitiva duplicada dos serviços migrados;
+- criação inicial de `infrastructure/sqlite` para histórico de reprodução;
+- separação entre row SQLite, modelo de domínio e DTO público nessa primeira área.
 
 Ainda falta:
 
 - separação sistemática entre DTO público, domínio e row SQLite;
 - estender IDs de domínio às demais áreas estabilizadas;
-- criação de `infrastructure/sqlite`;
+- ampliar `infrastructure/sqlite` para as demais áreas;
 - ports pequenos para dependências substituíveis;
 - retirada das chamadas diretas a `database::operations` dos serviços de aplicação.
 
@@ -228,7 +230,7 @@ Continuar a introdução gradual de IDs de domínio nas áreas já estabilizadas
 3. introduzir `PlaylistId` nas operações de playlist — **concluído**;
 4. manter a conversão de `i64` concentrada na fachada pública;
 5. somente depois separar rows SQLite dos DTOs públicos de uma área pequena;
-6. então extrair o primeiro adapter em `infrastructure/sqlite`, sem reescrever queries;
+6. extrair adapters adicionais em `infrastructure/sqlite`, sem reescrever queries;
 7. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do checkpoint.
 
 ## Resumo executivo
@@ -252,4 +254,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `1734345` | Extensão de `TrackId` às entradas de metadata |
 | 23/09/2026 | `90fa77e` | Introdução de `PlaylistId` nas operações de playlist |
 | 23/09/2026 | `2ff6571` | Introdução de `PlaybackHistoryId` na remoção de histórico |
-| 23/09/2026 | estado não commitado | Extensão de `ArtistId` às entradas de enrichment |
+| 23/09/2026 | `ca94106` | Extensão de `ArtistId` às entradas de enrichment |
+| 23/09/2026 | estado não commitado | Primeiro adapter SQLite e modelo de domínio para histórico |

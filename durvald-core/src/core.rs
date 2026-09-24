@@ -21,6 +21,7 @@ use crate::application::settings::{SettingsApplication, normalized_cross_fade_du
 #[cfg(test)]
 use crate::application::settings::{normalized_audio_quality, validate_settings};
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
+use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
@@ -314,7 +315,9 @@ impl DurvaldCore {
                 library_application.clone(),
             ),
             db_pool: db_pool.clone(),
-            history_application: HistoryApplication::new(db_pool.clone()),
+            history_application: HistoryApplication::new(SqlitePlaybackHistoryRepository::new(
+                db_pool.clone(),
+            )),
             lastfm_application,
             library_application,
             metadata_application: MetadataApplication::new(
