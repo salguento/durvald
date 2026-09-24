@@ -467,33 +467,25 @@ impl LibraryApplication {
                 id: artist.artist_id as i64,
                 name: artist.artist_name,
             })
-            .map_err(|error| match error {
-                CatalogArtistLookupError::NotFound => CoreError::NotFound {
-                    message: format!("Artist {} not found", artist_id.get()),
-                },
-                CatalogArtistLookupError::Storage(message) => CoreError::Storage { message },
-            })
+            .map_err(|error| catalog_artist_error(error, artist_id))
     }
 
     pub(crate) async fn artist_releases(&self, artist_id: ArtistId) -> CoreResult<Vec<Release>> {
-        self.run_database(move |conn| {
-            crate::database::operations::get_releases_by_artist_id(
-                conn,
-                &artist_id.get().to_string(),
-            )
+        self.persistence
+            .catalog_artist_query
+            .releases(artist_id)
+            .await
             .map(|releases| releases.into_iter().map(release_from_database).collect())
-            .map_err(|error| error.to_string())
-        })
-        .await
+            .map_err(|error| catalog_artist_error(error, artist_id))
     }
 
     pub(crate) async fn artist_tracks(&self, artist_id: ArtistId) -> CoreResult<Vec<Track>> {
-        self.run_database(move |conn| {
-            crate::database::operations::get_songs_by_artist_id(conn, &artist_id.get().to_string())
-                .map(|tracks| tracks.into_iter().map(track_from_song).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.persistence
+            .catalog_artist_query
+            .tracks(artist_id)
+            .await
+            .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+            .map_err(|error| catalog_artist_error(error, artist_id))
     }
 
     pub(crate) async fn track(&self, track_id: TrackId) -> CoreResult<Track> {
@@ -709,6 +701,15 @@ fn validate_rating(rating: Option<u8>) -> CoreResult<()> {
 
 fn storage_error(message: String) -> CoreError {
     CoreError::Storage { message }
+}
+
+fn catalog_artist_error(error: CatalogArtistLookupError, artist_id: ArtistId) -> CoreError {
+    match error {
+        CatalogArtistLookupError::NotFound => CoreError::NotFound {
+            message: format!("Artist {} not found", artist_id.get()),
+        },
+        CatalogArtistLookupError::Storage(message) => CoreError::Storage { message },
+    }
 }
 
 fn entity_update_result(result: Result<bool, String>, entity: &str, id: u64) -> CoreResult<()> {
