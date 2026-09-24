@@ -2,9 +2,9 @@
 
 Última atualização: 24 de setembro de 2026
 
-Commit de referência: `87e4765 refactor(core): isolate public session persistence`
+Commit de referência: `c4fb369 refactor(core): isolate completed playback recording`
 
-Estado adicional: registro de conclusão isolado e ainda não commitado
+Estado adicional: listagem de playlists isolada e ainda não commitada
 
 ## Visão geral
 
@@ -49,7 +49,7 @@ O Marco 6 também introduziu `src/domain/ids.rs`, com `TrackId`, `ReleaseId`,
 `i64` da API pública e
 as operações de catálogo migradas recebem apenas IDs já validados.
 
-O diretório `src/infrastructure/sqlite/` contém atualmente onze adapters
+O diretório `src/infrastructure/sqlite/` contém atualmente doze adapters
 concretos:
 
 - histórico de reprodução;
@@ -64,7 +64,7 @@ concretos:
 - preparação, persistência dos lotes e reconciliação SQLite do scan da
   biblioteca;
 - sessão de playback completamente isolada;
-- registro de conclusão no histórico ainda não commitado.
+- playlists, com a listagem agregada ainda não commitada.
 
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
@@ -233,8 +233,8 @@ Já foi concluído:
 - extração da busca agregada de catálogo;
 - conclusão dos adapters de persistência e extração do scan;
 - retirada de todas as resoluções diretas de faixa de `PlaybackApplication`;
-- criação inicial do adapter de sessão de playback, com a leitura pública já
-  redirecionada no working tree.
+- conclusão do adapter de sessão e retirada do pool de `PlaybackApplication`;
+- início do adapter de playlists com a listagem agregada no working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -242,7 +242,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
 | `PlaybackApplication` | 0 | catálogo, sessão e histórico acessados por adapters dedicados |
-| `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
+| `PlaylistApplication` | 15 | consultas restantes, CRUD, preferências, tracks e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
 Ainda falta:
@@ -270,9 +270,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit o registro de conclusão atualmente no working tree;
-2. criar o adapter SQLite de playlists, começando pelas consultas antes das
-   mutações;
+1. registrar em commit a listagem de playlists atualmente no working tree;
+2. continuar o adapter SQLite de playlists pelas consultas antes das mutações;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
 4. criar ports somente nas dependências com necessidade real de substituição;
@@ -334,4 +333,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `90498bf` | Update de progresso da sessão isolado em adapter SQLite |
 | 24/09/2026 | `f3f427f` | Update de volume da sessão isolado em adapter SQLite |
 | 24/09/2026 | `87e4765` | Escrita pública da última sessão isolada em adapter SQLite |
-| 24/09/2026 | estado não commitado | Registro de conclusão isolado no adapter de histórico |
+| 24/09/2026 | `c4fb369` | Registro de conclusão isolado no adapter de histórico |
+| 24/09/2026 | estado não commitado | Listagem agregada de playlists isolada em adapter SQLite |

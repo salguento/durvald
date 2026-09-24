@@ -8,29 +8,35 @@ use crate::{
     api::{CoreError, CoreResult, Playlist, PlaylistTrack, Track},
     application::library::track_from_song,
     domain::ids::{PlaylistId, TrackId},
+    infrastructure::sqlite::playlists::SqlitePlaylistRepository,
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
 pub(crate) struct PlaylistApplication {
     db_pool: Arc<DatabasePool>,
+    repository: SqlitePlaylistRepository,
 }
 
 impl PlaylistApplication {
-    pub(crate) fn new(db_pool: Arc<DatabasePool>) -> Self {
-        Self { db_pool }
+    pub(crate) fn new(db_pool: Arc<DatabasePool>, repository: SqlitePlaylistRepository) -> Self {
+        Self {
+            db_pool,
+            repository,
+        }
     }
 
     pub(crate) async fn playlists(&self) -> CoreResult<Vec<Playlist>> {
-        self.run_database(|conn| {
-            let summaries = crate::database::operations::get_all_playlists_with_track_counts(conn)
-                .map_err(|error| error.to_string())?;
-            Ok(summaries
-                .into_iter()
-                .map(|summary| playlist_from_database(summary.playlist, summary.track_count))
-                .collect())
-        })
-        .await
+        self.repository
+            .all()
+            .await
+            .map(|summaries| {
+                summaries
+                    .into_iter()
+                    .map(|summary| playlist_from_database(summary.playlist, summary.track_count))
+                    .collect()
+            })
+            .map_err(|message| CoreError::Storage { message })
     }
 
     pub(crate) async fn create_playlist(

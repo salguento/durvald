@@ -33,6 +33,7 @@ use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository;
+use crate::infrastructure::sqlite::playlists::SqlitePlaylistRepository;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
 use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
 use crate::lastfm::LastFmClient;
@@ -349,7 +350,10 @@ impl DurvaldCore {
                 playback_application.audio_player().clone(),
             ),
             playback_application,
-            playlist_application: PlaylistApplication::new(db_pool.clone()),
+            playlist_application: PlaylistApplication::new(
+                db_pool.clone(),
+                SqlitePlaylistRepository::new(db_pool.clone()),
+            ),
             lastfm,
             covers_dir: config.covers_dir.clone(),
         };
