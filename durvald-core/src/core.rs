@@ -39,7 +39,6 @@ pub struct DurvaldCore {
     playlist_application: PlaylistApplication,
     settings_application: SettingsApplication,
     lastfm: Arc<LastFmClient>,
-    enrichment: crate::enrichment::service::EnrichmentService,
     covers_dir: String,
 }
 
@@ -325,13 +324,16 @@ impl DurvaldCore {
             config.covers_dir.clone(),
             metadata_edit_queue.clone(),
         ));
-        let lastfm_application = LastFmApplication::new(lastfm.clone(), enrichment.clone());
+        let lastfm_application = LastFmApplication::new(
+            lastfm.clone(),
+            enrichment.clone(),
+            playback_application.clone(),
+        );
         let core = Self {
             enrichment_application: EnrichmentApplication::new(
                 enrichment.clone(),
                 library_application.clone(),
             ),
-            enrichment,
             db_pool: db_pool.clone(),
             history_application: HistoryApplication::new(db_pool.clone()),
             lastfm_application,
@@ -855,14 +857,7 @@ impl DurvaldCore {
     /// Ends the Last.fm integration and removes its credentials and cached
     /// metadata without affecting snapshots from other providers.
     pub async fn disconnect_lastfm(&self) -> CoreResult<()> {
-        self.lastfm
-            .disconnect_lastfm()
-            .await
-            .map_err(lastfm_error)?;
-        self.playback_application.clear_lastfm_tracking().await;
-        self.enrichment
-            .clear_provider_data(EnrichmentProvider::LastFm)
-            .await
+        self.lastfm_application.disconnect().await
     }
 
     /// Returns the last session state.

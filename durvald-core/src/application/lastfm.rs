@@ -5,17 +5,27 @@ use std::sync::Arc;
 use crate::api::{
     AuthTokenResponse, CoreError, CoreResult, EnrichmentProvider, LastFmStatus, SessionResponse,
 };
+use crate::application::playback::PlaybackApplication;
 use crate::enrichment::service::EnrichmentService;
 use crate::lastfm::{LastFmClient, LastFmError};
 
 pub(crate) struct LastFmApplication {
     client: Arc<LastFmClient>,
     enrichment: EnrichmentService,
+    playback: Arc<PlaybackApplication>,
 }
 
 impl LastFmApplication {
-    pub(crate) fn new(client: Arc<LastFmClient>, enrichment: EnrichmentService) -> Self {
-        Self { client, enrichment }
+    pub(crate) fn new(
+        client: Arc<LastFmClient>,
+        enrichment: EnrichmentService,
+        playback: Arc<PlaybackApplication>,
+    ) -> Self {
+        Self {
+            client,
+            enrichment,
+            playback,
+        }
     }
 
     pub(crate) async fn status(&self) -> CoreResult<LastFmStatus> {
@@ -70,6 +80,17 @@ impl LastFmApplication {
                 username: response.username,
             })
             .map_err(lastfm_error)
+    }
+
+    pub(crate) async fn disconnect(&self) -> CoreResult<()> {
+        self.client
+            .disconnect_lastfm()
+            .await
+            .map_err(lastfm_error)?;
+        self.playback.clear_lastfm_tracking().await;
+        self.enrichment
+            .clear_provider_data(EnrichmentProvider::LastFm)
+            .await
     }
 }
 
