@@ -458,10 +458,9 @@ impl LibraryApplication {
         .await
     }
 
-    pub(crate) async fn track(&self, track_id: i64) -> CoreResult<Track> {
-        let track_id = non_negative_id(track_id, "Track ID")?;
+    pub(crate) async fn track(&self, track_id: TrackId) -> CoreResult<Track> {
         self.run_database_core(move |conn| {
-            crate::database::operations::get_song_by_id(conn, &track_id.to_string())
+            crate::database::operations::get_song_by_id(conn, &track_id.get().to_string())
                 .map_err(|error| CoreError::Storage {
                     message: error.to_string(),
                 })?
@@ -469,28 +468,29 @@ impl LibraryApplication {
                 .next()
                 .map(track_from_song)
                 .ok_or_else(|| CoreError::NotFound {
-                    message: format!("Track {track_id} not found"),
+                    message: format!("Track {} not found", track_id.get()),
                 })
         })
         .await
     }
 
-    pub(crate) async fn release(&self, release_id: i64) -> CoreResult<Release> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
+    pub(crate) async fn release(&self, release_id: ReleaseId) -> CoreResult<Release> {
         self.run_database_core(move |conn| {
-            crate::database::operations::get_release_by_id(conn, &release_id.to_string())
+            crate::database::operations::get_release_by_id(conn, &release_id.get().to_string())
                 .map(release_from_database)
-                .map_err(|error| lookup_error(error, "Release", release_id))
+                .map_err(|error| lookup_error(error, "Release", release_id.get()))
         })
         .await
     }
 
-    pub(crate) async fn release_tracks(&self, release_id: i64) -> CoreResult<Vec<Track>> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
+    pub(crate) async fn release_tracks(&self, release_id: ReleaseId) -> CoreResult<Vec<Track>> {
         self.run_database(move |conn| {
-            crate::database::operations::get_songs_by_release_id(conn, &release_id.to_string())
-                .map(|tracks| tracks.into_iter().map(track_from_song).collect())
-                .map_err(|error| error.to_string())
+            crate::database::operations::get_songs_by_release_id(
+                conn,
+                &release_id.get().to_string(),
+            )
+            .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+            .map_err(|error| error.to_string())
         })
         .await
     }

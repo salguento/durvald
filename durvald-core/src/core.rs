@@ -893,7 +893,9 @@ impl DurvaldCore {
 
     /// Gets a track by ID.
     pub async fn track(&self, track_id: i64) -> CoreResult<Track> {
-        self.library_application.track(track_id).await
+        self.library_application
+            .track(track_id_from_api(track_id)?)
+            .await
     }
 
     /// Reads indexed metadata, backfilling older libraries once when necessary.
@@ -920,12 +922,16 @@ impl DurvaldCore {
 
     /// Gets a release by ID.
     pub async fn release(&self, release_id: i64) -> CoreResult<Release> {
-        self.library_application.release(release_id).await
+        self.library_application
+            .release(release_id_from_api(release_id)?)
+            .await
     }
 
     /// Gets tracks for a release.
     pub async fn release_tracks(&self, release_id: i64) -> CoreResult<Vec<Track>> {
-        self.library_application.release_tracks(release_id).await
+        self.library_application
+            .release_tracks(release_id_from_api(release_id)?)
+            .await
     }
 
     /// Extracts metadata from an audio file (for preview/import).
