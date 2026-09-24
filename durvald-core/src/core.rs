@@ -32,6 +32,7 @@ use crate::infrastructure::sqlite::catalog_track::SqliteCatalogTrackQuery;
 use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
+use crate::infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
 use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
 use crate::lastfm::LastFmClient;
@@ -299,6 +300,7 @@ impl DurvaldCore {
         let playback_application = Arc::new(PlaybackApplication::new(
             db_pool.clone(),
             SqliteCatalogTrackQuery::new(db_pool.clone()),
+            SqlitePlaybackSessionRepository::new(db_pool.clone()),
             audio_player,
             lastfm.clone(),
         ));

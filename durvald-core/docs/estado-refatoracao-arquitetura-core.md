@@ -2,9 +2,9 @@
 
 Última atualização: 24 de setembro de 2026
 
-Commit de referência: `915f6a8 refactor(core): resolve lastfm tracking through catalog`
+Commit de referência: `b485216 refactor(core): resolve completed playback through catalog`
 
-Estado adicional: faixa da conclusão de playback isolada e ainda não commitada
+Estado adicional: leitura pública da sessão isolada e ainda não commitada
 
 ## Visão geral
 
@@ -39,8 +39,8 @@ O diretório `src/application/` contém oito serviços:
 - `EnrichmentApplication`;
 - `LastFmApplication`.
 
-Durante a extração, `src/core.rs` caiu de aproximadamente 2.903 para 1.404
-linhas, uma redução próxima de 52%, mantendo 89 operações assíncronas
+Durante a extração, `src/core.rs` caiu de aproximadamente 2.903 para 1.410
+linhas, uma redução próxima de 51%, mantendo 89 operações assíncronas
 públicas. A API foi preservada enquanto a implementação interna foi deslocada
 para serviços de aplicação.
 
@@ -49,7 +49,7 @@ O Marco 6 também introduziu `src/domain/ids.rs`, com `TrackId`, `ReleaseId`,
 `i64` da API pública e
 as operações de catálogo migradas recebem apenas IDs já validados.
 
-O diretório `src/infrastructure/sqlite/` contém atualmente dez adapters
+O diretório `src/infrastructure/sqlite/` contém atualmente onze adapters
 concretos:
 
 - histórico de reprodução;
@@ -62,13 +62,15 @@ concretos:
 - consultas de artistas;
 - busca agregada de catálogo;
 - preparação, persistência dos lotes e reconciliação SQLite do scan da
-  biblioteca; a reconciliação ainda não está commitada.
+  biblioteca;
+- sessão de playback, cuja leitura pública ainda não está commitada.
 
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
 relacionadas ao scan já não chamam `database::operations` diretamente.
 Após a extração do ciclo de scan, `LibraryApplication` também deixou de receber
-o pool SQLite diretamente.
+o pool SQLite diretamente. A extração de metadata passou a usar
+`LocalMetadataExtractor`, fora do namespace de banco.
 
 ## Implementações concluídas
 
@@ -227,14 +229,18 @@ Já foi concluído:
 - extração das consultas completa e paginada da coleção de faixas;
 - extração das consultas completa e paginada da coleção de lançamentos;
 - extração da listagem completa da coleção de artistas;
-- extração da busca agregada de catálogo.
+- extração da busca agregada de catálogo;
+- conclusão dos adapters de persistência e extração do scan;
+- retirada de todas as resoluções diretas de faixa de `PlaybackApplication`;
+- criação inicial do adapter de sessão de playback, com a leitura pública já
+  redirecionada no working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
 | Serviço | Referências diretas | Escopo restante |
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
-| `PlaybackApplication` | 7 | sessão e registro de conclusão; resoluções de faixa já isoladas |
+| `PlaybackApplication` | 6 | persistência de sessão e registro de conclusão; resoluções de faixa já isoladas |
 | `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
@@ -246,8 +252,9 @@ Ainda falta:
 - ports pequenos para dependências substituíveis;
 - retirada das chamadas diretas a `database::operations` dos serviços de aplicação.
 
-Os serviços atuais ainda recebem implementações concretas, especialmente o pool
-SQLite. Isso é deliberado e compatível com a etapa atual do roteiro.
+`PlaybackApplication` e `PlaylistApplication` ainda recebem o pool SQLite
+diretamente. Os outros seis serviços de aplicação já não o recebem. Isso é
+deliberado e compatível com a etapa atual do roteiro.
 
 ### Marco 7
 
@@ -263,8 +270,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a resolução de faixa da conclusão atualmente no working tree;
-2. extrair de `PlaybackApplication` a persistência da última sessão e o
+1. registrar em commit a leitura pública da sessão atualmente no working tree;
+2. concluir no novo adapter a persistência da última sessão e extrair o
    registro de conclusão;
 3. criar o adapter SQLite de playlists, começando pelas consultas antes das
    mutações;
@@ -278,11 +285,11 @@ Ainda falta:
 
 O padrão arquitetural foi replicado em oito serviços e o Marco 5 foi concluído.
 A fachada pública está reduzida principalmente à delegação, composição e
-conversão de fronteira. No Marco 6, a tipagem dos IDs foi estabelecida e todas
-as consultas comuns de catálogo foram deslocadas para adapters SQLite. O foco
-agora passa a ser retirar os três blocos restantes de acesso direto ao banco —
-scan, playback/sessão e playlists — e aprofundar a separação entre DTOs
-públicos, modelos de domínio e rows SQLite.
+conversão de fronteira. No Marco 6, a tipagem dos IDs foi estabelecida, todas
+as consultas comuns de catálogo foram deslocadas para adapters SQLite e o ciclo
+de scan foi isolado. O foco agora passa a ser retirar os dois blocos restantes
+de acesso direto ao banco — playback/sessão e playlists — e aprofundar a
+separação entre DTOs públicos, modelos de domínio e rows SQLite.
 
 ## Histórico de atualizações
 
@@ -323,4 +330,5 @@ públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `71b8fee` | Helper interno de faixa do playback redirecionado ao adapter de catálogo |
 | 24/09/2026 | `c7ff0bd` | Resolução da faixa atual do snapshot redirecionada ao adapter de catálogo |
 | 24/09/2026 | `915f6a8` | Resolução da faixa do tracking Last.fm redirecionada ao adapter de catálogo |
-| 24/09/2026 | estado não commitado | Resolução da duração na conclusão redirecionada ao adapter de catálogo |
+| 24/09/2026 | `b485216` | Resolução da duração na conclusão redirecionada ao adapter de catálogo |
+| 24/09/2026 | estado não commitado | Leitura pública da última sessão isolada em adapter SQLite |

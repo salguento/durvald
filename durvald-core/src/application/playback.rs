@@ -10,6 +10,7 @@ use crate::{
     audio::AudioPlayer,
     domain::ids::TrackId,
     infrastructure::sqlite::catalog_track::{CatalogTrackLookupError, SqliteCatalogTrackQuery},
+    infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository,
     lastfm::LastFmClient,
 };
 
@@ -40,6 +41,7 @@ struct AutomaticPlaybackEvent {
 pub(crate) struct PlaybackApplication {
     db_pool: Arc<DatabasePool>,
     track_query: SqliteCatalogTrackQuery,
+    session_repository: SqlitePlaybackSessionRepository,
     audio_player: Arc<tokio::sync::Mutex<AudioPlayer>>,
     playback_transition: tokio::sync::Mutex<()>,
     lastfm: Arc<LastFmClient>,
@@ -50,12 +52,14 @@ impl PlaybackApplication {
     pub(crate) fn new(
         db_pool: Arc<DatabasePool>,
         track_query: SqliteCatalogTrackQuery,
+        session_repository: SqlitePlaybackSessionRepository,
         audio_player: AudioPlayer,
         lastfm: Arc<LastFmClient>,
     ) -> Self {
         Self {
             db_pool,
             track_query,
+            session_repository,
             audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
             playback_transition: tokio::sync::Mutex::new(()),
             lastfm,
@@ -520,16 +524,11 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn last_session(&self) -> CoreResult<LastSession> {
-        let db_pool = self.db_pool.clone();
-        let session = tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| error.to_string())?;
-            crate::database::operations::get_last_session(&conn).map_err(|error| error.to_string())
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Last-session query task failed: {error}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })?;
+        let session = self
+            .session_repository
+            .load()
+            .await
+            .map_err(|message| CoreError::Storage { message })?;
 
         Ok(LastSession {
             current_track_id: session.current_song_id,

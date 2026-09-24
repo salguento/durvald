@@ -8,5 +8,6 @@ pub(crate) mod catalog_track;
 pub(crate) mod library_paths;
 pub(crate) mod library_scan;
 pub(crate) mod playback_history;
+pub(crate) mod playback_session;
 pub(crate) mod settings;
 pub(crate) mod track_metadata;
