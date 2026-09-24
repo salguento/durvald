@@ -3,8 +3,9 @@
 use std::sync::Arc;
 
 use crate::{
-    database::models::{Releases, SongItem},
-    domain::ids::ReleaseId,
+    database::models::Releases,
+    domain::{catalog::CatalogTrack, ids::ReleaseId},
+    infrastructure::sqlite::catalog_track::track_from_row,
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -55,7 +56,7 @@ impl SqliteCatalogReleaseQuery {
     pub(crate) async fn tracks(
         &self,
         release_id: ReleaseId,
-    ) -> Result<Vec<SongItem>, CatalogReleaseLookupError> {
+    ) -> Result<Vec<CatalogTrack>, CatalogReleaseLookupError> {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool
@@ -65,6 +66,7 @@ impl SqliteCatalogReleaseQuery {
                 &conn,
                 &release_id.get().to_string(),
             )
+            .map(|tracks| tracks.into_iter().map(track_from_row).collect())
             .map_err(|error| CatalogReleaseLookupError::Storage(error.to_string()))
         })
         .await

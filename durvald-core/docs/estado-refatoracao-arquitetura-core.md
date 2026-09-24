@@ -253,6 +253,8 @@ Já foi concluído:
 - consultas direta, completa e paginada de faixas convertidas para modelo de
   domínio no adapter de catálogo;
 - consulta de faixas por artista convertida para o mesmo modelo de domínio no
+  adapter SQLite;
+- consulta de faixas por release convertida para o mesmo modelo de domínio no
   working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
@@ -289,9 +291,9 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a conversão das faixas por artista atualmente no working
+1. registrar em commit a conversão das faixas por release atualmente no working
    tree;
-2. estender a conversão de faixa às consultas por release, busca e playlist;
+2. estender a conversão de faixa às consultas de busca e playlist;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
 4. criar ports somente nas dependências com necessidade real de substituição;
@@ -369,4 +371,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `8ab8b63` | Row de playlist convertida para modelo de domínio no adapter SQLite |
 | 24/09/2026 | `c1b39b6` | Row e JSON da sessão confinados ao adapter SQLite |
 | 24/09/2026 | `d0e0ba5` | Consultas principais de faixa convertidas para modelo de domínio |
-| 24/09/2026 | estado não commitado | Faixas por artista convertidas para modelo de domínio |
+| 24/09/2026 | `7da46dc` | Faixas por artista convertidas para modelo de domínio |
+| 24/09/2026 | estado não commitado | Faixas por release convertidas para modelo de domínio |

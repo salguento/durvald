@@ -489,7 +489,7 @@ impl LibraryApplication {
             .catalog_release_query
             .tracks(release_id)
             .await
-            .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+            .map(|tracks| tracks.into_iter().map(track_from_catalog).collect())
             .map_err(|error| catalog_release_error(error, release_id))
     }
 
