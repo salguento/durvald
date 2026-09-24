@@ -14,6 +14,7 @@ use crate::api::{
     Artist, CoreError, CoreResult, Playlist, Release, ReleasePage, ScanPhase, ScanProgress,
     ScanResult, SearchResults, Track, TrackPage,
 };
+use crate::domain::ids::{ReleaseId, TrackId};
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
@@ -494,88 +495,92 @@ impl LibraryApplication {
         .await
     }
 
-    pub(crate) async fn set_track_favorite(&self, track_id: i64, favorite: bool) -> CoreResult<()> {
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_entity_update("Track", track_id, move |conn| {
-            crate::database::operations::set_track_favorite(conn, track_id, favorite)
+    pub(crate) async fn set_track_favorite(
+        &self,
+        track_id: TrackId,
+        favorite: bool,
+    ) -> CoreResult<()> {
+        self.run_entity_update("Track", track_id.get(), move |conn| {
+            crate::database::operations::set_track_favorite(conn, track_id.get(), favorite)
         })
         .await
     }
 
     pub(crate) async fn set_release_favorite(
         &self,
-        release_id: i64,
+        release_id: ReleaseId,
         favorite: bool,
     ) -> CoreResult<()> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_entity_update("Release", release_id, move |conn| {
-            crate::database::operations::set_release_favorite(conn, release_id, favorite)
+        self.run_entity_update("Release", release_id.get(), move |conn| {
+            crate::database::operations::set_release_favorite(conn, release_id.get(), favorite)
         })
         .await
     }
 
-    pub(crate) async fn set_track_hidden(&self, track_id: i64, hidden: bool) -> CoreResult<()> {
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_entity_update("Track", track_id, move |conn| {
-            crate::database::operations::set_track_hidden(conn, track_id, hidden)
+    pub(crate) async fn set_track_hidden(&self, track_id: TrackId, hidden: bool) -> CoreResult<()> {
+        self.run_entity_update("Track", track_id.get(), move |conn| {
+            crate::database::operations::set_track_hidden(conn, track_id.get(), hidden)
         })
         .await
     }
 
-    pub(crate) async fn set_release_hidden(&self, release_id: i64, hidden: bool) -> CoreResult<()> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_entity_update("Release", release_id, move |conn| {
-            crate::database::operations::set_release_hidden(conn, release_id, hidden)
+    pub(crate) async fn set_release_hidden(
+        &self,
+        release_id: ReleaseId,
+        hidden: bool,
+    ) -> CoreResult<()> {
+        self.run_entity_update("Release", release_id.get(), move |conn| {
+            crate::database::operations::set_release_hidden(conn, release_id.get(), hidden)
         })
         .await
     }
 
     pub(crate) async fn set_track_suggest_less(
         &self,
-        track_id: i64,
+        track_id: TrackId,
         suggest_less: bool,
     ) -> CoreResult<()> {
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_entity_update("Track", track_id, move |conn| {
-            crate::database::operations::set_track_suggest_less(conn, track_id, suggest_less)
+        self.run_entity_update("Track", track_id.get(), move |conn| {
+            crate::database::operations::set_track_suggest_less(conn, track_id.get(), suggest_less)
         })
         .await
     }
 
     pub(crate) async fn set_release_suggest_less(
         &self,
-        release_id: i64,
+        release_id: ReleaseId,
         suggest_less: bool,
     ) -> CoreResult<()> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_entity_update("Release", release_id, move |conn| {
-            crate::database::operations::set_release_suggest_less(conn, release_id, suggest_less)
+        self.run_entity_update("Release", release_id.get(), move |conn| {
+            crate::database::operations::set_release_suggest_less(
+                conn,
+                release_id.get(),
+                suggest_less,
+            )
         })
         .await
     }
 
     pub(crate) async fn set_track_rating(
         &self,
-        track_id: i64,
+        track_id: TrackId,
         rating: Option<u8>,
     ) -> CoreResult<()> {
         validate_rating(rating)?;
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_entity_update("Track", track_id, move |conn| {
-            crate::database::operations::set_track_rating(conn, track_id, rating)
+        self.run_entity_update("Track", track_id.get(), move |conn| {
+            crate::database::operations::set_track_rating(conn, track_id.get(), rating)
         })
         .await
     }
 
     pub(crate) async fn set_release_rating(
         &self,
-        release_id: i64,
+        release_id: ReleaseId,
         rating: Option<u8>,
     ) -> CoreResult<()> {
         validate_rating(rating)?;
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_entity_update("Release", release_id, move |conn| {
-            crate::database::operations::set_release_rating(conn, release_id, rating)
+        self.run_entity_update("Release", release_id.get(), move |conn| {
+            crate::database::operations::set_release_rating(conn, release_id.get(), rating)
         })
         .await
     }

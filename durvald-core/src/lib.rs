@@ -15,6 +15,7 @@ mod artwork;
 pub mod audio;
 pub mod core;
 pub mod database;
+mod domain;
 pub mod enrichment;
 pub mod lastfm;
 pub mod metadata;

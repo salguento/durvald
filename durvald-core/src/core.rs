@@ -20,6 +20,7 @@ use crate::application::playlist::PlaylistApplication;
 use crate::application::settings::{SettingsApplication, normalized_cross_fade_duration};
 #[cfg(test)]
 use crate::application::settings::{normalized_audio_quality, validate_settings};
+use crate::domain::ids::{ReleaseId, TrackId};
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
@@ -99,6 +100,18 @@ fn normalized_volume(volume: f64) -> f32 {
     }
     let normalized = if volume > 1.0 { volume / 100.0 } else { volume };
     normalized.clamp(0.0, 1.0) as f32
+}
+
+fn track_id_from_api(value: i64) -> CoreResult<TrackId> {
+    TrackId::try_from(value).map_err(|_| CoreError::InvalidInput {
+        message: "Track ID must not be negative".to_string(),
+    })
+}
+
+fn release_id_from_api(value: i64) -> CoreResult<ReleaseId> {
+    ReleaseId::try_from(value).map_err(|_| CoreError::InvalidInput {
+        message: "Release ID must not be negative".to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -591,28 +604,28 @@ impl DurvaldCore {
     /// Sets whether a track is favorited.
     pub async fn set_track_favorite(&self, track_id: i64, favorite: bool) -> CoreResult<()> {
         self.library_application
-            .set_track_favorite(track_id, favorite)
+            .set_track_favorite(track_id_from_api(track_id)?, favorite)
             .await
     }
 
     /// Sets whether a release is favorited.
     pub async fn set_release_favorite(&self, release_id: i64, favorite: bool) -> CoreResult<()> {
         self.library_application
-            .set_release_favorite(release_id, favorite)
+            .set_release_favorite(release_id_from_api(release_id)?, favorite)
             .await
     }
 
     /// Sets whether a track is hidden from normal library views.
     pub async fn set_track_hidden(&self, track_id: i64, hidden: bool) -> CoreResult<()> {
         self.library_application
-            .set_track_hidden(track_id, hidden)
+            .set_track_hidden(track_id_from_api(track_id)?, hidden)
             .await
     }
 
     /// Sets whether a release is hidden from normal library views.
     pub async fn set_release_hidden(&self, release_id: i64, hidden: bool) -> CoreResult<()> {
         self.library_application
-            .set_release_hidden(release_id, hidden)
+            .set_release_hidden(release_id_from_api(release_id)?, hidden)
             .await
     }
 
@@ -623,7 +636,7 @@ impl DurvaldCore {
         suggest_less: bool,
     ) -> CoreResult<()> {
         self.library_application
-            .set_track_suggest_less(track_id, suggest_less)
+            .set_track_suggest_less(track_id_from_api(track_id)?, suggest_less)
             .await
     }
 
@@ -634,7 +647,7 @@ impl DurvaldCore {
         suggest_less: bool,
     ) -> CoreResult<()> {
         self.library_application
-            .set_release_suggest_less(release_id, suggest_less)
+            .set_release_suggest_less(release_id_from_api(release_id)?, suggest_less)
             .await
     }
 
@@ -659,14 +672,14 @@ impl DurvaldCore {
     /// Sets or clears a track rating on the 0–5 scale.
     pub async fn set_track_rating(&self, track_id: i64, rating: Option<u8>) -> CoreResult<()> {
         self.library_application
-            .set_track_rating(track_id, rating)
+            .set_track_rating(track_id_from_api(track_id)?, rating)
             .await
     }
 
     /// Sets or clears a release rating on the 0–5 scale.
     pub async fn set_release_rating(&self, release_id: i64, rating: Option<u8>) -> CoreResult<()> {
         self.library_application
-            .set_release_rating(release_id, rating)
+            .set_release_rating(release_id_from_api(release_id)?, rating)
             .await
     }
 
