@@ -642,38 +642,30 @@ impl DurvaldCore {
 
     /// Sets whether a track is favorited.
     pub async fn set_track_favorite(&self, track_id: i64, favorite: bool) -> CoreResult<()> {
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_entity_update("Track", track_id, move |conn| {
-            crate::database::operations::set_track_favorite(conn, track_id, favorite)
-        })
-        .await
+        self.library_application
+            .set_track_favorite(track_id, favorite)
+            .await
     }
 
     /// Sets whether a release is favorited.
     pub async fn set_release_favorite(&self, release_id: i64, favorite: bool) -> CoreResult<()> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_entity_update("Release", release_id, move |conn| {
-            crate::database::operations::set_release_favorite(conn, release_id, favorite)
-        })
-        .await
+        self.library_application
+            .set_release_favorite(release_id, favorite)
+            .await
     }
 
     /// Sets whether a track is hidden from normal library views.
     pub async fn set_track_hidden(&self, track_id: i64, hidden: bool) -> CoreResult<()> {
-        let track_id = non_negative_id(track_id, "Track ID")?;
-        self.run_entity_update("Track", track_id, move |conn| {
-            crate::database::operations::set_track_hidden(conn, track_id, hidden)
-        })
-        .await
+        self.library_application
+            .set_track_hidden(track_id, hidden)
+            .await
     }
 
     /// Sets whether a release is hidden from normal library views.
     pub async fn set_release_hidden(&self, release_id: i64, hidden: bool) -> CoreResult<()> {
-        let release_id = non_negative_id(release_id, "Release ID")?;
-        self.run_entity_update("Release", release_id, move |conn| {
-            crate::database::operations::set_release_hidden(conn, release_id, hidden)
-        })
-        .await
+        self.library_application
+            .set_release_hidden(release_id, hidden)
+            .await
     }
 
     /// Sets whether recommendations should de-emphasize a track.

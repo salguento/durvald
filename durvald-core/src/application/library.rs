@@ -494,6 +494,66 @@ impl LibraryApplication {
         .await
     }
 
+    pub(crate) async fn set_track_favorite(&self, track_id: i64, favorite: bool) -> CoreResult<()> {
+        let track_id = non_negative_id(track_id, "Track ID")?;
+        self.run_entity_update("Track", track_id, move |conn| {
+            crate::database::operations::set_track_favorite(conn, track_id, favorite)
+        })
+        .await
+    }
+
+    pub(crate) async fn set_release_favorite(
+        &self,
+        release_id: i64,
+        favorite: bool,
+    ) -> CoreResult<()> {
+        let release_id = non_negative_id(release_id, "Release ID")?;
+        self.run_entity_update("Release", release_id, move |conn| {
+            crate::database::operations::set_release_favorite(conn, release_id, favorite)
+        })
+        .await
+    }
+
+    pub(crate) async fn set_track_hidden(&self, track_id: i64, hidden: bool) -> CoreResult<()> {
+        let track_id = non_negative_id(track_id, "Track ID")?;
+        self.run_entity_update("Track", track_id, move |conn| {
+            crate::database::operations::set_track_hidden(conn, track_id, hidden)
+        })
+        .await
+    }
+
+    pub(crate) async fn set_release_hidden(&self, release_id: i64, hidden: bool) -> CoreResult<()> {
+        let release_id = non_negative_id(release_id, "Release ID")?;
+        self.run_entity_update("Release", release_id, move |conn| {
+            crate::database::operations::set_release_hidden(conn, release_id, hidden)
+        })
+        .await
+    }
+
+    async fn run_entity_update<F>(
+        &self,
+        entity: &'static str,
+        id: u64,
+        operation: F,
+    ) -> CoreResult<()>
+    where
+        F: FnOnce(&rusqlite::Connection) -> crate::database::operations::DatabaseResult<bool>
+            + Send
+            + 'static,
+    {
+        self.run_database_core(move |conn| {
+            if !operation(conn).map_err(|error| CoreError::Storage {
+                message: error.to_string(),
+            })? {
+                return Err(CoreError::NotFound {
+                    message: format!("{entity} {id} not found"),
+                });
+            }
+            Ok(())
+        })
+        .await
+    }
+
     async fn run_database<T, F>(&self, operation: F) -> CoreResult<T>
     where
         T: Send + 'static,
