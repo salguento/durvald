@@ -424,15 +424,7 @@ impl LibraryApplication {
             .catalog_artist_query
             .all()
             .await
-            .map(|artists| {
-                artists
-                    .into_iter()
-                    .map(|artist| Artist {
-                        id: artist.artist_id as i64,
-                        name: artist.artist_name,
-                    })
-                    .collect()
-            })
+            .map(|artists| artists.into_iter().map(artist_from_catalog).collect())
             .map_err(catalog_artist_storage_error)
     }
 
@@ -441,10 +433,7 @@ impl LibraryApplication {
             .catalog_artist_query
             .find(artist_id)
             .await
-            .map(|artist| Artist {
-                id: artist.artist_id as i64,
-                name: artist.artist_name,
-            })
+            .map(artist_from_catalog)
             .map_err(|error| catalog_artist_error(error, artist_id))
     }
 
@@ -734,6 +723,13 @@ pub(crate) fn track_from_catalog(track: crate::domain::catalog::CatalogTrack) ->
         is_favorite: track.is_favorite,
         is_hidden: track.is_hidden,
         suggest_less: track.suggest_less,
+    }
+}
+
+fn artist_from_catalog(artist: crate::domain::catalog::CatalogArtist) -> Artist {
+    Artist {
+        id: artist.id.get() as i64,
+        name: artist.name,
     }
 }
 

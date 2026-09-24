@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{
     database::models::ArtistItem,
     domain::{
-        catalog::{CatalogRelease, CatalogTrack},
+        catalog::{CatalogArtist, CatalogRelease, CatalogTrack},
         ids::ArtistId,
     },
     infrastructure::sqlite::catalog_release::release_from_row,
@@ -31,13 +31,14 @@ impl SqliteCatalogArtistQuery {
     pub(crate) async fn find(
         &self,
         artist_id: ArtistId,
-    ) -> Result<ArtistItem, CatalogArtistLookupError> {
+    ) -> Result<CatalogArtist, CatalogArtistLookupError> {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool
                 .get()
                 .map_err(|error| CatalogArtistLookupError::Storage(error.to_string()))?;
             crate::database::operations::get_artist_by_id(&conn, &artist_id.get().to_string())
+                .map(artist_from_row)
                 .map_err(|error| {
                     if matches!(
                         &error,
@@ -98,18 +99,26 @@ impl SqliteCatalogArtistQuery {
         })?
     }
 
-    pub(crate) async fn all(&self) -> Result<Vec<ArtistItem>, CatalogArtistLookupError> {
+    pub(crate) async fn all(&self) -> Result<Vec<CatalogArtist>, CatalogArtistLookupError> {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool
                 .get()
                 .map_err(|error| CatalogArtistLookupError::Storage(error.to_string()))?;
             crate::database::operations::get_all_artists(&conn)
+                .map(|artists| artists.into_iter().map(artist_from_row).collect())
                 .map_err(|error| CatalogArtistLookupError::Storage(error.to_string()))
         })
         .await
         .map_err(|error| {
             CatalogArtistLookupError::Storage(format!("Blocking database task failed: {error}"))
         })?
+    }
+}
+
+pub(crate) fn artist_from_row(row: ArtistItem) -> CatalogArtist {
+    CatalogArtist {
+        id: ArtistId::from_persisted(row.artist_id),
+        name: row.artist_name,
     }
 }

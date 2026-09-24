@@ -2,6 +2,11 @@
 
 use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
 
+pub(crate) struct CatalogArtist {
+    pub(crate) id: ArtistId,
+    pub(crate) name: String,
+}
+
 pub(crate) struct CatalogTrack {
     pub(crate) id: TrackId,
     pub(crate) title: String,
