@@ -1,10 +1,10 @@
 # Estado da refatoração arquitetural do core
 
-Última atualização: 23 de setembro de 2026
+Última atualização: 24 de setembro de 2026
 
-Commit de referência: `3eb964c refactor(core): isolate library scan reconciliation`
+Commit de referência: `df9c31a refactor(core): isolate scan metadata extraction`
 
-Estado adicional: extração local de metadata isolada e ainda não commitada
+Estado adicional: resolução inicial de faixa no playback isolada e ainda não commitada
 
 ## Visão geral
 
@@ -234,7 +234,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | Serviço | Referências diretas | Escopo restante |
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
-| `PlaybackApplication` | 12 | resolução de faixas, sessão e registro de conclusão |
+| `PlaybackApplication` | 11 | resolução de faixas, sessão e registro de conclusão |
 | `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
@@ -263,8 +263,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit o adapter local de extração de metadata atualmente no working tree;
-2. extrair de `PlaybackApplication` a resolução SQLite de faixas e a
+1. registrar em commit a resolução inicial de faixa no playback atualmente no working tree;
+2. concluir em `PlaybackApplication` a resolução SQLite de faixas e a
    persistência da última sessão;
 3. criar o adapter SQLite de playlists, começando pelas consultas antes das
    mutações;
@@ -318,4 +318,5 @@ públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `c804cb2` | Preparação do scan isolada em adapter SQLite |
 | 23/09/2026 | `14bfedf` | Persistência dos lotes do scan isolada em adapter SQLite |
 | 23/09/2026 | `3eb964c` | Reconciliação SQLite do scan isolada em adapter SQLite |
-| 23/09/2026 | estado não commitado | Extração local de metadata isolada do namespace de banco |
+| 24/09/2026 | `df9c31a` | Extração local de metadata isolada do namespace de banco |
+| 24/09/2026 | estado não commitado | Resolução inicial de faixa do playback redirecionada ao adapter de catálogo |

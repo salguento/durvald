@@ -9,6 +9,7 @@ use crate::{
     api::{CoreError, CoreResult, LastSession, PlaybackSnapshot, QueueItem, RepeatMode, Track},
     audio::AudioPlayer,
     domain::ids::TrackId,
+    infrastructure::sqlite::catalog_track::{CatalogTrackLookupError, SqliteCatalogTrackQuery},
     lastfm::LastFmClient,
 };
 
@@ -38,6 +39,7 @@ struct AutomaticPlaybackEvent {
 #[allow(dead_code)]
 pub(crate) struct PlaybackApplication {
     db_pool: Arc<DatabasePool>,
+    track_query: SqliteCatalogTrackQuery,
     audio_player: Arc<tokio::sync::Mutex<AudioPlayer>>,
     playback_transition: tokio::sync::Mutex<()>,
     lastfm: Arc<LastFmClient>,
@@ -47,11 +49,13 @@ pub(crate) struct PlaybackApplication {
 impl PlaybackApplication {
     pub(crate) fn new(
         db_pool: Arc<DatabasePool>,
+        track_query: SqliteCatalogTrackQuery,
         audio_player: AudioPlayer,
         lastfm: Arc<LastFmClient>,
     ) -> Self {
         Self {
             db_pool,
+            track_query,
             audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
             playback_transition: tokio::sync::Mutex::new(()),
             lastfm,
@@ -107,26 +111,12 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn play(&self, track_id: TrackId) -> CoreResult<PlaybackSnapshot> {
+        let track = self
+            .track_query
+            .find(track_id)
+            .await
+            .map_err(|error| playback_track_error(error, track_id))?;
         let track_id = track_id.get() as i64;
-        let db_pool = self.db_pool.clone();
-        let track = tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })?;
-            crate::database::operations::get_song_by_id(&conn, &track_id.to_string())
-                .map_err(|error| CoreError::Storage {
-                    message: error.to_string(),
-                })?
-                .into_iter()
-                .next()
-                .ok_or_else(|| CoreError::NotFound {
-                    message: format!("Track {track_id} not found"),
-                })
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Blocking database task failed: {error}"),
-        })??;
 
         let _transition = self.playback_transition.lock().await;
         let prepared = self.prepare_sound(track.file_path).await?;
@@ -740,6 +730,15 @@ impl PlaybackApplication {
             .await
             .as_ref()
             .is_some_and(|playback| playback.track_id == track_id)
+    }
+}
+
+fn playback_track_error(error: CatalogTrackLookupError, track_id: TrackId) -> CoreError {
+    match error {
+        CatalogTrackLookupError::NotFound => CoreError::NotFound {
+            message: format!("Track {} not found", track_id.get()),
+        },
+        CatalogTrackLookupError::Storage(message) => CoreError::Storage { message },
     }
 }
 
