@@ -7,6 +7,7 @@
 use crate::api::*;
 use crate::application::enrichment::EnrichmentApplication;
 use crate::application::history::HistoryApplication;
+use crate::application::lastfm::{LastFmApplication, lastfm_error};
 use crate::application::library::LibraryApplication;
 pub(crate) use crate::application::library::track_from_song;
 use crate::application::metadata::MetadataApplication;
@@ -19,7 +20,7 @@ use crate::application::playlist::PlaylistApplication;
 use crate::application::settings::{SettingsApplication, normalized_cross_fade_duration};
 #[cfg(test)]
 use crate::application::settings::{normalized_audio_quality, validate_settings};
-use crate::lastfm::{LastFmClient, LastFmError};
+use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
 /// Opaque core engine - the main entry point for all operations.
@@ -32,6 +33,7 @@ pub struct DurvaldCore {
     enrichment_application: EnrichmentApplication,
     history_application: HistoryApplication,
     library_application: Arc<LibraryApplication>,
+    lastfm_application: LastFmApplication,
     metadata_application: MetadataApplication,
     playback_application: Arc<PlaybackApplication>,
     playlist_application: PlaylistApplication,
@@ -164,18 +166,6 @@ fn repeat_mode_from_string(mode: &str) -> RepeatMode {
         "one" => RepeatMode::One,
         "all" => RepeatMode::All,
         _ => RepeatMode::None,
-    }
-}
-
-fn lastfm_error(error: LastFmError) -> CoreError {
-    let message = error.to_string();
-    match error {
-        LastFmError::Network(_) | LastFmError::RateLimit(_) => CoreError::Network { message },
-        LastFmError::NotConnected | LastFmError::Api { .. } => {
-            CoreError::Authentication { message }
-        }
-        LastFmError::SecureStore(_) => CoreError::Storage { message },
-        _ => CoreError::Network { message },
     }
 }
 
@@ -343,6 +333,7 @@ impl DurvaldCore {
             enrichment,
             db_pool: db_pool.clone(),
             history_application: HistoryApplication::new(db_pool.clone()),
+            lastfm_application: LastFmApplication::new(lastfm.clone()),
             library_application,
             metadata_application: MetadataApplication::new(
                 db_pool.clone(),
@@ -842,16 +833,7 @@ impl DurvaldCore {
 
     /// Returns Last.fm connection status.
     pub async fn lastfm_status(&self) -> CoreResult<LastFmStatus> {
-        let connected = self.lastfm.is_connected().await;
-        let username = if connected {
-            self.lastfm.username().await.map_err(lastfm_error)?
-        } else {
-            None
-        };
-        Ok(LastFmStatus {
-            connected,
-            username,
-        })
+        self.lastfm_application.status().await
     }
 
     /// Stores Last.fm API credentials in the secure store.
@@ -872,14 +854,7 @@ impl DurvaldCore {
 
     /// Starts browser-based Last.fm authorization and returns its approval URL.
     pub async fn lastfm_auth_token(&self) -> CoreResult<AuthTokenResponse> {
-        self.lastfm
-            .get_auth_token()
-            .await
-            .map(|response| AuthTokenResponse {
-                token: response.token,
-                auth_url: response.auth_url,
-            })
-            .map_err(lastfm_error)
+        self.lastfm_application.auth_token().await
     }
 
     /// Completes Last.fm authorization after the user approved the token.
