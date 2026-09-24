@@ -7,6 +7,7 @@ use base64::Engine;
 use crate::{
     api::{CoreError, CoreResult, Playlist, PlaylistTrack, Track},
     application::library::track_from_song,
+    domain::ids::{PlaylistId, TrackId},
 };
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -56,8 +57,8 @@ impl PlaylistApplication {
         .await
     }
 
-    pub(crate) async fn playlist(&self, playlist_id: i64) -> CoreResult<Playlist> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+    pub(crate) async fn playlist(&self, playlist_id: PlaylistId) -> CoreResult<Playlist> {
+        let playlist_id = playlist_id.get();
         self.run_database_core(move |conn| {
             let playlist = crate::database::operations::get_playlist_by_id(conn, playlist_id)
                 .map_err(|error| lookup_error(error, "Playlist", playlist_id))?;
@@ -74,7 +75,7 @@ impl PlaylistApplication {
 
     pub(crate) async fn update_playlist(
         &self,
-        playlist_id: i64,
+        playlist_id: PlaylistId,
         name: String,
         description: String,
         artwork_base64: Option<String>,
@@ -84,7 +85,7 @@ impl PlaylistApplication {
                 message: "Playlist name cannot be empty".to_string(),
             });
         }
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        let playlist_id = playlist_id.get();
         self.run_entity_update("Playlist", playlist_id, move |conn| {
             crate::database::operations::update_playlist(
                 conn,
@@ -97,8 +98,8 @@ impl PlaylistApplication {
         .await
     }
 
-    pub(crate) async fn delete_playlist(&self, playlist_id: i64) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+    pub(crate) async fn delete_playlist(&self, playlist_id: PlaylistId) -> CoreResult<()> {
+        let playlist_id = playlist_id.get();
         self.run_entity_update("Playlist", playlist_id, move |conn| {
             crate::database::operations::delete_playlist(conn, playlist_id)
         })
@@ -107,10 +108,10 @@ impl PlaylistApplication {
 
     pub(crate) async fn set_playlist_favorite(
         &self,
-        playlist_id: i64,
+        playlist_id: PlaylistId,
         favorite: bool,
     ) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        let playlist_id = playlist_id.get();
         self.run_entity_update("Playlist", playlist_id, move |conn| {
             crate::database::operations::set_playlist_favorite(conn, playlist_id, favorite)
         })
@@ -119,18 +120,18 @@ impl PlaylistApplication {
 
     pub(crate) async fn set_playlist_suggest_less(
         &self,
-        playlist_id: i64,
+        playlist_id: PlaylistId,
         suggest_less: bool,
     ) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        let playlist_id = playlist_id.get();
         self.run_entity_update("Playlist", playlist_id, move |conn| {
             crate::database::operations::set_playlist_suggest_less(conn, playlist_id, suggest_less)
         })
         .await
     }
 
-    pub(crate) async fn playlist_tracks(&self, playlist_id: i64) -> CoreResult<Vec<Track>> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+    pub(crate) async fn playlist_tracks(&self, playlist_id: PlaylistId) -> CoreResult<Vec<Track>> {
+        let playlist_id = playlist_id.get();
         self.run_database(move |conn| {
             crate::database::operations::get_playlist_tracks(conn, playlist_id)
                 .map(|tracks| tracks.into_iter().map(track_from_song).collect())
@@ -141,12 +142,12 @@ impl PlaylistApplication {
 
     pub(crate) async fn add_track_to_playlist(
         &self,
-        playlist_id: i64,
-        track_id: i64,
+        playlist_id: PlaylistId,
+        track_id: TrackId,
         position: u64,
     ) -> CoreResult<PlaylistTrack> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        let track_id = non_negative_id(track_id, "Track ID")?;
+        let playlist_id = playlist_id.get();
+        let track_id = track_id.get();
         self.run_database(move |conn| {
             crate::database::operations::add_track_to_playlist_songs(
                 conn,
@@ -167,12 +168,12 @@ impl PlaylistApplication {
 
     pub(crate) async fn remove_track_from_playlist(
         &self,
-        playlist_id: i64,
-        track_id: i64,
+        playlist_id: PlaylistId,
+        track_id: TrackId,
         position: u64,
     ) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
-        let track_id = non_negative_id(track_id, "Track ID")?;
+        let playlist_id = playlist_id.get();
+        let track_id = track_id.get();
         self.run_database(move |conn| {
             crate::database::operations::remove_track_from_playlist(
                 conn,
@@ -187,11 +188,11 @@ impl PlaylistApplication {
 
     pub(crate) async fn move_playlist_track(
         &self,
-        playlist_id: i64,
+        playlist_id: PlaylistId,
         from: u64,
         to: u64,
     ) -> CoreResult<()> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        let playlist_id = playlist_id.get();
         self.run_database(move |conn| {
             crate::database::operations::move_playlist_track(conn, playlist_id, from, to)
                 .map_err(|error| error.to_string())
@@ -201,9 +202,9 @@ impl PlaylistApplication {
 
     pub(crate) async fn playlist_artwork_bytes(
         &self,
-        playlist_id: i64,
+        playlist_id: PlaylistId,
     ) -> CoreResult<Option<Vec<u8>>> {
-        let playlist_id = non_negative_id(playlist_id, "Playlist ID")?;
+        let playlist_id = playlist_id.get();
         self.run_database(move |conn| {
             crate::database::operations::get_playlist_by_id(conn, playlist_id)
                 .map(|playlist| playlist.cover)
@@ -289,12 +290,6 @@ fn playlist_from_database(
         created_at: playlist.created_at,
         updated_at: playlist.updated_at,
     }
-}
-
-fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
-    u64::try_from(value).map_err(|_| CoreError::InvalidInput {
-        message: format!("{label} must not be negative"),
-    })
 }
 
 fn lookup_error(

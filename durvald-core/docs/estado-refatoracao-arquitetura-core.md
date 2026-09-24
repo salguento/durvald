@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `345a2a1 refactor(core): type playback track inputs`
+Commit de referência: `1734345 refactor(core): type metadata track inputs`
 
-Estado adicional: extensão de `TrackId` a metadata implementada e ainda não commitada
+Estado adicional: introdução de `PlaylistId` implementada e ainda não commitada
 
 ## Visão geral
 
@@ -44,8 +44,8 @@ linhas, uma redução próxima de 54%, mantendo 89 operações assíncronas
 públicas. A API foi preservada enquanto a implementação interna foi deslocada
 para serviços de aplicação.
 
-O Marco 6 também introduziu `src/domain/ids.rs`, inicialmente com `TrackId`,
-`ReleaseId` e `ArtistId`. A fachada converte os valores `i64` da API pública e
+O Marco 6 também introduziu `src/domain/ids.rs`, com `TrackId`, `ReleaseId`,
+`ArtistId` e `PlaylistId`. A fachada converte os valores `i64` da API pública e
 as operações de catálogo migradas recebem apenas IDs já validados.
 
 ## Implementações concluídas
@@ -190,7 +190,7 @@ mas o gate multiplataforma completo precisa ser renovado no próximo checkpoint.
 Já foi concluído:
 
 - criação do módulo interno `domain`;
-- introdução de `TrackId`, `ReleaseId` e `ArtistId`;
+- introdução de `TrackId`, `ReleaseId`, `ArtistId` e `PlaylistId`;
 - conversão de IDs na fronteira pública das operações migradas;
 - uso de IDs tipados nas mutações e consultas de catálogo;
 - remoção da validação primitiva duplicada de `LibraryApplication`.
@@ -224,7 +224,7 @@ Continuar a introdução gradual de IDs de domínio nas áreas já estabilizadas
 
 1. concluir `ArtistId` nas consultas de catálogo e sua ponte com enrichment — **concluído**;
 2. levar `TrackId` às entradas de playback e metadata — **concluído**;
-3. introduzir `PlaylistId` nas operações de playlist;
+3. introduzir `PlaylistId` nas operações de playlist — **concluído**;
 4. manter a conversão de `i64` concentrada na fachada pública;
 5. somente depois separar rows SQLite dos DTOs públicos de uma área pequena;
 6. então extrair o primeiro adapter em `infrastructure/sqlite`, sem reescrever queries;
@@ -248,4 +248,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `8558dbc`–`903fe71` | Início do Marco 6 com IDs de domínio para catálogo |
 | 23/09/2026 | `7fa544e` | Extensão de `ArtistId` às consultas de catálogo e à ponte de enrichment |
 | 23/09/2026 | `345a2a1` | Extensão inicial de `TrackId` às entradas de playback |
-| 23/09/2026 | estado não commitado | Extensão de `TrackId` às entradas de metadata |
+| 23/09/2026 | `1734345` | Extensão de `TrackId` às entradas de metadata |
+| 23/09/2026 | estado não commitado | Introdução de `PlaylistId` nas operações de playlist |

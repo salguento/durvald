@@ -20,7 +20,7 @@ use crate::application::playlist::PlaylistApplication;
 use crate::application::settings::{SettingsApplication, normalized_cross_fade_duration};
 #[cfg(test)]
 use crate::application::settings::{normalized_audio_quality, validate_settings};
-use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
+use crate::domain::ids::{ArtistId, PlaylistId, ReleaseId, TrackId};
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
@@ -117,6 +117,12 @@ fn artist_id_from_api(value: i64) -> CoreResult<ArtistId> {
 fn release_id_from_api(value: i64) -> CoreResult<ReleaseId> {
     ReleaseId::try_from(value).map_err(|_| CoreError::InvalidInput {
         message: "Release ID must not be negative".to_string(),
+    })
+}
+
+fn playlist_id_from_api(value: i64) -> CoreResult<PlaylistId> {
+    PlaylistId::try_from(value).map_err(|_| CoreError::InvalidInput {
+        message: "Playlist ID must not be negative".to_string(),
     })
 }
 
@@ -574,7 +580,9 @@ impl DurvaldCore {
 
     /// Gets one playlist by ID.
     pub async fn playlist(&self, playlist_id: i64) -> CoreResult<Playlist> {
-        self.playlist_application.playlist(playlist_id).await
+        self.playlist_application
+            .playlist(playlist_id_from_api(playlist_id)?)
+            .await
     }
 
     /// Updates a playlist's name, description, and optional artwork.
@@ -586,18 +594,27 @@ impl DurvaldCore {
         artwork_base64: Option<String>,
     ) -> CoreResult<()> {
         self.playlist_application
-            .update_playlist(playlist_id, name, description, artwork_base64)
+            .update_playlist(
+                playlist_id_from_api(playlist_id)?,
+                name,
+                description,
+                artwork_base64,
+            )
             .await
     }
 
     /// Deletes a playlist and its track entries.
     pub async fn delete_playlist(&self, playlist_id: i64) -> CoreResult<()> {
-        self.playlist_application.delete_playlist(playlist_id).await
+        self.playlist_application
+            .delete_playlist(playlist_id_from_api(playlist_id)?)
+            .await
     }
 
     /// Returns tracks in playlist order.
     pub async fn playlist_tracks(&self, playlist_id: i64) -> CoreResult<Vec<Track>> {
-        self.playlist_application.playlist_tracks(playlist_id).await
+        self.playlist_application
+            .playlist_tracks(playlist_id_from_api(playlist_id)?)
+            .await
     }
 
     /// Loads persisted track or release artwork as bytes for Swift `Data`.
@@ -609,7 +626,7 @@ impl DurvaldCore {
     /// Loads a playlist's artwork blob as bytes for Swift `Data`.
     pub async fn playlist_artwork_bytes(&self, playlist_id: i64) -> CoreResult<Option<Vec<u8>>> {
         self.playlist_application
-            .playlist_artwork_bytes(playlist_id)
+            .playlist_artwork_bytes(playlist_id_from_api(playlist_id)?)
             .await
     }
 
@@ -666,7 +683,7 @@ impl DurvaldCore {
     /// Sets whether a playlist is favorited.
     pub async fn set_playlist_favorite(&self, playlist_id: i64, favorite: bool) -> CoreResult<()> {
         self.playlist_application
-            .set_playlist_favorite(playlist_id, favorite)
+            .set_playlist_favorite(playlist_id_from_api(playlist_id)?, favorite)
             .await
     }
 
@@ -677,7 +694,7 @@ impl DurvaldCore {
         suggest_less: bool,
     ) -> CoreResult<()> {
         self.playlist_application
-            .set_playlist_suggest_less(playlist_id, suggest_less)
+            .set_playlist_suggest_less(playlist_id_from_api(playlist_id)?, suggest_less)
             .await
     }
 
@@ -703,7 +720,11 @@ impl DurvaldCore {
         position: u64,
     ) -> CoreResult<PlaylistTrack> {
         self.playlist_application
-            .add_track_to_playlist(playlist_id, track_id, position)
+            .add_track_to_playlist(
+                playlist_id_from_api(playlist_id)?,
+                track_id_from_api(track_id)?,
+                position,
+            )
             .await
     }
 
@@ -715,7 +736,11 @@ impl DurvaldCore {
         position: u64,
     ) -> CoreResult<()> {
         self.playlist_application
-            .remove_track_from_playlist(playlist_id, track_id, position)
+            .remove_track_from_playlist(
+                playlist_id_from_api(playlist_id)?,
+                track_id_from_api(track_id)?,
+                position,
+            )
             .await
     }
 
@@ -727,7 +752,7 @@ impl DurvaldCore {
         to: u64,
     ) -> CoreResult<()> {
         self.playlist_application
-            .move_playlist_track(playlist_id, from, to)
+            .move_playlist_track(playlist_id_from_api(playlist_id)?, from, to)
             .await
     }
 
