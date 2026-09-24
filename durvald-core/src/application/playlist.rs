@@ -200,13 +200,10 @@ impl PlaylistApplication {
         &self,
         playlist_id: PlaylistId,
     ) -> CoreResult<Option<Vec<u8>>> {
-        let playlist_id = playlist_id.get();
-        self.run_database(move |conn| {
-            crate::database::operations::get_playlist_by_id(conn, playlist_id)
-                .map(|playlist| playlist.cover)
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.repository
+            .artwork(playlist_id)
+            .await
+            .map_err(|message| CoreError::Storage { message })
     }
 
     async fn run_database<T, F>(&self, operation: F) -> CoreResult<T>

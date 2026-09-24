@@ -81,4 +81,16 @@ impl SqlitePlaylistRepository {
         .await
         .map_err(|error| format!("Playlist tracks query task failed: {error}"))?
     }
+
+    pub(crate) async fn artwork(&self, playlist_id: PlaylistId) -> Result<Option<Vec<u8>>, String> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::get_playlist_by_id(&conn, playlist_id.get())
+                .map(|playlist| playlist.cover)
+                .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| format!("Playlist artwork query task failed: {error}"))?
+    }
 }
