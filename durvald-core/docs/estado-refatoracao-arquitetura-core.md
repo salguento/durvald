@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `5b58adf refactor(core): load settings through sqlite adapter`
+Commit de referência: `c1a0596 refactor(core): isolate track metadata persistence`
 
-Estado adicional: persistência de metadata isolada em adapter e ainda não commitada
+Estado adicional: persistência de paths da biblioteca isolada e ainda não commitada
 
 ## Visão geral
 
@@ -198,7 +198,8 @@ Já foi concluído:
 - criação inicial de `infrastructure/sqlite` para histórico de reprodução;
 - separação entre row SQLite, modelo de domínio e DTO público em histórico;
 - aplicação do mesmo corte arquitetural à persistência de settings;
-- retirada de pool e conexão SQLite de `MetadataApplication`.
+- retirada de pool e conexão SQLite de `MetadataApplication`;
+- extração incremental da persistência de paths de `LibraryApplication`.
 
 Ainda falta:
 
@@ -260,4 +261,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `47ca7e7` | Primeiro adapter SQLite e modelo de domínio para histórico |
 | 23/09/2026 | `e1f5a9f` | Adapter SQLite e modelo de domínio para settings |
 | 23/09/2026 | `5b58adf` | Leitura inicial de settings redirecionada ao adapter SQLite |
-| 23/09/2026 | estado não commitado | Persistência de metadata isolada em adapter SQLite |
+| 23/09/2026 | `c1a0596` | Persistência de metadata isolada em adapter SQLite |
+| 23/09/2026 | estado não commitado | Persistência de paths da biblioteca isolada em adapter SQLite |

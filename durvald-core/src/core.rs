@@ -23,6 +23,7 @@ use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
+use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
 use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
@@ -300,6 +301,7 @@ impl DurvaldCore {
         );
         let library_application = Arc::new(LibraryApplication::new(
             db_pool.clone(),
+            SqliteLibraryPathsRepository::new(db_pool.clone()),
             config.covers_dir.clone(),
             metadata_edit_queue.clone(),
         ));

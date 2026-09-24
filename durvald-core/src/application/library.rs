@@ -15,12 +15,14 @@ use crate::api::{
     ScanResult, SearchResults, Track, TrackPage,
 };
 use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
+use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
 /// Coordinates library use cases behind the public core facade.
 pub(crate) struct LibraryApplication {
     db_pool: Arc<DatabasePool>,
+    library_paths_repository: SqliteLibraryPathsRepository,
     covers_dir: String,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     scan_in_progress: Arc<AtomicBool>,
@@ -31,11 +33,13 @@ pub(crate) struct LibraryApplication {
 impl LibraryApplication {
     pub(crate) fn new(
         db_pool: Arc<DatabasePool>,
+        library_paths_repository: SqliteLibraryPathsRepository,
         covers_dir: String,
         metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
         Self {
             db_pool,
+            library_paths_repository,
             covers_dir,
             metadata_edit_queue,
             scan_in_progress: Arc::new(AtomicBool::new(false)),
@@ -264,46 +268,36 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn add_library_path(&self, path: String) -> CoreResult<()> {
-        self.run_database_core(move |conn| {
-            if !std::path::Path::new(&path).is_dir() {
-                return Err(CoreError::InvalidInput {
-                    message: format!("Library path is not a directory: {path}"),
-                });
-            }
-            crate::database::operations::add_library_path(conn, path).map_err(|error| {
-                CoreError::Storage {
-                    message: error.to_string(),
-                }
-            })
-        })
-        .await
+        if !std::path::Path::new(&path).is_dir() {
+            return Err(CoreError::InvalidInput {
+                message: format!("Library path is not a directory: {path}"),
+            });
+        }
+        self.library_paths_repository
+            .add(path)
+            .await
+            .map_err(storage_error)
     }
 
     pub(crate) async fn library_paths(&self) -> CoreResult<Vec<String>> {
-        self.run_database(|conn| {
-            crate::database::operations::get_library_paths(conn)
-                .map(|paths| paths.into_iter().map(|path| path.path).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.library_paths_repository
+            .all()
+            .await
+            .map_err(storage_error)
     }
 
     pub(crate) async fn remove_library_path(&self, path: String) -> CoreResult<()> {
-        self.run_database_core(move |conn| {
-            let removed =
-                crate::database::operations::remove_library_path(conn, &path).map_err(|error| {
-                    CoreError::Storage {
-                        message: error.to_string(),
-                    }
-                })?;
-            if !removed {
-                return Err(CoreError::NotFound {
-                    message: format!("Library path is not configured: {path}"),
-                });
-            }
-            Ok(())
-        })
-        .await
+        let removed = self
+            .library_paths_repository
+            .remove(path.clone())
+            .await
+            .map_err(storage_error)?;
+        if !removed {
+            return Err(CoreError::NotFound {
+                message: format!("Library path is not configured: {path}"),
+            });
+        }
+        Ok(())
     }
 
     pub(crate) async fn search(&self, query: String) -> CoreResult<SearchResults> {
@@ -676,6 +670,10 @@ fn validate_rating(rating: Option<u8>) -> CoreResult<()> {
         });
     }
     Ok(())
+}
+
+fn storage_error(message: String) -> CoreError {
+    CoreError::Storage { message }
 }
 
 fn lookup_error(
