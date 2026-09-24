@@ -36,6 +36,12 @@ impl PlaybackHistoryId {
     }
 }
 
+impl ArtistId {
+    pub(crate) fn from_persisted(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 impl PlaylistId {
     pub(crate) fn from_persisted(value: u64) -> Self {
         Self(value)
@@ -43,6 +49,12 @@ impl PlaylistId {
 }
 
 impl TrackId {
+    pub(crate) fn from_persisted(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl ReleaseId {
     pub(crate) fn from_persisted(value: u64) -> Self {
         Self(value)
     }

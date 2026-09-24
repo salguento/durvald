@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::{
     api::{CoreError, CoreResult, LastSession, PlaybackSnapshot, QueueItem, RepeatMode, Track},
+    application::library::track_from_catalog,
     audio::AudioPlayer,
     domain::{ids::TrackId, playback_session::PlaybackSessionState},
     infrastructure::sqlite::catalog_track::{CatalogTrackLookupError, SqliteCatalogTrackQuery},
@@ -401,7 +402,7 @@ impl PlaybackApplication {
         self.track_query
             .find(track_id)
             .await
-            .map(track_from_song)
+            .map(track_from_catalog)
             .map_err(|error| playback_track_error(error, track_id))
     }
 
@@ -550,7 +551,7 @@ impl PlaybackApplication {
                     .find(track_id)
                     .await
                     .ok()
-                    .map(track_from_song),
+                    .map(track_from_catalog),
                 None => None,
             }
         } else {
@@ -585,7 +586,7 @@ impl PlaybackApplication {
             artist: track.artist_name,
             title: track.title,
             release: track.release_title,
-            duration_seconds: track.duration,
+            duration_seconds: track.duration_seconds,
             started_at,
             active_since: Some(started_at),
             played_seconds: 0,
@@ -634,7 +635,7 @@ impl PlaybackApplication {
             return;
         };
         let duration = match self.track_query.find(typed_track_id).await {
-            Ok(track) => track.duration,
+            Ok(track) => track.duration_seconds,
             Err(CatalogTrackLookupError::NotFound) => 0,
             Err(CatalogTrackLookupError::Storage(_)) => return,
         };
@@ -714,31 +715,6 @@ impl PlaybackStateSnapshot {
             shuffle_enabled: player.shuffle_enabled(),
             repeat_mode: player.repeat_mode(),
         }
-    }
-}
-
-fn track_from_song(track: crate::database::models::SongItem) -> Track {
-    Track {
-        id: track.song_id as i64,
-        title: track.title,
-        artist: track.artist_name,
-        artist_id: track.artist_id as i64,
-        release: track.release_title,
-        release_id: track.release_id as i64,
-        track_number: track.track_number,
-        disc_number: track.disc_number,
-        duration_seconds: track.duration as f64,
-        file_path: track.file_path,
-        artwork_id: (!track.artwork.is_empty()).then_some(track.artwork),
-        bitrate: track.bitrate,
-        sample_rate: track.sample_rate,
-        bit_depth: track.bit_depth,
-        play_count: track.play_count,
-        last_played: track.last_played,
-        rating: track.rating,
-        is_favorite: track.is_favorite,
-        is_hidden: track.is_hidden,
-        suggest_less: track.suggest_less,
     }
 }
 

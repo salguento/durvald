@@ -372,7 +372,7 @@ impl LibraryApplication {
             .catalog_track_query
             .all()
             .await
-            .map(|tracks| tracks.into_iter().map(track_from_song).collect())
+            .map(|tracks| tracks.into_iter().map(track_from_catalog).collect())
             .map_err(catalog_track_storage_error)
     }
 
@@ -385,7 +385,7 @@ impl LibraryApplication {
             .await
             .map_err(catalog_track_storage_error)?
             .into_iter()
-            .map(track_from_song)
+            .map(track_from_catalog)
             .collect();
         let (items, next_offset) = finish_page(tracks, page_size, offset);
         Ok(TrackPage { items, next_offset })
@@ -471,7 +471,7 @@ impl LibraryApplication {
             .catalog_track_query
             .find(track_id)
             .await
-            .map(track_from_song)
+            .map(track_from_catalog)
             .map_err(|error| catalog_track_error(error, track_id))
     }
 
@@ -723,6 +723,31 @@ pub(crate) fn track_from_song(track: crate::database::models::SongItem) -> Track
         track_number: track.track_number,
         disc_number: track.disc_number,
         duration_seconds: track.duration as f64,
+        file_path: track.file_path,
+        artwork_id: (!track.artwork.is_empty()).then_some(track.artwork),
+        bitrate: track.bitrate,
+        sample_rate: track.sample_rate,
+        bit_depth: track.bit_depth,
+        play_count: track.play_count,
+        last_played: track.last_played,
+        rating: track.rating,
+        is_favorite: track.is_favorite,
+        is_hidden: track.is_hidden,
+        suggest_less: track.suggest_less,
+    }
+}
+
+pub(crate) fn track_from_catalog(track: crate::domain::catalog::CatalogTrack) -> Track {
+    Track {
+        id: track.id.get() as i64,
+        title: track.title,
+        artist: track.artist_name,
+        artist_id: track.artist_id.get() as i64,
+        release: track.release_title,
+        release_id: track.release_id.get() as i64,
+        track_number: track.track_number,
+        disc_number: track.disc_number,
+        duration_seconds: track.duration_seconds as f64,
         file_path: track.file_path,
         artwork_id: (!track.artwork.is_empty()).then_some(track.artwork),
         bitrate: track.bitrate,
