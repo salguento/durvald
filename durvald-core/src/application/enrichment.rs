@@ -1,21 +1,26 @@
 //! Enrichment use-case coordination.
 
+use std::sync::Arc;
+
 use crate::api::{
     ArtistDetails, ArtistDiscographyPage, ArtistFieldOverride, ArtistIdentity,
-    ArtistIdentityCandidates, ArtistPopularTracks, ArtistProfileField, CoreError, CoreResult,
-    EnrichmentProvider, EnrichmentSettings, ExternalReleaseDetails,
+    ArtistIdentityCandidates, ArtistPopularTracks, ArtistProfileField, ArtistRefreshRequest,
+    ArtistRefreshResult, CoreError, CoreResult, EnrichmentProvider, EnrichmentSettings,
+    ExternalReleaseDetails, Release,
 };
+use crate::application::library::LibraryApplication;
 use crate::enrichment::service::EnrichmentService;
 
 const MAX_PAGE_SIZE: u64 = 200;
 
 pub(crate) struct EnrichmentApplication {
     service: EnrichmentService,
+    library: Arc<LibraryApplication>,
 }
 
 impl EnrichmentApplication {
-    pub(crate) fn new(service: EnrichmentService) -> Self {
-        Self { service }
+    pub(crate) fn new(service: EnrichmentService, library: Arc<LibraryApplication>) -> Self {
+        Self { service, library }
     }
 
     pub(crate) async fn artist_details(
@@ -115,6 +120,23 @@ impl EnrichmentApplication {
 
     pub(crate) async fn clear_provider_data(&self, provider: EnrichmentProvider) -> CoreResult<()> {
         self.service.clear_provider_data(provider).await
+    }
+
+    pub(crate) async fn refresh_artist(
+        &self,
+        artist_id: i64,
+        request: ArtistRefreshRequest,
+    ) -> CoreResult<ArtistRefreshResult> {
+        self.service.refresh_artist(artist_id, request).await
+    }
+
+    pub(crate) async fn sync_artist_release_metadata(
+        &self,
+        artist_id: i64,
+    ) -> CoreResult<Vec<Release>> {
+        non_negative_id(artist_id, "Artist ID")?;
+        self.service.sync_local_release_metadata(artist_id).await?;
+        self.library.artist_releases(artist_id).await
     }
 }
 

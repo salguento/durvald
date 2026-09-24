@@ -31,7 +31,7 @@ pub struct DurvaldCore {
     db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
     enrichment_application: EnrichmentApplication,
     history_application: HistoryApplication,
-    library_application: LibraryApplication,
+    library_application: Arc<LibraryApplication>,
     metadata_application: MetadataApplication,
     playback_application: Arc<PlaybackApplication>,
     playlist_application: PlaylistApplication,
@@ -330,16 +330,20 @@ impl DurvaldCore {
             config.covers_dir.clone(),
             lastfm.clone(),
         );
+        let library_application = Arc::new(LibraryApplication::new(
+            db_pool.clone(),
+            config.covers_dir.clone(),
+            metadata_edit_queue.clone(),
+        ));
         let core = Self {
-            enrichment_application: EnrichmentApplication::new(enrichment.clone()),
+            enrichment_application: EnrichmentApplication::new(
+                enrichment.clone(),
+                library_application.clone(),
+            ),
             enrichment,
             db_pool: db_pool.clone(),
             history_application: HistoryApplication::new(db_pool.clone()),
-            library_application: LibraryApplication::new(
-                db_pool.clone(),
-                config.covers_dir.clone(),
-                metadata_edit_queue.clone(),
-            ),
+            library_application,
             metadata_application: MetadataApplication::new(
                 db_pool.clone(),
                 config.covers_dir.clone(),
@@ -540,17 +544,17 @@ impl DurvaldCore {
         artist_id: i64,
         request: ArtistRefreshRequest,
     ) -> CoreResult<ArtistRefreshResult> {
-        self.enrichment.refresh_artist(artist_id, request).await
+        self.enrichment_application
+            .refresh_artist(artist_id, request)
+            .await
     }
 
     /// Applies metadata from the artist's cached MusicBrainz catalog to local
     /// releases and returns the refreshed local collection without network I/O.
     pub async fn sync_artist_release_metadata(&self, artist_id: i64) -> CoreResult<Vec<Release>> {
-        non_negative_id(artist_id, "Artist ID")?;
-        self.enrichment
-            .sync_local_release_metadata(artist_id)
-            .await?;
-        self.artist_releases(artist_id).await
+        self.enrichment_application
+            .sync_artist_release_metadata(artist_id)
+            .await
     }
 
     pub async fn set_artist_override(
