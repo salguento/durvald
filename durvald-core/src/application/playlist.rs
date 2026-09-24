@@ -1,7 +1,5 @@
 //! Playlist use-case coordination.
 
-use std::sync::Arc;
-
 use base64::Engine;
 
 use crate::{
@@ -13,19 +11,13 @@ use crate::{
     },
 };
 
-type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
-
 pub(crate) struct PlaylistApplication {
-    db_pool: Arc<DatabasePool>,
     repository: SqlitePlaylistRepository,
 }
 
 impl PlaylistApplication {
-    pub(crate) fn new(db_pool: Arc<DatabasePool>, repository: SqlitePlaylistRepository) -> Self {
-        Self {
-            db_pool,
-            repository,
-        }
+    pub(crate) fn new(repository: SqlitePlaylistRepository) -> Self {
+        Self { repository }
     }
 
     pub(crate) async fn playlists(&self) -> CoreResult<Vec<Playlist>> {
@@ -163,12 +155,10 @@ impl PlaylistApplication {
         from: u64,
         to: u64,
     ) -> CoreResult<()> {
-        let playlist_id = playlist_id.get();
-        self.run_database(move |conn| {
-            crate::database::operations::move_playlist_track(conn, playlist_id, from, to)
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.repository
+            .move_track(playlist_id, from, to)
+            .await
+            .map_err(|message| CoreError::Storage { message })
     }
 
     pub(crate) async fn playlist_artwork_bytes(
@@ -179,23 +169,6 @@ impl PlaylistApplication {
             .artwork(playlist_id)
             .await
             .map_err(|message| CoreError::Storage { message })
-    }
-
-    async fn run_database<T, F>(&self, operation: F) -> CoreResult<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(&rusqlite::Connection) -> Result<T, String> + Send + 'static,
-    {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| error.to_string())?;
-            operation(&conn)
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Blocking database task failed: {error}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })
     }
 }
 

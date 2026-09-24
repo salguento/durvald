@@ -243,7 +243,9 @@ Já foi concluído:
 - preferência `suggest_less` de playlist isolada no adapter SQLite;
 - inclusão de faixa em playlist isolada no adapter SQLite, com modelo de domínio
   próprio;
-- remoção de faixa de playlist isolada no adapter SQLite no working tree.
+- remoção de faixa de playlist isolada no adapter SQLite;
+- reordenação de faixa isolada no adapter SQLite e pool retirado de
+  `PlaylistApplication` no working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -251,7 +253,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
 | `PlaybackApplication` | 0 | catálogo, sessão e histórico acessados por adapters dedicados |
-| `PlaylistApplication` | 1 | reordenação de tracks |
+| `PlaylistApplication` | 0 | operações acessadas pelo adapter de playlists |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
 Ainda falta:
@@ -260,10 +262,10 @@ Ainda falta:
 - estender IDs de domínio às demais áreas estabilizadas;
 - ampliar `infrastructure/sqlite` para as demais áreas;
 - ports pequenos para dependências substituíveis;
-- retirada das chamadas diretas a `database::operations` dos serviços de aplicação.
+- auditoria final da retirada das chamadas diretas a `database::operations` dos
+  serviços de aplicação.
 
-Somente `PlaylistApplication` ainda recebe o pool SQLite diretamente. Os outros
-sete serviços de aplicação já não o recebem.
+Nenhum dos oito serviços de aplicação recebe o pool SQLite diretamente.
 
 ### Marco 7
 
@@ -279,8 +281,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a remoção de faixa de playlist atualmente no working tree;
-2. continuar o adapter pelas demais mutações de playlist e de suas faixas;
+1. registrar em commit a reordenação de faixa atualmente no working tree;
+2. auditar o fechamento dos adapters e a ausência de SQL direto em application;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
 4. criar ports somente nas dependências com necessidade real de substituição;
@@ -353,4 +355,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `f40a587` | Preferência de favorito de playlist isolada em adapter SQLite |
 | 24/09/2026 | `a0a2108` | Preferência `suggest_less` de playlist isolada em adapter SQLite |
 | 24/09/2026 | `82f3903` | Inclusão de faixa em playlist isolada em adapter SQLite |
-| 24/09/2026 | estado não commitado | Remoção de faixa de playlist isolada em adapter SQLite |
+| 24/09/2026 | `b221236` | Remoção de faixa de playlist isolada em adapter SQLite |
+| 24/09/2026 | estado não commitado | Reordenação de faixa isolada e pool retirado de `PlaylistApplication` |

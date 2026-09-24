@@ -350,10 +350,9 @@ impl DurvaldCore {
                 playback_application.audio_player().clone(),
             ),
             playback_application,
-            playlist_application: PlaylistApplication::new(
+            playlist_application: PlaylistApplication::new(SqlitePlaylistRepository::new(
                 db_pool.clone(),
-                SqlitePlaylistRepository::new(db_pool.clone()),
-            ),
+            )),
             lastfm,
             covers_dir: config.covers_dir.clone(),
         };
