@@ -247,6 +247,8 @@ Já foi concluído:
 - reordenação de faixa isolada no adapter SQLite e pool retirado de
   `PlaylistApplication`;
 - row de playlist convertida para modelo de domínio dentro do adapter SQLite no
+  adapter SQLite;
+- row e serialização JSON da sessão de playback confinadas ao adapter SQLite no
   working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
@@ -283,8 +285,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a fronteira de modelo de playlist atualmente no working tree;
-2. continuar a auditoria das rows de catálogo e sessão ainda referenciadas por
+1. registrar em commit a fronteira de sessão de playback atualmente no working tree;
+2. continuar a auditoria das rows de catálogo ainda referenciadas por
    `application`;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
@@ -360,4 +362,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `82f3903` | Inclusão de faixa em playlist isolada em adapter SQLite |
 | 24/09/2026 | `b221236` | Remoção de faixa de playlist isolada em adapter SQLite |
 | 24/09/2026 | `154fcde` | Reordenação de faixa isolada e pool retirado de `PlaylistApplication` |
-| 24/09/2026 | estado não commitado | Row de playlist convertida para modelo de domínio no adapter SQLite |
+| 24/09/2026 | `8ab8b63` | Row de playlist convertida para modelo de domínio no adapter SQLite |
+| 24/09/2026 | estado não commitado | Row e JSON da sessão confinados ao adapter SQLite |

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::{
     api::{CoreError, CoreResult, LastSession, PlaybackSnapshot, QueueItem, RepeatMode, Track},
     audio::AudioPlayer,
-    domain::ids::TrackId,
+    domain::{ids::TrackId, playback_session::PlaybackSessionState},
     infrastructure::sqlite::catalog_track::{CatalogTrackLookupError, SqliteCatalogTrackQuery},
     infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository,
     infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository,
@@ -468,15 +468,13 @@ impl PlaybackApplication {
                     .collect::<Vec<_>>(),
             )
         };
-        let session = crate::database::models::LastSession {
-            current_song_id,
+        let session = PlaybackSessionState {
+            current_track_id: current_song_id,
             progress_seconds,
             volume,
             shuffle_enabled,
             repeat_mode: format!("{repeat_mode:?}").to_lowercase(),
-            queue_snapshot: serde_json::to_string(&queue).map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })?,
+            queue,
             queue_position: 0,
             source_context: String::new(),
             updated_at: String::new(),
@@ -509,7 +507,7 @@ impl PlaybackApplication {
             .map_err(|message| CoreError::Storage { message })?;
 
         Ok(LastSession {
-            current_track_id: session.current_song_id,
+            current_track_id: session.current_track_id,
             progress_seconds: session.progress_seconds,
             volume: normalized_volume(session.volume),
             shuffle_enabled: session.shuffle_enabled,
@@ -518,22 +516,22 @@ impl PlaybackApplication {
                 "all" => RepeatMode::All,
                 _ => RepeatMode::None,
             },
-            queue: serde_json::from_str(&session.queue_snapshot).unwrap_or_default(),
-            queue_position: session.queue_position as u64,
+            queue: session.queue,
+            queue_position: session.queue_position,
             source_context: session.source_context,
             updated_at: session.updated_at,
         })
     }
 
     pub(crate) async fn save_session(&self, session: LastSession) -> CoreResult<()> {
-        let db_session = crate::database::models::LastSession {
-            current_song_id: session.current_track_id,
+        let db_session = PlaybackSessionState {
+            current_track_id: session.current_track_id,
             progress_seconds: session.progress_seconds,
             volume: normalized_volume(session.volume as f64) as f64,
             shuffle_enabled: session.shuffle_enabled,
             repeat_mode: format!("{:?}", session.repeat_mode).to_lowercase(),
-            queue_snapshot: serde_json::to_string(&session.queue).unwrap_or_default(),
-            queue_position: session.queue_position as i64,
+            queue: session.queue,
+            queue_position: session.queue_position,
             source_context: session.source_context,
             updated_at: String::new(),
         };
