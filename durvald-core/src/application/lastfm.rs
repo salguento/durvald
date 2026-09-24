@@ -2,16 +2,20 @@
 
 use std::sync::Arc;
 
-use crate::api::{AuthTokenResponse, CoreError, CoreResult, LastFmStatus};
+use crate::api::{
+    AuthTokenResponse, CoreError, CoreResult, EnrichmentProvider, LastFmStatus, SessionResponse,
+};
+use crate::enrichment::service::EnrichmentService;
 use crate::lastfm::{LastFmClient, LastFmError};
 
 pub(crate) struct LastFmApplication {
     client: Arc<LastFmClient>,
+    enrichment: EnrichmentService,
 }
 
 impl LastFmApplication {
-    pub(crate) fn new(client: Arc<LastFmClient>) -> Self {
-        Self { client }
+    pub(crate) fn new(client: Arc<LastFmClient>, enrichment: EnrichmentService) -> Self {
+        Self { client, enrichment }
     }
 
     pub(crate) async fn status(&self) -> CoreResult<LastFmStatus> {
@@ -34,6 +38,36 @@ impl LastFmApplication {
             .map(|response| AuthTokenResponse {
                 token: response.token,
                 auth_url: response.auth_url,
+            })
+            .map_err(lastfm_error)
+    }
+
+    pub(crate) async fn configure(&self, api_key: String, api_secret: String) -> CoreResult<()> {
+        if api_key.trim().is_empty() || api_secret.trim().is_empty() {
+            return Err(CoreError::InvalidInput {
+                message: "Last.fm API key and secret cannot be empty".to_string(),
+            });
+        }
+        self.client
+            .initialize_lastfm(api_key, api_secret)
+            .await
+            .map_err(lastfm_error)?;
+        self.enrichment
+            .clear_provider_failures(EnrichmentProvider::LastFm)
+            .await
+    }
+
+    pub(crate) async fn complete_auth(&self, token: String) -> CoreResult<SessionResponse> {
+        if token.trim().is_empty() {
+            return Err(CoreError::InvalidInput {
+                message: "Last.fm authorization token cannot be empty".to_string(),
+            });
+        }
+        self.client
+            .poll_session(token)
+            .await
+            .map(|response| SessionResponse {
+                username: response.username,
             })
             .map_err(lastfm_error)
     }

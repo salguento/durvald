@@ -325,6 +325,7 @@ impl DurvaldCore {
             config.covers_dir.clone(),
             metadata_edit_queue.clone(),
         ));
+        let lastfm_application = LastFmApplication::new(lastfm.clone(), enrichment.clone());
         let core = Self {
             enrichment_application: EnrichmentApplication::new(
                 enrichment.clone(),
@@ -333,7 +334,7 @@ impl DurvaldCore {
             enrichment,
             db_pool: db_pool.clone(),
             history_application: HistoryApplication::new(db_pool.clone()),
-            lastfm_application: LastFmApplication::new(lastfm.clone()),
+            lastfm_application,
             library_application,
             metadata_application: MetadataApplication::new(
                 db_pool.clone(),
@@ -838,18 +839,7 @@ impl DurvaldCore {
 
     /// Stores Last.fm API credentials in the secure store.
     pub async fn configure_lastfm(&self, api_key: String, api_secret: String) -> CoreResult<()> {
-        if api_key.trim().is_empty() || api_secret.trim().is_empty() {
-            return Err(CoreError::InvalidInput {
-                message: "Last.fm API key and secret cannot be empty".to_string(),
-            });
-        }
-        self.lastfm
-            .initialize_lastfm(api_key, api_secret)
-            .await
-            .map_err(lastfm_error)?;
-        self.enrichment
-            .clear_provider_failures(EnrichmentProvider::LastFm)
-            .await
+        self.lastfm_application.configure(api_key, api_secret).await
     }
 
     /// Starts browser-based Last.fm authorization and returns its approval URL.
@@ -859,18 +849,7 @@ impl DurvaldCore {
 
     /// Completes Last.fm authorization after the user approved the token.
     pub async fn complete_lastfm_auth(&self, token: String) -> CoreResult<SessionResponse> {
-        if token.trim().is_empty() {
-            return Err(CoreError::InvalidInput {
-                message: "Last.fm authorization token cannot be empty".to_string(),
-            });
-        }
-        self.lastfm
-            .poll_session(token)
-            .await
-            .map(|response| SessionResponse {
-                username: response.username,
-            })
-            .map_err(lastfm_error)
+        self.lastfm_application.complete_auth(token).await
     }
 
     /// Ends the Last.fm integration and removes its credentials and cached
