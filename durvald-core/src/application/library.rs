@@ -337,7 +337,7 @@ impl LibraryApplication {
             releases: results
                 .releases
                 .into_iter()
-                .map(release_from_database)
+                .map(release_from_catalog)
                 .collect(),
             artists: results
                 .artists
@@ -734,27 +734,6 @@ pub(crate) fn track_from_catalog(track: crate::domain::catalog::CatalogTrack) ->
         is_favorite: track.is_favorite,
         is_hidden: track.is_hidden,
         suggest_less: track.suggest_less,
-    }
-}
-
-fn release_from_database(release: crate::database::models::Releases) -> Release {
-    Release {
-        id: release.release_id as i64,
-        title: release.title,
-        artist: release.artist_name,
-        artist_id: release.artist_id as i64,
-        release_date: (!release.release_date.is_empty()).then_some(release.release_date),
-        genres: release.genres,
-        composers: release.composers,
-        producers: release.producers,
-        total_tracks: release.total_tracks,
-        total_discs: release.total_discs,
-        duration_seconds: release.duration,
-        artwork_id: (!release.artwork.is_empty()).then_some(release.artwork),
-        is_favorite: release.is_favorite,
-        is_hidden: release.is_hidden,
-        suggest_less: release.suggest_less,
-        rating: release.rating,
     }
 }
 

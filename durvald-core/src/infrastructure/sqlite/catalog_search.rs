@@ -3,8 +3,9 @@
 use std::sync::Arc;
 
 use crate::{
-    database::models::{ArtistItem, Playlist, Releases},
-    domain::catalog::CatalogTrack,
+    database::models::{ArtistItem, Playlist},
+    domain::catalog::{CatalogRelease, CatalogTrack},
+    infrastructure::sqlite::catalog_release::release_from_row,
     infrastructure::sqlite::catalog_track::track_from_row,
 };
 
@@ -12,7 +13,7 @@ type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
 pub(crate) struct CatalogSearchResults {
     pub(crate) tracks: Vec<CatalogTrack>,
-    pub(crate) releases: Vec<Releases>,
+    pub(crate) releases: Vec<CatalogRelease>,
     pub(crate) artists: Vec<ArtistItem>,
     pub(crate) playlists: Vec<Playlist>,
 }
@@ -33,7 +34,7 @@ impl SqliteCatalogSearchQuery {
             crate::database::operations::search_library(&conn, &query)
                 .map(|results| CatalogSearchResults {
                     tracks: results.tracks.into_iter().map(track_from_row).collect(),
-                    releases: results.releases,
+                    releases: results.releases.into_iter().map(release_from_row).collect(),
                     artists: results.artists,
                     playlists: results.playlists,
                 })
