@@ -246,10 +246,8 @@ Já foi concluído:
 - remoção de faixa de playlist isolada no adapter SQLite;
 - reordenação de faixa isolada no adapter SQLite e pool retirado de
   `PlaylistApplication`;
-- row de playlist convertida para modelo de domínio dentro do adapter SQLite no
-  adapter SQLite;
-- row e serialização JSON da sessão de playback confinadas ao adapter SQLite no
-  adapter SQLite;
+- row de playlist convertida para modelo de domínio dentro do adapter SQLite;
+- row e serialização JSON da sessão de playback confinadas ao adapter SQLite;
 - consultas direta, completa e paginada de faixas convertidas para modelo de
   domínio no adapter de catálogo;
 - consulta de faixas por artista convertida para o mesmo modelo de domínio no
@@ -272,7 +270,11 @@ Já foi concluído:
 - artistas dos resultados de busca convertidos para `CatalogArtist` no adapter
   SQLite;
 - playlists dos resultados de busca convertidas para `PlaylistDetails`,
-  concluindo a retirada de rows do retorno do adapter de busca, no working tree.
+  concluindo a retirada de rows do retorno do adapter de busca;
+- auditoria confirma que `application/` não referencia rows, operações, pool ou
+  conexões SQLite;
+- teste arquitetural protege essa independência contra regressões no working
+  tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -283,14 +285,11 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | `PlaylistApplication` | 0 | operações acessadas pelo adapter de playlists |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
-Ainda falta:
-
-- separação sistemática entre DTO público, domínio e row SQLite;
-- estender IDs de domínio às demais áreas estabilizadas;
-- ampliar `infrastructure/sqlite` para as demais áreas;
-- ports pequenos para dependências substituíveis;
-- auditoria final da retirada das chamadas diretas a `database::operations` dos
-  serviços de aplicação.
+O gate estrutural do Marco 6 está atendido nas áreas migradas: DTOs públicos,
+modelos de domínio e rows SQLite estão separados, e os serviços de aplicação
+não conhecem detalhes do banco. A auditoria de ports não identificou outra
+dependência com necessidade concreta de substituição além das fronteiras já
+isoladas; portanto, nenhum trait adicional foi criado.
 
 Nenhum dos oito serviços de aplicação recebe o pool SQLite diretamente.
 
@@ -308,13 +307,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a conversão das playlists da busca atualmente no working
-   tree;
-2. auditar o fechamento das fronteiras do Marco 6 e a necessidade real de ports;
-3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
-   de rows de `database::models` fora da infraestrutura;
-4. criar ports somente nas dependências com necessidade real de substituição;
-5. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
+1. registrar em commit o teste arquitetural atualmente no working tree;
+2. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
    checkpoint do Marco 6.
 
 ## Resumo executivo
@@ -397,4 +391,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `2ec8417` | Releases da busca convertidos para modelo de domínio |
 | 24/09/2026 | `0962a2c` | Consultas de artista convertidas para modelo de domínio |
 | 24/09/2026 | `7de6227` | Artistas da busca convertidos para modelo de domínio |
-| 24/09/2026 | estado não commitado | Playlists da busca convertidas para modelo de domínio |
+| 24/09/2026 | `aadfd77` | Playlists da busca convertidas para modelo de domínio |
+| 24/09/2026 | estado não commitado | Auditoria e teste da fronteira entre application e banco |
