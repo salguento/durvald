@@ -6,35 +6,29 @@ use crate::api::{
     AudioMetadata, CoreError, CoreResult, KeyValuePair, TrackInfo, TrackMetadataEdit,
 };
 use crate::domain::ids::TrackId;
-
-type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
+use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
 
 pub(crate) struct MetadataApplication {
-    db_pool: Arc<DatabasePool>,
+    repository: SqliteTrackMetadataRepository,
     covers_dir: String,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl MetadataApplication {
     pub(crate) fn new(
-        db_pool: Arc<DatabasePool>,
+        repository: SqliteTrackMetadataRepository,
         covers_dir: String,
         metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
         Self {
-            db_pool,
+            repository,
             covers_dir,
             metadata_edit_queue,
         }
     }
 
     pub(crate) async fn track_info(&self, track_id: TrackId) -> CoreResult<TrackInfo> {
-        let track_id = track_id.get() as i64;
-        self.run_database_core(move |conn| {
-            crate::metadata_edit::ensure_cached(conn, track_id)?;
-            crate::metadata_edit::info(conn, track_id)
-        })
-        .await
+        self.repository.info(track_id).await
     }
 
     pub(crate) async fn extract_metadata(&self, file_path: String) -> CoreResult<AudioMetadata> {
@@ -77,39 +71,16 @@ impl MetadataApplication {
         metadata: TrackMetadataEdit,
         write_to_file: bool,
     ) -> CoreResult<TrackInfo> {
-        let track_id = track_id.get() as i64;
         let _queue = self.metadata_edit_queue.lock().await;
         let backup_dir = std::path::PathBuf::from(&self.covers_dir).join("metadata-backups");
-        self.run_database_core(move |conn| {
-            crate::metadata_edit::ensure_cached(conn, track_id)?;
-            crate::metadata_edit::save(conn, track_id, metadata, write_to_file, &backup_dir)
-        })
-        .await
-    }
-
-    pub(crate) async fn undo_track_metadata(&self, track_id: TrackId) -> CoreResult<TrackInfo> {
-        let track_id = track_id.get() as i64;
-        let _queue = self.metadata_edit_queue.lock().await;
-        self.run_database_core(move |conn| crate::metadata_edit::undo(conn, track_id))
+        self.repository
+            .save(track_id, metadata, write_to_file, backup_dir)
             .await
     }
 
-    async fn run_database_core<T, F>(&self, operation: F) -> CoreResult<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
-    {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| CoreError::Storage {
-                message: error.to_string(),
-            })?;
-            operation(&conn)
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Blocking database task failed: {error}"),
-        })?
+    pub(crate) async fn undo_track_metadata(&self, track_id: TrackId) -> CoreResult<TrackInfo> {
+        let _queue = self.metadata_edit_queue.lock().await;
+        self.repository.undo(track_id).await
     }
 }
 

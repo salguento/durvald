@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `e1f5a9f refactor(core): isolate settings sqlite`
+Commit de referência: `5b58adf refactor(core): load settings through sqlite adapter`
 
-Estado adicional: leitura inicial de settings migrada para o adapter e ainda não commitada
+Estado adicional: persistência de metadata isolada em adapter e ainda não commitada
 
 ## Visão geral
 
@@ -197,7 +197,8 @@ Já foi concluído:
 - remoção da validação primitiva duplicada dos serviços migrados;
 - criação inicial de `infrastructure/sqlite` para histórico de reprodução;
 - separação entre row SQLite, modelo de domínio e DTO público em histórico;
-- aplicação do mesmo corte arquitetural à persistência de settings.
+- aplicação do mesmo corte arquitetural à persistência de settings;
+- retirada de pool e conexão SQLite de `MetadataApplication`.
 
 Ainda falta:
 
@@ -258,4 +259,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `ca94106` | Extensão de `ArtistId` às entradas de enrichment |
 | 23/09/2026 | `47ca7e7` | Primeiro adapter SQLite e modelo de domínio para histórico |
 | 23/09/2026 | `e1f5a9f` | Adapter SQLite e modelo de domínio para settings |
-| 23/09/2026 | estado não commitado | Leitura inicial de settings redirecionada ao adapter SQLite |
+| 23/09/2026 | `5b58adf` | Leitura inicial de settings redirecionada ao adapter SQLite |
+| 23/09/2026 | estado não commitado | Persistência de metadata isolada em adapter SQLite |

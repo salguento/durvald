@@ -25,6 +25,7 @@ use crate::application::settings::{
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
+use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
@@ -319,7 +320,7 @@ impl DurvaldCore {
             lastfm_application,
             library_application,
             metadata_application: MetadataApplication::new(
-                db_pool.clone(),
+                SqliteTrackMetadataRepository::new(db_pool.clone()),
                 config.covers_dir.clone(),
                 metadata_edit_queue.clone(),
             ),
