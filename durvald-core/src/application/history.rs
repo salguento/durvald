@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use crate::api::{CoreError, CoreResult, PlaybackHistoryItem, PlaybackHistoryPage};
+use crate::domain::ids::PlaybackHistoryId;
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
@@ -43,8 +44,11 @@ impl HistoryApplication {
         Ok(PlaybackHistoryPage { items, next_offset })
     }
 
-    pub(crate) async fn remove_playback_history_item(&self, history_id: i64) -> CoreResult<()> {
-        let history_id = non_negative_id(history_id, "Playback history ID")?;
+    pub(crate) async fn remove_playback_history_item(
+        &self,
+        history_id: PlaybackHistoryId,
+    ) -> CoreResult<()> {
+        let history_id = history_id.get();
         self.run_database_core(move |conn| {
             let removed = crate::database::operations::remove_song_from_history(conn, history_id)
                 .map_err(|error| CoreError::Storage {
@@ -125,12 +129,6 @@ fn finish_page<T>(mut items: Vec<T>, page_size: usize, offset: u64) -> (Vec<T>, 
     items.truncate(page_size);
     let next_offset = has_more.then(|| offset.saturating_add(page_size as u64));
     (items, next_offset)
-}
-
-fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
-    u64::try_from(value).map_err(|_| CoreError::InvalidInput {
-        message: format!("{label} must not be negative"),
-    })
 }
 
 fn history_from_database(item: crate::database::models::PlayHistory) -> PlaybackHistoryItem {

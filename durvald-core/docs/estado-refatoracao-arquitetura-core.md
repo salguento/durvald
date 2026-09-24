@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `1734345 refactor(core): type metadata track inputs`
+Commit de referência: `90fa77e refactor(core): type playlist domain ids`
 
-Estado adicional: introdução de `PlaylistId` implementada e ainda não commitada
+Estado adicional: introdução de `PlaybackHistoryId` implementada e ainda não commitada
 
 ## Visão geral
 
@@ -45,7 +45,8 @@ públicas. A API foi preservada enquanto a implementação interna foi deslocada
 para serviços de aplicação.
 
 O Marco 6 também introduziu `src/domain/ids.rs`, com `TrackId`, `ReleaseId`,
-`ArtistId` e `PlaylistId`. A fachada converte os valores `i64` da API pública e
+`ArtistId`, `PlaylistId` e `PlaybackHistoryId`. A fachada converte os valores
+`i64` da API pública e
 as operações de catálogo migradas recebem apenas IDs já validados.
 
 ## Implementações concluídas
@@ -190,7 +191,7 @@ mas o gate multiplataforma completo precisa ser renovado no próximo checkpoint.
 Já foi concluído:
 
 - criação do módulo interno `domain`;
-- introdução de `TrackId`, `ReleaseId`, `ArtistId` e `PlaylistId`;
+- introdução de `TrackId`, `ReleaseId`, `ArtistId`, `PlaylistId` e `PlaybackHistoryId`;
 - conversão de IDs na fronteira pública das operações migradas;
 - uso de IDs tipados nas mutações e consultas de catálogo;
 - remoção da validação primitiva duplicada de `LibraryApplication`.
@@ -249,4 +250,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `7fa544e` | Extensão de `ArtistId` às consultas de catálogo e à ponte de enrichment |
 | 23/09/2026 | `345a2a1` | Extensão inicial de `TrackId` às entradas de playback |
 | 23/09/2026 | `1734345` | Extensão de `TrackId` às entradas de metadata |
-| 23/09/2026 | estado não commitado | Introdução de `PlaylistId` nas operações de playlist |
+| 23/09/2026 | `90fa77e` | Introdução de `PlaylistId` nas operações de playlist |
+| 23/09/2026 | estado não commitado | Introdução de `PlaybackHistoryId` na remoção de histórico |

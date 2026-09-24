@@ -20,7 +20,7 @@ use crate::application::playlist::PlaylistApplication;
 use crate::application::settings::{SettingsApplication, normalized_cross_fade_duration};
 #[cfg(test)]
 use crate::application::settings::{normalized_audio_quality, validate_settings};
-use crate::domain::ids::{ArtistId, PlaylistId, ReleaseId, TrackId};
+use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
@@ -123,6 +123,12 @@ fn release_id_from_api(value: i64) -> CoreResult<ReleaseId> {
 fn playlist_id_from_api(value: i64) -> CoreResult<PlaylistId> {
     PlaylistId::try_from(value).map_err(|_| CoreError::InvalidInput {
         message: "Playlist ID must not be negative".to_string(),
+    })
+}
+
+fn playback_history_id_from_api(value: i64) -> CoreResult<PlaybackHistoryId> {
+    PlaybackHistoryId::try_from(value).map_err(|_| CoreError::InvalidInput {
+        message: "Playback history ID must not be negative".to_string(),
     })
 }
 
@@ -866,7 +872,7 @@ impl DurvaldCore {
     /// Removes a single completed-playback event.
     pub async fn remove_playback_history_item(&self, history_id: i64) -> CoreResult<()> {
         self.history_application
-            .remove_playback_history_item(history_id)
+            .remove_playback_history_item(playback_history_id_from_api(history_id)?)
             .await
     }
 

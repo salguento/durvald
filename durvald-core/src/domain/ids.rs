@@ -25,19 +25,21 @@ macro_rules! domain_id {
 pub(crate) struct InvalidDomainId;
 
 domain_id!(ArtistId);
+domain_id!(PlaybackHistoryId);
 domain_id!(PlaylistId);
 domain_id!(TrackId);
 domain_id!(ReleaseId);
 
 #[cfg(test)]
 mod tests {
-    use super::{ArtistId, PlaylistId, ReleaseId, TrackId};
+    use super::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 
     #[test]
     fn catalog_ids_accept_non_negative_api_values() {
         assert_eq!(TrackId::try_from(0).unwrap().get(), 0);
         assert_eq!(ArtistId::try_from(42).unwrap().get(), 42);
         assert_eq!(PlaylistId::try_from(7).unwrap().get(), 7);
+        assert_eq!(PlaybackHistoryId::try_from(9).unwrap().get(), 9);
         assert_eq!(
             ReleaseId::try_from(i64::MAX).unwrap().get(),
             i64::MAX as u64
@@ -49,6 +51,7 @@ mod tests {
         assert!(TrackId::try_from(-1).is_err());
         assert!(ArtistId::try_from(-1).is_err());
         assert!(PlaylistId::try_from(-1).is_err());
+        assert!(PlaybackHistoryId::try_from(-1).is_err());
         assert!(ReleaseId::try_from(-1).is_err());
     }
 }
