@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `3d366ac refactor(core): isolate catalog search`
+Commit de referência: `c804cb2 refactor(core): isolate library scan preparation`
 
-Estado adicional: preparação do scan isolada e ainda não commitada
+Estado adicional: persistência dos lotes do scan isolada e ainda não commitada
 
 ## Visão geral
 
@@ -61,7 +61,8 @@ concretos:
 - consultas de lançamentos;
 - consultas de artistas;
 - busca agregada de catálogo;
-- preparação do scan da biblioteca, ainda não commitada.
+- preparação e persistência dos lotes do scan da biblioteca; a persistência de
+  lotes ainda não está commitada.
 
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
@@ -230,7 +231,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
 | Serviço | Referências diretas | Escopo restante |
 | --- | ---: | --- |
-| `LibraryApplication` | 3 | extração, persistência e remoção durante scan |
+| `LibraryApplication` | 2 | extração de metadata e remoção durante reconciliação do scan |
 | `PlaybackApplication` | 12 | resolução de faixas, sessão e registro de conclusão |
 | `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
@@ -260,8 +261,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a preparação do scan atualmente no working tree;
-2. concluir o ciclo de persistência do scan no adapter dedicado, mantendo
+1. registrar em commit a persistência dos lotes do scan atualmente no working tree;
+2. concluir a reconciliação do scan no adapter dedicado, mantendo
    cancelamento, progresso e coordenação em `LibraryApplication`;
 3. extrair de `PlaybackApplication` a resolução SQLite de faixas e a
    persistência da última sessão;
@@ -314,4 +315,5 @@ públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `d43aa85` | Paginação de lançamentos isolada em adapter SQLite |
 | 23/09/2026 | `9bee74c` | Listagem completa de artistas isolada em adapter SQLite |
 | 23/09/2026 | `3d366ac` | Busca agregada de catálogo isolada em adapter SQLite |
-| 23/09/2026 | estado não commitado | Preparação do scan isolada em adapter SQLite |
+| 23/09/2026 | `c804cb2` | Preparação do scan isolada em adapter SQLite |
+| 23/09/2026 | estado não commitado | Persistência dos lotes do scan isolada em adapter SQLite |

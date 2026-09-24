@@ -184,32 +184,22 @@ impl LibraryApplication {
                     new_tracks,
                 });
 
-                let db_pool = self.db_pool.clone();
-                let write_result = tokio::task::spawn_blocking(move || {
-                    let conn = db_pool.get().map_err(|error| error.to_string())?;
-                    crate::database::operations::persist_metadata_with_existing_ids(
-                        &conn,
+                match self
+                    .persistence
+                    .library_scan_repository
+                    .persist_metadata(
                         extracted.metadata,
                         extracted.mtimes,
                         extracted.existing_song_ids,
                     )
-                    .map_err(|error| error.to_string())
-                })
-                .await;
-                match write_result {
-                    Ok(Ok(written)) => {
+                    .await
+                {
+                    Ok(written) => {
                         new_tracks += written.added_tracks as u64;
                         updated_tracks += written.updated_tracks as u64;
                     }
-                    Ok(Err(error)) => {
-                        errors.push(format!("{path}: {error}"));
-                        path_failed = true;
-                        break;
-                    }
                     Err(error) => {
-                        errors.push(format!(
-                            "{path}: Library database write task failed: {error}"
-                        ));
+                        errors.push(format!("{path}: {error}"));
                         path_failed = true;
                         break;
                     }
