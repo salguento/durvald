@@ -27,6 +27,7 @@ use crate::infrastructure::sqlite::catalog_track::{
     CatalogTrackLookupError, SqliteCatalogTrackQuery,
 };
 use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
+use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
@@ -48,6 +49,7 @@ pub(crate) struct LibraryPersistence {
     catalog_search_query: SqliteCatalogSearchQuery,
     catalog_track_query: SqliteCatalogTrackQuery,
     library_paths_repository: SqliteLibraryPathsRepository,
+    library_scan_repository: SqliteLibraryScanRepository,
 }
 
 impl LibraryPersistence {
@@ -58,6 +60,7 @@ impl LibraryPersistence {
         catalog_search_query: SqliteCatalogSearchQuery,
         catalog_track_query: SqliteCatalogTrackQuery,
         library_paths_repository: SqliteLibraryPathsRepository,
+        library_scan_repository: SqliteLibraryScanRepository,
     ) -> Self {
         Self {
             catalog_artist_query,
@@ -66,6 +69,7 @@ impl LibraryPersistence {
             catalog_search_query,
             catalog_track_query,
             library_paths_repository,
+            library_scan_repository,
         }
     }
 }
@@ -121,29 +125,17 @@ impl LibraryApplication {
                 new_tracks,
             });
 
-            let db_pool = self.db_pool.clone();
             let cancellation = self.scan_cancel_requested.clone();
             let scan_path = path.clone();
-            let pending = tokio::task::spawn_blocking(move || {
-                let conn = db_pool.get().map_err(|error| error.to_string())?;
-                crate::database::operations::prepare_database_update_with_cancel(
-                    &conn,
-                    scan_path,
-                    Some(cancellation.as_ref()),
-                )
-                .map_err(|error| error.to_string())
-            })
-            .await;
-            let pending = match pending {
-                Ok(Ok(pending)) => pending,
-                Ok(Err(message)) => {
+            let pending = match self
+                .persistence
+                .library_scan_repository
+                .prepare(scan_path, cancellation)
+                .await
+            {
+                Ok(pending) => pending,
+                Err(message) => {
                     errors.push(format!("{path}: {message}"));
-                    continue;
-                }
-                Err(error) => {
-                    errors.push(format!(
-                        "{path}: Library scan preparation task failed: {error}"
-                    ));
                     continue;
                 }
             };

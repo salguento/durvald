@@ -29,6 +29,7 @@ use crate::infrastructure::sqlite::catalog_release::SqliteCatalogReleaseQuery;
 use crate::infrastructure::sqlite::catalog_search::SqliteCatalogSearchQuery;
 use crate::infrastructure::sqlite::catalog_track::SqliteCatalogTrackQuery;
 use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
+use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
 use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
@@ -313,6 +314,7 @@ impl DurvaldCore {
                 SqliteCatalogSearchQuery::new(db_pool.clone()),
                 SqliteCatalogTrackQuery::new(db_pool.clone()),
                 SqliteLibraryPathsRepository::new(db_pool.clone()),
+                SqliteLibraryScanRepository::new(db_pool.clone()),
             ),
             config.covers_dir.clone(),
             metadata_edit_queue.clone(),

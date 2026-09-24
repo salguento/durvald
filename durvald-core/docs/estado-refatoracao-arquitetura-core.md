@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `9bee74c refactor(core): isolate catalog artist listing`
+Commit de referência: `3d366ac refactor(core): isolate catalog search`
 
-Estado adicional: busca de catálogo isolada e ainda não commitada
+Estado adicional: preparação do scan isolada e ainda não commitada
 
 ## Visão geral
 
@@ -49,7 +49,7 @@ O Marco 6 também introduziu `src/domain/ids.rs`, com `TrackId`, `ReleaseId`,
 `i64` da API pública e
 as operações de catálogo migradas recebem apenas IDs já validados.
 
-O diretório `src/infrastructure/sqlite/` contém atualmente nove adapters
+O diretório `src/infrastructure/sqlite/` contém atualmente dez adapters
 concretos:
 
 - histórico de reprodução;
@@ -60,7 +60,8 @@ concretos:
 - consultas de faixas;
 - consultas de lançamentos;
 - consultas de artistas;
-- busca agregada de catálogo, ainda não commitada.
+- busca agregada de catálogo;
+- preparação do scan da biblioteca, ainda não commitada.
 
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
@@ -229,7 +230,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
 | Serviço | Referências diretas | Escopo restante |
 | --- | ---: | --- |
-| `LibraryApplication` | 4 | preparação, extração, persistência e remoção durante scan |
+| `LibraryApplication` | 3 | extração, persistência e remoção durante scan |
 | `PlaybackApplication` | 12 | resolução de faixas, sessão e registro de conclusão |
 | `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
@@ -259,8 +260,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit o adapter de busca agregada atualmente no working tree;
-2. isolar o ciclo de persistência do scan em um adapter dedicado, mantendo
+1. registrar em commit a preparação do scan atualmente no working tree;
+2. concluir o ciclo de persistência do scan no adapter dedicado, mantendo
    cancelamento, progresso e coordenação em `LibraryApplication`;
 3. extrair de `PlaybackApplication` a resolução SQLite de faixas e a
    persistência da última sessão;
@@ -312,4 +313,5 @@ públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `fc3e232` | Listagem completa de lançamentos isolada em adapter SQLite |
 | 23/09/2026 | `d43aa85` | Paginação de lançamentos isolada em adapter SQLite |
 | 23/09/2026 | `9bee74c` | Listagem completa de artistas isolada em adapter SQLite |
-| 23/09/2026 | estado não commitado | Busca agregada de catálogo isolada em adapter SQLite |
+| 23/09/2026 | `3d366ac` | Busca agregada de catálogo isolada em adapter SQLite |
+| 23/09/2026 | estado não commitado | Preparação do scan isolada em adapter SQLite |
