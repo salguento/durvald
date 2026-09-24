@@ -268,7 +268,9 @@ Já foi concluído:
   a última referência explícita a `database::models` em `application`, no
   adapter SQLite;
 - consultas individual e completa de artistas convertidas para `CatalogArtist`
-  no working tree.
+  no adapter SQLite;
+- artistas dos resultados de busca convertidos para `CatalogArtist` no working
+  tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -304,9 +306,9 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit o modelo das consultas de artista atualmente no working
+1. registrar em commit a conversão dos artistas da busca atualmente no working
    tree;
-2. estender `CatalogArtist` aos resultados de busca;
+2. converter as playlists dos resultados de busca para o modelo de domínio;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
 4. criar ports somente nas dependências com necessidade real de substituição;
@@ -391,4 +393,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `ffa8ac2` | Consultas principais de release convertidas para modelo de domínio |
 | 24/09/2026 | `84b5567` | Releases por artista convertidos para modelo de domínio |
 | 24/09/2026 | `2ec8417` | Releases da busca convertidos para modelo de domínio |
-| 24/09/2026 | estado não commitado | Consultas de artista convertidas para modelo de domínio |
+| 24/09/2026 | `0962a2c` | Consultas de artista convertidas para modelo de domínio |
+| 24/09/2026 | estado não commitado | Artistas da busca convertidos para modelo de domínio |

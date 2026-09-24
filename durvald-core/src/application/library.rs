@@ -342,10 +342,7 @@ impl LibraryApplication {
             artists: results
                 .artists
                 .into_iter()
-                .map(|artist| Artist {
-                    id: artist.artist_id as i64,
-                    name: artist.artist_name,
-                })
+                .map(artist_from_catalog)
                 .collect(),
             playlists: results
                 .playlists
