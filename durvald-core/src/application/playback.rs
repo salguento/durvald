@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::{
     api::{CoreError, CoreResult, LastSession, PlaybackSnapshot, QueueItem, RepeatMode, Track},
     audio::AudioPlayer,
+    domain::ids::TrackId,
     lastfm::LastFmClient,
 };
 
@@ -105,12 +106,8 @@ impl PlaybackApplication {
         });
     }
 
-    pub(crate) async fn play(&self, track_id: i64) -> CoreResult<PlaybackSnapshot> {
-        if track_id < 0 {
-            return Err(CoreError::InvalidInput {
-                message: "Track ID must not be negative".to_string(),
-            });
-        }
+    pub(crate) async fn play(&self, track_id: TrackId) -> CoreResult<PlaybackSnapshot> {
+        let track_id = track_id.get() as i64;
         let db_pool = self.db_pool.clone();
         let track = tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| CoreError::Storage {
@@ -257,7 +254,8 @@ impl PlaybackApplication {
         Ok(snapshot)
     }
 
-    pub(crate) async fn add_to_queue(&self, track_id: i64) -> CoreResult<()> {
+    pub(crate) async fn add_to_queue(&self, track_id: TrackId) -> CoreResult<()> {
+        let track_id = track_id.get() as i64;
         let track = self.find_track(track_id).await?;
         let _transition = self.playback_transition.lock().await;
         let starts_playback = self.audio_player.lock().await.should_start_queued_track();

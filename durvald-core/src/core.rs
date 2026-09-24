@@ -733,7 +733,9 @@ impl DurvaldCore {
 
     /// Starts playback of a track.
     pub async fn play(&self, track_id: i64) -> CoreResult<PlaybackSnapshot> {
-        self.playback_application.play(track_id).await
+        self.playback_application
+            .play(track_id_from_api(track_id)?)
+            .await
     }
 
     /// Returns the current playback state.
@@ -865,7 +867,9 @@ impl DurvaldCore {
 
     /// Adds a track to the playback queue.
     pub async fn add_to_queue(&self, track_id: i64) -> CoreResult<()> {
-        self.playback_application.add_to_queue(track_id).await
+        self.playback_application
+            .add_to_queue(track_id_from_api(track_id)?)
+            .await
     }
 
     /// Advances to the next queued track.
