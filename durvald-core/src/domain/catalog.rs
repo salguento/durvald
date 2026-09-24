@@ -24,3 +24,22 @@ pub(crate) struct CatalogTrack {
     pub(crate) suggest_less: bool,
     pub(crate) file_path: String,
 }
+
+pub(crate) struct CatalogRelease {
+    pub(crate) id: ReleaseId,
+    pub(crate) title: String,
+    pub(crate) artist_id: ArtistId,
+    pub(crate) artist_name: String,
+    pub(crate) release_date: String,
+    pub(crate) genres: Vec<String>,
+    pub(crate) composers: Vec<String>,
+    pub(crate) producers: Vec<String>,
+    pub(crate) total_tracks: u8,
+    pub(crate) total_discs: u8,
+    pub(crate) duration_seconds: u64,
+    pub(crate) artwork: String,
+    pub(crate) is_favorite: bool,
+    pub(crate) is_hidden: bool,
+    pub(crate) suggest_less: bool,
+    pub(crate) rating: Option<u8>,
+}

@@ -396,7 +396,7 @@ impl LibraryApplication {
             .catalog_release_query
             .all()
             .await
-            .map(|releases| releases.into_iter().map(release_from_database).collect())
+            .map(|releases| releases.into_iter().map(release_from_catalog).collect())
             .map_err(catalog_release_storage_error)
     }
 
@@ -413,7 +413,7 @@ impl LibraryApplication {
             .await
             .map_err(catalog_release_storage_error)?
             .into_iter()
-            .map(release_from_database)
+            .map(release_from_catalog)
             .collect();
         let (items, next_offset) = finish_page(releases, page_size, offset);
         Ok(ReleasePage { items, next_offset })
@@ -480,7 +480,7 @@ impl LibraryApplication {
             .catalog_release_query
             .find(release_id)
             .await
-            .map(release_from_database)
+            .map(release_from_catalog)
             .map_err(|error| catalog_release_error(error, release_id))
     }
 
@@ -750,6 +750,27 @@ fn release_from_database(release: crate::database::models::Releases) -> Release 
         total_tracks: release.total_tracks,
         total_discs: release.total_discs,
         duration_seconds: release.duration,
+        artwork_id: (!release.artwork.is_empty()).then_some(release.artwork),
+        is_favorite: release.is_favorite,
+        is_hidden: release.is_hidden,
+        suggest_less: release.suggest_less,
+        rating: release.rating,
+    }
+}
+
+fn release_from_catalog(release: crate::domain::catalog::CatalogRelease) -> Release {
+    Release {
+        id: release.id.get() as i64,
+        title: release.title,
+        artist: release.artist_name,
+        artist_id: release.artist_id.get() as i64,
+        release_date: (!release.release_date.is_empty()).then_some(release.release_date),
+        genres: release.genres,
+        composers: release.composers,
+        producers: release.producers,
+        total_tracks: release.total_tracks,
+        total_discs: release.total_discs,
+        duration_seconds: release.duration_seconds,
         artwork_id: (!release.artwork.is_empty()).then_some(release.artwork),
         is_favorite: release.is_favorite,
         is_hidden: release.is_hidden,
