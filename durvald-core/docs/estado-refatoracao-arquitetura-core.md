@@ -2,9 +2,9 @@
 
 Última atualização: 24 de setembro de 2026
 
-Commit de referência: `5afd7f0 refactor(core): isolate playback session loading`
+Commit de referência: `296b1db refactor(core): isolate automatic session persistence`
 
-Estado adicional: persistência automática da sessão isolada e ainda não commitada
+Estado adicional: update de progresso da sessão isolado e ainda não commitado
 
 ## Visão geral
 
@@ -63,8 +63,8 @@ concretos:
 - busca agregada de catálogo;
 - preparação, persistência dos lotes e reconciliação SQLite do scan da
   biblioteca;
-- sessão de playback, com leitura pública commitada e persistência automática
-  ainda não commitada.
+- sessão de playback, com leitura e persistência automática commitadas e
+  update de progresso ainda não commitado.
 
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
@@ -241,7 +241,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | Serviço | Referências diretas | Escopo restante |
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
-| `PlaybackApplication` | 4 | updates pontuais, escrita pública de sessão e registro de conclusão |
+| `PlaybackApplication` | 3 | update de volume, escrita pública de sessão e registro de conclusão |
 | `PlaylistApplication` | 16 | CRUD, preferências, tracks ordenadas e classificação de erro |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
@@ -271,8 +271,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a persistência automática da sessão atualmente no working tree;
-2. concluir no novo adapter os updates e a escrita pública da última sessão;
+1. registrar em commit o update de progresso da sessão atualmente no working tree;
+2. concluir no novo adapter o update de volume e a escrita pública da última sessão;
 3. extrair o registro de conclusão;
 4. criar o adapter SQLite de playlists, começando pelas consultas antes das
    mutações;
@@ -333,4 +333,5 @@ separação entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `915f6a8` | Resolução da faixa do tracking Last.fm redirecionada ao adapter de catálogo |
 | 24/09/2026 | `b485216` | Resolução da duração na conclusão redirecionada ao adapter de catálogo |
 | 24/09/2026 | `5afd7f0` | Leitura pública da última sessão isolada em adapter SQLite |
-| 24/09/2026 | estado não commitado | Persistência automática da sessão isolada em adapter SQLite |
+| 24/09/2026 | `296b1db` | Persistência automática da sessão isolada em adapter SQLite |
+| 24/09/2026 | estado não commitado | Update de progresso da sessão isolado em adapter SQLite |

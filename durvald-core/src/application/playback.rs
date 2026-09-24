@@ -489,17 +489,10 @@ impl PlaybackApplication {
     }
 
     async fn persist_progress(&self, progress_seconds: f64) -> CoreResult<()> {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool.get().map_err(|error| error.to_string())?;
-            crate::database::operations::update_session_progress(&conn, progress_seconds)
-                .map_err(|error| error.to_string())
-        })
-        .await
-        .map_err(|error| CoreError::Storage {
-            message: format!("Session progress persistence task failed: {error}"),
-        })?
-        .map_err(|message| CoreError::Storage { message })
+        self.session_repository
+            .update_progress(progress_seconds)
+            .await
+            .map_err(|message| CoreError::Storage { message })
     }
 
     async fn persist_volume(&self, volume: f64) -> CoreResult<()> {
