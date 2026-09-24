@@ -242,7 +242,8 @@ Já foi concluído:
 - preferência de favorito de playlist isolada no adapter SQLite;
 - preferência `suggest_less` de playlist isolada no adapter SQLite;
 - inclusão de faixa em playlist isolada no adapter SQLite, com modelo de domínio
-  próprio, no working tree.
+  próprio;
+- remoção de faixa de playlist isolada no adapter SQLite no working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -250,7 +251,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
 | `PlaybackApplication` | 0 | catálogo, sessão e histórico acessados por adapters dedicados |
-| `PlaylistApplication` | 2 | remoção e reordenação de tracks |
+| `PlaylistApplication` | 1 | reordenação de tracks |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
 Ainda falta:
@@ -278,7 +279,7 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a inclusão de faixa em playlist atualmente no working tree;
+1. registrar em commit a remoção de faixa de playlist atualmente no working tree;
 2. continuar o adapter pelas demais mutações de playlist e de suas faixas;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
@@ -351,4 +352,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `6078256` | Exclusão de playlist isolada em adapter SQLite |
 | 24/09/2026 | `f40a587` | Preferência de favorito de playlist isolada em adapter SQLite |
 | 24/09/2026 | `a0a2108` | Preferência `suggest_less` de playlist isolada em adapter SQLite |
-| 24/09/2026 | estado não commitado | Inclusão de faixa em playlist isolada em adapter SQLite |
+| 24/09/2026 | `82f3903` | Inclusão de faixa em playlist isolada em adapter SQLite |
+| 24/09/2026 | estado não commitado | Remoção de faixa de playlist isolada em adapter SQLite |

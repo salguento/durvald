@@ -151,18 +151,10 @@ impl PlaylistApplication {
         track_id: TrackId,
         position: u64,
     ) -> CoreResult<()> {
-        let playlist_id = playlist_id.get();
-        let track_id = track_id.get();
-        self.run_database(move |conn| {
-            crate::database::operations::remove_track_from_playlist(
-                conn,
-                playlist_id,
-                track_id,
-                position,
-            )
-            .map_err(|error| error.to_string())
-        })
-        .await
+        self.repository
+            .remove_track(playlist_id, track_id, position)
+            .await
+            .map_err(|message| CoreError::Storage { message })
     }
 
     pub(crate) async fn move_playlist_track(

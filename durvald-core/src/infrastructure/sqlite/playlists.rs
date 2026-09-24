@@ -190,6 +190,27 @@ impl SqlitePlaylistRepository {
         .map_err(|error| format!("Playlist track insertion task failed: {error}"))?
     }
 
+    pub(crate) async fn remove_track(
+        &self,
+        playlist_id: PlaylistId,
+        track_id: TrackId,
+        position: u64,
+    ) -> Result<(), String> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::remove_track_from_playlist(
+                &conn,
+                playlist_id.get(),
+                track_id.get(),
+                position,
+            )
+            .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| format!("Playlist track removal task failed: {error}"))?
+    }
+
     pub(crate) async fn find(
         &self,
         playlist_id: PlaylistId,
