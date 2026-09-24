@@ -575,18 +575,16 @@ impl PlaybackApplication {
 
     async fn snapshot_from_state(&self, state: PlaybackStateSnapshot) -> PlaybackSnapshot {
         let current_track = if let Some(id) = state.current_track_id {
-            let db_pool = self.db_pool.clone();
-            tokio::task::spawn_blocking(move || {
-                let conn = db_pool.get().ok()?;
-                crate::database::operations::get_song_by_id(&conn, &id.to_string())
-                    .ok()?
-                    .into_iter()
-                    .next()
-                    .map(track_from_song)
-            })
-            .await
-            .ok()
-            .flatten()
+            let track_id = TrackId::try_from(id).ok();
+            match track_id {
+                Some(track_id) => self
+                    .track_query
+                    .find(track_id)
+                    .await
+                    .ok()
+                    .map(track_from_song),
+                None => None,
+            }
         } else {
             None
         };
