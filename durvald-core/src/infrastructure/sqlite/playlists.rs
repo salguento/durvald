@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::{
-    database::models::{PlaylistWithTrackCount, SongItem},
+    database::models::{Playlist, PlaylistWithTrackCount, SongItem},
     domain::ids::PlaylistId,
 };
 
@@ -32,6 +32,22 @@ impl SqlitePlaylistRepository {
         })
         .await
         .map_err(|error| format!("Playlist query task failed: {error}"))?
+    }
+
+    pub(crate) async fn create(
+        &self,
+        name: String,
+        artwork_base64: String,
+        description: String,
+    ) -> Result<Playlist, String> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::create_playlist(&conn, name, artwork_base64, description)
+                .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| format!("Playlist creation task failed: {error}"))?
     }
 
     pub(crate) async fn find(

@@ -235,7 +235,8 @@ Já foi concluído:
 - conclusão dos adapters de persistência e extração do scan;
 - retirada de todas as resoluções diretas de faixa de `PlaybackApplication`;
 - conclusão do adapter de sessão e retirada do pool de `PlaybackApplication`;
-- início do adapter de playlists com a listagem agregada no working tree.
+- consultas de playlist, suas faixas e artwork isoladas no adapter SQLite;
+- início da extração das mutações de playlist com a criação no working tree.
 
 Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 
@@ -243,7 +244,7 @@ Acoplamentos SQLite diretos que permanecem nos serviços de aplicação:
 | --- | ---: | --- |
 | `LibraryApplication` | 0 | scan coordenado por adapters de persistência e extração local |
 | `PlaybackApplication` | 0 | catálogo, sessão e histórico acessados por adapters dedicados |
-| `PlaylistApplication` | 9 | CRUD, preferências e mutações de tracks |
+| `PlaylistApplication` | 8 | update/delete, preferências e mutações de tracks |
 | Demais serviços | 0 | já usam serviços internos ou adapters dedicados |
 
 Ainda falta:
@@ -271,8 +272,8 @@ Ainda falta:
 
 ## Próximos passos recomendados
 
-1. registrar em commit a consulta de artwork da playlist atualmente no working tree;
-2. continuar o adapter pelas mutações de playlist e de suas faixas;
+1. registrar em commit a criação de playlist atualmente no working tree;
+2. continuar o adapter pelas demais mutações de playlist e de suas faixas;
 3. introduzir modelos internos nas próximas áreas extraídas para reduzir o uso
    de rows de `database::models` fora da infraestrutura;
 4. criar ports somente nas dependências com necessidade real de substituição;
@@ -338,4 +339,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `3968e15` | Listagem agregada de playlists isolada em adapter SQLite |
 | 24/09/2026 | `534198a` | Consulta individual de playlist isolada em adapter SQLite |
 | 24/09/2026 | `baeae60` | Consulta de faixas da playlist isolada em adapter SQLite |
-| 24/09/2026 | estado não commitado | Consulta de artwork da playlist isolada em adapter SQLite |
+| 24/09/2026 | `571dd1c` | Consulta de artwork da playlist isolada em adapter SQLite |
+| 24/09/2026 | estado não commitado | Criação de playlist isolada em adapter SQLite |

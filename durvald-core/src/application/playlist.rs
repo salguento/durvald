@@ -50,17 +50,11 @@ impl PlaylistApplication {
                 message: "Playlist name cannot be empty".to_string(),
             });
         }
-        self.run_database(move |conn| {
-            crate::database::operations::create_playlist(
-                conn,
-                name,
-                artwork_base64.unwrap_or_default(),
-                description,
-            )
+        self.repository
+            .create(name, artwork_base64.unwrap_or_default(), description)
+            .await
             .map(|playlist| playlist_from_database(playlist, 0))
-            .map_err(|error| error.to_string())
-        })
-        .await
+            .map_err(|message| CoreError::Storage { message })
     }
 
     pub(crate) async fn playlist(&self, playlist_id: PlaylistId) -> CoreResult<Playlist> {
