@@ -916,7 +916,9 @@ impl DurvaldCore {
 
     /// Reads indexed metadata, backfilling older libraries once when necessary.
     pub async fn track_info(&self, track_id: i64) -> CoreResult<TrackInfo> {
-        self.metadata_application.track_info(track_id).await
+        self.metadata_application
+            .track_info(track_id_from_api(track_id)?)
+            .await
     }
 
     pub async fn save_track_metadata(
@@ -926,13 +928,13 @@ impl DurvaldCore {
         write_to_file: bool,
     ) -> CoreResult<TrackInfo> {
         self.metadata_application
-            .save_track_metadata(track_id, metadata, write_to_file)
+            .save_track_metadata(track_id_from_api(track_id)?, metadata, write_to_file)
             .await
     }
 
     pub async fn undo_track_metadata(&self, track_id: i64) -> CoreResult<TrackInfo> {
         self.metadata_application
-            .undo_track_metadata(track_id)
+            .undo_track_metadata(track_id_from_api(track_id)?)
             .await
     }
 

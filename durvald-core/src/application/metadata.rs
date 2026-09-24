@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::api::{
     AudioMetadata, CoreError, CoreResult, KeyValuePair, TrackInfo, TrackMetadataEdit,
 };
+use crate::domain::ids::TrackId;
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
@@ -27,8 +28,8 @@ impl MetadataApplication {
         }
     }
 
-    pub(crate) async fn track_info(&self, track_id: i64) -> CoreResult<TrackInfo> {
-        non_negative_id(track_id, "Track ID")?;
+    pub(crate) async fn track_info(&self, track_id: TrackId) -> CoreResult<TrackInfo> {
+        let track_id = track_id.get() as i64;
         self.run_database_core(move |conn| {
             crate::metadata_edit::ensure_cached(conn, track_id)?;
             crate::metadata_edit::info(conn, track_id)
@@ -72,11 +73,11 @@ impl MetadataApplication {
 
     pub(crate) async fn save_track_metadata(
         &self,
-        track_id: i64,
+        track_id: TrackId,
         metadata: TrackMetadataEdit,
         write_to_file: bool,
     ) -> CoreResult<TrackInfo> {
-        non_negative_id(track_id, "Track ID")?;
+        let track_id = track_id.get() as i64;
         let _queue = self.metadata_edit_queue.lock().await;
         let backup_dir = std::path::PathBuf::from(&self.covers_dir).join("metadata-backups");
         self.run_database_core(move |conn| {
@@ -86,8 +87,8 @@ impl MetadataApplication {
         .await
     }
 
-    pub(crate) async fn undo_track_metadata(&self, track_id: i64) -> CoreResult<TrackInfo> {
-        non_negative_id(track_id, "Track ID")?;
+    pub(crate) async fn undo_track_metadata(&self, track_id: TrackId) -> CoreResult<TrackInfo> {
+        let track_id = track_id.get() as i64;
         let _queue = self.metadata_edit_queue.lock().await;
         self.run_database_core(move |conn| crate::metadata_edit::undo(conn, track_id))
             .await
@@ -110,12 +111,6 @@ impl MetadataApplication {
             message: format!("Blocking database task failed: {error}"),
         })?
     }
-}
-
-fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
-    u64::try_from(value).map_err(|_| CoreError::InvalidInput {
-        message: format!("{label} must not be negative"),
-    })
 }
 
 fn metadata_to_api(metadata: crate::metadata::AudioMetadata) -> AudioMetadata {

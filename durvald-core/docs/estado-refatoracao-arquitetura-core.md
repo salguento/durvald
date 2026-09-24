@@ -2,9 +2,9 @@
 
 Última atualização: 23 de setembro de 2026
 
-Commit de referência: `7fa544e refactor(core): type artist catalog boundaries`
+Commit de referência: `345a2a1 refactor(core): type playback track inputs`
 
-Estado adicional: primeira extensão de `TrackId` ao playback implementada e ainda não commitada
+Estado adicional: extensão de `TrackId` a metadata implementada e ainda não commitada
 
 ## Visão geral
 
@@ -223,7 +223,7 @@ Ainda falta:
 Continuar a introdução gradual de IDs de domínio nas áreas já estabilizadas:
 
 1. concluir `ArtistId` nas consultas de catálogo e sua ponte com enrichment — **concluído**;
-2. levar `TrackId` às entradas de playback e metadata — **playback em andamento**;
+2. levar `TrackId` às entradas de playback e metadata — **concluído**;
 3. introduzir `PlaylistId` nas operações de playlist;
 4. manter a conversão de `i64` concentrada na fachada pública;
 5. somente depois separar rows SQLite dos DTOs públicos de uma área pequena;
@@ -247,4 +247,5 @@ DTOs públicos, modelos de domínio e rows SQLite.
 | 23/09/2026 | `1d5ff1b`–`f4a41b3` | Conclusão das preferências de catálogo e do Marco 5 |
 | 23/09/2026 | `8558dbc`–`903fe71` | Início do Marco 6 com IDs de domínio para catálogo |
 | 23/09/2026 | `7fa544e` | Extensão de `ArtistId` às consultas de catálogo e à ponte de enrichment |
-| 23/09/2026 | estado não commitado | Extensão inicial de `TrackId` às entradas de playback |
+| 23/09/2026 | `345a2a1` | Extensão inicial de `TrackId` às entradas de playback |
+| 23/09/2026 | estado não commitado | Extensão de `TrackId` às entradas de metadata |
