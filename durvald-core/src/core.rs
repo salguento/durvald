@@ -24,6 +24,7 @@ use crate::application::settings::{
 };
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
+use crate::infrastructure::sqlite::catalog_release::SqliteCatalogReleaseQuery;
 use crate::infrastructure::sqlite::catalog_track::SqliteCatalogTrackQuery;
 use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
@@ -304,6 +305,7 @@ impl DurvaldCore {
         let library_application = Arc::new(LibraryApplication::new(
             db_pool.clone(),
             SqliteCatalogPreferencesRepository::new(db_pool.clone()),
+            SqliteCatalogReleaseQuery::new(db_pool.clone()),
             SqliteCatalogTrackQuery::new(db_pool.clone()),
             SqliteLibraryPathsRepository::new(db_pool.clone()),
             config.covers_dir.clone(),

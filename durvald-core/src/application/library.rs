@@ -16,6 +16,9 @@ use crate::api::{
 };
 use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
 use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
+use crate::infrastructure::sqlite::catalog_release::{
+    CatalogReleaseLookupError, SqliteCatalogReleaseQuery,
+};
 use crate::infrastructure::sqlite::catalog_track::{
     CatalogTrackLookupError, SqliteCatalogTrackQuery,
 };
@@ -27,6 +30,7 @@ type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 pub(crate) struct LibraryApplication {
     db_pool: Arc<DatabasePool>,
     catalog_preferences_repository: SqliteCatalogPreferencesRepository,
+    catalog_release_query: SqliteCatalogReleaseQuery,
     catalog_track_query: SqliteCatalogTrackQuery,
     library_paths_repository: SqliteLibraryPathsRepository,
     covers_dir: String,
@@ -40,6 +44,7 @@ impl LibraryApplication {
     pub(crate) fn new(
         db_pool: Arc<DatabasePool>,
         catalog_preferences_repository: SqliteCatalogPreferencesRepository,
+        catalog_release_query: SqliteCatalogReleaseQuery,
         catalog_track_query: SqliteCatalogTrackQuery,
         library_paths_repository: SqliteLibraryPathsRepository,
         covers_dir: String,
@@ -48,6 +53,7 @@ impl LibraryApplication {
         Self {
             db_pool,
             catalog_preferences_repository,
+            catalog_release_query,
             catalog_track_query,
             library_paths_repository,
             covers_dir,
@@ -476,12 +482,16 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn release(&self, release_id: ReleaseId) -> CoreResult<Release> {
-        self.run_database_core(move |conn| {
-            crate::database::operations::get_release_by_id(conn, &release_id.get().to_string())
-                .map(release_from_database)
-                .map_err(|error| lookup_error(error, "Release", release_id.get()))
-        })
-        .await
+        self.catalog_release_query
+            .find(release_id)
+            .await
+            .map(release_from_database)
+            .map_err(|error| match error {
+                CatalogReleaseLookupError::NotFound => CoreError::NotFound {
+                    message: format!("Release {} not found", release_id.get()),
+                },
+                CatalogReleaseLookupError::Storage(message) => CoreError::Storage { message },
+            })
     }
 
     pub(crate) async fn release_tracks(&self, release_id: ReleaseId) -> CoreResult<Vec<Track>> {
