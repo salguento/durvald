@@ -20,7 +20,7 @@ use crate::application::playlist::PlaylistApplication;
 use crate::application::settings::{SettingsApplication, normalized_cross_fade_duration};
 #[cfg(test)]
 use crate::application::settings::{normalized_audio_quality, validate_settings};
-use crate::domain::ids::{ReleaseId, TrackId};
+use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
@@ -105,6 +105,12 @@ fn normalized_volume(volume: f64) -> f32 {
 fn track_id_from_api(value: i64) -> CoreResult<TrackId> {
     TrackId::try_from(value).map_err(|_| CoreError::InvalidInput {
         message: "Track ID must not be negative".to_string(),
+    })
+}
+
+fn artist_id_from_api(value: i64) -> CoreResult<ArtistId> {
+    ArtistId::try_from(value).map_err(|_| CoreError::InvalidInput {
+        message: "Artist ID must not be negative".to_string(),
     })
 }
 
@@ -395,7 +401,9 @@ impl DurvaldCore {
 
     /// Gets an artist by ID.
     pub async fn artist(&self, artist_id: i64) -> CoreResult<Artist> {
-        self.library_application.artist(artist_id).await
+        self.library_application
+            .artist(artist_id_from_api(artist_id)?)
+            .await
     }
 
     /// Reads the local enrichment cache, even when enrichment is disabled/offline.
@@ -535,12 +543,16 @@ impl DurvaldCore {
 
     /// Returns releases by an artist.
     pub async fn artist_releases(&self, artist_id: i64) -> CoreResult<Vec<Release>> {
-        self.library_application.artist_releases(artist_id).await
+        self.library_application
+            .artist_releases(artist_id_from_api(artist_id)?)
+            .await
     }
 
     /// Returns tracks by an artist.
     pub async fn artist_tracks(&self, artist_id: i64) -> CoreResult<Vec<Track>> {
-        self.library_application.artist_tracks(artist_id).await
+        self.library_application
+            .artist_tracks(artist_id_from_api(artist_id)?)
+            .await
     }
 
     /// Returns all playlists.

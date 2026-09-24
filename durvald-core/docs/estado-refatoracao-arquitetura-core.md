@@ -1,12 +1,15 @@
 # Estado da refatoração arquitetural do core
 
-Última atualização: 23 de setembro de 2026  
-Commit de referência: `1697eab refactor(core): move artwork reading into application service`
+Última atualização: 23 de setembro de 2026
+
+Commit de referência: `903fe71 refactor(core): type catalog lookup ids`
+
+Estado adicional: primeira extensão de `ArtistId` implementada e ainda não commitada
 
 ## Visão geral
 
-A refatoração incremental está avançada e estável. Os Marcos 1–4 foram
-concluídos, o Marco 5 está em andamento e os Marcos 6 e 7 ainda não começaram.
+A refatoração incremental está avançada e estável. Os Marcos 1–5 foram
+concluídos, o Marco 6 está em andamento e o Marco 7 ainda não começou.
 
 O roteiro de referência permanece em
 [`arquitetura/roteiro-implementacao-direto.md`](arquitetura/roteiro-implementacao-direto.md).
@@ -19,24 +22,31 @@ O roteiro de referência permanece em
 | 2 — Baseline P0 | Concluído | Biblioteca, playback, fila, sessão, avanço automático, cancelamento e históricos protegidos |
 | 3 — `PlaybackApplication` | Concluído | Coordenação completa de playback removida da fachada |
 | 4 — `LibraryApplication` | Concluído | Scan, paths, catálogo, busca e consultas migrados |
-| 5 — Fachada por domínio | Em andamento | History, playlists e metadata/artwork extraídos |
-| 6 — Modelos e infraestrutura | Não iniciado | SQLite, rows, ports e adapters continuam no formato atual |
+| 5 — Fachada por domínio | Concluído | History, playlists, metadata/artwork, settings, enrichment, Last.fm e preferências extraídos |
+| 6 — Modelos e infraestrutura | Em andamento | IDs de domínio de catálogo introduzidos; SQLite, rows, ports e adapters ainda pendentes |
 | 7 — Composição e redução da API | Não iniciado | `DurvaldCore::open`, accessors e exports legados ainda precisam ser tratados |
 
 ## Estrutura implementada
 
-O diretório `src/application/` contém cinco serviços:
+O diretório `src/application/` contém oito serviços:
 
 - `PlaybackApplication`;
 - `LibraryApplication`;
 - `HistoryApplication`;
 - `PlaylistApplication`;
-- `MetadataApplication`.
+- `MetadataApplication`;
+- `SettingsApplication`;
+- `EnrichmentApplication`;
+- `LastFmApplication`.
 
-Durante a extração, `src/core.rs` caiu de aproximadamente 2.903 para 1.521
-linhas, uma redução próxima de 48%, mantendo as mesmas 88 operações assíncronas
+Durante a extração, `src/core.rs` caiu de aproximadamente 2.903 para 1.349
+linhas, uma redução próxima de 54%, mantendo 89 operações assíncronas
 públicas. A API foi preservada enquanto a implementação interna foi deslocada
 para serviços de aplicação.
+
+O Marco 6 também introduziu `src/domain/ids.rs`, inicialmente com `TrackId`,
+`ReleaseId` e `ArtistId`. A fachada converte os valores `i64` da API pública e
+as operações de catálogo migradas recebem apenas IDs já validados.
 
 ## Implementações concluídas
 
@@ -79,7 +89,8 @@ O `LibraryApplication` concentra:
 - busca;
 - listagem e paginação;
 - consultas de tracks, releases e artistas;
-- consultas derivadas por artista e release.
+- consultas derivadas por artista e release;
+- favorito, ocultação, `suggest less` e rating de tracks e releases.
 
 ### History
 
@@ -112,33 +123,46 @@ O `MetadataApplication` concentra:
 - leitura segura de artwork;
 - validação de confinamento dos arquivos ao diretório de capas.
 
+### Settings e secure storage
+
+O `SettingsApplication` concentra leitura, normalização, validação, persistência
+e aplicação runtime das configurações de áudio. O secure storage permanece
+encapsulado no `LastFmClient`, que é seu consumidor concreto; não foi criado um
+port sem necessidade de substituição identificada.
+
+### Enrichment
+
+O `EnrichmentApplication` concentra leituras locais, configuração, identidade,
+refresh, overrides e sincronização de metadata de lançamentos. O serviço mantém
+a coordenação remota já decomposta e a fachada apenas delega os casos de uso.
+
+### Last.fm
+
+O `LastFmApplication` concentra estado, autenticação, polling de sessão,
+configuração, desconexão e integração com enrichment/playback. O accessor
+concreto de `LastFmClient` permanece apenas como compatibilidade transitória.
+
 ## Situação detalhada do Marco 5
 
 A ordem definida no roteiro é:
 
 1. playlists e history — **concluído**;
-2. metadata e artwork — **concluído no escopo público identificado**;
-3. settings e secure storage — **próximo**;
-4. enrichment — **pendente**;
-5. Last.fm — **pendente**.
+2. metadata e artwork — **concluído**;
+3. settings e secure storage — **concluído**;
+4. enrichment — **concluído**;
+5. Last.fm — **concluído**;
+6. preferências de tracks e releases — **concluído em `LibraryApplication`**.
 
-Ainda existem operações de preferências de tracks e releases diretamente em
-`core.rs`, como favorito, ocultação, `suggest less` e rating. Antes de fechar
-definitivamente a fronteira de catálogo/metadata, será necessário decidir se
-essas mutações pertencem a `LibraryApplication`, `MetadataApplication` ou a um
-serviço próprio. Essa é uma pendência de organização, não uma regressão
-funcional.
+Com a remoção dos helpers genéricos de mutação SQLite de `DurvaldCore`, a
+fachada deixou de coordenar diretamente os casos de uso previstos neste marco.
 
 ## Responsabilidades ainda presentes em `DurvaldCore`
 
 As maiores concentrações restantes são:
 
-- construção e composição de banco, player, enrichment e Last.fm;
-- helpers genéricos de execução SQLite;
-- settings;
-- mutações de preferências de tracks e releases;
-- chamadas de enrichment;
-- autenticação e configuração Last.fm;
+- construção e composição de banco, player, serviços, enrichment e Last.fm;
+- conversão de tipos da API pública para tipos internos;
+- adaptação entre modelos públicos e representações internas ainda legadas;
 - accessors concretos para banco, player, Last.fm e diretório de capas.
 
 A fachada está significativamente mais fina, mas ainda não atingiu o estado
@@ -151,31 +175,30 @@ Na implementação mais recente foram aprovados:
 - `rustfmt`;
 - `git diff --check`;
 - Clippy com a feature UniFFI e warnings tratados como erro;
-- suíte completa do core: **281 testes aprovados e 3 ignorados**.
+- suíte completa do core: **287 testes aprovados e 3 ignorados**.
 
 Os gates globais de UniFFI, Swift e GTK foram executados no início da extração
-arquitetural, e o lockfile GTK foi atualizado deliberadamente. Entretanto, a
-geração dos bindings, o build Swift e o build GTK não foram repetidos depois de
-cada commit recente do Marco 5. O código Rust está verde no estado de referência,
+arquitetural, incluindo a correção de `process_mock_audio`, e o lockfile GTK foi
+atualizado deliberadamente no macOS. Eles não foram repetidos após todas as
+fatias posteriores dos Marcos 5 e 6. O código Rust está verde no estado atual,
 mas o gate multiplataforma completo precisa ser renovado no próximo checkpoint.
 
 ## Marcos pendentes
 
-### Marco 5
-
-- criar `SettingsApplication`;
-- mover leitura, validação, persistência e efeitos runtime de settings;
-- definir a fronteira prática do secure storage;
-- extrair coordenação de enrichment;
-- extrair coordenação Last.fm;
-- resolver as preferências de tracks e releases ainda na fachada.
-
 ### Marco 6
 
-Ainda não houve:
+Já foi concluído:
+
+- criação do módulo interno `domain`;
+- introdução de `TrackId`, `ReleaseId` e `ArtistId`;
+- conversão de IDs na fronteira pública das operações migradas;
+- uso de IDs tipados nas mutações e consultas de catálogo;
+- remoção da validação primitiva duplicada de `LibraryApplication`.
+
+Ainda falta:
 
 - separação sistemática entre DTO público, domínio e row SQLite;
-- introdução gradual de IDs de domínio;
+- estender IDs de domínio às demais áreas estabilizadas;
 - criação de `infrastructure/sqlite`;
 - ports pequenos para dependências substituíveis;
 - retirada das chamadas diretas a `database::operations` dos serviços de aplicação.
@@ -197,26 +220,30 @@ Ainda falta:
 
 ## Próximo passo recomendado
 
-Iniciar a terceira fatia do Marco 5: **settings e secure storage**, em incrementos
-pequenos:
+Continuar a introdução gradual de IDs de domínio nas áreas já estabilizadas:
 
-1. fechar a baseline diretamente afetada de settings;
-2. criar `application/settings.rs`;
-3. mover primeiro a leitura e normalização;
-4. mover validação, persistência e atualização runtime do player;
-5. avaliar a fronteira de secure storage sem criar um port antecipadamente;
-6. executar o gate Rust;
-7. ao fechar a fatia, renovar UniFFI, bindings Swift, build macOS e GTK.
+1. concluir `ArtistId` nas consultas de catálogo e sua ponte com enrichment;
+2. levar `TrackId` às entradas de playback e metadata;
+3. introduzir `PlaylistId` nas operações de playlist;
+4. manter a conversão de `i64` concentrada na fachada pública;
+5. somente depois separar rows SQLite dos DTOs públicos de uma área pequena;
+6. então extrair o primeiro adapter em `infrastructure/sqlite`, sem reescrever queries;
+7. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do checkpoint.
 
 ## Resumo executivo
 
-O padrão arquitetural foi provado e replicado em cinco serviços. A migração já
-retirou da fachada playback, biblioteca, histórico, playlists e metadata/artwork.
-O próximo bloco é settings; depois vêm os dois domínios mais acoplados e
-sensíveis, enrichment e Last.fm.
+O padrão arquitetural foi replicado em oito serviços e o Marco 5 foi concluído.
+A fachada pública está reduzida principalmente à delegação, composição e
+conversão de fronteira. O Marco 6 começou pela tipagem dos IDs de catálogo; os
+próximos blocos são ampliar essa tipagem e iniciar a separação controlada entre
+DTOs públicos, modelos de domínio e rows SQLite.
 
 ## Histórico de atualizações
 
 | Data | Commit | Alteração registrada |
 | --- | --- | --- |
 | 23/09/2026 | `1697eab` | Criação do relatório após concluir a extração de metadata e artwork |
+| 23/09/2026 | `9011762`–`ff1f021` | Conclusão de settings, secure storage, enrichment e Last.fm |
+| 23/09/2026 | `1d5ff1b`–`f4a41b3` | Conclusão das preferências de catálogo e do Marco 5 |
+| 23/09/2026 | `8558dbc`–`903fe71` | Início do Marco 6 com IDs de domínio para catálogo |
+| 23/09/2026 | estado não commitado | Extensão de `ArtistId` às consultas de catálogo e à ponte de enrichment |

@@ -9,6 +9,7 @@ use crate::api::{
     ExternalReleaseDetails, Release,
 };
 use crate::application::library::LibraryApplication;
+use crate::domain::ids::ArtistId;
 use crate::enrichment::service::EnrichmentService;
 
 const MAX_PAGE_SIZE: u64 = 200;
@@ -134,8 +135,12 @@ impl EnrichmentApplication {
         &self,
         artist_id: i64,
     ) -> CoreResult<Vec<Release>> {
-        non_negative_id(artist_id, "Artist ID")?;
-        self.service.sync_local_release_metadata(artist_id).await?;
+        let artist_id = ArtistId::try_from(artist_id).map_err(|_| CoreError::InvalidInput {
+            message: "Artist ID must not be negative".to_string(),
+        })?;
+        self.service
+            .sync_local_release_metadata(artist_id.get() as i64)
+            .await?;
         self.library.artist_releases(artist_id).await
     }
 }

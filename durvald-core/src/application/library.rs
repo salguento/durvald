@@ -14,7 +14,7 @@ use crate::api::{
     Artist, CoreError, CoreResult, Playlist, Release, ReleasePage, ScanPhase, ScanProgress,
     ScanResult, SearchResults, Track, TrackPage,
 };
-use crate::domain::ids::{ReleaseId, TrackId};
+use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
 
 type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
@@ -425,33 +425,33 @@ impl LibraryApplication {
         .await
     }
 
-    pub(crate) async fn artist(&self, artist_id: i64) -> CoreResult<Artist> {
-        let artist_id = non_negative_id(artist_id, "Artist ID")?;
+    pub(crate) async fn artist(&self, artist_id: ArtistId) -> CoreResult<Artist> {
         self.run_database_core(move |conn| {
-            crate::database::operations::get_artist_by_id(conn, &artist_id.to_string())
+            crate::database::operations::get_artist_by_id(conn, &artist_id.get().to_string())
                 .map(|artist| Artist {
                     id: artist.artist_id as i64,
                     name: artist.artist_name,
                 })
-                .map_err(|error| lookup_error(error, "Artist", artist_id))
+                .map_err(|error| lookup_error(error, "Artist", artist_id.get()))
         })
         .await
     }
 
-    pub(crate) async fn artist_releases(&self, artist_id: i64) -> CoreResult<Vec<Release>> {
-        let artist_id = non_negative_id(artist_id, "Artist ID")?;
+    pub(crate) async fn artist_releases(&self, artist_id: ArtistId) -> CoreResult<Vec<Release>> {
         self.run_database(move |conn| {
-            crate::database::operations::get_releases_by_artist_id(conn, &artist_id.to_string())
-                .map(|releases| releases.into_iter().map(release_from_database).collect())
-                .map_err(|error| error.to_string())
+            crate::database::operations::get_releases_by_artist_id(
+                conn,
+                &artist_id.get().to_string(),
+            )
+            .map(|releases| releases.into_iter().map(release_from_database).collect())
+            .map_err(|error| error.to_string())
         })
         .await
     }
 
-    pub(crate) async fn artist_tracks(&self, artist_id: i64) -> CoreResult<Vec<Track>> {
-        let artist_id = non_negative_id(artist_id, "Artist ID")?;
+    pub(crate) async fn artist_tracks(&self, artist_id: ArtistId) -> CoreResult<Vec<Track>> {
         self.run_database(move |conn| {
-            crate::database::operations::get_songs_by_artist_id(conn, &artist_id.to_string())
+            crate::database::operations::get_songs_by_artist_id(conn, &artist_id.get().to_string())
                 .map(|tracks| tracks.into_iter().map(track_from_song).collect())
                 .map_err(|error| error.to_string())
         })
@@ -667,12 +667,6 @@ fn finish_page<T>(mut items: Vec<T>, page_size: usize, offset: u64) -> (Vec<T>, 
     items.truncate(page_size);
     let next_offset = has_more.then(|| offset.saturating_add(page_size as u64));
     (items, next_offset)
-}
-
-fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
-    u64::try_from(value).map_err(|_| CoreError::InvalidInput {
-        message: format!("{label} must not be negative"),
-    })
 }
 
 fn validate_rating(rating: Option<u8>) -> CoreResult<()> {
