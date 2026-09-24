@@ -414,12 +414,12 @@ impl LibraryApplication {
     }
 
     pub(crate) async fn releases(&self) -> CoreResult<Vec<Release>> {
-        self.run_database(|conn| {
-            crate::database::operations::get_all_releases(conn)
-                .map(|releases| releases.into_iter().map(release_from_database).collect())
-                .map_err(|error| error.to_string())
-        })
-        .await
+        self.persistence
+            .catalog_release_query
+            .all()
+            .await
+            .map(|releases| releases.into_iter().map(release_from_database).collect())
+            .map_err(catalog_release_storage_error)
     }
 
     pub(crate) async fn releases_page(
@@ -503,12 +503,7 @@ impl LibraryApplication {
             .find(release_id)
             .await
             .map(release_from_database)
-            .map_err(|error| match error {
-                CatalogReleaseLookupError::NotFound => CoreError::NotFound {
-                    message: format!("Release {} not found", release_id.get()),
-                },
-                CatalogReleaseLookupError::Storage(message) => CoreError::Storage { message },
-            })
+            .map_err(|error| catalog_release_error(error, release_id))
     }
 
     pub(crate) async fn release_tracks(&self, release_id: ReleaseId) -> CoreResult<Vec<Track>> {
@@ -517,12 +512,7 @@ impl LibraryApplication {
             .tracks(release_id)
             .await
             .map(|tracks| tracks.into_iter().map(track_from_song).collect())
-            .map_err(|error| match error {
-                CatalogReleaseLookupError::NotFound => CoreError::NotFound {
-                    message: format!("Release {} not found", release_id.get()),
-                },
-                CatalogReleaseLookupError::Storage(message) => CoreError::Storage { message },
-            })
+            .map_err(|error| catalog_release_error(error, release_id))
     }
 
     pub(crate) async fn set_track_favorite(
@@ -722,6 +712,24 @@ fn catalog_track_storage_error(error: CatalogTrackLookupError) -> CoreError {
             message: "Unexpected missing track while listing catalog".to_string(),
         },
         CatalogTrackLookupError::Storage(message) => CoreError::Storage { message },
+    }
+}
+
+fn catalog_release_error(error: CatalogReleaseLookupError, release_id: ReleaseId) -> CoreError {
+    match error {
+        CatalogReleaseLookupError::NotFound => CoreError::NotFound {
+            message: format!("Release {} not found", release_id.get()),
+        },
+        CatalogReleaseLookupError::Storage(message) => CoreError::Storage { message },
+    }
+}
+
+fn catalog_release_storage_error(error: CatalogReleaseLookupError) -> CoreError {
+    match error {
+        CatalogReleaseLookupError::NotFound => CoreError::Storage {
+            message: "Unexpected missing release while listing catalog".to_string(),
+        },
+        CatalogReleaseLookupError::Storage(message) => CoreError::Storage { message },
     }
 }
 
