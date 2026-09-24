@@ -306,7 +306,6 @@ impl DurvaldCore {
             lastfm.clone(),
         );
         let library_application = Arc::new(LibraryApplication::new(
-            db_pool.clone(),
             LibraryPersistence::new(
                 SqliteCatalogArtistQuery::new(db_pool.clone()),
                 SqliteCatalogPreferencesRepository::new(db_pool.clone()),

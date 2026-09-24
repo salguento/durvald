@@ -3,7 +3,7 @@
 use std::sync::{Arc, atomic::AtomicBool};
 
 use crate::{
-    database::operations::{PendingDatabaseUpdate, PersistedMetadata},
+    database::operations::{PendingDatabaseUpdate, PersistedMetadata, ScanReconciliation},
     metadata::AudioMetadata,
 };
 
@@ -56,5 +56,19 @@ impl SqliteLibraryScanRepository {
         })
         .await
         .map_err(|error| format!("Library database write task failed: {error}"))?
+    }
+
+    pub(crate) async fn reconcile(
+        &self,
+        reconciliation: ScanReconciliation,
+    ) -> Result<u64, String> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::remove_missing_songs_in_folder(&conn, reconciliation)
+                .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| format!("Library scan reconciliation task failed: {error}"))?
     }
 }

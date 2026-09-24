@@ -29,11 +29,8 @@ use crate::infrastructure::sqlite::catalog_track::{
 use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 
-type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
-
 /// Coordinates library use cases behind the public core facade.
 pub(crate) struct LibraryApplication {
-    db_pool: Arc<DatabasePool>,
     persistence: LibraryPersistence,
     covers_dir: String,
     metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
@@ -76,13 +73,11 @@ impl LibraryPersistence {
 
 impl LibraryApplication {
     pub(crate) fn new(
-        db_pool: Arc<DatabasePool>,
         persistence: LibraryPersistence,
         covers_dir: String,
         metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
         Self {
-            db_pool,
             persistence,
             covers_dir,
             metadata_edit_queue,
@@ -215,19 +210,11 @@ impl LibraryApplication {
             }
 
             if let Some(reconciliation) = reconciliation {
-                let db_pool = self.db_pool.clone();
-                let reconcile_result = tokio::task::spawn_blocking(move || {
-                    let conn = db_pool.get().map_err(|error| error.to_string())?;
-                    crate::database::operations::remove_missing_songs_in_folder(
-                        &conn,
-                        reconciliation,
-                    )
-                    .map_err(|error| error.to_string())
-                })
-                .await;
-                if let Err(error) = reconcile_result
-                    .map_err(|error| error.to_string())
-                    .and_then(|result| result)
+                if let Err(error) = self
+                    .persistence
+                    .library_scan_repository
+                    .reconcile(reconciliation)
+                    .await
                 {
                     errors.push(format!("{path}: {error}"));
                     continue;
