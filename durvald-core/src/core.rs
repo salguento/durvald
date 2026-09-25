@@ -48,9 +48,6 @@ impl DurvaldCore {
     }
 }
 
-/// Type alias for the core handle used in UniFFI
-pub type DurvaldCoreHandle = Arc<DurvaldCore>;
-
 #[cfg(test)]
 const MAX_LIBRARY_PAGE_SIZE: u64 = 200;
 
