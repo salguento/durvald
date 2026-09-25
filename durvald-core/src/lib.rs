@@ -20,7 +20,7 @@ mod domain;
 pub mod enrichment;
 mod infrastructure;
 pub mod lastfm;
-pub mod metadata;
+mod metadata;
 mod metadata_edit;
 pub mod secure_store;
 
