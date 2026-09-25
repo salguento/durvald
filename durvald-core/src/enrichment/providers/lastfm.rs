@@ -672,11 +672,7 @@ fn map_error(error: LastFmError) -> TransportError {
         LastFmError::MetadataStorage { extended_code } => TransportError::Storage { extended_code },
         LastFmError::Json(_) => TransportError::InvalidJson,
         LastFmError::ResponseTooLarge { .. } => TransportError::BodyTooLarge,
-        LastFmError::RateLimit(_) => TransportError::RateLimited {
-            retry_after_seconds: 60,
-        },
         LastFmError::Time(_) => TransportError::Network,
-        LastFmError::NotConnected => TransportError::NotConfigured,
         LastFmError::Custom(_) => TransportError::InvalidRequest,
     }
 }

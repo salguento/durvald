@@ -97,10 +97,8 @@ impl LastFmApplication {
 pub(crate) fn lastfm_error(error: LastFmError) -> CoreError {
     let message = error.to_string();
     match error {
-        LastFmError::Network(_) | LastFmError::RateLimit(_) => CoreError::Network { message },
-        LastFmError::NotConnected | LastFmError::Api { .. } => {
-            CoreError::Authentication { message }
-        }
+        LastFmError::Network(_) => CoreError::Network { message },
+        LastFmError::Api { .. } => CoreError::Authentication { message },
         LastFmError::SecureStore(_) => CoreError::Storage { message },
         _ => CoreError::Network { message },
     }

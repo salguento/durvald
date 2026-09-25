@@ -23,8 +23,6 @@ pub enum LastFmError {
     Json(#[from] serde_json::Error),
     #[error("Secure store error: {0}")]
     SecureStore(#[from] SecureStoreError),
-    #[error("Rate limit error: {0}")]
-    RateLimit(String),
     #[error("Last.fm response exceeds the {limit_bytes}-byte limit")]
     ResponseTooLarge { limit_bytes: usize },
     #[error("Last.fm API error {code}: {message}")]
@@ -40,8 +38,6 @@ pub enum LastFmError {
     },
     #[error("Time error: {0}")]
     Time(String),
-    #[error("Not connected")]
-    NotConnected,
     #[error("{0}")]
     Custom(String),
 }
@@ -315,7 +311,7 @@ async fn bounded_metadata_image_response(mut response: reqwest::Response) -> Las
         .map_err(|_| LastFmError::Custom("Invalid Last.fm image decode".into()))
 }
 
-#[cfg(any(test, debug_assertions))]
+#[cfg(test)]
 fn api_key_diagnostic(api_key: &str) -> String {
     if api_key.trim().is_empty() {
         "Store is missing an API key".to_string()
@@ -324,7 +320,7 @@ fn api_key_diagnostic(api_key: &str) -> String {
     }
 }
 
-#[cfg(any(test, debug_assertions))]
+#[cfg(test)]
 fn credentials_diagnostic(api_key: &str, api_secret: &str) -> String {
     if api_key.trim().is_empty() || api_secret.trim().is_empty() {
         "Last.fm credentials are incomplete".to_string()
@@ -1099,30 +1095,6 @@ impl LastFmClient {
         Ok(())
     }
 
-    pub async fn verify_credentials(&self) -> LastFmResult<String> {
-        let store = self.secure_store.lock().await;
-        let api_key = store
-            .get("api_key")
-            .map_err(LastFmError::SecureStore)?
-            .and_then(|v| v.as_str().map(String::from))
-            .ok_or_else(|| {
-                LastFmError::SecureStore(SecureStoreError::Custom("API key not found".to_string()))
-            })?;
-
-        let secret = Zeroizing::new(
-            store
-                .get_secret("api_secret")
-                .map_err(LastFmError::SecureStore)?,
-        );
-
-        if api_key.trim().is_empty() || secret.trim().is_empty() {
-            return Err(LastFmError::Custom(
-                "Last.fm credentials are empty".to_string(),
-            ));
-        }
-        Ok("Last.fm credentials are configured".to_string())
-    }
-
     pub async fn get_auth_token(&self) -> LastFmResult<AuthTokenResponse> {
         enforce_rate_limit().await?;
 
@@ -1379,38 +1351,6 @@ impl LastFmClient {
         cache.api_secret.take();
         cache.session_key.take();
         Ok(())
-    }
-
-    #[cfg(debug_assertions)]
-    pub async fn debug_store(&self) -> LastFmResult<String> {
-        let store = self.secure_store.lock().await;
-        store
-            .get("api_key")
-            .map_err(LastFmError::SecureStore)?
-            .and_then(|v| v.as_str().map(String::from))
-            .map(|key| api_key_diagnostic(&key))
-            .ok_or_else(|| {
-                LastFmError::SecureStore(SecureStoreError::Custom("API key not found".to_string()))
-            })
-    }
-
-    #[cfg(debug_assertions)]
-    pub async fn debug_session(&self) -> LastFmResult<String> {
-        let store = self.secure_store.lock().await;
-        match store.get_secret("session_key") {
-            Ok(key) => {
-                let key = Zeroizing::new(key);
-                Ok(format!("Session key found ({} chars)", key.len()))
-            }
-            Err(e) => Ok(format!("Session key not found: {}", e)),
-        }
-    }
-
-    #[cfg(debug_assertions)]
-    pub async fn debug_credentials(&self) -> LastFmResult<String> {
-        let api_key = self.get_api_key().await?;
-        let secret = self.get_api_secret().await?;
-        Ok(credentials_diagnostic(&api_key, secret.as_str()))
     }
 }
 
