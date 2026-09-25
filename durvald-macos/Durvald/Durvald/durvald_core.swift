@@ -552,8 +552,8 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 /**
  * Opaque core engine - the main entry point for all operations.
  *
- * Internally owns the database pool, audio player, secure storage,
- * and Last.fm client. All state is encapsulated here.
+ * Internally owns the application services and integration clients that back
+ * the public API. All state is encapsulated behind this facade.
  */
 public protocol DurvaldCoreProtocol : AnyObject {
 
@@ -986,8 +986,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
 /**
  * Opaque core engine - the main entry point for all operations.
  *
- * Internally owns the database pool, audio player, secure storage,
- * and Last.fm client. All state is encapsulated here.
+ * Internally owns the application services and integration clients that back
+ * the public API. All state is encapsulated behind this facade.
  */
 open class DurvaldCore:
     DurvaldCoreProtocol {

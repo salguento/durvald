@@ -2,14 +2,17 @@
 
 Última atualização: 24 de setembro de 2026
 
-Commit de referência: `baeae60 refactor(core): isolate playlist track queries`
+Commit de referência: `f9f89a3 test(core): enforce application database boundary`
 
-Estado adicional: consulta de artwork da playlist isolada e ainda não commitada
+Estado adicional: bindings Swift regenerados e checkpoint global do Marco 6 ainda
+não commitado
 
 ## Visão geral
 
-A refatoração incremental está avançada e estável. Os Marcos 1–5 foram
-concluídos, o Marco 6 está em andamento e o Marco 7 ainda não começou.
+A refatoração incremental está avançada e estável. Os Marcos 1–6 foram
+concluídos quanto à implementação; o gate GTK do checkpoint final permanece
+bloqueado apenas pela ausência das bibliotecas nativas no macOS. O Marco 7
+ainda não começou.
 
 O roteiro de referência permanece em
 [`arquitetura/roteiro-implementacao-direto.md`](arquitetura/roteiro-implementacao-direto.md).
@@ -23,7 +26,7 @@ O roteiro de referência permanece em
 | 3 — `PlaybackApplication` | Concluído | Coordenação completa de playback removida da fachada |
 | 4 — `LibraryApplication` | Concluído | Scan, paths, catálogo, busca e consultas migrados |
 | 5 — Fachada por domínio | Concluído | History, playlists, metadata/artwork, settings, enrichment, Last.fm e preferências extraídos |
-| 6 — Modelos e infraestrutura | Em andamento | IDs de domínio introduzidos e adapters SQLite consolidados para settings, history, metadata e leituras/mutações de catálogo |
+| 6 — Modelos e infraestrutura | Implementação concluída | IDs e modelos de domínio separados de DTOs/rows, adapters consolidados e fronteira arquitetural protegida por teste |
 | 7 — Composição e redução da API | Não iniciado | `DurvaldCore::open`, accessors e exports legados ainda precisam ser tratados |
 
 ## Estrutura implementada
@@ -196,22 +199,27 @@ final previsto no Marco 7.
 
 ## Validação atual
 
-Na implementação mais recente foram aprovados:
+No fechamento da implementação do Marco 6 foram aprovados:
 
 - `rustfmt`;
 - `git diff --check`;
 - Clippy com a feature UniFFI e warnings tratados como erro;
-- suíte completa do core: **287 testes aprovados e 3 ignorados**.
+- suíte completa do core: **288 testes aprovados e 3 ignorados**;
+- geração dos bindings UniFFI e smoke test da fronteira FFI;
+- build Debug do aplicativo macOS;
+- suíte `DurvaldTests` no macOS;
+- `cargo fmt -- --check` no frontend GTK.
 
-Os gates globais de UniFFI, Swift e GTK foram executados no início da extração
-arquitetural, incluindo a correção de `process_mock_audio`, e o lockfile GTK foi
-atualizado deliberadamente no macOS. Eles não foram repetidos após todas as
-fatias posteriores dos Marcos 5 e 6. O código Rust está verde no estado atual,
-mas o gate multiplataforma completo precisa ser renovado no próximo checkpoint.
+Os comandos `cargo clippy --locked --all-targets -- -D warnings` e
+`cargo build --locked` do GTK foram executados, mas não chegaram ao código do
+projeto: `pkg-config` não encontrou as bibliotecas nativas `gtk4` e
+`graphene-gobject-1.0` neste macOS. As dependências Rust bloqueadas no lockfile
+foram baixadas normalmente. Portanto, UniFFI e Swift estão verdes; a compilação
+GTK precisa ser repetida em ambiente com GTK 4 instalado.
 
-## Marcos pendentes
+## Situação dos marcos finais
 
-### Marco 6
+### Marco 6 — implementação concluída
 
 Já foi concluído:
 
@@ -301,25 +309,25 @@ Ainda falta:
 - retirar a montagem de dependências de `DurvaldCore`;
 - revisar e remover accessors concretos;
 - reduzir exports internos legados;
-- regenerar bindings;
-- validar Swift e GTK;
+- manter os bindings sincronizados após mudanças na API;
+- repetir a validação GTK em ambiente com as bibliotecas nativas instaladas;
 - consolidar a documentação arquitetural final.
 
 ## Próximos passos recomendados
 
-1. registrar em commit o teste arquitetural atualmente no working tree;
-2. renovar UniFFI, bindings Swift, build macOS e GTK no fechamento do
-   checkpoint do Marco 6.
+1. repetir Clippy e build GTK em ambiente com GTK 4 e Graphene instalados;
+2. iniciar o Marco 7 pela criação de um composition root explícito.
 
 ## Resumo executivo
 
-O padrão arquitetural foi replicado em oito serviços e o Marco 5 foi concluído.
+O padrão arquitetural foi replicado em oito serviços e os Marcos 1–6 foram
+concluídos quanto à implementação.
 A fachada pública está reduzida principalmente à delegação, composição e
 conversão de fronteira. No Marco 6, a tipagem dos IDs foi estabelecida, todas
 as consultas comuns de catálogo foram deslocadas para adapters SQLite e o ciclo
-de scan e o playback foram isolados. O único serviço ainda com acesso direto ao
-banco é playlists; em paralelo, permanece necessário aprofundar a separação
-entre DTOs públicos, modelos de domínio e rows SQLite.
+de scan, o playback e playlists foram isolados. Nenhum serviço de aplicação
+conhece rows, operações, pools ou conexões SQLite; esse limite agora é protegido
+por teste arquitetural.
 
 ## Histórico de atualizações
 
@@ -392,4 +400,5 @@ entre DTOs públicos, modelos de domínio e rows SQLite.
 | 24/09/2026 | `0962a2c` | Consultas de artista convertidas para modelo de domínio |
 | 24/09/2026 | `7de6227` | Artistas da busca convertidos para modelo de domínio |
 | 24/09/2026 | `aadfd77` | Playlists da busca convertidas para modelo de domínio |
-| 24/09/2026 | estado não commitado | Auditoria e teste da fronteira entre application e banco |
+| 24/09/2026 | `f9f89a3` | Auditoria e teste da fronteira entre application e banco |
+| 24/09/2026 | estado não commitado | Regeneração UniFFI e checkpoint global do Marco 6 |
