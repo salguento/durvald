@@ -17,11 +17,6 @@ pub struct QueueItem {
     pub path: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct QueueData {
-    pub items: Vec<QueueItem>,
-}
-
 const MAX_PLAYBACK_HISTORY_ITEMS: usize = 100;
 
 pub(crate) struct PreparedSound {
@@ -83,14 +78,10 @@ pub enum AudioError {
     Join(#[from] tokio::task::JoinError),
     #[error("No track is currently loaded")]
     NoTrackLoaded,
-    #[error("Duration not available")]
-    DurationNotAvailable,
     #[error("Position out of bounds")]
     PositionOutOfBounds,
     #[error("Failed to remove item")]
     FailedToRemove,
-    #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
     #[cfg(any(test, feature = "test-support"))]
     #[error("Failed to initialize mock audio backend")]
     MockBackend,
@@ -476,17 +467,6 @@ impl AudioPlayer {
         (self.get_position(), self.get_duration())
     }
 
-    pub fn get_progress_percentage(&self) -> Option<f32> {
-        if let Some(total) = self.get_duration() {
-            let current = self.get_position();
-            let total_secs = total.as_secs_f32();
-            if total_secs > 0.0 {
-                return Some((current.as_secs_f32() / total_secs).min(1.0));
-            }
-        }
-        None
-    }
-
     pub async fn seek_to_position(&mut self, seconds: u64) -> Result<(), AudioError> {
         self.invalidate_gapless();
         if let Some(sound) = &mut self.current_sound {
@@ -497,16 +477,6 @@ impl AudioPlayer {
             Ok(())
         } else {
             Err(AudioError::NoTrackLoaded)
-        }
-    }
-
-    pub async fn seek_to_percentage(&mut self, percentage: f32) -> Result<(), AudioError> {
-        self.synchronize_gapless();
-        if let Some(duration) = self.total_duration {
-            let target_seconds = (duration.as_secs_f32() * percentage.clamp(0.0, 1.0)) as u64;
-            self.seek_to_position(target_seconds).await
-        } else {
-            Err(AudioError::DurationNotAvailable)
         }
     }
 
@@ -825,16 +795,6 @@ impl AudioPlayer {
             .map(|(song_id, path)| (song_id, path, self.paused_position.unwrap_or_default()))
     }
 
-    pub fn insert_at_position(&mut self, song_id: i64, path: String, position: usize) {
-        self.invalidate_gapless();
-        let item = QueueItem { song_id, path };
-        if position >= self.queue.len() {
-            self.queue.push_back(item);
-        } else {
-            self.queue.insert(position, item);
-        }
-    }
-
     pub async fn play_next(&mut self) -> Result<bool, AudioError> {
         self.invalidate_gapless();
         if self.repeat_mode == RepeatMode::One {
@@ -886,43 +846,6 @@ impl AudioPlayer {
         } else {
             Ok(false)
         }
-    }
-
-    pub async fn play_previous(&mut self) -> Result<bool, AudioError> {
-        self.invalidate_gapless();
-        if let Some(prev_item) = self.history.pop_back() {
-            // Add current song back to front of queue if playing
-            if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
-                self.queue.push_front(QueueItem {
-                    song_id,
-                    path: path.clone(),
-                });
-            }
-
-            self.current_song_id = Some(prev_item.song_id);
-            self.play(prev_item.path).await?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    }
-
-    pub async fn skip_to(&mut self, position: usize) -> Result<(), AudioError> {
-        self.invalidate_gapless();
-        if position >= self.queue.len() {
-            return Err(AudioError::PositionOutOfBounds);
-        }
-
-        // Remove all items before the target position and add them to history
-        for _ in 0..position {
-            if let Some(item) = self.queue.pop_front() {
-                self.push_history(item);
-            }
-        }
-
-        // Play the target song
-        self.play_next().await?;
-        Ok(())
     }
 
     pub fn remove_from_queue(&mut self, position: usize) -> Result<QueueItem, AudioError> {
@@ -988,23 +911,6 @@ impl AudioPlayer {
         self.playback_requested = false;
     }
 
-    /// Starts a restored session from its paused position, if necessary.
-    pub async fn resume_restored(&mut self) -> Result<bool, AudioError> {
-        if self.current_sound.is_some() {
-            self.resume();
-            return Ok(true);
-        }
-        let Some(path) = self.current_path.clone() else {
-            return Ok(false);
-        };
-        let position = self.paused_position.unwrap_or_default();
-        self.play(path).await?;
-        if position > 0.0 {
-            self.seek_to_position(position as u64).await?;
-        }
-        Ok(true)
-    }
-
     pub fn shuffle_enabled(&self) -> bool {
         self.shuffle_enabled
     }
@@ -1046,42 +952,8 @@ impl AudioPlayer {
         }
     }
 
-    // Database persistence methods
-    pub fn load_queue(&mut self, data: QueueData) -> Result<(), AudioError> {
-        self.invalidate_gapless();
-        self.queue = data.items.into_iter().collect();
-        self.history.clear();
-        Ok(())
-    }
-
-    pub fn load_queue_from_db_blocking(
-        conn: &rusqlite::Connection,
-    ) -> Result<QueueData, AudioError> {
-        let mut stmt = conn.prepare(
-            "SELECT q.song_id, s.file_path
-             FROM queue q
-             JOIN songs s ON q.song_id = s.song_id
-             ORDER BY q.position ASC",
-        )?;
-
-        let items: Result<Vec<QueueItem>, _> = stmt
-            .query_map([], |row| {
-                Ok(QueueItem {
-                    song_id: row.get(0)?,
-                    path: row.get(1)?,
-                })
-            })?
-            .collect();
-
-        Ok(QueueData { items: items? })
-    }
-
     pub fn queue_is_empty(&self) -> bool {
         self.queue.is_empty()
-    }
-
-    pub fn get_playback_state(&self) -> Option<kira::sound::PlaybackState> {
-        self.active_sound().map(|sound| sound.state())
     }
 }
 

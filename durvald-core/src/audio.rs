@@ -4,7 +4,7 @@ mod decoder;
 mod gapless;
 pub mod player;
 
-pub use player::{AudioPlayer, QueueData, QueueItem};
+pub use player::AudioPlayer;
 
 /// File extensions accepted by library scanning for this MVP. They map exactly
 /// to the Kira/Symphonia decoder features enabled in `Cargo.toml`: MP3, WAV,
