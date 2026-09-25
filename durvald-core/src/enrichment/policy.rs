@@ -45,10 +45,6 @@ pub fn normalized_settings(mut settings: EnrichmentSettings) -> CoreResult<Enric
     Ok(settings)
 }
 
-pub fn network_allowed(settings: &EnrichmentSettings) -> bool {
-    settings.enabled && !settings.offline
-}
-
 impl EnrichmentProvider {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -89,12 +85,6 @@ mod tests {
         for invalid in ["", "p", "pt_BR", "en/../../", "en--us", "éé", "en-"] {
             assert!(normalize_language(invalid).is_err(), "{invalid}");
         }
-        assert!(!network_allowed(&EnrichmentSettings::default()));
-        assert!(!network_allowed(&EnrichmentSettings {
-            enabled: true,
-            offline: true,
-            ..Default::default()
-        }));
     }
 
     #[test]

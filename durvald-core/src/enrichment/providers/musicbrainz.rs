@@ -490,9 +490,7 @@ impl MusicBrainz {
         let mut pages = Vec::new();
         let mut identifiers = HashSet::new();
         let mut response_validators = CacheValidators::default();
-        let mut remote_total = 0;
         let mut remote_exhausted = false;
-        let mut time_budget_reached = false;
         let no_validators = CacheValidators::default();
 
         while pages.len() < max_pages && !remote_exhausted {
@@ -509,10 +507,7 @@ impl MusicBrainz {
             {
                 Ok(response) => response?,
                 Err(_) if pages.is_empty() => return Err(TransportError::Timeout),
-                Err(_) => {
-                    time_budget_reached = true;
-                    break;
-                }
+                Err(_) => break,
             };
             match response {
                 ProviderResponse::NotModified { validators } if pages.is_empty() => {
@@ -531,7 +526,6 @@ impl MusicBrainz {
                     if pages.is_empty() {
                         response_validators = validators;
                     }
-                    remote_total = page.remote_total;
                     remote_exhausted = page.remote_exhausted;
                     offset = page.remote_next_offset.unwrap_or(offset);
                     pages.push(page);
@@ -541,13 +535,7 @@ impl MusicBrainz {
 
         Ok(ProviderResponse::Modified {
             value: DiscographyBatch {
-                remote_next_offset: (!remote_exhausted).then_some(offset),
-                remote_total,
                 remote_exhausted,
-                page_limit_reached: !remote_exhausted
-                    && !time_budget_reached
-                    && pages.len() == max_pages,
-                time_budget_reached,
                 pages,
             },
             validators: response_validators,
@@ -1183,11 +1171,8 @@ mod tests {
             panic!("unconditional catalog request returned 304")
         };
         assert_eq!(batch.pages.len(), 2);
-        assert_eq!(batch.remote_total, 3);
+        assert_eq!(batch.pages.last().map(|page| page.remote_total), Some(3));
         assert!(batch.remote_exhausted);
-        assert_eq!(batch.remote_next_offset, None);
-        assert!(!batch.page_limit_reached);
-        assert!(!batch.time_budget_reached);
         assert_eq!(validators.etag.as_deref(), Some("\"catalog-v1\""));
         let first = &batch.pages[0].groups[0];
         assert_eq!(first.musicbrainz_id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
@@ -1244,9 +1229,8 @@ mod tests {
         else {
             panic!("unconditional catalog request returned 304")
         };
-        assert!(capped.page_limit_reached);
-        assert!(!capped.time_budget_reached);
-        assert_eq!(capped.remote_next_offset, Some(1));
+        assert!(!capped.remote_exhausted);
+        assert_eq!(capped.pages.len(), 1);
         assert_eq!(mock.calls(), 1);
 
         let mut delayed = response(
@@ -1276,9 +1260,8 @@ mod tests {
         else {
             panic!("unconditional catalog request returned 304")
         };
-        assert!(timed.time_budget_reached);
-        assert!(!timed.page_limit_reached);
-        assert_eq!(timed.remote_next_offset, Some(1));
+        assert!(!timed.remote_exhausted);
+        assert_eq!(timed.pages.len(), 1);
         assert_eq!(mock.calls(), 2);
     }
 

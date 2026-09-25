@@ -134,11 +134,7 @@ pub struct ReleaseGroupPage {
 #[derive(Debug, Clone)]
 pub struct DiscographyBatch {
     pub pages: Vec<ReleaseGroupPage>,
-    pub remote_total: u64,
-    pub remote_next_offset: Option<u64>,
     pub remote_exhausted: bool,
-    pub page_limit_reached: bool,
-    pub time_budget_reached: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

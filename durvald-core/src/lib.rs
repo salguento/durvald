@@ -17,7 +17,7 @@ mod composition;
 pub mod core;
 pub mod database;
 mod domain;
-pub mod enrichment;
+mod enrichment;
 mod infrastructure;
 mod lastfm;
 mod metadata;
