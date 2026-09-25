@@ -1,6 +1,10 @@
 use crate::api::{CoreConfig, CoreError, CoreResult, RepeatMode};
 use crate::application::lastfm::lastfm_error;
+use crate::application::playback::PlaybackApplication;
 use crate::audio::{AudioPlayer, player::AudioError};
+use crate::infrastructure::sqlite::catalog_track::SqliteCatalogTrackQuery;
+use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
+use crate::infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
@@ -117,6 +121,20 @@ pub(crate) fn open_lastfm(config: &CoreConfig) -> CoreResult<Arc<LastFmClient>> 
     )
     .map(Arc::new)
     .map_err(lastfm_error)
+}
+
+pub(crate) fn build_playback_application(
+    pool: Arc<DatabasePool>,
+    audio_player: AudioPlayer,
+    lastfm: Arc<LastFmClient>,
+) -> Arc<PlaybackApplication> {
+    Arc::new(PlaybackApplication::new(
+        SqliteCatalogTrackQuery::new(pool.clone()),
+        SqlitePlaybackHistoryRepository::new(pool.clone()),
+        SqlitePlaybackSessionRepository::new(pool),
+        audio_player,
+        lastfm,
+    ))
 }
 
 fn repeat_mode_from_string(mode: &str) -> RepeatMode {

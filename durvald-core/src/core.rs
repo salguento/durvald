@@ -22,7 +22,8 @@ use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
 use crate::composition::{
-    initialize_audio_player, open_database, open_lastfm, prepare_filesystem, restore_playback,
+    build_playback_application, initialize_audio_player, open_database, open_lastfm,
+    prepare_filesystem, restore_playback,
 };
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
@@ -34,7 +35,6 @@ use crate::infrastructure::sqlite::catalog_track::SqliteCatalogTrackQuery;
 use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
-use crate::infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository;
 use crate::infrastructure::sqlite::playlists::SqlitePlaylistRepository;
 use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
 use crate::lastfm::LastFmClient;
@@ -184,13 +184,8 @@ impl DurvaldCore {
         let lastfm = open_lastfm(&config)?;
 
         let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
-        let playback_application = Arc::new(PlaybackApplication::new(
-            SqliteCatalogTrackQuery::new(db_pool.clone()),
-            SqlitePlaybackHistoryRepository::new(db_pool.clone()),
-            SqlitePlaybackSessionRepository::new(db_pool.clone()),
-            audio_player,
-            lastfm.clone(),
-        ));
+        let playback_application =
+            build_playback_application(db_pool.clone(), audio_player, lastfm.clone());
         let enrichment = crate::enrichment::service::EnrichmentService::new(
             db_pool.clone(),
             config.covers_dir.clone(),
