@@ -22,13 +22,11 @@ use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
 use crate::composition::{
-    build_enrichment_applications, build_library_application, build_playback_application,
-    initialize_audio_player, open_database, open_lastfm, prepare_filesystem, restore_playback,
+    build_enrichment_applications, build_library_application, build_persistence_applications,
+    build_playback_application, initialize_audio_player, open_database, open_lastfm,
+    prepare_filesystem, restore_playback,
 };
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
-use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
-use crate::infrastructure::sqlite::playlists::SqlitePlaylistRepository;
-use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
@@ -190,27 +188,23 @@ impl DurvaldCore {
             playback_application.clone(),
             library_application.clone(),
         );
+        let persistence_applications = build_persistence_applications(
+            db_pool.clone(),
+            config.covers_dir.clone(),
+            metadata_edit_queue,
+            settings_repository,
+            &playback_application,
+        );
         let core = Self {
             enrichment_application,
             db_pool: db_pool.clone(),
-            history_application: HistoryApplication::new(SqlitePlaybackHistoryRepository::new(
-                db_pool.clone(),
-            )),
+            history_application: persistence_applications.history,
             lastfm_application,
             library_application,
-            metadata_application: MetadataApplication::new(
-                SqliteTrackMetadataRepository::new(db_pool.clone()),
-                config.covers_dir.clone(),
-                metadata_edit_queue.clone(),
-            ),
-            settings_application: SettingsApplication::new(
-                settings_repository,
-                playback_application.audio_player().clone(),
-            ),
+            metadata_application: persistence_applications.metadata,
+            settings_application: persistence_applications.settings,
             playback_application,
-            playlist_application: PlaylistApplication::new(SqlitePlaylistRepository::new(
-                db_pool.clone(),
-            )),
+            playlist_application: persistence_applications.playlist,
             lastfm,
             covers_dir: config.covers_dir.clone(),
         };

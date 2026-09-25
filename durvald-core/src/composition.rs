@@ -1,8 +1,12 @@
 use crate::api::{CoreConfig, CoreError, CoreResult, RepeatMode};
 use crate::application::enrichment::EnrichmentApplication;
+use crate::application::history::HistoryApplication;
 use crate::application::lastfm::{LastFmApplication, lastfm_error};
 use crate::application::library::{LibraryApplication, LibraryPersistence};
+use crate::application::metadata::MetadataApplication;
 use crate::application::playback::PlaybackApplication;
+use crate::application::playlist::PlaylistApplication;
+use crate::application::settings::SettingsApplication;
 use crate::audio::{AudioPlayer, player::AudioError};
 use crate::enrichment::service::EnrichmentService;
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
@@ -15,7 +19,9 @@ use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository;
+use crate::infrastructure::sqlite::playlists::SqlitePlaylistRepository;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
+use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
@@ -28,6 +34,13 @@ pub(crate) struct PlaybackBootstrap {
     pub(crate) progress_seconds: f64,
     pub(crate) shuffle_enabled: bool,
     pub(crate) repeat_mode: RepeatMode,
+}
+
+pub(crate) struct PersistenceApplications {
+    pub(crate) history: HistoryApplication,
+    pub(crate) metadata: MetadataApplication,
+    pub(crate) playlist: PlaylistApplication,
+    pub(crate) settings: SettingsApplication,
 }
 
 pub(crate) fn prepare_filesystem(config: &CoreConfig) -> CoreResult<()> {
@@ -179,6 +192,25 @@ pub(crate) fn build_enrichment_applications(
     let enrichment_application = EnrichmentApplication::new(enrichment.clone(), library);
     let lastfm_application = LastFmApplication::new(lastfm, enrichment, playback);
     (enrichment_application, lastfm_application)
+}
+
+pub(crate) fn build_persistence_applications(
+    pool: Arc<DatabasePool>,
+    covers_dir: String,
+    metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
+    settings_repository: SqliteSettingsRepository,
+    playback: &PlaybackApplication,
+) -> PersistenceApplications {
+    PersistenceApplications {
+        history: HistoryApplication::new(SqlitePlaybackHistoryRepository::new(pool.clone())),
+        metadata: MetadataApplication::new(
+            SqliteTrackMetadataRepository::new(pool.clone()),
+            covers_dir,
+            metadata_edit_queue,
+        ),
+        playlist: PlaylistApplication::new(SqlitePlaylistRepository::new(pool)),
+        settings: SettingsApplication::new(settings_repository, playback.audio_player().clone()),
+    }
 }
 
 fn repeat_mode_from_string(mode: &str) -> RepeatMode {
