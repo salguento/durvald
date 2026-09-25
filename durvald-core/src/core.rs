@@ -21,7 +21,7 @@ use crate::application::settings::SettingsApplication;
 use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
-use crate::composition::{open_database, prepare_filesystem};
+use crate::composition::{open_database, prepare_filesystem, restore_playback};
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
 use crate::infrastructure::sqlite::catalog_artist::SqliteCatalogArtistQuery;
@@ -154,14 +154,6 @@ fn non_negative_id(value: i64, label: &str) -> CoreResult<u64> {
     })
 }
 
-fn repeat_mode_from_string(mode: &str) -> RepeatMode {
-    match mode {
-        "one" => RepeatMode::One,
-        "all" => RepeatMode::All,
-        _ => RepeatMode::None,
-    }
-}
-
 impl DurvaldCore {
     /// Creates a new core engine with the given configuration.
     /// Initializes database, audio, storage, and services.
@@ -193,42 +185,7 @@ impl DurvaldCore {
     {
         prepare_filesystem(&config)?;
         let db_pool = open_database(&config)?;
-
-        let (saved_session, current_track, upcoming_tracks) = {
-            // Create tables and resolve the saved queue while the connection
-            // is scoped to this synchronous initialization block.
-            let conn = db_pool.get().map_err(|e| CoreError::Storage {
-                message: e.to_string(),
-            })?;
-            let saved_session =
-                crate::database::operations::get_last_session(&conn).map_err(|e| {
-                    CoreError::Storage {
-                        message: e.to_string(),
-                    }
-                })?;
-            let queue_ids =
-                serde_json::from_str::<Vec<i64>>(&saved_session.queue_snapshot).unwrap_or_default();
-            let song_path = |song_id: i64| {
-                crate::database::operations::get_song_by_id(&conn, &song_id.to_string())
-                    .ok()
-                    .and_then(|tracks| tracks.into_iter().next())
-                    .map(|track| (song_id, track.file_path))
-            };
-            let current_track = saved_session.current_song_id.and_then(song_path);
-            let mut skipped_current = false;
-            let upcoming_tracks = queue_ids
-                .into_iter()
-                .filter_map(|song_id| {
-                    if !skipped_current && Some(song_id) == saved_session.current_song_id {
-                        skipped_current = true;
-                        None
-                    } else {
-                        song_path(song_id)
-                    }
-                })
-                .collect();
-            (saved_session, current_track, upcoming_tracks)
-        };
+        let playback_bootstrap = restore_playback(&db_pool)?;
 
         let settings_repository = SqliteSettingsRepository::new(db_pool.clone());
         let persisted_settings = settings_repository
@@ -240,18 +197,18 @@ impl DurvaldCore {
         let mut audio_player = create_audio_player().map_err(|e| CoreError::Playback {
             message: e.to_string(),
         })?;
-        audio_player.set_volume(normalized_volume(saved_session.volume));
+        audio_player.set_volume(normalized_volume(playback_bootstrap.volume));
         audio_player.set_crossfade(
             persisted_settings.cross_fade,
             persisted_settings.cross_fade_duration,
         );
         audio_player.set_volume_normalization(persisted_settings.normalize_volume);
         audio_player.restore_session(
-            current_track,
-            upcoming_tracks,
-            saved_session.progress_seconds,
-            saved_session.shuffle_enabled,
-            repeat_mode_from_string(&saved_session.repeat_mode),
+            playback_bootstrap.current_track,
+            playback_bootstrap.upcoming_tracks,
+            playback_bootstrap.progress_seconds,
+            playback_bootstrap.shuffle_enabled,
+            playback_bootstrap.repeat_mode,
         );
         // Secure storage remains an implementation detail of the Last.fm client.
         let lastfm = Arc::new(
