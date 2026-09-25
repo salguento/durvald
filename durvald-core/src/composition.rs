@@ -1,8 +1,10 @@
 use crate::api::{CoreConfig, CoreError, CoreResult, RepeatMode};
-use crate::application::lastfm::lastfm_error;
+use crate::application::enrichment::EnrichmentApplication;
+use crate::application::lastfm::{LastFmApplication, lastfm_error};
 use crate::application::library::{LibraryApplication, LibraryPersistence};
 use crate::application::playback::PlaybackApplication;
 use crate::audio::{AudioPlayer, player::AudioError};
+use crate::enrichment::service::EnrichmentService;
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
 use crate::infrastructure::sqlite::catalog_artist::SqliteCatalogArtistQuery;
 use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
@@ -164,6 +166,19 @@ pub(crate) fn build_library_application(
         covers_dir,
         metadata_edit_queue,
     ))
+}
+
+pub(crate) fn build_enrichment_applications(
+    pool: Arc<DatabasePool>,
+    covers_dir: String,
+    lastfm: Arc<LastFmClient>,
+    playback: Arc<PlaybackApplication>,
+    library: Arc<LibraryApplication>,
+) -> (EnrichmentApplication, LastFmApplication) {
+    let enrichment = EnrichmentService::new(pool, covers_dir, lastfm.clone());
+    let enrichment_application = EnrichmentApplication::new(enrichment.clone(), library);
+    let lastfm_application = LastFmApplication::new(lastfm, enrichment, playback);
+    (enrichment_application, lastfm_application)
 }
 
 fn repeat_mode_from_string(mode: &str) -> RepeatMode {

@@ -22,8 +22,8 @@ use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
 use crate::composition::{
-    build_library_application, build_playback_application, initialize_audio_player, open_database,
-    open_lastfm, prepare_filesystem, restore_playback,
+    build_enrichment_applications, build_library_application, build_playback_application,
+    initialize_audio_player, open_database, open_lastfm, prepare_filesystem, restore_playback,
 };
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
@@ -178,26 +178,20 @@ impl DurvaldCore {
         let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
         let playback_application =
             build_playback_application(db_pool.clone(), audio_player, lastfm.clone());
-        let enrichment = crate::enrichment::service::EnrichmentService::new(
-            db_pool.clone(),
-            config.covers_dir.clone(),
-            lastfm.clone(),
-        );
         let library_application = build_library_application(
             db_pool.clone(),
             config.covers_dir.clone(),
             metadata_edit_queue.clone(),
         );
-        let lastfm_application = LastFmApplication::new(
+        let (enrichment_application, lastfm_application) = build_enrichment_applications(
+            db_pool.clone(),
+            config.covers_dir.clone(),
             lastfm.clone(),
-            enrichment.clone(),
             playback_application.clone(),
+            library_application.clone(),
         );
         let core = Self {
-            enrichment_application: EnrichmentApplication::new(
-                enrichment.clone(),
-                library_application.clone(),
-            ),
+            enrichment_application,
             db_pool: db_pool.clone(),
             history_application: HistoryApplication::new(SqlitePlaybackHistoryRepository::new(
                 db_pool.clone(),
