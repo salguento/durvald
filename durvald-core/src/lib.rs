@@ -22,7 +22,7 @@ mod infrastructure;
 pub mod lastfm;
 mod metadata;
 mod metadata_edit;
-pub mod secure_store;
+mod secure_store;
 
 // Re-export public API types
 pub use crate::api::*;

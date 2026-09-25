@@ -5,7 +5,6 @@
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 use keyring::Entry;
-use once_cell::sync::Lazy;
 use ring::{
     aead::{self, Aad, LessSafeKey, Nonce, UnboundKey},
     digest,
@@ -505,27 +504,6 @@ impl SecureStore {
         self.lock_data()?.remove(key);
         Ok(())
     }
-}
-
-/// Global store instance (initialized once during app setup)
-pub static SECURE_STORE: Lazy<Mutex<Option<SecureStore>>> = Lazy::new(|| Mutex::new(None));
-
-pub fn init_secure_store(data_dir: PathBuf, keychain_service: String) -> SecureStoreResult<()> {
-    let mut store = SECURE_STORE
-        .lock()
-        .map_err(|_| SecureStoreError::MutexPoisoned("global store"))?;
-    *store = Some(SecureStore::new(data_dir, keychain_service)?);
-    Ok(())
-}
-
-pub fn get_secure_store() -> SecureStoreResult<SecureStore> {
-    let store = SECURE_STORE
-        .lock()
-        .map_err(|_| SecureStoreError::MutexPoisoned("global store"))?;
-    store
-        .as_ref()
-        .cloned()
-        .ok_or_else(|| SecureStoreError::Custom("Store not initialized".to_string()))
 }
 
 #[cfg(test)]
