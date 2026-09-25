@@ -21,7 +21,9 @@ use crate::application::settings::SettingsApplication;
 use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
-use crate::composition::{open_database, prepare_filesystem, restore_playback};
+use crate::composition::{
+    initialize_audio_player, open_database, prepare_filesystem, restore_playback,
+};
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
 use crate::infrastructure::sqlite::catalog_artist::SqliteCatalogArtistQuery;
@@ -34,7 +36,6 @@ use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository;
 use crate::infrastructure::sqlite::playlists::SqlitePlaylistRepository;
-use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
 use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
@@ -107,16 +108,6 @@ fn finish_page<T>(mut items: Vec<T>, page_size: usize, offset: u64) -> (Vec<T>, 
     (items, next_offset)
 }
 
-/// Converts legacy 0–100 persisted values and normalized API values to the
-/// single 0.0–1.0 scale used by the audio engine and Swift bindings.
-fn normalized_volume(volume: f64) -> f32 {
-    if !volume.is_finite() {
-        return 0.5;
-    }
-    let normalized = if volume > 1.0 { volume / 100.0 } else { volume };
-    normalized.clamp(0.0, 1.0) as f32
-}
-
 fn track_id_from_api(value: i64) -> CoreResult<TrackId> {
     TrackId::try_from(value).map_err(|_| CoreError::InvalidInput {
         message: "Track ID must not be negative".to_string(),
@@ -187,29 +178,9 @@ impl DurvaldCore {
         let db_pool = open_database(&config)?;
         let playback_bootstrap = restore_playback(&db_pool)?;
 
-        let settings_repository = SqliteSettingsRepository::new(db_pool.clone());
-        let persisted_settings = settings_repository
-            .get()
-            .await
-            .map_err(|message| CoreError::Storage { message })?;
-
-        // Initialize audio player
-        let mut audio_player = create_audio_player().map_err(|e| CoreError::Playback {
-            message: e.to_string(),
-        })?;
-        audio_player.set_volume(normalized_volume(playback_bootstrap.volume));
-        audio_player.set_crossfade(
-            persisted_settings.cross_fade,
-            persisted_settings.cross_fade_duration,
-        );
-        audio_player.set_volume_normalization(persisted_settings.normalize_volume);
-        audio_player.restore_session(
-            playback_bootstrap.current_track,
-            playback_bootstrap.upcoming_tracks,
-            playback_bootstrap.progress_seconds,
-            playback_bootstrap.shuffle_enabled,
-            playback_bootstrap.repeat_mode,
-        );
+        let (audio_player, settings_repository) =
+            initialize_audio_player(db_pool.clone(), playback_bootstrap, create_audio_player)
+                .await?;
         // Secure storage remains an implementation detail of the Last.fm client.
         let lastfm = Arc::new(
             LastFmClient::open(
@@ -1254,14 +1225,6 @@ mod tests {
         assert_eq!(normalized_audio_quality(0), 320);
         assert_eq!(normalized_audio_quality(320), 320);
         assert_eq!(normalized_audio_quality(2_000), 320);
-    }
-
-    #[test]
-    fn volume_normalization_rejects_non_finite_persisted_values() {
-        assert_eq!(normalized_volume(f64::NAN), 0.5);
-        assert_eq!(normalized_volume(f64::INFINITY), 0.5);
-        assert_eq!(normalized_volume(50.0), 0.5);
-        assert_eq!(normalized_volume(-1.0), 0.0);
     }
 
     #[test]

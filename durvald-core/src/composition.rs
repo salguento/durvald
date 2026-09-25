@@ -1,4 +1,6 @@
 use crate::api::{CoreConfig, CoreError, CoreResult, RepeatMode};
+use crate::audio::{AudioPlayer, player::AudioError};
+use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
 use std::sync::Arc;
 
 pub(crate) type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
@@ -76,6 +78,36 @@ pub(crate) fn restore_playback(pool: &DatabasePool) -> CoreResult<PlaybackBootst
     })
 }
 
+pub(crate) async fn initialize_audio_player<F>(
+    pool: Arc<DatabasePool>,
+    playback: PlaybackBootstrap,
+    factory: F,
+) -> CoreResult<(AudioPlayer, SqliteSettingsRepository)>
+where
+    F: FnOnce() -> Result<AudioPlayer, AudioError>,
+{
+    let settings_repository = SqliteSettingsRepository::new(pool);
+    let settings = settings_repository
+        .get()
+        .await
+        .map_err(|message| CoreError::Storage { message })?;
+    let mut audio_player = factory().map_err(|error| CoreError::Playback {
+        message: error.to_string(),
+    })?;
+    audio_player.set_volume(normalized_volume(playback.volume));
+    audio_player.set_crossfade(settings.cross_fade, settings.cross_fade_duration);
+    audio_player.set_volume_normalization(settings.normalize_volume);
+    audio_player.restore_session(
+        playback.current_track,
+        playback.upcoming_tracks,
+        playback.progress_seconds,
+        playback.shuffle_enabled,
+        playback.repeat_mode,
+    );
+
+    Ok((audio_player, settings_repository))
+}
+
 fn repeat_mode_from_string(mode: &str) -> RepeatMode {
     match mode {
         "one" => RepeatMode::One,
@@ -84,8 +116,29 @@ fn repeat_mode_from_string(mode: &str) -> RepeatMode {
     }
 }
 
+fn normalized_volume(volume: f64) -> f32 {
+    if !volume.is_finite() {
+        return 0.5;
+    }
+    let normalized = if volume > 1.0 { volume / 100.0 } else { volume };
+    normalized.clamp(0.0, 1.0) as f32
+}
+
 fn storage_error(error: impl std::fmt::Display) -> CoreError {
     CoreError::Storage {
         message: error.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalized_volume;
+
+    #[test]
+    fn volume_normalization_rejects_non_finite_persisted_values() {
+        assert_eq!(normalized_volume(f64::NAN), 0.5);
+        assert_eq!(normalized_volume(f64::INFINITY), 0.5);
+        assert_eq!(normalized_volume(50.0), 0.5);
+        assert_eq!(normalized_volume(-1.0), 0.0);
     }
 }
