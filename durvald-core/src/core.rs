@@ -7,7 +7,7 @@
 use crate::api::*;
 use crate::application::enrichment::EnrichmentApplication;
 use crate::application::history::HistoryApplication;
-use crate::application::lastfm::{LastFmApplication, lastfm_error};
+use crate::application::lastfm::LastFmApplication;
 use crate::application::library::{LibraryApplication, LibraryPersistence};
 use crate::application::metadata::MetadataApplication;
 #[cfg(test)]
@@ -22,7 +22,7 @@ use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
 use crate::composition::{
-    initialize_audio_player, open_database, prepare_filesystem, restore_playback,
+    initialize_audio_player, open_database, open_lastfm, prepare_filesystem, restore_playback,
 };
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
@@ -181,14 +181,7 @@ impl DurvaldCore {
         let (audio_player, settings_repository) =
             initialize_audio_player(db_pool.clone(), playback_bootstrap, create_audio_player)
                 .await?;
-        // Secure storage remains an implementation detail of the Last.fm client.
-        let lastfm = Arc::new(
-            LastFmClient::open(
-                config.app_support_dir.clone().into(),
-                config.keychain_service.clone(),
-            )
-            .map_err(lastfm_error)?,
-        );
+        let lastfm = open_lastfm(&config)?;
 
         let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
         let playback_application = Arc::new(PlaybackApplication::new(
