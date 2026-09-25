@@ -8,7 +8,7 @@ use crate::api::*;
 use crate::application::enrichment::EnrichmentApplication;
 use crate::application::history::HistoryApplication;
 use crate::application::lastfm::LastFmApplication;
-use crate::application::library::{LibraryApplication, LibraryPersistence};
+use crate::application::library::LibraryApplication;
 use crate::application::metadata::MetadataApplication;
 #[cfg(test)]
 use crate::application::metadata::artwork_path_in_covers_dir;
@@ -22,18 +22,10 @@ use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
 use crate::composition::{
-    build_playback_application, initialize_audio_player, open_database, open_lastfm,
-    prepare_filesystem, restore_playback,
+    build_library_application, build_playback_application, initialize_audio_player, open_database,
+    open_lastfm, prepare_filesystem, restore_playback,
 };
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
-use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
-use crate::infrastructure::sqlite::catalog_artist::SqliteCatalogArtistQuery;
-use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
-use crate::infrastructure::sqlite::catalog_release::SqliteCatalogReleaseQuery;
-use crate::infrastructure::sqlite::catalog_search::SqliteCatalogSearchQuery;
-use crate::infrastructure::sqlite::catalog_track::SqliteCatalogTrackQuery;
-use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
-use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::playlists::SqlitePlaylistRepository;
 use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
@@ -191,20 +183,11 @@ impl DurvaldCore {
             config.covers_dir.clone(),
             lastfm.clone(),
         );
-        let library_application = Arc::new(LibraryApplication::new(
-            LibraryPersistence::new(
-                SqliteCatalogArtistQuery::new(db_pool.clone()),
-                SqliteCatalogPreferencesRepository::new(db_pool.clone()),
-                SqliteCatalogReleaseQuery::new(db_pool.clone()),
-                SqliteCatalogSearchQuery::new(db_pool.clone()),
-                SqliteCatalogTrackQuery::new(db_pool.clone()),
-                SqliteLibraryPathsRepository::new(db_pool.clone()),
-                SqliteLibraryScanRepository::new(db_pool.clone()),
-            ),
-            LocalMetadataExtractor::new(),
+        let library_application = build_library_application(
+            db_pool.clone(),
             config.covers_dir.clone(),
             metadata_edit_queue.clone(),
-        ));
+        );
         let lastfm_application = LastFmApplication::new(
             lastfm.clone(),
             enrichment.clone(),

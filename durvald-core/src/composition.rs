@@ -1,8 +1,16 @@
 use crate::api::{CoreConfig, CoreError, CoreResult, RepeatMode};
 use crate::application::lastfm::lastfm_error;
+use crate::application::library::{LibraryApplication, LibraryPersistence};
 use crate::application::playback::PlaybackApplication;
 use crate::audio::{AudioPlayer, player::AudioError};
+use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
+use crate::infrastructure::sqlite::catalog_artist::SqliteCatalogArtistQuery;
+use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
+use crate::infrastructure::sqlite::catalog_release::SqliteCatalogReleaseQuery;
+use crate::infrastructure::sqlite::catalog_search::SqliteCatalogSearchQuery;
 use crate::infrastructure::sqlite::catalog_track::SqliteCatalogTrackQuery;
+use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
+use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
@@ -134,6 +142,27 @@ pub(crate) fn build_playback_application(
         SqlitePlaybackSessionRepository::new(pool),
         audio_player,
         lastfm,
+    ))
+}
+
+pub(crate) fn build_library_application(
+    pool: Arc<DatabasePool>,
+    covers_dir: String,
+    metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
+) -> Arc<LibraryApplication> {
+    Arc::new(LibraryApplication::new(
+        LibraryPersistence::new(
+            SqliteCatalogArtistQuery::new(pool.clone()),
+            SqliteCatalogPreferencesRepository::new(pool.clone()),
+            SqliteCatalogReleaseQuery::new(pool.clone()),
+            SqliteCatalogSearchQuery::new(pool.clone()),
+            SqliteCatalogTrackQuery::new(pool.clone()),
+            SqliteLibraryPathsRepository::new(pool.clone()),
+            SqliteLibraryScanRepository::new(pool),
+        ),
+        LocalMetadataExtractor::new(),
+        covers_dir,
+        metadata_edit_queue,
     ))
 }
 
