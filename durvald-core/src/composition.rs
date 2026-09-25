@@ -43,6 +43,68 @@ pub(crate) struct PersistenceApplications {
     pub(crate) settings: SettingsApplication,
 }
 
+pub(crate) struct CoreComponents {
+    pub(crate) db_pool: Arc<DatabasePool>,
+    pub(crate) enrichment_application: EnrichmentApplication,
+    pub(crate) history_application: HistoryApplication,
+    pub(crate) library_application: Arc<LibraryApplication>,
+    pub(crate) lastfm_application: LastFmApplication,
+    pub(crate) metadata_application: MetadataApplication,
+    pub(crate) playback_application: Arc<PlaybackApplication>,
+    pub(crate) playlist_application: PlaylistApplication,
+    pub(crate) settings_application: SettingsApplication,
+    pub(crate) lastfm: Arc<LastFmClient>,
+    pub(crate) covers_dir: String,
+}
+
+pub(crate) async fn compose<F>(config: CoreConfig, audio_factory: F) -> CoreResult<CoreComponents>
+where
+    F: FnOnce() -> Result<AudioPlayer, AudioError>,
+{
+    prepare_filesystem(&config)?;
+    let db_pool = open_database(&config)?;
+    let playback_bootstrap = restore_playback(&db_pool)?;
+    let (audio_player, settings_repository) =
+        initialize_audio_player(db_pool.clone(), playback_bootstrap, audio_factory).await?;
+    let lastfm = open_lastfm(&config)?;
+    let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
+    let playback_application =
+        build_playback_application(db_pool.clone(), audio_player, lastfm.clone());
+    let library_application = build_library_application(
+        db_pool.clone(),
+        config.covers_dir.clone(),
+        metadata_edit_queue.clone(),
+    );
+    let (enrichment_application, lastfm_application) = build_enrichment_applications(
+        db_pool.clone(),
+        config.covers_dir.clone(),
+        lastfm.clone(),
+        playback_application.clone(),
+        library_application.clone(),
+    );
+    let persistence = build_persistence_applications(
+        db_pool.clone(),
+        config.covers_dir.clone(),
+        metadata_edit_queue,
+        settings_repository,
+        &playback_application,
+    );
+
+    Ok(CoreComponents {
+        db_pool,
+        enrichment_application,
+        history_application: persistence.history,
+        library_application,
+        lastfm_application,
+        metadata_application: persistence.metadata,
+        playback_application,
+        playlist_application: persistence.playlist,
+        settings_application: persistence.settings,
+        lastfm,
+        covers_dir: config.covers_dir,
+    })
+}
+
 pub(crate) fn prepare_filesystem(config: &CoreConfig) -> CoreResult<()> {
     std::fs::create_dir_all(&config.app_support_dir).map_err(storage_error)?;
     std::fs::create_dir_all(&config.covers_dir).map_err(storage_error)?;

@@ -21,11 +21,7 @@ use crate::application::settings::SettingsApplication;
 use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
-use crate::composition::{
-    build_enrichment_applications, build_library_application, build_persistence_applications,
-    build_playback_application, initialize_audio_player, open_database, open_lastfm,
-    prepare_filesystem, restore_playback,
-};
+use crate::composition::compose;
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::lastfm::LastFmClient;
 use std::sync::Arc;
@@ -164,49 +160,19 @@ impl DurvaldCore {
     where
         F: FnOnce() -> Result<crate::audio::AudioPlayer, crate::audio::player::AudioError>,
     {
-        prepare_filesystem(&config)?;
-        let db_pool = open_database(&config)?;
-        let playback_bootstrap = restore_playback(&db_pool)?;
-
-        let (audio_player, settings_repository) =
-            initialize_audio_player(db_pool.clone(), playback_bootstrap, create_audio_player)
-                .await?;
-        let lastfm = open_lastfm(&config)?;
-
-        let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
-        let playback_application =
-            build_playback_application(db_pool.clone(), audio_player, lastfm.clone());
-        let library_application = build_library_application(
-            db_pool.clone(),
-            config.covers_dir.clone(),
-            metadata_edit_queue.clone(),
-        );
-        let (enrichment_application, lastfm_application) = build_enrichment_applications(
-            db_pool.clone(),
-            config.covers_dir.clone(),
-            lastfm.clone(),
-            playback_application.clone(),
-            library_application.clone(),
-        );
-        let persistence_applications = build_persistence_applications(
-            db_pool.clone(),
-            config.covers_dir.clone(),
-            metadata_edit_queue,
-            settings_repository,
-            &playback_application,
-        );
+        let components = compose(config, create_audio_player).await?;
         let core = Self {
-            enrichment_application,
-            db_pool: db_pool.clone(),
-            history_application: persistence_applications.history,
-            lastfm_application,
-            library_application,
-            metadata_application: persistence_applications.metadata,
-            settings_application: persistence_applications.settings,
-            playback_application,
-            playlist_application: persistence_applications.playlist,
-            lastfm,
-            covers_dir: config.covers_dir.clone(),
+            enrichment_application: components.enrichment_application,
+            db_pool: components.db_pool,
+            history_application: components.history_application,
+            lastfm_application: components.lastfm_application,
+            library_application: components.library_application,
+            metadata_application: components.metadata_application,
+            settings_application: components.settings_application,
+            playback_application: components.playback_application,
+            playlist_application: components.playlist_application,
+            lastfm: components.lastfm,
+            covers_dir: components.covers_dir,
         };
 
         let core = Arc::new(core);
