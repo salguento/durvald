@@ -21,6 +21,7 @@ use crate::application::settings::SettingsApplication;
 use crate::application::settings::{
     normalized_audio_quality, normalized_cross_fade_duration, validate_settings,
 };
+use crate::composition::{open_database, prepare_filesystem};
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
 use crate::infrastructure::sqlite::catalog_artist::SqliteCatalogArtistQuery;
@@ -190,48 +191,14 @@ impl DurvaldCore {
     where
         F: FnOnce() -> Result<crate::audio::AudioPlayer, crate::audio::player::AudioError>,
     {
-        // Create directories
-        std::fs::create_dir_all(&config.app_support_dir).map_err(|e| CoreError::Storage {
-            message: e.to_string(),
-        })?;
-        std::fs::create_dir_all(&config.covers_dir).map_err(|e| CoreError::Storage {
-            message: e.to_string(),
-        })?;
-
-        // Initialize database
-        let manager = r2d2_sqlite::SqliteConnectionManager::file(&config.database_path).with_init(|conn: &mut rusqlite::Connection| {
-            conn.execute_batch(
-                "PRAGMA journal_mode = WAL;\n PRAGMA busy_timeout = 5000;\n PRAGMA foreign_keys = ON;",
-            )?;
-            Ok(())
-        });
-        let pool = r2d2::Pool::new(manager).map_err(|e| CoreError::Storage {
-            message: e.to_string(),
-        })?;
+        prepare_filesystem(&config)?;
+        let db_pool = open_database(&config)?;
 
         let (saved_session, current_track, upcoming_tracks) = {
             // Create tables and resolve the saved queue while the connection
             // is scoped to this synchronous initialization block.
-            let mut conn = pool.get().map_err(|e| CoreError::Storage {
+            let conn = db_pool.get().map_err(|e| CoreError::Storage {
                 message: e.to_string(),
-            })?;
-            crate::database::operations::create_tables(&conn).map_err(|e| CoreError::Storage {
-                message: e.to_string(),
-            })?;
-            crate::database::migrations::migrate_enrichment(&mut conn).map_err(|e| {
-                CoreError::Storage {
-                    message: e.to_string(),
-                }
-            })?;
-            crate::database::operations::initiate_settings(&conn).map_err(|e| {
-                CoreError::Storage {
-                    message: e.to_string(),
-                }
-            })?;
-            crate::database::operations::initiate_last_session(&conn).map_err(|e| {
-                CoreError::Storage {
-                    message: e.to_string(),
-                }
             })?;
             let saved_session =
                 crate::database::operations::get_last_session(&conn).map_err(|e| {
@@ -263,7 +230,6 @@ impl DurvaldCore {
             (saved_session, current_track, upcoming_tracks)
         };
 
-        let db_pool = Arc::new(pool);
         let settings_repository = SqliteSettingsRepository::new(db_pool.clone());
         let persisted_settings = settings_repository
             .get()

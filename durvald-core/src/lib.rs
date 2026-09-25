@@ -13,6 +13,7 @@ pub mod api;
 mod application;
 mod artwork;
 pub mod audio;
+mod composition;
 pub mod core;
 pub mod database;
 mod domain;
