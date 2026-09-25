@@ -1244,6 +1244,7 @@ fn unreferenced_paths(conn: &Connection, paths: Vec<String>) -> CoreResult<Vec<S
 
 /// Selects only missing or expired cover fallbacks from the visible catalog.
 /// Exact local editions prefer their exact asset, then a release-group asset.
+#[cfg(test)]
 pub fn external_artwork_refresh_plan(
     conn: &Connection,
     artist_id: i64,
@@ -2435,9 +2436,6 @@ pub fn local_release_match_contexts(
             title,
             tagged_release_mbid: (origin.as_deref() == Some("tag"))
                 .then_some(release_mbid)
-                .flatten(),
-            tagged_release_group_mbid: (origin.as_deref() == Some("tag"))
-                .then_some(group_mbid)
                 .flatten(),
             candidate_release_groups: candidates,
             tracks,

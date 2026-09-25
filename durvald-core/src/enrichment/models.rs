@@ -102,7 +102,6 @@ pub struct LocalReleaseMatchContext {
     pub artist_name: String,
     pub title: String,
     pub tagged_release_mbid: Option<String>,
-    pub tagged_release_group_mbid: Option<String>,
     pub candidate_release_groups: Vec<ReleaseGroupSnapshot>,
     pub tracks: Vec<LocalReleaseTrackContext>,
 }

@@ -15,7 +15,7 @@ mod artwork;
 pub mod audio;
 mod composition;
 pub mod core;
-pub mod database;
+mod database;
 mod domain;
 mod enrichment;
 mod infrastructure;

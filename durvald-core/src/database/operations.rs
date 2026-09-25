@@ -737,14 +737,6 @@ pub fn save_settings(conn: &Connection, settings: &Settings) -> DatabaseResult<(
     Ok(())
 }
 
-pub fn update_onboarding_setting(conn: &Connection, value: bool) -> DatabaseResult<()> {
-    conn.execute(
-        "UPDATE settings SET onboarding = ?1 WHERE settings_id = 1",
-        params![value],
-    )?;
-    Ok(())
-}
-
 // ===== Artist/Release/Song Operations =====
 
 pub fn add_artist(conn: &Connection, artist: String) -> DatabaseResult<()> {
@@ -1005,18 +997,6 @@ pub fn group_releases(array: &Vec<AudioMetadata>) -> Vec<ReleaseGroup> {
 
 // ===== Query Operations =====
 
-pub fn get_releases(conn: &Connection) -> DatabaseResult<Vec<Releases>> {
-    let mut stmt = conn.prepare(concat!(
-        "SELECT ",
-        release_columns!("releases"),
-        " FROM releases"
-    ))?;
-    let releases_iter = stmt.query_map([], release_from_row)?;
-
-    let releases: Result<Vec<Releases>, _> = releases_iter.collect();
-    Ok(releases?)
-}
-
 pub fn get_release_by_id(conn: &Connection, release_id: &str) -> DatabaseResult<Releases> {
     conn.query_row(
         concat!(
@@ -1063,6 +1043,7 @@ pub fn get_song_by_id(conn: &Connection, song_id: &str) -> DatabaseResult<Vec<So
     Ok(songs)
 }
 
+#[cfg(test)]
 pub fn add_song_to_history(conn: &Connection, song_id: u64, duration: u64) -> DatabaseResult<()> {
     let played_at = Utc::now().to_rfc3339();
     conn.execute(
@@ -1133,38 +1114,6 @@ pub fn remove_song_from_history(conn: &Connection, history_id: u64) -> DatabaseR
 /// Deletes all completed-playback events and returns how many were removed.
 pub fn clear_play_history(conn: &Connection) -> DatabaseResult<u64> {
     Ok(conn.execute("DELETE FROM play_history", [])? as u64)
-}
-
-pub fn favorite_track(conn: &Connection, song_id: u64) -> DatabaseResult<()> {
-    conn.execute(
-        "UPDATE songs SET is_favorite = NOT is_favorite, updated_at = CURRENT_TIMESTAMP WHERE song_id = ?1 ",
-        params![song_id],
-    )?;
-    Ok(())
-}
-
-pub fn favorite_release(conn: &Connection, release_id: u64) -> DatabaseResult<()> {
-    conn.execute(
-        "UPDATE releases SET is_favorite = NOT is_favorite, updated_at = CURRENT_TIMESTAMP WHERE release_id = ?1 ",
-        params![release_id],
-    )?;
-    Ok(())
-}
-
-pub fn hide_track(conn: &Connection, song_id: u64) -> DatabaseResult<()> {
-    conn.execute(
-        "UPDATE songs SET is_hidden = NOT is_hidden, updated_at = CURRENT_TIMESTAMP WHERE song_id = ?1 ",
-        params![song_id],
-    )?;
-    Ok(())
-}
-
-pub fn suggest_less_track(conn: &Connection, song_id: u64) -> DatabaseResult<()> {
-    conn.execute(
-        "UPDATE songs SET suggest_less = NOT suggest_less, updated_at = CURRENT_TIMESTAMP WHERE song_id = ?1 ",
-        params![song_id],
-    )?;
-    Ok(())
 }
 
 pub fn set_track_favorite(conn: &Connection, song_id: u64, favorite: bool) -> DatabaseResult<bool> {
@@ -1792,27 +1741,6 @@ pub fn get_playlist_track_count(conn: &Connection, playlist_id: u64) -> Database
     .map_err(DatabaseError::from)
 }
 
-pub fn get_all_playlist_songs(conn: &Connection) -> DatabaseResult<Vec<PlaylistSong>> {
-    let mut playlist_song = conn.prepare(
-        "SELECT playlist_id, song_id, position, added_at
-         FROM playlist_songs ORDER BY playlist_id, position",
-    )?;
-    let playlist_song_map = playlist_song.query_map([], |row| {
-        Ok(PlaylistSong {
-            playlist_id: row.get(0)?,
-            song_id: row.get(1)?,
-            position: row.get(2)?,
-            added_at: row.get(3)?,
-        })
-    })?;
-
-    let mut results = Vec::new();
-    for item in playlist_song_map {
-        results.push(item?);
-    }
-    Ok(results)
-}
-
 pub fn add_track_to_playlist_songs(
     conn: &Connection,
     playlist_id: u64,
@@ -2041,57 +1969,6 @@ pub fn update_session_volume(conn: &Connection, volume: f64) -> DatabaseResult<(
     Ok(())
 }
 
-/// Convenience command: update the current song and reset progress to 0.
-/// Call this when a track change happens so you never read stale progress for a new song.
-pub fn update_session_current_song(
-    conn: &Connection,
-    current_song_id: Option<i64>,
-    queue_snapshot: String,
-    queue_position: i64,
-    source_context: String,
-) -> DatabaseResult<()> {
-    let updated_at = Utc::now().to_rfc3339();
-
-    conn.execute(
-        "UPDATE last_session
-         SET current_song_id  = ?1,
-             progress_seconds = 0.0,
-             queue_snapshot   = ?2,
-             queue_position   = ?3,
-             source_context   = ?4,
-             updated_at       = ?5
-         WHERE session_id = 1",
-        params![
-            current_song_id,
-            queue_snapshot,
-            queue_position,
-            source_context,
-            updated_at,
-        ],
-    )?;
-
-    Ok(())
-}
-
-/// Clears the session back to defaults (e.g. user explicitly stops playback).
-pub fn clear_last_session(conn: &Connection) -> DatabaseResult<()> {
-    let updated_at = Utc::now().to_rfc3339();
-
-    conn.execute(
-        "UPDATE last_session
-         SET current_song_id  = NULL,
-             progress_seconds = 0.0,
-             queue_snapshot   = '[]',
-             queue_position   = 0,
-             source_context   = '',
-             updated_at       = ?1
-         WHERE session_id = 1",
-        params![updated_at],
-    )?;
-
-    Ok(())
-}
-
 // ===== Scan Operations =====
 
 fn is_audio_file(extension: &str) -> bool {
@@ -2104,6 +1981,7 @@ fn file_mtime(path: &str) -> DatabaseResult<i64> {
     Ok(sys.duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64)
 }
 
+#[cfg(test)]
 pub fn scan_folder(folder_path: String) -> DatabaseResult<Vec<FileInfo>> {
     let mut files = Vec::new();
     walk_audio_files(&folder_path, None, |file| {
@@ -2352,6 +2230,7 @@ impl PendingDatabaseUpdate {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn prepare_database_update(
     conn: &Connection,
     folder_path: String,
@@ -2778,42 +2657,6 @@ fn normalize_metadata(mut metadata: AudioMetadata) -> AudioMetadata {
         metadata.release = Some("Unknown Album".to_string());
     }
     metadata
-}
-
-/// Kicks off a full library scan for all configured paths.
-pub async fn start_library_scan(
-    db_pool: std::sync::Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
-    covers_dir: PathBuf,
-) -> DatabaseResult<()> {
-    let paths = {
-        let conn = db_pool.get()?;
-        get_library_paths(&conn)?
-    };
-
-    for item in paths {
-        let pending = {
-            let conn = db_pool.get()?;
-            prepare_database_update(&conn, item.path)?
-        };
-        let (batches, reconciliation) = pending.into_metadata_batches();
-        for batch in batches {
-            let extracted =
-                extract_metadata_batch_with_cancel(batch, &covers_dir, None, None).await;
-            let conn = db_pool.get()?;
-            persist_metadata_with_existing_ids(
-                &conn,
-                extracted.metadata,
-                extracted.mtimes,
-                extracted.existing_song_ids,
-            )?;
-        }
-        if let Some(reconciliation) = reconciliation {
-            let conn = db_pool.get()?;
-            remove_missing_songs_in_folder(&conn, reconciliation)?;
-        }
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
