@@ -44,7 +44,6 @@ pub(crate) struct PersistenceApplications {
 }
 
 pub(crate) struct CoreComponents {
-    pub(crate) db_pool: Arc<DatabasePool>,
     pub(crate) enrichment_application: EnrichmentApplication,
     pub(crate) history_application: HistoryApplication,
     pub(crate) library_application: Arc<LibraryApplication>,
@@ -53,8 +52,6 @@ pub(crate) struct CoreComponents {
     pub(crate) playback_application: Arc<PlaybackApplication>,
     pub(crate) playlist_application: PlaylistApplication,
     pub(crate) settings_application: SettingsApplication,
-    pub(crate) lastfm: Arc<LastFmClient>,
-    pub(crate) covers_dir: String,
 }
 
 pub(crate) async fn compose<F>(config: CoreConfig, audio_factory: F) -> CoreResult<CoreComponents>
@@ -91,7 +88,6 @@ where
     );
 
     Ok(CoreComponents {
-        db_pool,
         enrichment_application,
         history_application: persistence.history,
         library_application,
@@ -100,8 +96,6 @@ where
         playback_application,
         playlist_application: persistence.playlist,
         settings_application: persistence.settings,
-        lastfm,
-        covers_dir: config.covers_dir,
     })
 }
 

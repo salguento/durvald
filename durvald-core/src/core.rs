@@ -23,7 +23,6 @@ use crate::application::settings::{
 };
 use crate::composition::compose;
 use crate::domain::ids::{ArtistId, PlaybackHistoryId, PlaylistId, ReleaseId, TrackId};
-use crate::lastfm::LastFmClient;
 use std::sync::Arc;
 
 /// Opaque core engine - the main entry point for all operations.
@@ -32,7 +31,6 @@ use std::sync::Arc;
 /// the public API. All state is encapsulated behind this facade.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
-    db_pool: Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>>,
     enrichment_application: EnrichmentApplication,
     history_application: HistoryApplication,
     library_application: Arc<LibraryApplication>,
@@ -41,26 +39,12 @@ pub struct DurvaldCore {
     playback_application: Arc<PlaybackApplication>,
     playlist_application: PlaylistApplication,
     settings_application: SettingsApplication,
-    lastfm: Arc<LastFmClient>,
-    covers_dir: String,
 }
 
 impl DurvaldCore {
-    // Internal accessor methods for Tauri integration (not exported to UniFFI)
-    pub fn db_pool(&self) -> &Arc<r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>> {
-        &self.db_pool
-    }
-
-    pub fn audio_player(&self) -> &Arc<tokio::sync::Mutex<crate::audio::AudioPlayer>> {
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn audio_player(&self) -> &Arc<tokio::sync::Mutex<crate::audio::AudioPlayer>> {
         self.playback_application.audio_player()
-    }
-
-    pub fn lastfm(&self) -> &Arc<LastFmClient> {
-        &self.lastfm
-    }
-
-    pub fn covers_dir(&self) -> &String {
-        &self.covers_dir
     }
 }
 
@@ -163,7 +147,6 @@ impl DurvaldCore {
         let components = compose(config, create_audio_player).await?;
         let core = Self {
             enrichment_application: components.enrichment_application,
-            db_pool: components.db_pool,
             history_application: components.history_application,
             lastfm_application: components.lastfm_application,
             library_application: components.library_application,
@@ -171,8 +154,6 @@ impl DurvaldCore {
             settings_application: components.settings_application,
             playback_application: components.playback_application,
             playlist_application: components.playlist_application,
-            lastfm: components.lastfm,
-            covers_dir: components.covers_dir,
         };
 
         let core = Arc::new(core);
