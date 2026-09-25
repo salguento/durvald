@@ -28,12 +28,6 @@ pub mod secure_store;
 pub use crate::api::*;
 pub use crate::core::DurvaldCore;
 
-// Re-export internal types for backward compatibility during transition
-pub use crate::audio::AudioPlayer;
-pub use crate::database::operations::*;
-pub use crate::lastfm::LastFmClient;
-pub use crate::secure_store::{SecureStore, SecureStoreError};
-
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub mod test_support;
