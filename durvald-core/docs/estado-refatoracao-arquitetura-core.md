@@ -1,18 +1,18 @@
 # Estado da refatoração arquitetural do core
 
-Última atualização: 24 de setembro de 2026
+Última atualização: 27 de setembro de 2026
 
-Commit de referência: `f9f89a3 test(core): enforce application database boundary`
+Commit de referência: `018fabe refactor(core): finish internalizing audio module`
 
-Estado adicional: bindings Swift regenerados e checkpoint global do Marco 6 ainda
-não commitado
+Estado adicional: Marco 7 concluído e protegido por testes arquiteturais
 
 ## Visão geral
 
-A refatoração incremental está avançada e estável. Os Marcos 1–6 foram
-concluídos quanto à implementação; o gate GTK do checkpoint final permanece
-bloqueado apenas pela ausência das bibliotecas nativas no macOS. O Marco 7
-ainda não começou.
+A refatoração incremental está concluída quanto à implementação dos Marcos
+1–7. O `DurvaldCore` permanece como fachada pública, a composição está
+centralizada e os módulos de implementação foram internalizados. O gate GTK
+do checkpoint final permanece bloqueado apenas pela ausência das bibliotecas
+nativas no macOS.
 
 O roteiro de referência permanece em
 [`arquitetura/roteiro-implementacao-direto.md`](arquitetura/roteiro-implementacao-direto.md).
@@ -27,7 +27,7 @@ O roteiro de referência permanece em
 | 4 — `LibraryApplication` | Concluído | Scan, paths, catálogo, busca e consultas migrados |
 | 5 — Fachada por domínio | Concluído | History, playlists, metadata/artwork, settings, enrichment, Last.fm e preferências extraídos |
 | 6 — Modelos e infraestrutura | Implementação concluída | IDs e modelos de domínio separados de DTOs/rows, adapters consolidados e fronteira arquitetural protegida por teste |
-| 7 — Composição e redução da API | Não iniciado | `DurvaldCore::open`, accessors e exports legados ainda precisam ser tratados |
+| 7 — Composição e redução da API | Concluído | Composition root centralizado, accessors concretos removidos e módulos internos retirados da API pública |
 
 ## Estrutura implementada
 
@@ -42,8 +42,8 @@ O diretório `src/application/` contém oito serviços:
 - `EnrichmentApplication`;
 - `LastFmApplication`.
 
-Durante a extração, `src/core.rs` caiu de aproximadamente 2.903 para 1.410
-linhas, uma redução próxima de 51%, mantendo 89 operações assíncronas
+Durante a extração, `src/core.rs` caiu de aproximadamente 2.903 para 1.201
+linhas, uma redução próxima de 59%, mantendo 89 operações assíncronas
 públicas. A API foi preservada enquanto a implementação interna foi deslocada
 para serviços de aplicação.
 
@@ -67,8 +67,8 @@ concretos:
 - preparação, persistência dos lotes e reconciliação SQLite do scan da
   biblioteca;
 - sessão de playback completamente isolada;
-- playlists, com listagem agregada, consulta individual e faixas commitadas;
-  consulta de artwork ainda não commitada.
+- playlists, incluindo listagem agregada, consulta individual, faixas,
+  artwork, mutações e preferências.
 
 Com a extração da busca, o helper genérico `LibraryApplication::run_database`
 deixou de ter consumidores e foi removido. As leituras de catálogo não
@@ -168,8 +168,8 @@ a coordenação remota já decomposta e a fachada apenas delega os casos de uso.
 ### Last.fm
 
 O `LastFmApplication` concentra estado, autenticação, polling de sessão,
-configuração, desconexão e integração com enrichment/playback. O accessor
-concreto de `LastFmClient` permanece apenas como compatibilidade transitória.
+configuração, desconexão e integração com enrichment/playback. O cliente
+concreto permanece encapsulado atrás da composição e do serviço de aplicação.
 
 ## Situação detalhada do Marco 5
 
@@ -185,30 +185,32 @@ A ordem definida no roteiro é:
 Com a remoção dos helpers genéricos de mutação SQLite de `DurvaldCore`, a
 fachada deixou de coordenar diretamente os casos de uso previstos neste marco.
 
-## Responsabilidades ainda presentes em `DurvaldCore`
+## Responsabilidades deliberadas em `DurvaldCore`
 
-As maiores concentrações restantes são:
+As responsabilidades restantes da fachada são:
 
-- construção e composição de banco, player, serviços, enrichment e Last.fm;
 - conversão de tipos da API pública para tipos internos;
-- adaptação entre modelos públicos e representações internas ainda legadas;
-- accessors concretos para banco, player, Last.fm e diretório de capas.
+- delegação dos casos de uso aos oito serviços de aplicação;
+- inicialização pública por `open`, encaminhada ao composition root;
+- adaptação entre modelos públicos e modelos internos.
 
-A fachada está significativamente mais fina, mas ainda não atingiu o estado
-final previsto no Marco 7.
+A construção de banco, player, adapters, enrichment e Last.fm reside em
+`composition.rs`. Não há accessors concretos públicos para infraestrutura.
 
 ## Validação atual
 
-No fechamento da implementação do Marco 6 foram aprovados:
+No checkpoint local de Rust de 27/09 foram aprovados:
 
 - `rustfmt`;
 - `git diff --check`;
 - Clippy com a feature UniFFI e warnings tratados como erro;
-- suíte completa do core: **288 testes aprovados e 3 ignorados**;
-- geração dos bindings UniFFI e smoke test da fronteira FFI;
-- build Debug do aplicativo macOS;
-- suíte `DurvaldTests` no macOS;
-- `cargo fmt -- --check` no frontend GTK.
+- suíte completa do core com `test-support`: **287 testes aprovados e 3 ignorados**;
+- compilação de toda a superfície UniFFI.
+
+No checkpoint global anterior, preservado após o Marco 6, também foram
+aprovados geração dos bindings, smoke test FFI, build Debug e `DurvaldTests` no
+macOS e formatação do frontend GTK. Esses gates de cliente ainda devem ser
+repetidos para o fechamento global definitivo do Marco 7.
 
 Os comandos `cargo clippy --locked --all-targets -- -D warnings` e
 `cargo build --locked` do GTK foram executados, mas não chegaram ao código do
@@ -301,33 +303,44 @@ isoladas; portanto, nenhum trait adicional foi criado.
 
 Nenhum dos oito serviços de aplicação recebe o pool SQLite diretamente.
 
-### Marco 7
+### Marco 7 — implementação concluída
 
-Ainda falta:
+Foi concluído:
 
-- criar um composition root explícito;
-- retirar a montagem de dependências de `DurvaldCore`;
-- revisar e remover accessors concretos;
-- reduzir exports internos legados;
-- manter os bindings sincronizados após mudanças na API;
-- repetir a validação GTK em ambiente com as bibliotecas nativas instaladas;
-- consolidar a documentação arquitetural final.
+- criação de `composition.rs` como composition root explícito;
+- retirada da montagem de dependências de `DurvaldCore`;
+- remoção dos accessors concretos públicos;
+- remoção dos reexports legados da raiz;
+- internalização de `core`, `database`, `enrichment`, `lastfm`, `secure_store`,
+  `metadata` e `audio`;
+- preservação de `api::*`, `DurvaldCore` e da superfície UniFFI como contratos
+  públicos deliberados;
+- proteção automatizada para impedir que módulos internos voltem a ser
+  públicos acidentalmente.
+
+Permanece como gate de ambiente, não como implementação do marco:
+
+- repetir Clippy e build do GTK em ambiente com GTK 4 e Graphene instalados.
 
 ## Próximos passos recomendados
 
 1. repetir Clippy e build GTK em ambiente com GTK 4 e Graphene instalados;
-2. iniciar o Marco 7 pela criação de um composition root explícito.
+2. manter futuras mudanças arquiteturais em fatias pequenas, cada uma com sua
+   fronteira e teste de regressão explícitos;
+3. tratar codecs adicionais, integração com o sistema operacional e file
+   watcher como iniciativas de produto separadas desta refatoração.
 
 ## Resumo executivo
 
-O padrão arquitetural foi replicado em oito serviços e os Marcos 1–6 foram
+O padrão arquitetural foi replicado em oito serviços e os Marcos 1–7 foram
 concluídos quanto à implementação.
 A fachada pública está reduzida principalmente à delegação, composição e
 conversão de fronteira. No Marco 6, a tipagem dos IDs foi estabelecida, todas
 as consultas comuns de catálogo foram deslocadas para adapters SQLite e o ciclo
 de scan, o playback e playlists foram isolados. Nenhum serviço de aplicação
 conhece rows, operações, pools ou conexões SQLite; esse limite agora é protegido
-por teste arquitetural.
+por teste arquitetural. A raiz da crate expõe deliberadamente apenas `api`, os
+reexports de `api::*`, `DurvaldCore` e o módulo opcional `test_support`.
 
 ## Histórico de atualizações
 
@@ -402,3 +415,7 @@ por teste arquitetural.
 | 24/09/2026 | `aadfd77` | Playlists da busca convertidas para modelo de domínio |
 | 24/09/2026 | `f9f89a3` | Auditoria e teste da fronteira entre application e banco |
 | 24/09/2026 | estado não commitado | Regeneração UniFFI e checkpoint global do Marco 6 |
+| 24–25/09/2026 | `157bfa9`–`50cc77a` | Criação e consolidação do composition root |
+| 25/09/2026 | `fe833a5` | Remoção dos accessors concretos da fachada |
+| 25/09/2026 | `c2b95bd`–`760bacd` | Remoção de reexports legados e internalização dos módulos de implementação |
+| 27/09/2026 | `018fabe` | Internalização final de áudio e proteção automatizada da superfície pública |
