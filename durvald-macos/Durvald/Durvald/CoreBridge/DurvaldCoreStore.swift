@@ -533,7 +533,9 @@ final class DurvaldCoreStore {
                     "Durvald: scan concluído — encontrados: \(result.totalFilesFound), novos: \(result.newTracksAdded), atualizados: \(result.updatedTracks), erros: \(result.errors)"
                 )
                 try await reloadLibrary(using: core)
-                await updateLibraryMetadata(refreshRemote: true)
+                // Apply metadata already cached on disk, but never turn a local
+                // library scan into an implicit full-catalog network refresh.
+                await updateLibraryMetadata()
 
                 if !result.errors.isEmpty {
                     errorMessage = result.errors.joined(separator: "\n")
@@ -1626,7 +1628,7 @@ final class DurvaldCoreStore {
     /// Atualiza toda a biblioteca em série para respeitar os limites dos
     /// provedores. O cache local é sempre aplicado; rede só é usada quando o
     /// enriquecimento está habilitado e fora do modo offline.
-    func updateLibraryMetadata(refreshRemote: Bool = true) async {
+    func updateLibraryMetadata(refreshRemote: Bool = false) async {
         guard let core, !isUpdatingLibraryMetadata else { return }
 
         isUpdatingLibraryMetadata = true

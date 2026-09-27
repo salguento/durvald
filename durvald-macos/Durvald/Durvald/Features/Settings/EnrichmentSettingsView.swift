@@ -48,7 +48,7 @@ struct EnrichmentSettingsView: View {
                 .disabled(store.isUpdatingLibraryMetadata || store.core == nil)
                 .accessibilityIdentifier("settings.enrichment.updateLibrary")
 
-                Text("A atualização também acontece automaticamente ao abrir o Durvald e depois de uma varredura. Artistas sem identidade confirmada precisam ser vinculados antes.")
+                Text("Metadados já armazenados são aplicados depois de uma varredura. Consultas remotas para toda a biblioteca só acontecem ao solicitar esta atualização. Artistas sem identidade confirmada precisam ser vinculados antes.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
