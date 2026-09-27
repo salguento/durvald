@@ -29,19 +29,15 @@ private actor ArtworkLoadGate {
 final class ArtworkRepository {
     static let shared = ArtworkRepository()
 
-    private final class CachedArtwork {
+    private struct CachedArtwork {
         let image: NSImage?
-        init(_ image: NSImage?) { self.image = image }
+        let cost: Int
     }
 
     private struct Request: Hashable {
         let coreID: ObjectIdentifier
         let artworkID: String
         let pixelSize: Int
-
-        var cacheKey: NSString {
-            "\(coreID):\(pixelSize):\(artworkID)" as NSString
-        }
     }
 
     private struct Flight {
@@ -49,7 +45,11 @@ final class ArtworkRepository {
         var waiters: Set<UUID>
     }
 
-    private let cache = NSCache<NSString, CachedArtwork>()
+    private var cache: [Request: CachedArtwork] = [:]
+    private var cacheRecency: [Request] = []
+    private var cacheCost = 0
+    private let cacheByteLimit: Int
+    private let cacheCountLimit: Int
     private var inFlight: [Request: Flight] = [:]
     // Keep the complete source bytes for at most one artwork at a time. Limiting
     // only this serial decoding queue would still allow every visible cell to
@@ -61,13 +61,16 @@ final class ArtworkRepository {
         let value: DurvaldCore
     }
 
-    init() {
-        cache.countLimit = 600
-        cache.totalCostLimit = 64 * 1024 * 1024
+    init(
+        cacheByteLimit: Int = 64 * 1024 * 1024,
+        cacheCountLimit: Int = 600
+    ) {
+        self.cacheByteLimit = max(0, cacheByteLimit)
+        self.cacheCountLimit = max(0, cacheCountLimit)
     }
 
     static func pixelSize(for size: CGFloat, scale: CGFloat) -> Int {
-        let requested = max(1, min(size * scale, 2048))
+        let requested = max(1, min(size * scale, 1024))
         var bucket = 64
         while CGFloat(bucket) < requested { bucket *= 2 }
         return bucket
@@ -75,7 +78,7 @@ final class ArtworkRepository {
 
     func cachedImage(for artworkID: String, pixelSize: Int, using core: DurvaldCore) -> NSImage? {
         let request = Request(coreID: ObjectIdentifier(core), artworkID: artworkID, pixelSize: pixelSize)
-        return cache.object(forKey: request.cacheKey)?.image
+        return cachedArtwork(for: request)?.image
     }
 
     func image(
@@ -84,7 +87,7 @@ final class ArtworkRepository {
         using core: DurvaldCore
     ) async throws -> NSImage? {
         let request = Request(coreID: ObjectIdentifier(core), artworkID: artworkID, pixelSize: pixelSize)
-        if let cached = cache.object(forKey: request.cacheKey) { return cached.image }
+        if let cached = cachedArtwork(for: request) { return cached.image }
         let waiterID = UUID()
         if var existing = inFlight[request] {
             existing.waiters.insert(waiterID)
@@ -147,10 +150,10 @@ final class ArtworkRepository {
             await loadGate.release()
 
             let image = thumbnail.map { NSImage(cgImage: $0, size: .zero) }
-            cache.setObject(
-                CachedArtwork(image),
-                forKey: request.cacheKey,
-                cost: thumbnail.map { $0.bytesPerRow * $0.height } ?? 0
+            insertCachedArtwork(
+                image,
+                cost: thumbnail.map { $0.bytesPerRow * $0.height } ?? 0,
+                for: request
             )
             return image
         }
@@ -182,6 +185,35 @@ final class ArtworkRepository {
             flight.task.cancel()
         } else {
             inFlight[request] = flight
+        }
+    }
+
+    private func cachedArtwork(for request: Request) -> CachedArtwork? {
+        guard let cached = cache[request] else { return nil }
+        cacheRecency.removeAll { $0 == request }
+        cacheRecency.append(request)
+        return cached
+    }
+
+    private func insertCachedArtwork(_ image: NSImage?, cost: Int, for request: Request) {
+        let boundedCost = max(0, cost)
+        guard cacheCountLimit > 0, boundedCost <= cacheByteLimit else { return }
+
+        if let previous = cache.removeValue(forKey: request) {
+            cacheCost -= previous.cost
+            cacheRecency.removeAll { $0 == request }
+        }
+
+        cache[request] = CachedArtwork(image: image, cost: boundedCost)
+        cacheRecency.append(request)
+        cacheCost += boundedCost
+
+        while cache.count > cacheCountLimit || cacheCost > cacheByteLimit {
+            guard let oldest = cacheRecency.first else { break }
+            cacheRecency.removeFirst()
+            if let removed = cache.removeValue(forKey: oldest) {
+                cacheCost -= removed.cost
+            }
         }
     }
 }

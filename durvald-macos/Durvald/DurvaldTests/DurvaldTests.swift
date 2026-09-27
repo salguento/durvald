@@ -747,6 +747,13 @@ final class ContentShellStateTests: XCTestCase {
 
 final class ArtworkRepositoryTests: XCTestCase {
     @MainActor
+    func testPixelSizeUsesBoundedPowerOfTwoBuckets() {
+        XCTAssertEqual(ArtworkRepository.pixelSize(for: 1, scale: 1), 64)
+        XCTAssertEqual(ArtworkRepository.pixelSize(for: 65, scale: 1), 128)
+        XCTAssertEqual(ArtworkRepository.pixelSize(for: 900, scale: 2), 1024)
+    }
+
+    @MainActor
     func testConcurrentRequestsShareDecodedThumbnailAndCache() async throws {
         let bitmap = try XCTUnwrap(NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: 2048, pixelsHigh: 1024,
@@ -786,6 +793,25 @@ final class ArtworkRepositoryTests: XCTestCase {
         }
         XCTAssertEqual(core.readCount, 1)
         XCTAssertFalse(core.readOnMainThread)
+    }
+
+    @MainActor
+    func testCacheEvictsLeastRecentlyUsedArtworkAtStrictByteLimit() async throws {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: 256, pixelsHigh: 256,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+            isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ))
+        let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        let core = ArtworkTestCore(data: data)
+        let repository = ArtworkRepository(cacheByteLimit: 70_000, cacheCountLimit: 10)
+
+        _ = try await repository.image(for: "first", pixelSize: 128, using: core)
+        _ = try await repository.image(for: "second", pixelSize: 128, using: core)
+        XCTAssertEqual(core.readCount, 2)
+
+        _ = try await repository.image(for: "first", pixelSize: 128, using: core)
+        XCTAssertEqual(core.readCount, 3)
     }
 }
 
