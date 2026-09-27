@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::time::{Instant, timeout_at};
 
 const RELEASE_GROUP_PAGE_SIZE: u64 = 100;
-const MAX_DISCOGRAPHY_PAGES_PER_REFRESH: usize = 10;
+const MAX_DISCOGRAPHY_PAGES_PER_REFRESH: usize = 2;
 const DISCOGRAPHY_REFRESH_BUDGET: Duration = Duration::from_secs(20);
 
 pub struct MusicBrainz {
@@ -240,6 +240,10 @@ impl MusicBrainz {
             return Err(TransportError::InvalidJson);
         };
         let truncated = body.count > body.offset.saturating_add(body.artists.len() as u64);
+        let normalized_local_releases = local_releases
+            .iter()
+            .map(|title| (title, normalized_match_text(title)))
+            .collect::<Vec<_>>();
         let mut candidates = Vec::new();
         for artist in body.artists.into_iter().take(10) {
             let mut candidate = artist.normalize(name)?;
@@ -260,12 +264,13 @@ impl MusicBrainz {
                     .await
                 {
                     Ok(JsonResponse::Modified { body, .. }) => {
-                        for local in local_releases {
-                            if body
-                                .groups
-                                .iter()
-                                .any(|g| g.title.to_lowercase() == local.to_lowercase())
-                            {
+                        let remote_titles = body
+                            .groups
+                            .iter()
+                            .map(|group| normalized_match_text(&group.title))
+                            .collect::<HashSet<_>>();
+                        for (local, normalized) in &normalized_local_releases {
+                            if remote_titles.contains(normalized) {
                                 candidate
                                     .evidence
                                     .push(format!("local_release_title:{local}"));

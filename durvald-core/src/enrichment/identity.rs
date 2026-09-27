@@ -17,18 +17,25 @@ pub fn normalize_mbid(value: &str) -> Option<String> {
 /// with MusicBrainz data. MusicBrainz commonly uses typographic punctuation
 /// where file tags use their ASCII equivalents.
 pub fn normalized_match_text(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| match character {
+    let mut normalized = String::with_capacity(value.len());
+    let mut pending_space = false;
+    for character in value.chars() {
+        let character = match character {
             '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2212}' => '-',
             '\u{2018}' | '\u{2019}' => '\'',
             _ => character,
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
+        };
+        if character.is_whitespace() {
+            pending_space = !normalized.is_empty();
+            continue;
+        }
+        if pending_space {
+            normalized.push(' ');
+            pending_space = false;
+        }
+        normalized.extend(character.to_lowercase());
+    }
+    normalized
 }
 
 #[cfg(test)]

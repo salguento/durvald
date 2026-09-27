@@ -1310,9 +1310,10 @@ impl EnrichmentService {
         };
         let expires_at = now.saturating_add(DISCOGRAPHY_TTL.as_secs() as i64);
         let remote_exhausted = value.remote_exhausted;
-        let mut stored_any = false;
-        for page in value.pages {
-            let snapshot = DiscographyPageSnapshot {
+        let snapshots = value
+            .pages
+            .into_iter()
+            .map(|page| DiscographyPageSnapshot {
                 artist_id,
                 identity_generation,
                 catalog_generation,
@@ -1324,34 +1325,36 @@ impl EnrichmentService {
                 fetched_at: now,
                 expires_at,
                 validators: snapshot_validators.clone(),
-            };
-            let store_result = self
-                .write_database_idempotent("discography.store_page", move |conn| {
-                    enrichment::store_discography_page(conn, &snapshot)
-                })
-                .await;
-            let stored = match store_result {
-                Ok(stored) => stored,
-                Err(CoreError::InvalidInput { .. }) => {
-                    self.write_database_idempotent("discography.discard_snapshot", move |conn| {
-                        enrichment::discard_discography_snapshot(
-                            conn,
-                            artist_id,
-                            identity_generation,
-                            catalog_generation,
-                        )
-                    })
-                    .await
-                    .map_err(storage_transport)?;
-                    return Err(TransportError::InvalidJson);
+            })
+            .collect::<Vec<_>>();
+        let store_result = self
+            .write_database(move |conn| {
+                let mut stored_any = false;
+                for snapshot in &snapshots {
+                    match enrichment::store_discography_page(conn, snapshot) {
+                        Ok(true) => stored_any = true,
+                        Ok(false) => return Ok(None),
+                        Err(error @ CoreError::InvalidInput { .. }) => {
+                            enrichment::discard_discography_snapshot(
+                                conn,
+                                artist_id,
+                                identity_generation,
+                                catalog_generation,
+                            )?;
+                            return Err(error);
+                        }
+                        Err(error) => return Err(error),
+                    }
                 }
-                Err(_) => return Err(TransportError::Network),
-            };
-            if !stored {
-                return Ok(ArtistRefreshStatus::Superseded);
-            }
-            stored_any = true;
-        }
+                Ok(Some(stored_any))
+            })
+            .await;
+        let stored_any = match store_result {
+            Ok(Some(stored_any)) => stored_any,
+            Ok(None) => return Ok(ArtistRefreshStatus::Superseded),
+            Err(CoreError::InvalidInput { .. }) => return Err(TransportError::InvalidJson),
+            Err(_) => return Err(TransportError::Network),
+        };
         if remote_exhausted {
             self.refresh_local_release_metadata(identity, force).await?;
         }
@@ -4195,11 +4198,16 @@ mod tests {
 
         let first = service.refresh_artist(1, request.clone()).await.unwrap();
         assert_eq!(first.sections[0].status, ArtistRefreshStatus::Partial);
-        assert_eq!(mock.calls(), 10);
+        assert_eq!(mock.calls(), 2);
         let hidden = service.artist_discography(1, 50, 0).await.unwrap();
         assert!(hidden.items.is_empty());
         assert_eq!(hidden.catalog_generation, 0);
 
+        for expected_calls in [4, 6, 8, 10] {
+            let partial = service.refresh_artist(1, request.clone()).await.unwrap();
+            assert_eq!(partial.sections[0].status, ArtistRefreshStatus::Partial);
+            assert_eq!(mock.calls(), expected_calls);
+        }
         let second = service.refresh_artist(1, request).await.unwrap();
         assert_eq!(second.sections[0].status, ArtistRefreshStatus::Updated);
         assert_eq!(mock.calls(), 11);
