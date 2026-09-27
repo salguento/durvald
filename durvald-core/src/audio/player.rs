@@ -88,6 +88,7 @@ pub enum AudioError {
 }
 
 enum PlayerBackend {
+    Uninitialized,
     Default(Box<AudioManager<DefaultBackend>>),
     #[cfg(any(test, feature = "test-support"))]
     Mock(Box<AudioManager<kira::backend::mock::MockBackend>>),
@@ -125,11 +126,9 @@ impl AudioPlayer {
 
 impl AudioPlayer {
     pub fn new() -> Result<Self, AudioError> {
-        let manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())
-            .map_err(|e| AudioError::Kira(Box::new(e)))?;
-        Ok(Self::from_backend(PlayerBackend::Default(Box::new(
-            manager,
-        ))))
+        // Opening the core must not acquire an audio device. The real backend
+        // is created on the first operation that actually starts playback.
+        Ok(Self::from_backend(PlayerBackend::Uninitialized))
     }
 }
 
@@ -149,6 +148,9 @@ impl AudioPlayer {
     pub(crate) fn process_mock_audio(&mut self, blocks: usize) {
         let manager = match &mut self.manager {
             PlayerBackend::Mock(manager) => manager,
+            PlayerBackend::Uninitialized => {
+                panic!("mock processing requires an initialized mock player")
+            }
             PlayerBackend::Default(_) => {
                 panic!("mock processing requires a mock player")
             }
@@ -164,6 +166,15 @@ impl AudioPlayer {
 }
 
 impl AudioPlayer {
+    fn ensure_backend(&mut self) -> Result<(), AudioError> {
+        if matches!(self.manager, PlayerBackend::Uninitialized) {
+            let manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())
+                .map_err(|error| AudioError::Kira(Box::new(error)))?;
+            self.manager = PlayerBackend::Default(Box::new(manager));
+        }
+        Ok(())
+    }
+
     fn from_backend(manager: PlayerBackend) -> Self {
         Self {
             manager,
@@ -239,6 +250,7 @@ impl AudioPlayer {
         prepared: PreparedSound,
         start_position: f64,
     ) -> Result<(), AudioError> {
+        self.ensure_backend()?;
         let PreparedSound {
             path,
             decoder,
@@ -285,6 +297,9 @@ impl AudioPlayer {
         self.next_token += 1;
         let data = GaplessData::new(voice);
         let transport = match &mut self.manager {
+            PlayerBackend::Uninitialized => {
+                unreachable!("audio backend is initialized before playback")
+            }
             PlayerBackend::Default(manager) => manager
                 .play(data)
                 .map_err(|e| AudioError::Kira(Box::new(e)))?,
@@ -966,7 +981,7 @@ impl AudioPlayer {
 
 #[cfg(test)]
 mod tests {
-    use super::{AudioPlayer, MAX_PLAYBACK_HISTORY_ITEMS, QueueItem};
+    use super::{AudioPlayer, MAX_PLAYBACK_HISTORY_ITEMS, PlayerBackend, QueueItem};
     use crate::api::RepeatMode;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -1007,6 +1022,28 @@ mod tests {
             })
             .collect();
         (directory, paths)
+    }
+
+    #[test]
+    fn default_backend_remains_lazy_while_restoring_non_playing_state() {
+        let mut player = AudioPlayer::new().unwrap();
+        player.set_volume(0.75);
+        player.set_crossfade(true, 5);
+        player.set_volume_normalization(true);
+        player.restore_session(
+            Some((7, "/library/restored.flac".to_string())),
+            vec![(8, "/library/next.flac".to_string())],
+            42.0,
+            true,
+            RepeatMode::All,
+        );
+
+        assert!(matches!(player.manager, PlayerBackend::Uninitialized));
+        assert_eq!(player.get_current_song_id(), Some(7));
+        assert_eq!(player.get_position(), Duration::from_secs(42));
+        assert_eq!(player.volume(), 0.75);
+        assert!(player.normalize_volume_enabled());
+        assert_eq!(player.repeat_mode(), RepeatMode::All);
     }
 
     #[tokio::test]
