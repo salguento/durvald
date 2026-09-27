@@ -2,6 +2,15 @@ use crate::api::{
     ArtistPartialDate, ArtistPopularTrack, ArtistProfile, EnrichmentAttribution, EnrichmentProvider,
 };
 
+/// Provider result normalized before it is materialized as a catalog artist.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SimilarArtistCandidate {
+    pub name: String,
+    pub musicbrainz_id: Option<String>,
+    pub lastfm_url: String,
+    pub match_score: f64,
+}
+
 /// Conditional-request metadata stays internal to Rust.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CacheValidators {

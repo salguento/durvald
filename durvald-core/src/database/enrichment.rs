@@ -8,7 +8,7 @@ use crate::enrichment::models::{
     ExternalArtworkRefreshPlan, ExternalArtworkRefreshTarget, ExternalArtworkSnapshot,
     ExternalArtworkStoreOutcome, ExternalReleaseDetailsSnapshot, LocalReleaseMatchContext,
     LocalReleaseTrackContext, MatchedReleaseMetadata, PopularTracksSnapshot, ProfileSnapshot,
-    ProviderFailureSnapshot, ReleaseGroupSnapshot,
+    ProviderFailureSnapshot, ReleaseGroupSnapshot, SimilarArtistCandidate,
 };
 use crate::enrichment::policy::{MAX_JSON_BYTES, normalize_language, normalized_settings};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -2978,14 +2978,72 @@ pub fn read_similar_artists(
     artist_id: i64,
     generation: u64,
 ) -> CoreResult<(Vec<crate::api::SimilarArtist>, Option<i64>)> {
-    let cached: (String, Option<i64>, Option<i64>) = conn.query_row(
-        "SELECT similar_artists, similar_artists_generation, similar_artists_fetched_at FROM artists WHERE artist_id=?1",
-        [artist_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-    ).map_err(storage)?;
-    if cached.1 != Some(i64::try_from(generation).map_err(storage)?) {
+    let cached: (Option<i64>, Option<i64>) = conn
+        .query_row(
+            "SELECT similar_artists_generation, similar_artists_fetched_at
+             FROM artists WHERE artist_id = ?1",
+            [artist_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(storage)?;
+    let generation = i64::try_from(generation).map_err(storage)?;
+    if cached.0 != Some(generation) {
         return Ok((Vec::new(), None));
     }
-    Ok((serde_json::from_str(&cached.0).map_err(storage)?, cached.2))
+    let mut statement = conn
+        .prepare(
+            "SELECT s.target_artist_id, a.name,
+                    COALESCE(state.identity_status, 'unresolved'),
+                    state.musicbrainz_id, s.provider,
+                    COALESCE((
+                        SELECT lastfm.external_id FROM artist_identity_keys lastfm
+                        WHERE lastfm.artist_id = s.target_artist_id
+                          AND lastfm.provider = 'last_fm'
+                        ORDER BY lastfm.created_at DESC, lastfm.external_id
+                        LIMIT 1
+                    ), ''), s.match_score,
+                    EXISTS(SELECT 1 FROM song_artists songs
+                           WHERE songs.artist_id = s.target_artist_id)
+             FROM artist_similarities s
+             JOIN artists a ON a.artist_id = s.target_artist_id
+             LEFT JOIN artist_enrichment_state state
+                    ON state.artist_id = s.target_artist_id
+             WHERE s.source_artist_id = ?1
+               AND s.source_identity_generation = ?2
+             ORDER BY s.match_score DESC, s.target_artist_id",
+        )
+        .map_err(storage)?;
+    let rows = statement
+        .query_map(params![artist_id, generation], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, f64>(6)?,
+                row.get::<_, bool>(7)?,
+            ))
+        })
+        .map_err(storage)?;
+    let mut items = Vec::new();
+    for row in rows {
+        let row = row.map_err(storage)?;
+        items.push(crate::api::SimilarArtist {
+            artist_id: row.0,
+            name: row.1,
+            identity_status: decode_enum(row.2)?,
+            musicbrainz_id: row.3,
+            discovery_provider: row.4,
+            discovery_external_id: row.5.clone(),
+            lastfm_url: row.5,
+            match_score: row.6,
+            portrait: None,
+            has_playable_sources: row.7,
+        });
+    }
+    Ok((items, cached.1))
 }
 
 /// Finds or creates a catalog artist exclusively by stable external identity.
@@ -3251,15 +3309,24 @@ pub fn similar_artists_fresh(
     generation: u64,
     now: i64,
 ) -> CoreResult<bool> {
-    conn.query_row("SELECT COALESCE(similar_artists_generation=?2 AND similar_artists_expires_at>?3, 0) FROM artists WHERE artist_id=?1",
-        params![artist_id, i64::try_from(generation).map_err(storage)?, now], |row| row.get(0)).map_err(storage)
+    conn.query_row(
+        "SELECT COALESCE(
+        similar_artists_generation = ?2 AND similar_artists_expires_at > ?3
+        AND (similar_artists = '[]' OR EXISTS(
+            SELECT 1 FROM artist_similarities
+            WHERE source_artist_id = ?1 AND source_identity_generation = ?2
+        )), 0) FROM artists WHERE artist_id=?1",
+        params![artist_id, i64::try_from(generation).map_err(storage)?, now],
+        |row| row.get(0),
+    )
+    .map_err(storage)
 }
 
 pub fn store_similar_artists(
     conn: &Connection,
     artist_id: i64,
     generation: u64,
-    items: &[crate::api::SimilarArtist],
+    items: &[SimilarArtistCandidate],
     now: i64,
     expires_at: i64,
 ) -> CoreResult<bool> {
@@ -3918,13 +3985,13 @@ mod tests {
         )
         .unwrap();
         let items = vec![
-            SimilarArtist {
+            SimilarArtistCandidate {
                 name: "Same Name".into(),
                 musicbrainz_id: Some("11111111-1111-4111-8111-111111111111".into()),
                 lastfm_url: "https://www.last.fm/music/first".into(),
                 match_score: 0.9,
             },
-            SimilarArtist {
+            SimilarArtistCandidate {
                 name: "Same Name".into(),
                 musicbrainz_id: Some("22222222-2222-4222-8222-222222222222".into()),
                 lastfm_url: "https://www.last.fm/music/second".into(),
@@ -3966,6 +4033,15 @@ mod tests {
             .unwrap(),
             2
         );
+        let (published, fetched_at) = read_similar_artists(&conn, 7, 3).unwrap();
+        assert_eq!(fetched_at, Some(100));
+        assert_eq!(published.len(), 2);
+        assert_ne!(published[0].artist_id, published[1].artist_id);
+        assert_eq!(published[0].name, "Same Name");
+        assert_eq!(published[0].identity_status, ArtistIdentityStatus::Resolved);
+        assert_eq!(published[0].discovery_provider, "last_fm");
+        assert_eq!(published[0].lastfm_url, "https://www.last.fm/music/first");
+        assert!(!published[0].has_playable_sources);
     }
 
     #[test]
@@ -3978,14 +4054,14 @@ mod tests {
             [],
         )
         .unwrap();
-        let original = vec![SimilarArtist {
+        let original = vec![SimilarArtistCandidate {
             name: "Original".into(),
             musicbrainz_id: Some("11111111-1111-4111-8111-111111111111".into()),
             lastfm_url: "https://www.last.fm/music/original".into(),
             match_score: 0.9,
         }];
         assert!(store_similar_artists(&conn, 7, 3, &original, 100, 200).unwrap());
-        let conflicting = vec![SimilarArtist {
+        let conflicting = vec![SimilarArtistCandidate {
             name: "Conflict".into(),
             musicbrainz_id: Some("22222222-2222-4222-8222-222222222222".into()),
             lastfm_url: "https://www.last.fm/music/original".into(),
@@ -3994,7 +4070,11 @@ mod tests {
 
         assert!(store_similar_artists(&conn, 7, 3, &conflicting, 150, 250).is_err());
         let (restored, fetched_at) = read_similar_artists(&conn, 7, 3).unwrap();
-        assert_eq!(restored, original);
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].name, original[0].name);
+        assert_eq!(restored[0].musicbrainz_id, original[0].musicbrainz_id);
+        assert_eq!(restored[0].lastfm_url, original[0].lastfm_url);
+        assert_eq!(restored[0].match_score, original[0].match_score);
         assert_eq!(fetched_at, Some(100));
         assert_eq!(
             conn.query_row(

@@ -257,10 +257,16 @@ pub struct ArtistFieldOverride {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SimilarArtist {
+    pub artist_id: i64,
     pub name: String,
+    pub identity_status: ArtistIdentityStatus,
     pub musicbrainz_id: Option<String>,
+    pub discovery_provider: String,
+    pub discovery_external_id: String,
     pub lastfm_url: String,
     pub match_score: f64,
+    pub portrait: Option<ArtistImageReference>,
+    pub has_playable_sources: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

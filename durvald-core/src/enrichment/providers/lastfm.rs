@@ -136,7 +136,7 @@ impl LastFm {
     pub async fn similar_artists(
         &self,
         artist_name: &str,
-    ) -> Result<Vec<crate::api::SimilarArtist>, TransportError> {
+    ) -> Result<Vec<crate::enrichment::models::SimilarArtistCandidate>, TransportError> {
         let response = self
             .client
             .get_metadata_json(
@@ -348,7 +348,7 @@ impl LastFm {
 fn normalize_similar_artists(
     body: serde_json::Value,
     artist_name: &str,
-) -> Result<Vec<crate::api::SimilarArtist>, TransportError> {
+) -> Result<Vec<crate::enrichment::models::SimilarArtistCandidate>, TransportError> {
     let root = body
         .get("similarartists")
         .and_then(serde_json::Value::as_object)
@@ -388,7 +388,7 @@ fn normalize_similar_artists(
             name,
         )
         .ok_or(TransportError::InvalidJson)?;
-        items.push(crate::api::SimilarArtist {
+        items.push(crate::enrichment::models::SimilarArtistCandidate {
             name: name.to_owned(),
             musicbrainz_id: value
                 .get("mbid")
