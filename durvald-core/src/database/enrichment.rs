@@ -212,7 +212,7 @@ pub fn read_artist_details(
             message: format!("Artist {artist_id} not found"),
         })?;
     let (similar_artists, similar_artists_fetched_at) =
-        read_similar_artists(&tx, artist_id, u64::try_from(row.3).map_err(storage)?)?;
+        read_similar_artists(&tx, artist_id, u64::try_from(row.3).map_err(storage)?, now)?;
     let mut details = ArtistDetails {
         similar_artists,
         similar_artists_fetched_at,
@@ -260,37 +260,7 @@ pub fn read_artist_details(
             });
         }
     }
-    details.portrait = tx
-        .query_row(
-            "SELECT provider, provider_id, source_url, managed_path, width, height,
-                    attribution, fetched_at, expires_at
-             FROM enrichment_assets
-             WHERE artist_id = ?1 AND generation = ?2
-               AND provider IN ('last_fm', 'commons') AND catalog_key = ''
-             ORDER BY CASE provider WHEN 'last_fm' THEN 0 ELSE 1 END
-             LIMIT 1",
-            params![artist_id, row.3],
-            |asset| {
-                let attribution: String = asset.get(6)?;
-                let expires_at: i64 = asset.get(8)?;
-                Ok(ArtistImageReference {
-                    provider: decode_enum(asset.get(0)?)
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    provider_id: asset.get(1)?,
-                    source_url: asset.get(2)?,
-                    managed_path: asset.get(3)?,
-                    width: asset.get(4)?,
-                    height: asset.get(5)?,
-                    attribution: serde_json::from_str(&attribution)
-                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
-                    fetched_at: asset.get(7)?,
-                    expires_at,
-                    stale: now >= expires_at,
-                })
-            },
-        )
-        .optional()
-        .map_err(storage)?;
+    details.portrait = read_artist_portrait(&tx, artist_id, row.3, now)?;
     {
         let mut stmt = tx
             .prepare(
@@ -319,6 +289,43 @@ pub fn read_artist_details(
     }
     tx.commit().map_err(storage)?;
     Ok(details)
+}
+
+fn read_artist_portrait(
+    conn: &Connection,
+    artist_id: i64,
+    generation: i64,
+    now: i64,
+) -> CoreResult<Option<ArtistImageReference>> {
+    conn.query_row(
+        "SELECT provider, provider_id, source_url, managed_path, width, height,
+                    attribution, fetched_at, expires_at
+             FROM enrichment_assets
+             WHERE artist_id = ?1 AND generation = ?2
+               AND provider IN ('last_fm', 'commons') AND catalog_key = ''
+             ORDER BY CASE provider WHEN 'last_fm' THEN 0 ELSE 1 END
+             LIMIT 1",
+        params![artist_id, generation],
+        |asset| {
+            let attribution: String = asset.get(6)?;
+            let expires_at: i64 = asset.get(8)?;
+            Ok(ArtistImageReference {
+                provider: decode_enum(asset.get(0)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                provider_id: asset.get(1)?,
+                source_url: asset.get(2)?,
+                managed_path: asset.get(3)?,
+                width: asset.get(4)?,
+                height: asset.get(5)?,
+                attribution: serde_json::from_str(&attribution)
+                    .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                fetched_at: asset.get(7)?,
+                expires_at,
+                stale: now >= expires_at,
+            })
+        },
+    )
+    .optional()
+    .map_err(storage)
 }
 
 fn validate_date(value: &Option<ArtistPartialDate>) -> CoreResult<()> {
@@ -2977,6 +2984,7 @@ pub fn read_similar_artists(
     conn: &Connection,
     artist_id: i64,
     generation: u64,
+    now: i64,
 ) -> CoreResult<(Vec<crate::api::SimilarArtist>, Option<i64>)> {
     let cached: (Option<i64>, Option<i64>) = conn
         .query_row(
@@ -2994,7 +3002,7 @@ pub fn read_similar_artists(
         .prepare(
             "SELECT s.target_artist_id, a.name,
                     COALESCE(state.identity_status, 'unresolved'),
-                    state.musicbrainz_id, s.provider,
+                    state.musicbrainz_id, COALESCE(state.generation, 0), s.provider,
                     COALESCE((
                         SELECT lastfm.external_id FROM artist_identity_keys lastfm
                         WHERE lastfm.artist_id = s.target_artist_id
@@ -3020,10 +3028,11 @@ pub fn read_similar_artists(
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, Option<String>>(3)?,
-                row.get::<_, String>(4)?,
+                row.get::<_, i64>(4)?,
                 row.get::<_, String>(5)?,
-                row.get::<_, f64>(6)?,
-                row.get::<_, bool>(7)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, f64>(7)?,
+                row.get::<_, bool>(8)?,
             ))
         })
         .map_err(storage)?;
@@ -3035,12 +3044,12 @@ pub fn read_similar_artists(
             name: row.1,
             identity_status: decode_enum(row.2)?,
             musicbrainz_id: row.3,
-            discovery_provider: row.4,
-            discovery_external_id: row.5.clone(),
-            lastfm_url: row.5,
-            match_score: row.6,
-            portrait: None,
-            has_playable_sources: row.7,
+            discovery_provider: row.5,
+            discovery_external_id: row.6.clone(),
+            lastfm_url: row.6,
+            match_score: row.7,
+            portrait: read_artist_portrait(conn, row.0, row.4, now)?,
+            has_playable_sources: row.8,
         });
     }
     Ok((items, cached.1))
@@ -4033,7 +4042,40 @@ mod tests {
             .unwrap(),
             2
         );
-        let (published, fetched_at) = read_similar_artists(&conn, 7, 3).unwrap();
+        let first_target: i64 = conn
+            .query_row(
+                "SELECT artist_id FROM artist_identity_keys
+                 WHERE provider = 'last_fm' AND external_id = ?1",
+                ["https://www.last.fm/music/first"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            store_asset(
+                &conn,
+                &AssetSnapshot {
+                    artist_id: first_target,
+                    identity_generation: 0,
+                    provider: EnrichmentProvider::LastFm,
+                    provider_id: "lastfm:first".into(),
+                    source_url: "https://images.example/first.jpg".into(),
+                    managed_path: "/tmp/similar-first.jpg".into(),
+                    width: Some(300),
+                    height: Some(300),
+                    attribution: EnrichmentAttribution {
+                        source_url: "https://www.last.fm/music/first".into(),
+                        author: None,
+                        license_name: None,
+                        license_url: None,
+                        revision: None,
+                    },
+                    fetched_at: 120,
+                    expires_at: 200,
+                },
+            )
+            .unwrap()
+        );
+        let (published, fetched_at) = read_similar_artists(&conn, 7, 3, 150).unwrap();
         assert_eq!(fetched_at, Some(100));
         assert_eq!(published.len(), 2);
         assert_ne!(published[0].artist_id, published[1].artist_id);
@@ -4041,6 +4083,17 @@ mod tests {
         assert_eq!(published[0].identity_status, ArtistIdentityStatus::Resolved);
         assert_eq!(published[0].discovery_provider, "last_fm");
         assert_eq!(published[0].lastfm_url, "https://www.last.fm/music/first");
+        assert_eq!(
+            published[0]
+                .portrait
+                .as_ref()
+                .map(|image| image.managed_path.as_str()),
+            Some("/tmp/similar-first.jpg")
+        );
+        assert_eq!(
+            published[0].portrait.as_ref().map(|image| image.stale),
+            Some(false)
+        );
         assert!(!published[0].has_playable_sources);
     }
 
@@ -4069,7 +4122,7 @@ mod tests {
         }];
 
         assert!(store_similar_artists(&conn, 7, 3, &conflicting, 150, 250).is_err());
-        let (restored, fetched_at) = read_similar_artists(&conn, 7, 3).unwrap();
+        let (restored, fetched_at) = read_similar_artists(&conn, 7, 3, 150).unwrap();
         assert_eq!(restored.len(), 1);
         assert_eq!(restored[0].name, original[0].name);
         assert_eq!(restored[0].musicbrainz_id, original[0].musicbrainz_id);

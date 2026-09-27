@@ -804,6 +804,9 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     /**
      * Returns all releases in the library.
+     *
+     * Retained for source and FFI compatibility. New consumers must iterate
+     * [`Self::releases_page`] so memory use remains bounded for large libraries.
      */
     func releases() async throws  -> [Release]
 
@@ -966,6 +969,9 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     /**
      * Returns all tracks in the library.
+     *
+     * Retained for source and FFI compatibility. New consumers must iterate
+     * [`Self::tracks_page`] so memory use remains bounded for large libraries.
      */
     func tracks() async throws  -> [Track]
 
@@ -2037,6 +2043,9 @@ open func releaseTracks(releaseId: Int64)async throws  -> [Track] {
 
     /**
      * Returns all releases in the library.
+     *
+     * Retained for source and FFI compatibility. New consumers must iterate
+     * [`Self::releases_page`] so memory use remains bounded for large libraries.
      */
 open func releases()async throws  -> [Release] {
     return
@@ -2699,6 +2708,9 @@ open func trackInfo(trackId: Int64)async throws  -> TrackInfo {
 
     /**
      * Returns all tracks in the library.
+     *
+     * Retained for source and FFI compatibility. New consumers must iterate
+     * [`Self::tracks_page`] so memory use remains bounded for large libraries.
      */
 open func tracks()async throws  -> [Track] {
     return
@@ -6698,18 +6710,30 @@ public func FfiConverterTypeSettings_lower(_ value: Settings) -> RustBuffer {
 
 
 public struct SimilarArtist {
+    public var artistId: Int64
     public var name: String
+    public var identityStatus: ArtistIdentityStatus
     public var musicbrainzId: String?
+    public var discoveryProvider: String
+    public var discoveryExternalId: String
     public var lastfmUrl: String
     public var matchScore: Double
+    public var portrait: ArtistImageReference?
+    public var hasPlayableSources: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(name: String, musicbrainzId: String?, lastfmUrl: String, matchScore: Double) {
+    public init(artistId: Int64, name: String, identityStatus: ArtistIdentityStatus, musicbrainzId: String?, discoveryProvider: String, discoveryExternalId: String, lastfmUrl: String, matchScore: Double, portrait: ArtistImageReference?, hasPlayableSources: Bool) {
+        self.artistId = artistId
         self.name = name
+        self.identityStatus = identityStatus
         self.musicbrainzId = musicbrainzId
+        self.discoveryProvider = discoveryProvider
+        self.discoveryExternalId = discoveryExternalId
         self.lastfmUrl = lastfmUrl
         self.matchScore = matchScore
+        self.portrait = portrait
+        self.hasPlayableSources = hasPlayableSources
     }
 }
 
@@ -6717,10 +6741,22 @@ public struct SimilarArtist {
 
 extension SimilarArtist: Equatable, Hashable {
     public static func ==(lhs: SimilarArtist, rhs: SimilarArtist) -> Bool {
+        if lhs.artistId != rhs.artistId {
+            return false
+        }
         if lhs.name != rhs.name {
             return false
         }
+        if lhs.identityStatus != rhs.identityStatus {
+            return false
+        }
         if lhs.musicbrainzId != rhs.musicbrainzId {
+            return false
+        }
+        if lhs.discoveryProvider != rhs.discoveryProvider {
+            return false
+        }
+        if lhs.discoveryExternalId != rhs.discoveryExternalId {
             return false
         }
         if lhs.lastfmUrl != rhs.lastfmUrl {
@@ -6729,14 +6765,26 @@ extension SimilarArtist: Equatable, Hashable {
         if lhs.matchScore != rhs.matchScore {
             return false
         }
+        if lhs.portrait != rhs.portrait {
+            return false
+        }
+        if lhs.hasPlayableSources != rhs.hasPlayableSources {
+            return false
+        }
         return true
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(artistId)
         hasher.combine(name)
+        hasher.combine(identityStatus)
         hasher.combine(musicbrainzId)
+        hasher.combine(discoveryProvider)
+        hasher.combine(discoveryExternalId)
         hasher.combine(lastfmUrl)
         hasher.combine(matchScore)
+        hasher.combine(portrait)
+        hasher.combine(hasPlayableSources)
     }
 }
 
@@ -6745,18 +6793,30 @@ public struct FfiConverterTypeSimilarArtist: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SimilarArtist {
         return
             try SimilarArtist(
+                artistId: FfiConverterInt64.read(from: &buf),
                 name: FfiConverterString.read(from: &buf),
+                identityStatus: FfiConverterTypeArtistIdentityStatus.read(from: &buf),
                 musicbrainzId: FfiConverterOptionString.read(from: &buf),
+                discoveryProvider: FfiConverterString.read(from: &buf),
+                discoveryExternalId: FfiConverterString.read(from: &buf),
                 lastfmUrl: FfiConverterString.read(from: &buf),
-                matchScore: FfiConverterDouble.read(from: &buf)
+                matchScore: FfiConverterDouble.read(from: &buf),
+                portrait: FfiConverterOptionTypeArtistImageReference.read(from: &buf),
+                hasPlayableSources: FfiConverterBool.read(from: &buf)
         )
     }
 
     public static func write(_ value: SimilarArtist, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.artistId, into: &buf)
         FfiConverterString.write(value.name, into: &buf)
+        FfiConverterTypeArtistIdentityStatus.write(value.identityStatus, into: &buf)
         FfiConverterOptionString.write(value.musicbrainzId, into: &buf)
+        FfiConverterString.write(value.discoveryProvider, into: &buf)
+        FfiConverterString.write(value.discoveryExternalId, into: &buf)
         FfiConverterString.write(value.lastfmUrl, into: &buf)
         FfiConverterDouble.write(value.matchScore, into: &buf)
+        FfiConverterOptionTypeArtistImageReference.write(value.portrait, into: &buf)
+        FfiConverterBool.write(value.hasPlayableSources, into: &buf)
     }
 }
 
@@ -9270,7 +9330,7 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_release_tracks() != 5208) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_releases() != 1645) {
+    if (uniffi_durvald_core_checksum_method_durvaldcore_releases() != 57176) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_releases_page() != 33341) {
@@ -9372,7 +9432,7 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_track_info() != 63609) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_tracks() != 21683) {
+    if (uniffi_durvald_core_checksum_method_durvaldcore_tracks() != 39316) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_tracks_page() != 23995) {

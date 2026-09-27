@@ -215,7 +215,6 @@ struct ArtistView: View {
                     $0.title.localizedStandardCompare($1.title) == .orderedAscending
                 }
             }
-            await loadSimilarArtistArtworkIDs()
             await cacheReleaseTracksAndResolvePopularArtwork()
         }
         .task(id: discographyPage) {
@@ -237,7 +236,6 @@ struct ArtistView: View {
             guard wasUpdating, !isUpdating else { return }
             Task {
                 await reloadCachedEnrichment()
-                await loadSimilarArtistArtworkIDs()
                 await cacheReleaseTracksAndResolvePopularArtwork()
             }
         }
@@ -1070,7 +1068,6 @@ struct ArtistView: View {
                 artistId: artist.id,
                 language: enrichmentLanguage
             )
-            await loadSimilarArtistArtworkIDs()
 
         case .discography, .covers:
             if let page = await store.artistDiscography(artistId: artist.id) {
@@ -1631,7 +1628,7 @@ struct ArtistView: View {
 
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 20) {
-                        ForEach(similarArtists, id: \.name) { similar in
+                        ForEach(similarArtists, id: \.artistId) { similar in
                             Group {
                                 if let local = localArtist(for: similar) {
                                     Button { selectArtist(local) } label: { similarArtistCard(similar) }
@@ -1641,6 +1638,9 @@ struct ArtistView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel(localArtist(for: similar) != nil ? "Abrir artista \(similar.name)" : "Abrir \(similar.name) no Last.fm")
+                            .task(id: similar.artistId) {
+                                await loadSimilarArtistPortrait(similar)
+                            }
                         }
                     }
                     .padding(.horizontal, 24)
@@ -1773,7 +1773,7 @@ struct ArtistView: View {
     }
 
     private func similarArtistAvatar(for similar: SimilarArtist) -> some View {
-        let artID = localArtist(for: similar).flatMap { similarArtistArtworkIDs[$0.id] }
+        let artID = similarArtistArtworkIDs[similar.artistId] ?? similar.portrait?.managedPath
         return Group {
             if let artID {
                 ArtworkView(
@@ -1802,37 +1802,26 @@ struct ArtistView: View {
     }
 
     @MainActor
-    private func loadSimilarArtistArtworkIDs() async {
-        var resolved: [Int64: String] = [:]
-        for similar in similarArtists.compactMap({ localArtist(for: $0) }) {
-            async let loadedDetails = store.artistDetails(
-                artistId: similar.id,
-                language: enrichmentLanguage
-            )
-            async let loadedReleases = store.releases(forArtistID: similar.id)
-            async let loadedDiscography = store.artistDiscography(artistId: similar.id)
-            let (details, releases, discography) = await (
-                loadedDetails,
-                loadedReleases,
-                loadedDiscography
-            )
-            let orderedReleases = releases.sorted {
-                $0.title.localizedStandardCompare($1.title) == .orderedAscending
-            }
-            let localArtworkIDs: [String?] = orderedReleases.map(\.artworkId)
-            let catalogArtworkIDs: [String?] = (discography?.items ?? []).map {
-                $0.artwork?.image.managedPath
-            }
-            let artworkID = ArtistPresentationPolicy.portraitArtworkID(
-                portrait: details?.portrait,
-                localArtworkIDs: localArtworkIDs + catalogArtworkIDs
-            )
-            if let artworkID {
-                resolved[similar.id] = artworkID
-            }
+    @MainActor
+    private func loadSimilarArtistPortrait(_ similar: SimilarArtist) async {
+        if let managedPath = similar.portrait?.managedPath {
+            similarArtistArtworkIDs[similar.artistId] = managedPath
+            return
         }
-        guard !Task.isCancelled else { return }
-        similarArtistArtworkIDs = resolved
+        guard store.enrichmentSettings?.enabled == true,
+              store.enrichmentSettings?.offline == false else { return }
+        _ = await store.refreshArtistSections(
+            artistId: similar.artistId,
+            language: enrichmentLanguage,
+            sections: [.portrait]
+        )
+        guard !Task.isCancelled,
+              let refreshed = await store.artistDetails(
+                  artistId: similar.artistId,
+                  language: enrichmentLanguage
+              ),
+              let managedPath = refreshed.portrait?.managedPath else { return }
+        similarArtistArtworkIDs[similar.artistId] = managedPath
     }
 
     @MainActor
