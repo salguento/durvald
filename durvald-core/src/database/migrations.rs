@@ -490,6 +490,50 @@ ALTER TABLE artists ADD COLUMN similar_artists_fetched_at INTEGER;
 ALTER TABLE artists ADD COLUMN similar_artists_expires_at INTEGER;
 "#;
 
+const CANONICAL_SIMILAR_ARTISTS: &str = r#"
+ALTER TABLE artists ADD COLUMN catalog_origin TEXT NOT NULL DEFAULT 'local_scan'
+    CHECK (catalog_origin IN ('local_scan', 'similar_artist', 'remote_search', 'manual'));
+ALTER TABLE artists ADD COLUMN catalog_created_at INTEGER NOT NULL DEFAULT 0
+    CHECK (catalog_created_at >= 0);
+ALTER TABLE artists ADD COLUMN catalog_updated_at INTEGER NOT NULL DEFAULT 0
+    CHECK (catalog_updated_at >= catalog_created_at);
+
+CREATE TABLE artist_identity_keys (
+    provider TEXT NOT NULL CHECK (length(trim(provider)) BETWEEN 1 AND 64),
+    external_id TEXT NOT NULL CHECK (length(trim(external_id)) BETWEEN 1 AND 500),
+    artist_id INTEGER NOT NULL REFERENCES artists(artist_id) ON DELETE CASCADE,
+    origin TEXT NOT NULL CHECK (origin IN ('local_tag', 'similar_artist', 'remote_search', 'manual')),
+    created_at INTEGER NOT NULL CHECK (created_at >= 0),
+    updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+    PRIMARY KEY (provider, external_id),
+    UNIQUE (provider, external_id, artist_id)
+);
+CREATE INDEX idx_artist_identity_keys_artist
+    ON artist_identity_keys(artist_id, provider);
+
+CREATE TABLE artist_similarities (
+    source_artist_id INTEGER NOT NULL REFERENCES artists(artist_id) ON DELETE CASCADE,
+    target_artist_id INTEGER NOT NULL REFERENCES artists(artist_id) ON DELETE CASCADE,
+    provider TEXT NOT NULL CHECK (length(trim(provider)) BETWEEN 1 AND 64),
+    target_identity_provider TEXT NOT NULL CHECK (length(trim(target_identity_provider)) BETWEEN 1 AND 64),
+    target_identity_value TEXT NOT NULL CHECK (length(trim(target_identity_value)) BETWEEN 1 AND 500),
+    source_identity_generation INTEGER NOT NULL CHECK (source_identity_generation >= 0),
+    match_score REAL NOT NULL CHECK (match_score >= 0.0 AND match_score <= 1.0),
+    fetched_at INTEGER NOT NULL CHECK (fetched_at >= 0),
+    expires_at INTEGER NOT NULL CHECK (expires_at >= fetched_at),
+    PRIMARY KEY (source_artist_id, target_artist_id, provider),
+    UNIQUE (source_artist_id, provider, target_identity_provider, target_identity_value),
+    FOREIGN KEY (target_identity_provider, target_identity_value, target_artist_id)
+        REFERENCES artist_identity_keys(provider, external_id, artist_id)
+        ON DELETE CASCADE,
+    CHECK (source_artist_id != target_artist_id)
+);
+CREATE INDEX idx_artist_similarities_target
+    ON artist_similarities(target_artist_id, provider);
+CREATE INDEX idx_artist_similarities_source_rank
+    ON artist_similarities(source_artist_id, provider, match_score DESC);
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -511,6 +555,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (15, EXTERNAL_RELEASE_DETAILS_CACHE),
             (16, ARTIST_POPULAR_TRACKS),
             (17, ARTIST_SIMILAR_ARTISTS),
+            (18, CANONICAL_SIMILAR_ARTISTS),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -581,7 +626,107 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            17
+            18
+        );
+    }
+
+    #[test]
+    fn similar_artist_relations_require_the_targets_registered_identity() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        crate::database::operations::create_tables(&conn).unwrap();
+        migrate_enrichment(&mut conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO artists (artist_id, name) VALUES
+                 (1, 'Source'),
+                 (2, 'The Homonym'),
+                 (3, 'The Homonym');
+             INSERT INTO artist_identity_keys
+                 (provider, external_id, artist_id, origin, created_at, updated_at)
+             VALUES
+                 ('musicbrainz', '11111111-1111-4111-8111-111111111111', 2,
+                  'similar_artist', 100, 100),
+                 ('musicbrainz', '22222222-2222-4222-8222-222222222222', 3,
+                  'similar_artist', 100, 100);",
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO artist_similarities
+             (source_artist_id, target_artist_id, provider,
+              target_identity_provider, target_identity_value,
+              source_identity_generation, match_score, fetched_at, expires_at)
+             VALUES (1, 2, 'last_fm', 'musicbrainz', ?1, 4, 0.9, 100, 200)",
+            ["11111111-1111-4111-8111-111111111111"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO artist_similarities
+             (source_artist_id, target_artist_id, provider,
+              target_identity_provider, target_identity_value,
+              source_identity_generation, match_score, fetched_at, expires_at)
+             VALUES (1, 3, 'last_fm', 'musicbrainz', ?1, 4, 0.8, 100, 200)",
+            ["22222222-2222-4222-8222-222222222222"],
+        )
+        .unwrap();
+
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artist_similarities WHERE source_artist_id = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            2
+        );
+        assert!(
+            conn.execute(
+                "INSERT INTO artist_similarities
+                 (source_artist_id, target_artist_id, provider,
+                  target_identity_provider, target_identity_value,
+                  source_identity_generation, match_score, fetched_at, expires_at)
+                 VALUES (3, 2, 'last_fm', 'musicbrainz', ?1, 1, 0.7, 100, 200)",
+                ["22222222-2222-4222-8222-222222222222"],
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn one_external_identity_cannot_belong_to_two_homonymous_artists() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        crate::database::operations::create_tables(&conn).unwrap();
+        migrate_enrichment(&mut conn).unwrap();
+        conn.execute_batch(
+            "INSERT INTO artists (artist_id, name) VALUES
+                 (1, 'Same Name'),
+                 (2, 'Same Name');
+             INSERT INTO artist_identity_keys
+                 (provider, external_id, artist_id, origin, created_at, updated_at)
+             VALUES ('musicbrainz', '11111111-1111-4111-8111-111111111111', 1,
+                     'similar_artist', 100, 100);",
+        )
+        .unwrap();
+
+        assert!(
+            conn.execute(
+                "INSERT INTO artist_identity_keys
+                 (provider, external_id, artist_id, origin, created_at, updated_at)
+                 VALUES ('musicbrainz', ?1, 2, 'similar_artist', 100, 100)",
+                ["11111111-1111-4111-8111-111111111111"],
+            )
+            .is_err()
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT artist_id FROM artist_identity_keys
+                 WHERE provider = 'musicbrainz' AND external_id = ?1",
+                ["11111111-1111-4111-8111-111111111111"],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
         );
     }
 
@@ -695,8 +840,12 @@ mod tests {
                     (12, PROVIDER_FAILURE_CACHE),
                     (13, LOCAL_RELEASE_METADATA),
                     (14, AGGREGATE_IDENTITY_INVALIDATION),
+                    (15, EXTERNAL_RELEASE_DETAILS_CACHE),
+                    (16, ARTIST_POPULAR_TRACKS),
+                    (17, ARTIST_SIMILAR_ARTISTS),
+                    (18, CANONICAL_SIMILAR_ARTISTS),
                     (
-                        18,
+                        19,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -709,7 +858,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            17
+            18
         );
     }
 
