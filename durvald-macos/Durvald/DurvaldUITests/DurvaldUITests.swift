@@ -133,7 +133,8 @@ final class DurvaldUITests: XCTestCase {
     @MainActor
     func testLongPlayerMetadataScrollsWithoutMovingItsLinks() async throws {
         let app = XCUIApplication()
-        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--long-player-metadata"]
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture",
+                                "--long-player-metadata", "--playback-clock-fixture"]
         app.launch()
 
         let title = app.links["player.trackTitle"]

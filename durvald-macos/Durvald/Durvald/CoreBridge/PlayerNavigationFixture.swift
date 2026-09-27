@@ -58,7 +58,12 @@ enum PlayerNavigationFixture {
                 shuffleEnabled: false, repeatMode: .none
             )
         return DurvaldCoreStore(
-            core: livePlayback ? PlaybackClockFixtureCore(snapshot: snapshot, tracks: tracks, autoAdvance: autoAdvance) : nil,
+            core: livePlayback ? PlaybackClockFixtureCore(
+                snapshot: snapshot,
+                tracks: tracks,
+                releases: releases,
+                autoAdvance: autoAdvance
+            ) : nil,
             playback: snapshot,
             tracks: tracks,
             // Same-name records come first to catch accidental matching by text.
@@ -73,12 +78,14 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
     private let lock = NSLock()
     private var snapshot: PlaybackSnapshot
     private let tracks: [Track]
+    private let releases: [Release]
     private let autoAdvance: Bool
     private var lastUpdate = ContinuousClock.now
 
-    init(snapshot: PlaybackSnapshot, tracks: [Track], autoAdvance: Bool) {
+    init(snapshot: PlaybackSnapshot, tracks: [Track], releases: [Release], autoAdvance: Bool) {
         self.snapshot = snapshot
         self.tracks = tracks
+        self.releases = releases
         self.autoAdvance = autoAdvance
         super.init(noPointer: .init())
     }
@@ -117,6 +124,38 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         lock.withLock {
             tracks.filter { $0.releaseId == releaseId }
         }
+    }
+
+    override func artistTracks(artistId: Int64) async throws -> [Track] {
+        lock.withLock {
+            tracks.filter { $0.artistId == artistId }
+        }
+    }
+
+    override func artistReleases(artistId: Int64) async throws -> [Release] {
+        lock.withLock {
+            releases.filter { $0.artistId == artistId }
+        }
+    }
+
+    override func artistIdentity(artistId: Int64) async throws -> ArtistIdentity {
+        throw CoreError.NotFound(message: "Fixture artist identity \(artistId) not found")
+    }
+
+    override func artistDetails(artistId: Int64, language: String) async throws -> ArtistDetails {
+        throw CoreError.NotFound(message: "Fixture artist details \(artistId) not found")
+    }
+
+    override func artistDiscography(
+        artistId: Int64,
+        pageSize: UInt64,
+        offset: UInt64
+    ) async throws -> ArtistDiscographyPage {
+        throw CoreError.NotFound(message: "Fixture artist discography \(artistId) not found")
+    }
+
+    override func artistPopularTracks(artistId: Int64) async throws -> ArtistPopularTracks? {
+        nil
     }
 
     override func track(trackId: Int64) async throws -> Track {

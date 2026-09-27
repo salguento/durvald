@@ -12,14 +12,16 @@ struct PlayerMarqueeText: View {
     @State private var availableWidth: CGFloat = 0
     @State private var cycleStart = Date.now
     @State private var pausedAt: Date?
+    @State private var isVisible = false
 
     private let copySpacing: CGFloat = 32
     private let pointsPerSecond = 22.0
     private let cyclePause = 1.0
+    private let minimumFrameInterval = 1.0 / 15.0
 
     private var shouldScroll: Bool {
         textWidth - availableWidth > 1 && availableWidth > 0
-            && isAnimating && !reduceMotion && scenePhase == .active
+            && isAnimating && isVisible && !reduceMotion && scenePhase == .active
     }
 
     private struct AnimationKey: Equatable {
@@ -29,6 +31,7 @@ struct PlayerMarqueeText: View {
         let isAnimating: Bool
         let reduceMotion: Bool
         let isActive: Bool
+        let isVisible: Bool
     }
 
     var body: some View {
@@ -45,7 +48,10 @@ struct PlayerMarqueeText: View {
                         .truncationMode(.tail)
                         .underline(underlined)
                 } else {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !shouldScroll || pausedAt != nil)) { context in
+                    TimelineView(.animation(
+                        minimumInterval: minimumFrameInterval,
+                        paused: !shouldScroll || pausedAt != nil
+                    )) { context in
                         HStack(spacing: copySpacing) {
                             movingText
                                 .onGeometryChange(for: CGFloat.self) { geometry in
@@ -82,6 +88,8 @@ struct PlayerMarqueeText: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(text)
+            .onAppear { isVisible = true }
+            .onDisappear { isVisible = false }
             .onHover { isHovered in
                 let now = Date.now
                 if isHovered {
@@ -98,7 +106,8 @@ struct PlayerMarqueeText: View {
                 availableWidth: availableWidth,
                 isAnimating: isAnimating,
                 reduceMotion: reduceMotion,
-                isActive: scenePhase == .active
+                isActive: scenePhase == .active,
+                isVisible: isVisible
             ), initial: true) { _, _ in
                 cycleStart = .now
                 if pausedAt != nil { pausedAt = cycleStart }
