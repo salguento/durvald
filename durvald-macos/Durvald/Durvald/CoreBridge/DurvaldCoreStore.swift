@@ -45,6 +45,7 @@ final class DurvaldCoreStore {
     private(set) var core: DurvaldCore?
     @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
     @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
+    @ObservationIgnored private var deferredInitializationTask: Task<Void, Never>?
     private static let libraryBookmarksKey = "durvald.library-security-bookmarks"
     @ObservationIgnored private var activeLibraryScopes: [URL] = []
     @ObservationIgnored private var volumeTask: Task<Void, Never>?
@@ -104,13 +105,10 @@ final class DurvaldCoreStore {
             let openedCore = try await open(config: try makeConfig())
             let initialPlayback = await openedCore.playback()
             core = openedCore
-            try await reloadLibrary(using: openedCore)
-            libraryPaths = try await openedCore.libraryPaths()
-            appSettings = try await openedCore.settings()
-            enrichmentSettings = try? await openedCore.enrichmentSettings()
             playback = initialPlayback
-
             startPlaybackPolling()
+            try await reloadPrimaryLibrary(using: openedCore)
+            startDeferredInitialization(using: openedCore)
         } catch {
             errorMessage = String(describing: error)
         }
@@ -149,7 +147,7 @@ final class DurvaldCoreStore {
         }
     }
 
-    private func reloadLibrary(using core: DurvaldCore) async throws {
+    private func reloadPrimaryLibrary(using core: DurvaldCore) async throws {
         async let loadedTracks = core.tracksPage(
             pageSize: Self.libraryPageSize,
             offset: 0
@@ -159,26 +157,46 @@ final class DurvaldCoreStore {
             offset: 0
         )
         async let loadedArtists = core.artists()
-        async let loadedPlaylists = core.playlists()
-        async let loadedHistory = core.playbackHistoryPage(
-            pageSize: Self.libraryPageSize,
-            offset: 0
-        )
         let result = try await (
             loadedTracks,
             loadedReleases,
-            loadedArtists,
-            loadedPlaylists,
-            loadedHistory
+            loadedArtists
         )
         tracks = result.0.items
         nextTracksOffset = result.0.nextOffset
         releases = result.1.items
         nextReleasesOffset = result.1.nextOffset
         artists = result.2
-        playlists = result.3
-        history = result.4.items
-        nextHistoryOffset = result.4.nextOffset
+    }
+
+    private func startDeferredInitialization(using core: DurvaldCore) {
+        deferredInitializationTask?.cancel()
+        deferredInitializationTask = Task { [weak self] in
+            // Give SwiftUI an opportunity to render the primary catalog before
+            // issuing secondary collection and settings queries.
+            await Task.yield()
+            guard let self, self.core === core, !Task.isCancelled else { return }
+
+            do {
+                self.playlists = try await core.playlists()
+                guard !Task.isCancelled else { return }
+
+                let historyPage = try await core.playbackHistoryPage(
+                    pageSize: Self.libraryPageSize,
+                    offset: 0
+                )
+                self.history = historyPage.items
+                self.nextHistoryOffset = historyPage.nextOffset
+                guard !Task.isCancelled else { return }
+
+                self.libraryPaths = try await core.libraryPaths()
+                self.appSettings = try await core.settings()
+                self.enrichmentSettings = try? await core.enrichmentSettings()
+            } catch {
+                guard !Task.isCancelled else { return }
+                self.errorMessage = String(describing: error)
+            }
+        }
     }
 
     func loadMoreTracks(ifNeededAfter trackID: Int64) async {
@@ -532,10 +550,11 @@ final class DurvaldCoreStore {
                 print(
                     "Durvald: scan concluído — encontrados: \(result.totalFilesFound), novos: \(result.newTracksAdded), atualizados: \(result.updatedTracks), erros: \(result.errors)"
                 )
-                try await reloadLibrary(using: core)
+                try await reloadPrimaryLibrary(using: core)
                 // Apply metadata already cached on disk, but never turn a local
                 // library scan into an implicit full-catalog network refresh.
                 await updateLibraryMetadata()
+                startDeferredInitialization(using: core)
 
                 if !result.errors.isEmpty {
                     errorMessage = result.errors.joined(separator: "\n")
@@ -1741,6 +1760,7 @@ final class DurvaldCoreStore {
     deinit {
         playbackPollingTask?.cancel()
         scanProgressPollingTask?.cancel()
+        deferredInitializationTask?.cancel()
         seekTask?.cancel()
         activeLibraryScopes.forEach { $0.stopAccessingSecurityScopedResource() }
     }
