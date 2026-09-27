@@ -3020,41 +3020,70 @@ pub fn upsert_discovered_artist(
         })
         .transpose()?;
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(storage)?;
-    let by_provider = identity_key_artist(&tx, provider, external_id)?;
-    let by_musicbrainz = musicbrainz_id
-        .as_deref()
-        .map(|mbid| identity_key_artist(&tx, "musicbrainz", mbid))
+    let artist_id = upsert_discovered_artist_inner(
+        &tx,
+        name,
+        provider,
+        external_id,
+        musicbrainz_id.as_deref(),
+        origin,
+        now,
+    )?;
+    tx.commit().map_err(storage)?;
+    Ok(artist_id)
+}
+
+fn upsert_discovered_artist_inner(
+    conn: &Connection,
+    name: &str,
+    provider: &str,
+    external_id: &str,
+    musicbrainz_id: Option<&str>,
+    origin: &str,
+    now: i64,
+) -> CoreResult<i64> {
+    let by_provider = identity_key_artist(conn, provider, external_id)?;
+    let by_registered_mbid = musicbrainz_id
+        .map(|mbid| identity_key_artist(conn, "musicbrainz", mbid))
         .transpose()?
         .flatten();
-    if by_provider.is_some() && by_musicbrainz.is_some() && by_provider != by_musicbrainz {
+    let by_persisted_mbid = musicbrainz_id
+        .map(|mbid| persisted_mbid_artist(conn, mbid))
+        .transpose()?
+        .flatten();
+    let mut identities = [by_provider, by_registered_mbid, by_persisted_mbid]
+        .into_iter()
+        .flatten();
+    let matched_artist = identities.next();
+    if matched_artist.is_some_and(|artist_id| identities.any(|other| other != artist_id)) {
         return Err(invalid(
             "Discovered artist identities belong to different artists",
         ));
     }
 
-    let artist_id = match by_musicbrainz.or(by_provider) {
+    let artist_id = match matched_artist {
         Some(artist_id) => artist_id,
         None => {
-            tx.execute(
+            conn.execute(
                 "INSERT INTO artists
                  (name, catalog_origin, catalog_created_at, catalog_updated_at)
                  VALUES (?1, ?2, ?3, ?3)",
                 params![name, origin, now],
             )
             .map_err(storage)?;
-            tx.last_insert_rowid()
+            conn.last_insert_rowid()
         }
     };
-    tx.execute(
+    conn.execute(
         "INSERT OR IGNORE INTO artist_enrichment_state (artist_id) VALUES (?1)",
         [artist_id],
     )
     .map_err(storage)?;
 
-    register_identity_key(&tx, provider, external_id, artist_id, origin, now)?;
-    if let Some(mbid) = musicbrainz_id.as_deref() {
-        register_identity_key(&tx, "musicbrainz", mbid, artist_id, origin, now)?;
-        let current_mbid: Option<String> = tx
+    register_identity_key(conn, provider, external_id, artist_id, origin, now)?;
+    if let Some(mbid) = musicbrainz_id {
+        register_identity_key(conn, "musicbrainz", mbid, artist_id, origin, now)?;
+        let current_mbid: Option<String> = conn
             .query_row(
                 "SELECT musicbrainz_id FROM artist_enrichment_state WHERE artist_id = ?1",
                 [artist_id],
@@ -3069,7 +3098,7 @@ pub fn upsert_discovered_artist(
                 "Artist already has a different MusicBrainz identity",
             ));
         }
-        tx.execute(
+        conn.execute(
             "UPDATE artist_enrichment_state
              SET identity_status = 'resolved', musicbrainz_id = ?2,
                  identity_origin = NULL,
@@ -3082,7 +3111,7 @@ pub fn upsert_discovered_artist(
         )
         .map_err(storage)?;
     }
-    let generation: i64 = tx
+    let generation: i64 = conn
         .query_row(
             "SELECT generation FROM artist_enrichment_state WHERE artist_id = ?1",
             [artist_id],
@@ -3090,7 +3119,7 @@ pub fn upsert_discovered_artist(
         )
         .map_err(storage)?;
     store_discovered_external_id(
-        &tx,
+        conn,
         artist_id,
         provider,
         external_id,
@@ -3098,17 +3127,43 @@ pub fn upsert_discovered_artist(
         origin,
         now,
     )?;
-    if let Some(mbid) = musicbrainz_id.as_deref() {
-        store_discovered_external_id(&tx, artist_id, "musicbrainz", mbid, generation, origin, now)?;
+    if let Some(mbid) = musicbrainz_id {
+        store_discovered_external_id(
+            conn,
+            artist_id,
+            "musicbrainz",
+            mbid,
+            generation,
+            origin,
+            now,
+        )?;
     }
-    tx.execute(
+    conn.execute(
         "UPDATE artists SET catalog_updated_at = MAX(catalog_updated_at, ?2)
          WHERE artist_id = ?1",
         params![artist_id, now],
     )
     .map_err(storage)?;
-    tx.commit().map_err(storage)?;
     Ok(artist_id)
+}
+
+fn persisted_mbid_artist(conn: &Connection, mbid: &str) -> CoreResult<Option<i64>> {
+    let mut statement = conn
+        .prepare(
+            "SELECT artist_id FROM artist_enrichment_state
+             WHERE identity_status = 'resolved' AND musicbrainz_id = ?1
+             ORDER BY artist_id LIMIT 2",
+        )
+        .map_err(storage)?;
+    let artists = statement
+        .query_map([mbid], |row| row.get::<_, i64>(0))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    if artists.len() > 1 {
+        return Err(invalid("MusicBrainz identity belongs to multiple artists"));
+    }
+    Ok(artists.into_iter().next())
 }
 
 fn identity_key_artist(
@@ -3208,10 +3263,100 @@ pub fn store_similar_artists(
     now: i64,
     expires_at: i64,
 ) -> CoreResult<bool> {
-    let payload = serde_json::to_string(items).map_err(storage)?;
+    if artist_id < 0 || now < 0 || expires_at < now || items.len() > 20 {
+        return Err(invalid("Invalid similar artist snapshot"));
+    }
     let generation = i64::try_from(generation).map_err(storage)?;
-    conn.execute("UPDATE artists SET similar_artists=?3, similar_artists_generation=?2, similar_artists_fetched_at=?4, similar_artists_expires_at=?5 WHERE artist_id=?1 AND EXISTS (SELECT 1 FROM artist_enrichment_state WHERE artist_id=?1 AND generation=?2 AND identity_status='resolved')",
-        params![artist_id, generation, payload, now, expires_at]).map(|count| count > 0).map_err(storage)
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(storage)?;
+    let current: bool = tx
+        .query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM artist_enrichment_state
+                 WHERE artist_id = ?1 AND generation = ?2 AND identity_status = 'resolved'
+             )",
+            params![artist_id, generation],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    if !current {
+        return Ok(false);
+    }
+
+    let mut materialized = Vec::with_capacity(items.len());
+    for item in items {
+        let target_artist_id = upsert_discovered_artist_inner(
+            &tx,
+            &item.name,
+            "last_fm",
+            &item.lastfm_url,
+            item.musicbrainz_id.as_deref(),
+            "similar_artist",
+            now,
+        )?;
+        if target_artist_id == artist_id {
+            continue;
+        }
+        let (identity_provider, identity_value) = match &item.musicbrainz_id {
+            Some(mbid) => ("musicbrainz".to_owned(), mbid.clone()),
+            None => ("last_fm".to_owned(), item.lastfm_url.clone()),
+        };
+        materialized.push((
+            item.clone(),
+            target_artist_id,
+            identity_provider,
+            identity_value,
+        ));
+    }
+    let published_items = materialized
+        .iter()
+        .map(|(item, _, _, _)| item.clone())
+        .collect::<Vec<_>>();
+    let payload = serde_json::to_string(&published_items).map_err(storage)?;
+    tx.execute(
+        "DELETE FROM artist_similarities
+         WHERE source_artist_id = ?1 AND provider = 'last_fm'",
+        [artist_id],
+    )
+    .map_err(storage)?;
+    for (item, target_artist_id, identity_provider, identity_value) in materialized {
+        tx.execute(
+            "INSERT INTO artist_similarities
+             (source_artist_id, target_artist_id, provider,
+              target_identity_provider, target_identity_value,
+              source_identity_generation, match_score, fetched_at, expires_at)
+             VALUES (?1, ?2, 'last_fm', ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                artist_id,
+                target_artist_id,
+                identity_provider,
+                identity_value,
+                generation,
+                item.match_score,
+                now,
+                expires_at
+            ],
+        )
+        .map_err(storage)?;
+    }
+    let changed = tx
+        .execute(
+            "UPDATE artists SET
+             similar_artists = ?3,
+             similar_artists_generation = ?2,
+             similar_artists_fetched_at = ?4,
+             similar_artists_expires_at = ?5
+         WHERE artist_id = ?1 AND EXISTS (
+             SELECT 1 FROM artist_enrichment_state
+             WHERE artist_id = ?1 AND generation = ?2 AND identity_status = 'resolved'
+         )",
+            params![artist_id, generation, payload, now, expires_at],
+        )
+        .map_err(storage)?;
+    if changed != 1 {
+        return Ok(false);
+    }
+    tx.commit().map_err(storage)?;
+    Ok(true)
 }
 
 pub fn popular_tracks_snapshot(
@@ -3759,6 +3904,106 @@ mod tests {
                 .get::<_, i64>(0))
                 .unwrap(),
             count_before
+        );
+    }
+
+    #[test]
+    fn similar_artist_snapshot_materializes_targets_and_their_identities_atomically() {
+        let conn = database();
+        conn.execute(
+            "INSERT INTO artist_enrichment_state
+             (artist_id, generation, identity_status, musicbrainz_id)
+             VALUES (7, 3, 'resolved', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')",
+            [],
+        )
+        .unwrap();
+        let items = vec![
+            SimilarArtist {
+                name: "Same Name".into(),
+                musicbrainz_id: Some("11111111-1111-4111-8111-111111111111".into()),
+                lastfm_url: "https://www.last.fm/music/first".into(),
+                match_score: 0.9,
+            },
+            SimilarArtist {
+                name: "Same Name".into(),
+                musicbrainz_id: Some("22222222-2222-4222-8222-222222222222".into()),
+                lastfm_url: "https://www.last.fm/music/second".into(),
+                match_score: 0.8,
+            },
+        ];
+
+        assert!(store_similar_artists(&conn, 7, 3, &items, 100, 200).unwrap());
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artist_similarities WHERE source_artist_id = 7",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(DISTINCT target_artist_id) FROM artist_similarities
+                 WHERE source_artist_id = 7",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artist_similarities s
+                 JOIN artist_identity_keys k
+                   ON k.artist_id = s.target_artist_id
+                  AND k.provider = s.target_identity_provider
+                  AND k.external_id = s.target_identity_value
+                 WHERE s.source_artist_id = 7",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            2
+        );
+    }
+
+    #[test]
+    fn conflicting_similar_artist_snapshot_preserves_previous_publication() {
+        let conn = database();
+        conn.execute(
+            "INSERT INTO artist_enrichment_state
+             (artist_id, generation, identity_status, musicbrainz_id)
+             VALUES (7, 3, 'resolved', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')",
+            [],
+        )
+        .unwrap();
+        let original = vec![SimilarArtist {
+            name: "Original".into(),
+            musicbrainz_id: Some("11111111-1111-4111-8111-111111111111".into()),
+            lastfm_url: "https://www.last.fm/music/original".into(),
+            match_score: 0.9,
+        }];
+        assert!(store_similar_artists(&conn, 7, 3, &original, 100, 200).unwrap());
+        let conflicting = vec![SimilarArtist {
+            name: "Conflict".into(),
+            musicbrainz_id: Some("22222222-2222-4222-8222-222222222222".into()),
+            lastfm_url: "https://www.last.fm/music/original".into(),
+            match_score: 0.8,
+        }];
+
+        assert!(store_similar_artists(&conn, 7, 3, &conflicting, 150, 250).is_err());
+        let (restored, fetched_at) = read_similar_artists(&conn, 7, 3).unwrap();
+        assert_eq!(restored, original);
+        assert_eq!(fetched_at, Some(100));
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artist_similarities WHERE source_artist_id = 7",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
         );
     }
 
