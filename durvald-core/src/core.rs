@@ -42,7 +42,7 @@ pub struct DurvaldCore {
 }
 
 impl DurvaldCore {
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(feature = "test-support")]
     pub(crate) fn audio_player(&self) -> &Arc<tokio::sync::Mutex<crate::audio::AudioPlayer>> {
         self.playback_application.audio_player()
     }

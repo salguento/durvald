@@ -12,7 +12,7 @@ uniffi::setup_scaffolding!();
 pub mod api;
 mod application;
 mod artwork;
-pub mod audio;
+mod audio;
 mod composition;
 mod core;
 mod database;

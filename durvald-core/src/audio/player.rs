@@ -301,6 +301,7 @@ impl AudioPlayer {
         Ok(())
     }
 
+    #[cfg(test)]
     pub async fn play(&mut self, path: String) -> Result<(), AudioError> {
         // Load before stopping the active track so a missing or invalid
         // replacement does not destroy an otherwise recoverable session.
@@ -310,6 +311,7 @@ impl AudioPlayer {
 
     /// Starts a specific library track and records its identity for playback
     /// snapshots, history, and queue transitions.
+    #[cfg(test)]
     pub async fn play_song(&mut self, song_id: i64, path: String) -> Result<(), AudioError> {
         self.play(path).await?;
         self.current_song_id = Some(song_id);
@@ -481,6 +483,7 @@ impl AudioPlayer {
     }
 
     // Queue management methods
+    #[cfg(test)]
     pub async fn add_to_queue(&mut self, song_id: i64, path: String) -> Result<(), AudioError> {
         self.prepare_queue_append();
         if self.is_empty() && self.queue.is_empty() {
@@ -766,6 +769,7 @@ impl AudioPlayer {
         Ok(())
     }
 
+    #[cfg(test)]
     async fn prepare_gapless_next(&mut self) -> Result<(), AudioError> {
         self.synchronize_gapless();
         if let Some(plan) = self.gapless_plan() {
@@ -795,6 +799,7 @@ impl AudioPlayer {
             .map(|(song_id, path)| (song_id, path, self.paused_position.unwrap_or_default()))
     }
 
+    #[cfg(test)]
     pub async fn play_next(&mut self) -> Result<bool, AudioError> {
         self.invalidate_gapless();
         if self.repeat_mode == RepeatMode::One {
@@ -940,6 +945,7 @@ impl AudioPlayer {
         Ok(())
     }
 
+    #[cfg(test)]
     pub async fn check_and_play_next(&mut self) -> Result<bool, AudioError> {
         self.prepare_gapless_next().await?;
         if self.pop_completed_transition().is_some() {
@@ -952,6 +958,7 @@ impl AudioPlayer {
         }
     }
 
+    #[cfg(test)]
     pub fn queue_is_empty(&self) -> bool {
         self.queue.is_empty()
     }
