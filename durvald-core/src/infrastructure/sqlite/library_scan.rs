@@ -46,13 +46,16 @@ impl SqliteLibraryScanRepository {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
-            crate::database::operations::persist_metadata_with_existing_ids(
+            let persisted = crate::database::operations::persist_metadata_with_existing_ids(
                 &conn,
                 metadata,
                 mtimes,
                 existing_song_ids,
             )
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+            let _checkpoint =
+                super::wal::passive_checkpoint_if_large(&conn, super::wal::LARGE_BATCH_WAL_BYTES);
+            Ok(persisted)
         })
         .await
         .map_err(|error| format!("Library database write task failed: {error}"))?
@@ -65,8 +68,12 @@ impl SqliteLibraryScanRepository {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
-            crate::database::operations::remove_missing_songs_in_folder(&conn, reconciliation)
-                .map_err(|error| error.to_string())
+            let removed =
+                crate::database::operations::remove_missing_songs_in_folder(&conn, reconciliation)
+                    .map_err(|error| error.to_string())?;
+            let _checkpoint =
+                super::wal::passive_checkpoint_if_large(&conn, super::wal::LARGE_BATCH_WAL_BYTES);
+            Ok(removed)
         })
         .await
         .map_err(|error| format!("Library scan reconciliation task failed: {error}"))?

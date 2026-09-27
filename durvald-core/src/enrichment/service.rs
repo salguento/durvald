@@ -1346,6 +1346,13 @@ impl EnrichmentService {
                         Err(error) => return Err(error),
                     }
                 }
+                if stored_any {
+                    let _checkpoint =
+                        crate::infrastructure::sqlite::wal::passive_checkpoint_if_large(
+                            conn,
+                            crate::infrastructure::sqlite::wal::LARGE_BATCH_WAL_BYTES,
+                        );
+                }
                 Ok(Some(stored_any))
             })
             .await;

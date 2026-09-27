@@ -12,3 +12,4 @@ pub(crate) mod playback_session;
 pub(crate) mod playlists;
 pub(crate) mod settings;
 pub(crate) mod track_metadata;
+pub(crate) mod wal;
