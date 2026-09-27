@@ -47,13 +47,28 @@ pub fn build(app: &gtk::Application, backend: Backend) {
                     button.set_sensitive(false);
                     status.set_text("Carregando biblioteca…");
                     glib::spawn_future_local(async move {
-                        match backend.run(async move { core.tracks().await }).await {
-                            Ok(tracks) if tracks.is_empty() => status.set_text(
+                        let track_count = backend
+                            .run(async move {
+                                let mut count = 0usize;
+                                let mut offset = 0;
+                                loop {
+                                    let page = core.tracks_page(200, offset).await?;
+                                    count = count.saturating_add(page.items.len());
+                                    let Some(next_offset) = page.next_offset else {
+                                        break;
+                                    };
+                                    offset = next_offset;
+                                }
+                                Ok::<_, durvald_core::CoreError>(count)
+                            })
+                            .await;
+                        match track_count {
+                            Ok(0) => status.set_text(
                                 "Core pronto. A biblioteca está vazia.\nA interface de importação será implementada aqui.",
                             ),
-                            Ok(tracks) => status.set_text(&format!(
+                            Ok(track_count) => status.set_text(&format!(
                                 "Core pronto. {} músicas na biblioteca.",
-                                tracks.len()
+                                track_count
                             )),
                             Err(error) => status.set_text(&format!(
                                 "Não foi possível carregar a biblioteca:\n{error}"

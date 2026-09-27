@@ -204,6 +204,13 @@ impl DurvaldCore {
     }
 
     /// Returns all tracks in the library.
+    ///
+    /// Retained for source and FFI compatibility. New consumers must iterate
+    /// [`Self::tracks_page`] so memory use remains bounded for large libraries.
+    #[deprecated(
+        since = "0.1.0",
+        note = "use tracks_page(page_size, offset) and follow next_offset"
+    )]
     pub async fn tracks(&self) -> CoreResult<Vec<Track>> {
         self.library_application.tracks().await
     }
@@ -216,6 +223,13 @@ impl DurvaldCore {
     }
 
     /// Returns all releases in the library.
+    ///
+    /// Retained for source and FFI compatibility. New consumers must iterate
+    /// [`Self::releases_page`] so memory use remains bounded for large libraries.
+    #[deprecated(
+        since = "0.1.0",
+        note = "use releases_page(page_size, offset) and follow next_offset"
+    )]
     pub async fn releases(&self) -> CoreResult<Vec<Release>> {
         self.library_application.releases().await
     }
