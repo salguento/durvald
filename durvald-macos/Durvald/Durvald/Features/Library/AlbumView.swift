@@ -83,6 +83,11 @@ struct AlbumView: View {
         return "remote.\(externalRelease?.musicbrainzId ?? "unknown")"
     }
 
+    private var accessibilityDetailID: String {
+        if let album { return "album.detail.\(album.id)" }
+        return "album.detail.remote.\(externalRelease?.musicbrainzId ?? "unknown")"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
@@ -116,7 +121,7 @@ struct AlbumView: View {
                 )
             }
         }
-        .accessibilityIdentifier("album.detail.\(detailID)")
+        .accessibilityIdentifier(accessibilityDetailID)
         .task(id: store.metadataRevision) {
             guard store.metadataRevision > 0, let album else { return }
             tracks = await store.tracks(forReleaseID: album.id)

@@ -61,7 +61,10 @@ final class DurvaldCoreStore {
     @ObservationIgnored private var isLoadingHistoryPage = false
     private static let libraryPageSize: UInt64 = 100
     private static let pagePrefetchDistance = 12
-    private static let activePlaybackPollingInterval = Duration.milliseconds(250)
+    // Playback commands publish their snapshots immediately. Keep this loop as
+    // a low-frequency reconciliation path for progress and automatic track
+    // transitions instead of crossing FFI and querying SQLite four times a second.
+    private static let activePlaybackPollingInterval = Duration.seconds(1)
     private static let idlePlaybackPollingInterval = Duration.seconds(5)
 
     private struct SeekRequest {

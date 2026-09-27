@@ -119,6 +119,20 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         }
     }
 
+    override func track(trackId: Int64) async throws -> Track {
+        guard let track = lock.withLock({ tracks.first(where: { $0.id == trackId }) }) else {
+            throw CoreError.NotFound(message: "Fixture track \(trackId) not found")
+        }
+        return track
+    }
+
+    override func syncArtistReleaseMetadata(artistId: Int64) async throws -> [Release] {
+        // AlbumView performs this local synchronization when it opens. The UI
+        // fixture has no Rust pointer, so keep the generated UniFFI method from
+        // trying to clone the deliberately pointerless fake core.
+        []
+    }
+
     override func pause() async throws {
         lock.withLock {
             updateClock()
