@@ -210,22 +210,10 @@ struct ArtistView: View {
                 applyDiscographyPage(resolvedDiscography, reset: true)
             }
             isLoading = false
-            if resolvedIdentity?.status == .resolved,
-               resolvedDiscography == nil || resolvedDiscography?.stale == true
-                    || resolvedDiscography?.catalogGeneration == 0 || resolvedDiscography?.remoteExhausted == false {
-                await refreshLatestReleaseCatalog()
-            }
             if let synchronizedAlbums = await store.syncArtistReleaseMetadata(artistId: artist.id) {
                 albums = synchronizedAlbums.sorted {
                     $0.title.localizedStandardCompare($1.title) == .orderedAscending
                 }
-            }
-            if let result = await store.refreshArtistSections(
-                artistId: artist.id, language: enrichmentLanguage,
-                sections: [.similarArtists], force: false
-            ) {
-                mergeRefreshResults(result.sections)
-                details = await store.artistDetails(artistId: artist.id, language: enrichmentLanguage)
             }
             await loadSimilarArtistArtworkIDs()
             await cacheReleaseTracksAndResolvePopularArtwork()
@@ -1112,37 +1100,6 @@ struct ArtistView: View {
         if let page = await store.artistDiscography(artistId: artist.id, offset: offset) {
             applyDiscographyPage(page, reset: false)
             await cacheReleaseTracksAndResolvePopularArtwork()
-        }
-    }
-
-    /// Continue bounded MusicBrainz batches so a partial first page doesn't
-    /// masquerade as the artist's latest release. Stop if a gate or provider
-    /// failure prevents progress, preserving the catalog already available.
-    private func refreshLatestReleaseCatalog() async {
-        guard !isRefreshingCatalog else { return }
-        isRefreshingCatalog = true
-        defer { isRefreshingCatalog = false }
-        while !Task.isCancelled {
-            let previousOffset = discographyPage?.remoteNextOffset
-            guard let result = await store.refreshArtistSections(
-                artistId: artist.id, language: enrichmentLanguage, sections: [.discography]
-            ), !Task.isCancelled else { return }
-            mergeRefreshResults(result.sections)
-            guard let page = await store.artistDiscography(artistId: artist.id),
-                  !Task.isCancelled else { return }
-            applyDiscographyPage(page, reset: true)
-            if page.remoteExhausted { break }
-            guard let next = page.remoteNextOffset,
-                  previousOffset == nil || next > previousOffset! else { break }
-        }
-        guard !Task.isCancelled else { return }
-        if let result = await store.refreshArtistSections(
-            artistId: artist.id, language: enrichmentLanguage, sections: [.covers]
-        ) {
-            mergeRefreshResults(result.sections)
-            if let page = await store.artistDiscography(artistId: artist.id), !Task.isCancelled {
-                applyDiscographyPage(page, reset: true)
-            }
         }
     }
 

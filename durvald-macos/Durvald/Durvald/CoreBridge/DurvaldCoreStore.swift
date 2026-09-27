@@ -108,9 +108,6 @@ final class DurvaldCoreStore {
             playback = initialPlayback
 
             startPlaybackPolling()
-            Task { [weak self] in
-                await self?.updateLibraryMetadata(refreshRemote: true)
-            }
         } catch {
             errorMessage = String(describing: error)
         }
