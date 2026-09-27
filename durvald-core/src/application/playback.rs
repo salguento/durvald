@@ -4,6 +4,7 @@
 //! remains the stable public facade.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::{
     api::{CoreError, CoreResult, LastSession, PlaybackSnapshot, QueueItem, RepeatMode, Track},
@@ -33,6 +34,9 @@ struct AutomaticPlaybackEvent {
     started_track_id: Option<i64>,
 }
 
+const ACTIVE_COORDINATION_INTERVAL: Duration = Duration::from_millis(50);
+const IDLE_COORDINATION_INTERVAL: Duration = Duration::from_secs(1);
+
 /// Coordinates playback use cases behind the public core facade.
 ///
 /// The concrete collaborators remain in use during the first extraction. Ports
@@ -44,6 +48,7 @@ pub(crate) struct PlaybackApplication {
     session_repository: SqlitePlaybackSessionRepository,
     audio_player: Arc<tokio::sync::Mutex<AudioPlayer>>,
     playback_transition: tokio::sync::Mutex<()>,
+    coordination_wakeup: tokio::sync::Notify,
     lastfm: Arc<LastFmClient>,
     lastfm_playback: tokio::sync::Mutex<Option<LastFmPlayback>>,
 }
@@ -62,6 +67,7 @@ impl PlaybackApplication {
             session_repository,
             audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
             playback_transition: tokio::sync::Mutex::new(()),
+            coordination_wakeup: tokio::sync::Notify::new(),
             lastfm,
             lastfm_playback: tokio::sync::Mutex::new(None),
         }
@@ -98,7 +104,6 @@ impl PlaybackApplication {
         let playback_application = Arc::downgrade(self);
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 let Some(application) = playback_application.upgrade() else {
                     break;
                 };
@@ -110,8 +115,26 @@ impl PlaybackApplication {
                         started_track_id,
                     });
                 }
+                let interval = application.automatic_coordination_interval().await;
+                tokio::select! {
+                    _ = tokio::time::sleep(interval) => {}
+                    _ = application.coordination_wakeup.notified() => {}
+                }
             }
         });
+    }
+
+    async fn automatic_coordination_interval(&self) -> Duration {
+        let player = self.audio_player.lock().await;
+        if !player.is_paused() && !player.is_empty() {
+            ACTIVE_COORDINATION_INTERVAL
+        } else {
+            IDLE_COORDINATION_INTERVAL
+        }
+    }
+
+    fn wake_automatic_coordination(&self) {
+        self.coordination_wakeup.notify_one();
     }
 
     pub(crate) async fn play(&self, track_id: TrackId) -> CoreResult<PlaybackSnapshot> {
@@ -134,6 +157,7 @@ impl PlaybackApplication {
             PlaybackStateSnapshot::from_player(&player)
         };
         drop(_transition);
+        self.wake_automatic_coordination();
 
         let snapshot = self.snapshot_from_state(state).await;
         self.persist_session().await?;
@@ -152,6 +176,7 @@ impl PlaybackApplication {
 
     pub(crate) async fn pause(&self) -> CoreResult<()> {
         self.audio_player.lock().await.pause();
+        self.wake_automatic_coordination();
         self.pause_lastfm().await;
         self.persist_session().await
     }
@@ -178,6 +203,7 @@ impl PlaybackApplication {
         }
         let current_track_id = self.audio_player.lock().await.get_current_song_id();
         drop(_transition);
+        self.wake_automatic_coordination();
         if let Some(track_id) = current_track_id {
             if self.is_tracking(track_id).await {
                 self.resume_lastfm().await;
@@ -192,6 +218,7 @@ impl PlaybackApplication {
         let _transition = self.playback_transition.lock().await;
         self.audio_player.lock().await.stop();
         drop(_transition);
+        self.wake_automatic_coordination();
         *self.lastfm_playback.lock().await = None;
         self.persist_session().await
     }
@@ -270,6 +297,9 @@ impl PlaybackApplication {
         }
         drop(player);
         drop(_transition);
+        if starts_playback {
+            self.wake_automatic_coordination();
+        }
         self.persist_session().await?;
         if starts_playback {
             self.report_track_started(track_id).await;
@@ -390,6 +420,7 @@ impl PlaybackApplication {
             PlaybackStateSnapshot::from_player(&player)
         };
         let snapshot = self.snapshot_from_state(state).await;
+        self.wake_automatic_coordination();
         self.persist_session().await?;
         self.report_track_started(track_id).await;
         Ok(snapshot)
