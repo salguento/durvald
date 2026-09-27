@@ -2,17 +2,17 @@
 
 Última atualização: 27 de setembro de 2026
 
-Commit de referência: `018fabe refactor(core): finish internalizing audio module`
+Commit de referência: `cd2d603 perf(macos): reduce active playback polling`
 
-Estado adicional: Marco 7 concluído e protegido por testes arquiteturais
+Estado adicional: Marcos 1–7 formalmente concluídos, incluindo o gate Linux/GTK
 
 ## Visão geral
 
-A refatoração incremental está concluída quanto à implementação dos Marcos
-1–7. O `DurvaldCore` permanece como fachada pública, a composição está
-centralizada e os módulos de implementação foram internalizados. O gate GTK
-do checkpoint final permanece bloqueado apenas pela ausência das bibliotecas
-nativas no macOS.
+A refatoração incremental dos Marcos 1–7 está formalmente concluída. O
+`DurvaldCore` permanece como fachada pública, a composição está centralizada e
+os módulos de implementação foram internalizados. O checkpoint final do GTK,
+que não podia ser executado no macOS por ausência das bibliotecas nativas, foi
+concluído em Linux com GTK 4 e Graphene disponíveis.
 
 O roteiro de referência permanece em
 [`arquitetura/roteiro-implementacao-direto.md`](arquitetura/roteiro-implementacao-direto.md).
@@ -204,20 +204,25 @@ No checkpoint local de Rust de 27/09 foram aprovados:
 - `rustfmt`;
 - `git diff --check`;
 - Clippy com a feature UniFFI e warnings tratados como erro;
-- suíte completa do core com `test-support`: **287 testes aprovados e 3 ignorados**;
+- suíte completa do core com `test-support`: **289 testes aprovados e 3 ignorados**;
 - compilação de toda a superfície UniFFI.
 
 No checkpoint global anterior, preservado após o Marco 6, também foram
 aprovados geração dos bindings, smoke test FFI, build Debug e `DurvaldTests` no
-macOS e formatação do frontend GTK. Esses gates de cliente ainda devem ser
-repetidos para o fechamento global definitivo do Marco 7.
+macOS.
 
-Os comandos `cargo clippy --locked --all-targets -- -D warnings` e
-`cargo build --locked` do GTK foram executados, mas não chegaram ao código do
-projeto: `pkg-config` não encontrou as bibliotecas nativas `gtk4` e
-`graphene-gobject-1.0` neste macOS. As dependências Rust bloqueadas no lockfile
-foram baixadas normalmente. Portanto, UniFFI e Swift estão verdes; a compilação
-GTK precisa ser repetida em ambiente com GTK 4 instalado.
+O gate Linux/GTK foi concluído em 27/09/2026 no Arch Linux x86_64, kernel
+7.2.6, com `rustc 1.91.0`, `cargo 1.91.0`, GTK 4.22.5 e Graphene 1.10.8. Foram
+aprovados, no diretório `durvald-gtk`:
+
+- `cargo fmt --check`;
+- `cargo clippy --locked --all-targets -- -D warnings`;
+- `cargo build --locked`.
+
+Também foram repetidos no `durvald-core` o `cargo fmt --check` e o teste
+direcionado `cargo test --locked --test architecture_boundaries`, com os dois
+testes de fronteira aprovados. O Marco 7 não possui mais gates ambientais
+pendentes.
 
 ## Situação dos marcos finais
 
@@ -318,16 +323,14 @@ Foi concluído:
 - proteção automatizada para impedir que módulos internos voltem a ser
   públicos acidentalmente.
 
-Permanece como gate de ambiente, não como implementação do marco:
-
-- repetir Clippy e build do GTK em ambiente com GTK 4 e Graphene instalados.
+O gate de ambiente foi concluído em Linux com GTK 4 e Graphene instalados.
+Não há pendência arquitetural ou ambiental restante para o marco.
 
 ## Próximos passos recomendados
 
-1. repetir Clippy e build GTK em ambiente com GTK 4 e Graphene instalados;
-2. manter futuras mudanças arquiteturais em fatias pequenas, cada uma com sua
+1. manter futuras mudanças arquiteturais em fatias pequenas, cada uma com sua
    fronteira e teste de regressão explícitos;
-3. tratar codecs adicionais, integração com o sistema operacional e file
+2. tratar codecs adicionais, integração com o sistema operacional e file
    watcher como iniciativas de produto separadas desta refatoração.
 
 ## Resumo executivo
@@ -419,3 +422,4 @@ reexports de `api::*`, `DurvaldCore` e o módulo opcional `test_support`.
 | 25/09/2026 | `fe833a5` | Remoção dos accessors concretos da fachada |
 | 25/09/2026 | `c2b95bd`–`760bacd` | Remoção de reexports legados e internalização dos módulos de implementação |
 | 27/09/2026 | `018fabe` | Internalização final de áudio e proteção automatizada da superfície pública |
+| 27/09/2026 | checkpoint Linux/GTK | Formatação, Clippy com warnings como erro, build locked e testes arquiteturais aprovados |
