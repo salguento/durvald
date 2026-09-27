@@ -2988,6 +2988,208 @@ pub fn read_similar_artists(
     Ok((serde_json::from_str(&cached.0).map_err(storage)?, cached.2))
 }
 
+/// Finds or creates a catalog artist exclusively by stable external identity.
+/// Display names are never used for lookup, so homonyms remain independent.
+pub fn upsert_discovered_artist(
+    conn: &Connection,
+    name: &str,
+    provider: &str,
+    external_id: &str,
+    musicbrainz_id: Option<&str>,
+    origin: &str,
+    now: i64,
+) -> CoreResult<i64> {
+    let name = name.trim();
+    let provider = provider.trim();
+    let external_id = external_id.trim();
+    if name.is_empty()
+        || name.len() > 500
+        || provider.is_empty()
+        || provider.len() > 64
+        || external_id.is_empty()
+        || external_id.len() > 500
+        || now < 0
+        || !matches!(origin, "similar_artist" | "remote_search" | "manual")
+    {
+        return Err(invalid("Invalid discovered artist identity"));
+    }
+    let musicbrainz_id = musicbrainz_id
+        .map(|value| {
+            crate::enrichment::identity::normalize_mbid(value)
+                .ok_or_else(|| invalid("Invalid discovered artist MusicBrainz ID"))
+        })
+        .transpose()?;
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(storage)?;
+    let by_provider = identity_key_artist(&tx, provider, external_id)?;
+    let by_musicbrainz = musicbrainz_id
+        .as_deref()
+        .map(|mbid| identity_key_artist(&tx, "musicbrainz", mbid))
+        .transpose()?
+        .flatten();
+    if by_provider.is_some() && by_musicbrainz.is_some() && by_provider != by_musicbrainz {
+        return Err(invalid(
+            "Discovered artist identities belong to different artists",
+        ));
+    }
+
+    let artist_id = match by_musicbrainz.or(by_provider) {
+        Some(artist_id) => artist_id,
+        None => {
+            tx.execute(
+                "INSERT INTO artists
+                 (name, catalog_origin, catalog_created_at, catalog_updated_at)
+                 VALUES (?1, ?2, ?3, ?3)",
+                params![name, origin, now],
+            )
+            .map_err(storage)?;
+            tx.last_insert_rowid()
+        }
+    };
+    tx.execute(
+        "INSERT OR IGNORE INTO artist_enrichment_state (artist_id) VALUES (?1)",
+        [artist_id],
+    )
+    .map_err(storage)?;
+
+    register_identity_key(&tx, provider, external_id, artist_id, origin, now)?;
+    if let Some(mbid) = musicbrainz_id.as_deref() {
+        register_identity_key(&tx, "musicbrainz", mbid, artist_id, origin, now)?;
+        let current_mbid: Option<String> = tx
+            .query_row(
+                "SELECT musicbrainz_id FROM artist_enrichment_state WHERE artist_id = ?1",
+                [artist_id],
+                |row| row.get(0),
+            )
+            .map_err(storage)?;
+        if current_mbid
+            .as_deref()
+            .is_some_and(|current| current != mbid)
+        {
+            return Err(invalid(
+                "Artist already has a different MusicBrainz identity",
+            ));
+        }
+        tx.execute(
+            "UPDATE artist_enrichment_state
+             SET identity_status = 'resolved', musicbrainz_id = ?2,
+                 identity_origin = NULL,
+                 generation = generation + CASE
+                     WHEN identity_status != 'resolved' OR musicbrainz_id IS NOT ?2 THEN 1
+                     ELSE 0
+                 END
+             WHERE artist_id = ?1",
+            params![artist_id, mbid],
+        )
+        .map_err(storage)?;
+    }
+    let generation: i64 = tx
+        .query_row(
+            "SELECT generation FROM artist_enrichment_state WHERE artist_id = ?1",
+            [artist_id],
+            |row| row.get(0),
+        )
+        .map_err(storage)?;
+    store_discovered_external_id(
+        &tx,
+        artist_id,
+        provider,
+        external_id,
+        generation,
+        origin,
+        now,
+    )?;
+    if let Some(mbid) = musicbrainz_id.as_deref() {
+        store_discovered_external_id(&tx, artist_id, "musicbrainz", mbid, generation, origin, now)?;
+    }
+    tx.execute(
+        "UPDATE artists SET catalog_updated_at = MAX(catalog_updated_at, ?2)
+         WHERE artist_id = ?1",
+        params![artist_id, now],
+    )
+    .map_err(storage)?;
+    tx.commit().map_err(storage)?;
+    Ok(artist_id)
+}
+
+fn identity_key_artist(
+    conn: &Connection,
+    provider: &str,
+    external_id: &str,
+) -> CoreResult<Option<i64>> {
+    conn.query_row(
+        "SELECT artist_id FROM artist_identity_keys
+         WHERE provider = ?1 AND external_id = ?2",
+        params![provider, external_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(storage)
+}
+
+fn register_identity_key(
+    conn: &Connection,
+    provider: &str,
+    external_id: &str,
+    artist_id: i64,
+    origin: &str,
+    now: i64,
+) -> CoreResult<()> {
+    conn.execute(
+        "INSERT INTO artist_identity_keys
+         (provider, external_id, artist_id, origin, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+         ON CONFLICT (provider, external_id) DO UPDATE SET
+             updated_at = MAX(updated_at, excluded.updated_at)
+         WHERE artist_id = excluded.artist_id",
+        params![provider, external_id, artist_id, origin, now],
+    )
+    .map_err(storage)?;
+    if identity_key_artist(conn, provider, external_id)? != Some(artist_id) {
+        return Err(invalid(
+            "External identity already belongs to another artist",
+        ));
+    }
+    Ok(())
+}
+
+fn store_discovered_external_id(
+    conn: &Connection,
+    artist_id: i64,
+    provider: &str,
+    external_id: &str,
+    generation: i64,
+    origin: &str,
+    now: i64,
+) -> CoreResult<()> {
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT external_id FROM artist_external_ids
+             WHERE artist_id = ?1 AND provider = ?2",
+            params![artist_id, provider],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(storage)?;
+    if existing
+        .as_deref()
+        .is_some_and(|value| value != external_id)
+    {
+        return Err(invalid("Artist already has a different provider identity"));
+    }
+    conn.execute(
+        "INSERT INTO artist_external_ids
+         (artist_id, provider, external_id, generation, origin, fetched_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT (artist_id, provider) DO UPDATE SET
+             generation = excluded.generation,
+             origin = excluded.origin,
+             fetched_at = MAX(fetched_at, excluded.fetched_at)",
+        params![artist_id, provider, external_id, generation, origin, now],
+    )
+    .map_err(storage)?;
+    Ok(())
+}
+
 pub fn similar_artists_fresh(
     conn: &Connection,
     artist_id: i64,
@@ -3407,6 +3609,157 @@ mod tests {
         )
         .unwrap();
         conn
+    }
+
+    #[test]
+    fn discovered_artists_are_upserted_by_identity_never_by_name() {
+        let conn = database();
+        let first = upsert_discovered_artist(
+            &conn,
+            "Same Name",
+            "last_fm",
+            "https://www.last.fm/music/first",
+            Some("11111111-1111-4111-8111-111111111111"),
+            "similar_artist",
+            100,
+        )
+        .unwrap();
+        let repeated = upsert_discovered_artist(
+            &conn,
+            "Updated Display Name",
+            "last_fm",
+            "https://www.last.fm/music/first",
+            Some("11111111-1111-4111-8111-111111111111"),
+            "similar_artist",
+            110,
+        )
+        .unwrap();
+        let homonym = upsert_discovered_artist(
+            &conn,
+            "Same Name",
+            "last_fm",
+            "https://www.last.fm/music/second",
+            Some("22222222-2222-4222-8222-222222222222"),
+            "similar_artist",
+            120,
+        )
+        .unwrap();
+
+        assert_eq!(first, repeated);
+        assert_ne!(first, homonym);
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artists WHERE name = 'Same Name'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            2
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT musicbrainz_id FROM artist_enrichment_state WHERE artist_id = ?1",
+                [first],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "11111111-1111-4111-8111-111111111111"
+        );
+    }
+
+    #[test]
+    fn provisional_discovered_artists_are_stable_per_provider_identity() {
+        let conn = database();
+        let first = upsert_discovered_artist(
+            &conn,
+            "No MBID",
+            "last_fm",
+            "https://www.last.fm/music/no-mbid",
+            None,
+            "similar_artist",
+            100,
+        )
+        .unwrap();
+        let repeated = upsert_discovered_artist(
+            &conn,
+            "No MBID",
+            "last_fm",
+            "https://www.last.fm/music/no-mbid",
+            None,
+            "similar_artist",
+            101,
+        )
+        .unwrap();
+        let other_provider_identity = upsert_discovered_artist(
+            &conn,
+            "No MBID",
+            "last_fm",
+            "https://www.last.fm/music/another-no-mbid",
+            None,
+            "similar_artist",
+            102,
+        )
+        .unwrap();
+
+        assert_eq!(first, repeated);
+        assert_ne!(first, other_provider_identity);
+        assert_eq!(
+            conn.query_row(
+                "SELECT identity_status FROM artist_enrichment_state WHERE artist_id = ?1",
+                [first],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap(),
+            "unresolved"
+        );
+    }
+
+    #[test]
+    fn conflicting_discovered_identities_roll_back_without_partial_artist() {
+        let conn = database();
+        let first = upsert_discovered_artist(
+            &conn,
+            "First",
+            "last_fm",
+            "https://www.last.fm/music/first",
+            Some("11111111-1111-4111-8111-111111111111"),
+            "similar_artist",
+            100,
+        )
+        .unwrap();
+        let second = upsert_discovered_artist(
+            &conn,
+            "Second",
+            "last_fm",
+            "https://www.last.fm/music/second",
+            Some("22222222-2222-4222-8222-222222222222"),
+            "similar_artist",
+            100,
+        )
+        .unwrap();
+        let count_before: i64 = conn
+            .query_row("SELECT COUNT(*) FROM artists", [], |row| row.get(0))
+            .unwrap();
+
+        assert!(
+            upsert_discovered_artist(
+                &conn,
+                "Conflict",
+                "last_fm",
+                "https://www.last.fm/music/first",
+                Some("22222222-2222-4222-8222-222222222222"),
+                "similar_artist",
+                200,
+            )
+            .is_err()
+        );
+        assert_ne!(first, second);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM artists", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            count_before
+        );
     }
 
     #[test]
