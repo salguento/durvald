@@ -22,7 +22,7 @@ struct LibrarySidebarView: View {
     @State private var arePlaylistsExpanded = true
     @State private var localSearchText = ""
     @State private var committedLocalQuery = ""
-    @State private var orderingTracks: [Track] = []
+    @State private var albumLastPlayedByRelease: [Int64: String] = [:]
     @State private var tracksByPlaylist: [Int64: [Track]] = [:]
 
     var body: some View {
@@ -255,7 +255,7 @@ struct LibrarySidebarView: View {
         return CollectionListingSorter.albums(
             filtered,
             order: albumListingOrder,
-            tracks: orderingTracks.isEmpty ? store.tracks : orderingTracks
+            lastPlayedByRelease: albumLastPlayedByRelease
         )
     }
 
@@ -265,7 +265,9 @@ struct LibrarySidebarView: View {
 
     private func loadOrderingMetadataIfNeeded() async {
         if section == .albums, albumListingOrder == .recent {
-            orderingTracks = (try? await store.core?.tracks()) ?? store.tracks
+            albumLastPlayedByRelease = (try? await store.core?.releasePlaybackRecency())?.reduce(into: [:]) {
+                if let releaseID = Int64($1.key) { $0[releaseID] = $1.value }
+            } ?? [:]
         }
         guard section == .playlists,
               playlistListingOrder == .recent || playlistListingOrder == .artist || playlistListingOrder == .releaseDate,

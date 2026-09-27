@@ -1233,6 +1233,18 @@ pub fn get_all_releases(conn: &Connection) -> DatabaseResult<Vec<Releases>> {
         .collect::<Result<_, _>>()?)
 }
 
+pub fn get_release_playback_recency(conn: &Connection) -> DatabaseResult<Vec<(u64, String)>> {
+    let mut releases = conn.prepare(
+        "SELECT release_id, MAX(last_played)
+         FROM songs
+         WHERE last_played IS NOT NULL
+         GROUP BY release_id",
+    )?;
+    Ok(releases
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?)
+}
+
 pub fn get_releases_page(
     conn: &Connection,
     limit: u64,
@@ -2945,6 +2957,10 @@ mod tests {
         let first_track = first_tracks.remove(0);
         assert_eq!(first_track.play_count, 1);
         assert!(first_track.last_played.is_some());
+        assert_eq!(
+            get_release_playback_recency(&conn).unwrap(),
+            vec![(1, first_track.last_played.unwrap())]
+        );
         let history = get_play_history(&conn).unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].song_id, 1);

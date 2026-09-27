@@ -793,6 +793,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func release(releaseId: Int64) async throws  -> Release
 
     /**
+     * Returns the latest playback timestamp for each release that was played.
+     */
+    func releasePlaybackRecency() async throws  -> [KeyValuePair]
+
+    /**
      * Gets tracks for a release.
      */
     func releaseTracks(releaseId: Int64) async throws  -> [Track]
@@ -1986,6 +1991,26 @@ open func release(releaseId: Int64)async throws  -> Release {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeRelease.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Returns the latest playback timestamp for each release that was played.
+     */
+open func releasePlaybackRecency()async throws  -> [KeyValuePair] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_release_playback_recency(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeKeyValuePair.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -9237,6 +9262,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_release() != 18366) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_release_playback_recency() != 29190) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_release_tracks() != 5208) {

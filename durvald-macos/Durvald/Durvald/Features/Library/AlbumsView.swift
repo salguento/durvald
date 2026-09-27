@@ -59,7 +59,7 @@ struct AlbumsView: View {
     @AppStorage("albums.listingMode") private var listingMode: CollectionListingMode = .standardGrid
     @AppStorage("albums.listingOrder") private var listingOrder: CollectionListingOrder = .recent
     @Environment(DurvaldCoreStore.self) private var store
-    @State private var orderingTracks: [Track] = []
+    @State private var lastPlayedByRelease: [Int64: String] = [:]
 
     let onSelectAlbum: (Release) -> Void
 
@@ -75,8 +75,10 @@ struct AlbumsView: View {
             }
         }
         .task(id: orderingTaskID) {
-            guard listingOrder == .recent else { return }
-            orderingTracks = (try? await store.core?.tracks()) ?? store.tracks
+            guard listingOrder == .recent, let core = store.core else { return }
+            lastPlayedByRelease = (try? await core.releasePlaybackRecency())?.reduce(into: [:]) {
+                if let releaseID = Int64($1.key) { $0[releaseID] = $1.value }
+            } ?? [:]
         }
     }
 
@@ -84,7 +86,7 @@ struct AlbumsView: View {
         CollectionListingSorter.albums(
             store.releases,
             order: listingOrder,
-            tracks: orderingTracks.isEmpty ? store.tracks : orderingTracks
+            lastPlayedByRelease: lastPlayedByRelease
         )
     }
 

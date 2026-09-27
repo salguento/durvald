@@ -48,13 +48,8 @@ enum CollectionListingSorter {
     static func albums(
         _ albums: [Release],
         order: CollectionListingOrder,
-        tracks: [Track]
+        lastPlayedByRelease: [Int64: String]
     ) -> [Release] {
-        let lastPlayedByRelease = tracks.reduce(into: [Int64: String]()) { result, track in
-            guard let lastPlayed = track.lastPlayed else { return }
-            result[track.releaseId] = max(result[track.releaseId] ?? "", lastPlayed)
-        }
-
         return albums.sorted { lhs, rhs in
             switch order {
             case .recent:

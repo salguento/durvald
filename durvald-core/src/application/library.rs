@@ -11,8 +11,8 @@ use std::sync::{
 use base64::Engine;
 
 use crate::api::{
-    Artist, CoreError, CoreResult, Playlist, Release, ReleasePage, ScanPhase, ScanProgress,
-    ScanResult, SearchResults, Track, TrackPage,
+    Artist, CoreError, CoreResult, KeyValuePair, Playlist, Release, ReleasePage, ScanPhase,
+    ScanProgress, ScanResult, SearchResults, Track, TrackPage,
 };
 use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
@@ -394,6 +394,23 @@ impl LibraryApplication {
             .all()
             .await
             .map(|releases| releases.into_iter().map(release_from_catalog).collect())
+            .map_err(catalog_release_storage_error)
+    }
+
+    pub(crate) async fn release_playback_recency(&self) -> CoreResult<Vec<KeyValuePair>> {
+        self.persistence
+            .catalog_release_query
+            .playback_recency()
+            .await
+            .map(|items| {
+                items
+                    .into_iter()
+                    .map(|(release_id, last_played)| KeyValuePair {
+                        key: release_id.get().to_string(),
+                        value: last_played,
+                    })
+                    .collect()
+            })
             .map_err(catalog_release_storage_error)
     }
 

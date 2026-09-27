@@ -220,6 +220,11 @@ impl DurvaldCore {
         self.library_application.releases().await
     }
 
+    /// Returns the latest playback timestamp for each release that was played.
+    pub async fn release_playback_recency(&self) -> CoreResult<Vec<KeyValuePair>> {
+        self.library_application.release_playback_recency().await
+    }
+
     /// Returns a bounded page of releases ordered by their stable database ID.
     pub async fn releases_page(&self, page_size: u64, offset: u64) -> CoreResult<ReleasePage> {
         self.library_application
