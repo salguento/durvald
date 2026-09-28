@@ -593,7 +593,7 @@ private struct SidebarSectionSearchField: View {
                 )
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("sidebar.sectionSearch.container")
-                .glassEffect(.regular, in: .rect(cornerRadius: 7))
+                .glassEffect(.regular, in: .capsule)
                 .transition(.opacity)
 
             } else {
