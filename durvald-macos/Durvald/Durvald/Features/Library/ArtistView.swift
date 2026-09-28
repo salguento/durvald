@@ -21,7 +21,6 @@ struct ArtistView: View {
 
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.appearsActive) private var appearsActive
-    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("followedArtistIDs") private var followedArtistIDs = ""
     @AppStorage("favoriteArtistIDs") private var favoriteArtistIDs = ""
 
@@ -58,7 +57,7 @@ struct ArtistView: View {
     @FocusState private var isTrackSearchFocused: Bool
     @State private var isLoading = true
     @ScaledMetric(relativeTo: .largeTitle) private var artistNameFontSize =
-        NSFont.preferredFont(forTextStyle: .largeTitle).pointSize * 1.275
+        NSFont.preferredFont(forTextStyle: .largeTitle).pointSize * 1.275 * 1.35
 
     var body: some View {
         GeometryReader { geometry in
@@ -76,56 +75,62 @@ struct ArtistView: View {
                         showsBorder: false
                     )
                     .backgroundExtensionEffect()
-                    .overlay(alignment: .bottomLeading) {
-                        HStack(alignment: .lastTextBaseline, spacing: 10) {
-                            Text(artist.name)
-                                .font(.system(size: artistNameFontSize, weight: .bold))
-                                .accessibilityAddTraits(.isHeader)
+                    .overlay {
+                        GeometryReader { header in
+                            let titleY = header.size.height * 2 / 3 + 32
+                            let controlsY = (titleY + header.size.height) / 2
+                            ZStack(alignment: .topLeading) {
+                                HStack(alignment: .lastTextBaseline, spacing: 10) {
+                                    Text(artist.name)
+                                        .font(.system(size: artistNameFontSize, weight: .bold))
+                                        .multilineTextAlignment(.center)
+                                        .accessibilityAddTraits(.isHeader)
 
-                            if let identity {
-                                Button {
-                                    isIdentityPopoverPresented.toggle()
-                                } label: {
-                                    Image(systemName: identity.status == .resolved
-                                          ? "checkmark.seal.fill"
-                                          : "person.crop.circle.badge.questionmark")
-                                        .font(.title2)
-                                        .foregroundStyle(identity.status == .resolved ? Color.accentColor : Color.white)
-                                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                    if let identity {
+                                        Button {
+                                            isIdentityPopoverPresented.toggle()
+                                        } label: {
+                                            Image(systemName: identity.status == .resolved
+                                                  ? "checkmark.seal.fill"
+                                                  : "person.crop.circle.badge.questionmark")
+                                                .font(.title2)
+                                                .foregroundStyle(identity.status == .resolved ? Color.accentColor : Color.white)
+                                                .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .alignmentGuide(.lastTextBaseline) { dimensions in
+                                            dimensions[.bottom]
+                                        }
+                                        .help("Ver identidade e conexões de metadados")
+                                        .accessibilityLabel("Ver identidade de \(artist.name)")
+                                        .accessibilityIdentifier("artist.identity.badge")
+                                        .popover(isPresented: $isIdentityPopoverPresented, arrowEdge: .bottom) {
+                                            identityInformationPopover(identity)
+                                        }
+                                    }
                                 }
-                                .buttonStyle(.plain)
-                                .alignmentGuide(.lastTextBaseline) { dimensions in
-                                    dimensions[.bottom]
-                                }
-                                .help("Ver identidade e conexões de metadados")
-                                .accessibilityLabel("Ver identidade de \(artist.name)")
-                                .accessibilityIdentifier("artist.identity.badge")
-                                .popover(isPresented: $isIdentityPopoverPresented, arrowEdge: .bottom) {
-                                    identityInformationPopover(identity)
-                                }
-                            }
-                        }
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
-                        .padding(24)
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        if let portrait = details?.portrait,
-                           let sourceURL = URL(string: portrait.attribution.sourceUrl) {
-                            Link("Foto: \(portraitSourceName(portrait.provider))", destination: sourceURL)
-                                .font(.caption.weight(.medium))
                                 .foregroundStyle(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.black.opacity(0.55), in: Capsule())
-                                .padding(24)
+                                .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
+                                .frame(maxWidth: max(1, header.size.width - 48))
+                                .position(
+                                    x: header.size.width / 2,
+                                    y: titleY
+                                )
+
+                                collectionControls
+                                    .foregroundStyle(.white)
+                                    .shadow(color: .black.opacity(0.55), radius: 4, y: 2)
+                                    .frame(width: max(1, header.size.width - 48))
+                                    .position(
+                                        x: header.size.width / 2,
+                                        y: controlsY
+                                    )
+                            }
                         }
                     }
                     .accessibilityIdentifier("artist.header.\(artist.id)")
 
                     VStack(alignment: .leading, spacing: 24) {
-                        collectionControls
-
                         artistHighlights(width: geometry.size.width)
 
                         discographySections(width: geometry.size.width)
@@ -1284,6 +1289,7 @@ struct ArtistView: View {
                     Task { await store.playTracks(tracks, shuffleEnabled: true) }
                 }
             )
+            .glassEffect(.regular.interactive(), in: .capsule)
 
             artistRelationshipControls
 
@@ -1304,7 +1310,7 @@ struct ArtistView: View {
             }
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
-            .background(Color.primary.opacity(0.08), in: .circle)
+            .glassEffect(.regular.interactive(), in: .circle)
             .help("Opções")
             .accessibilityLabel("Opções")
             .accessibilityIdentifier("artist.options")
@@ -1323,7 +1329,7 @@ struct ArtistView: View {
             }
             .padding(.horizontal, 12)
             .frame(width: 147, height: 34)
-            .background(Color.primary.opacity(0.08), in: .capsule)
+            .glassEffect(.regular.interactive(), in: .capsule)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("artist.tracks.search")
 
@@ -1339,7 +1345,7 @@ struct ArtistView: View {
             }
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
-            .background(Color.primary.opacity(0.08), in: .capsule)
+            .glassEffect(.regular.interactive(), in: .capsule)
             .help("Organizar ou filtrar faixas")
             .accessibilityLabel("Organizar ou filtrar faixas")
             .accessibilityIdentifier("artist.tracks.organize")
@@ -1385,9 +1391,9 @@ struct ArtistView: View {
                     }
                 }
                 .frame(width: 34, height: 34)
-                .background(relationshipBackground, in: .circle)
                 .contentShape(.circle)
             }
+            .glassEffect(.regular.interactive(), in: .circle)
             .help(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
             .accessibilityLabel(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
             .accessibilityValue(isFollowing ? "Seguindo" : "Não seguindo")
@@ -1398,9 +1404,9 @@ struct ArtistView: View {
             } label: {
                 Image(systemName: isFavorite ? "star.fill" : "star")
                     .frame(width: 34, height: 34)
-                    .background(relationshipBackground, in: .circle)
                     .contentShape(.circle)
             }
+            .glassEffect(.regular.interactive(), in: .circle)
             .help(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
             .accessibilityLabel(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
             .accessibilityValue(isFavorite ? "Favorito" : "Não favorito")
@@ -1409,14 +1415,6 @@ struct ArtistView: View {
         .buttonStyle(.plain)
         .font(.body.weight(.medium))
         .foregroundStyle(Color.accentColor.opacity(appearsActive ? 1 : 0.63))
-    }
-
-    private var relationshipBackground: Color {
-        Color.primary.opacity(
-            colorScheme == .dark
-                ? (appearsActive ? 0.08 : 0.10)
-                : (appearsActive ? 0.10 : 0.06)
-        )
     }
 
     private var visibleTracks: [Track] {
@@ -1683,10 +1681,6 @@ struct ArtistView: View {
 
     private var biographySourceName: String {
         biographySource?.provider == .lastFm ? "Last.fm" : "Wikipedia"
-    }
-
-    private func portraitSourceName(_ provider: EnrichmentProvider) -> String {
-        provider == .lastFm ? "Last.fm" : "Wikimedia Commons"
     }
 
     private var biographyOverride: ArtistFieldOverride? {
