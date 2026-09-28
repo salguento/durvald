@@ -16,6 +16,13 @@ Toda relação de similaridade deve registrar simultaneamente:
 
 Nome nunca é identidade e nunca pode unir automaticamente dois artistas.
 
+## Decisão de escopo
+
+A persistência e a navegação de artistas similares abrangem as etapas 1–7 e a
+remoção do armazenamento JSON legado da etapa 9. Fontes Soulseek e streaming
+não fazem parte desta entrega: serão introduzidas futuramente por features
+dedicadas, sem alterar a identidade textual já persistida no catálogo.
+
 ## Estado atual
 
 - `artists` contém os artistas criados pelo scan da biblioteca local.

@@ -3877,7 +3877,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn similar_artists_are_stored_in_artist_row_cached_and_preserved_offline() {
+    async fn similar_artists_are_normalized_cached_and_preserved_offline() {
         let service = service_with_lastfm(test_lastfm_metadata_client(
             serde_json::json!({"similarartists":{"artist":[{"name":"Similar","match":"0.8","url":"https://www.last.fm/music/Similar"}]}}),
             None,
@@ -3904,10 +3904,11 @@ mod tests {
         let cached = service.artist_details(1, "pt".into()).await.unwrap();
         assert_eq!(cached.similar_artists[0].name, "Similar");
         assert!(cached.similar_artists_fetched_at.is_some());
-        let payload: String = service
+        let stored_relations: i64 = service
             .database(|conn| {
                 conn.query_row(
-                    "SELECT similar_artists FROM artists WHERE artist_id=1",
+                    "SELECT COUNT(*) FROM artist_similarities
+                     WHERE source_artist_id = 1 AND provider = 'last_fm'",
                     [],
                     |row| row.get(0),
                 )
@@ -3915,7 +3916,7 @@ mod tests {
             })
             .await
             .unwrap();
-        assert!(payload.contains("Similar"));
+        assert_eq!(stored_relations, 1);
         let second = service.refresh_artist(1, request.clone()).await.unwrap();
         assert_eq!(second.sections[0].status, ArtistRefreshStatus::Unchanged);
         assert_eq!(service.lastfm.metadata_query_count(), 1);

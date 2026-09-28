@@ -534,6 +534,51 @@ CREATE INDEX idx_artist_similarities_source_rank
     ON artist_similarities(source_artist_id, provider, match_score DESC);
 "#;
 
+const NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS: &str = r#"
+CREATE TABLE artist_similarity_snapshots (
+    source_artist_id INTEGER NOT NULL REFERENCES artists(artist_id) ON DELETE CASCADE,
+    provider TEXT NOT NULL CHECK (length(trim(provider)) BETWEEN 1 AND 64),
+    source_identity_generation INTEGER NOT NULL CHECK (source_identity_generation >= 0),
+    fetched_at INTEGER NOT NULL CHECK (fetched_at >= 0),
+    expires_at INTEGER NOT NULL CHECK (expires_at >= fetched_at),
+    PRIMARY KEY (source_artist_id, provider)
+);
+CREATE INDEX idx_artist_similarity_snapshots_expiry
+    ON artist_similarity_snapshots(provider, expires_at);
+
+INSERT INTO artist_similarity_snapshots (
+    source_artist_id, provider, source_identity_generation, fetched_at, expires_at
+)
+SELECT artist_id, 'last_fm', similar_artists_generation,
+       similar_artists_fetched_at, similar_artists_expires_at
+FROM artists
+WHERE similar_artists_generation IS NOT NULL
+  AND similar_artists_fetched_at IS NOT NULL
+  AND similar_artists_expires_at IS NOT NULL
+  AND (
+      similar_artists = '[]'
+      OR EXISTS (
+          SELECT 1 FROM artist_similarities s
+          WHERE s.source_artist_id = artists.artist_id
+            AND s.provider = 'last_fm'
+            AND s.source_identity_generation = artists.similar_artists_generation
+      )
+  );
+
+CREATE TRIGGER invalidate_artist_similarity_identity
+AFTER UPDATE OF generation ON artist_enrichment_state
+WHEN NEW.generation != OLD.generation
+BEGIN
+    DELETE FROM artist_similarity_snapshots WHERE source_artist_id = NEW.artist_id;
+    DELETE FROM artist_similarities WHERE source_artist_id = NEW.artist_id;
+END;
+
+ALTER TABLE artists DROP COLUMN similar_artists;
+ALTER TABLE artists DROP COLUMN similar_artists_generation;
+ALTER TABLE artists DROP COLUMN similar_artists_fetched_at;
+ALTER TABLE artists DROP COLUMN similar_artists_expires_at;
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -556,6 +601,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (16, ARTIST_POPULAR_TRACKS),
             (17, ARTIST_SIMILAR_ARTISTS),
             (18, CANONICAL_SIMILAR_ARTISTS),
+            (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -844,8 +890,9 @@ mod tests {
                     (16, ARTIST_POPULAR_TRACKS),
                     (17, ARTIST_SIMILAR_ARTISTS),
                     (18, CANONICAL_SIMILAR_ARTISTS),
+                    (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
                     (
-                        19,
+                        20,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -858,8 +905,83 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            18
+            19
         );
+    }
+
+    #[test]
+    fn legacy_similar_artist_json_is_replaced_by_normalized_snapshot_state() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        crate::database::operations::create_tables(&conn).unwrap();
+        apply(
+            &mut conn,
+            &[
+                (1, FOUNDATION),
+                (2, IDENTITY),
+                (3, PROFILE),
+                (4, PROFILE_ASSETS),
+                (5, PROFILE_OVERRIDES),
+                (6, DISCOGRAPHY),
+                (7, RELEASE_IDENTIFIER_BACKFILL),
+                (8, DISCOGRAPHY_TOTALS),
+                (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
+                (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
+                (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
+                (12, PROVIDER_FAILURE_CACHE),
+                (13, LOCAL_RELEASE_METADATA),
+                (14, AGGREGATE_IDENTITY_INVALIDATION),
+                (15, EXTERNAL_RELEASE_DETAILS_CACHE),
+                (16, ARTIST_POPULAR_TRACKS),
+                (17, ARTIST_SIMILAR_ARTISTS),
+                (18, CANONICAL_SIMILAR_ARTISTS),
+            ],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO artists (artist_id, name) VALUES (7, 'Source')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE artists SET similar_artists = '[]', similar_artists_generation = 3,
+                 similar_artists_fetched_at = 100, similar_artists_expires_at = 200
+             WHERE artist_id = 7",
+            [],
+        )
+        .unwrap();
+
+        migrate_enrichment(&mut conn).unwrap();
+
+        assert_eq!(
+            conn.query_row(
+                "SELECT source_identity_generation, fetched_at, expires_at
+                 FROM artist_similarity_snapshots
+                 WHERE source_artist_id = 7 AND provider = 'last_fm'",
+                [],
+                |row| Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?
+                )),
+            )
+            .unwrap(),
+            (3, 100, 200)
+        );
+        for column in [
+            "similar_artists",
+            "similar_artists_generation",
+            "similar_artists_fetched_at",
+            "similar_artists_expires_at",
+        ] {
+            let exists: bool = conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM pragma_table_info('artists') WHERE name = ?1)",
+                    [column],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(!exists, "legacy column {column} still exists");
+        }
     }
 
     #[test]

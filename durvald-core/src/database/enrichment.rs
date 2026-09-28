@@ -2986,16 +2986,21 @@ pub fn read_similar_artists(
     generation: u64,
     now: i64,
 ) -> CoreResult<(Vec<crate::api::SimilarArtist>, Option<i64>)> {
-    let cached: (Option<i64>, Option<i64>) = conn
+    let snapshot: Option<(i64, i64)> = conn
         .query_row(
-            "SELECT similar_artists_generation, similar_artists_fetched_at
-             FROM artists WHERE artist_id = ?1",
+            "SELECT source_identity_generation, fetched_at
+             FROM artist_similarity_snapshots
+             WHERE source_artist_id = ?1 AND provider = 'last_fm'",
             [artist_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
+        .optional()
         .map_err(storage)?;
     let generation = i64::try_from(generation).map_err(storage)?;
-    if cached.0 != Some(generation) {
+    let Some((snapshot_generation, fetched_at)) = snapshot else {
+        return Ok((Vec::new(), None));
+    };
+    if snapshot_generation != generation {
         return Ok((Vec::new(), None));
     }
     let mut statement = conn
@@ -3017,6 +3022,7 @@ pub fn read_similar_artists(
              LEFT JOIN artist_enrichment_state state
                     ON state.artist_id = s.target_artist_id
              WHERE s.source_artist_id = ?1
+               AND s.provider = 'last_fm'
                AND s.source_identity_generation = ?2
              ORDER BY s.match_score DESC, s.target_artist_id",
         )
@@ -3052,7 +3058,7 @@ pub fn read_similar_artists(
             has_playable_sources: row.8,
         });
     }
-    Ok((items, cached.1))
+    Ok((items, Some(fetched_at)))
 }
 
 /// Finds or creates a catalog artist exclusively by stable external identity.
@@ -3319,12 +3325,11 @@ pub fn similar_artists_fresh(
     now: i64,
 ) -> CoreResult<bool> {
     conn.query_row(
-        "SELECT COALESCE(
-        similar_artists_generation = ?2 AND similar_artists_expires_at > ?3
-        AND (similar_artists = '[]' OR EXISTS(
-            SELECT 1 FROM artist_similarities
-            WHERE source_artist_id = ?1 AND source_identity_generation = ?2
-        )), 0) FROM artists WHERE artist_id=?1",
+        "SELECT EXISTS(
+            SELECT 1 FROM artist_similarity_snapshots
+            WHERE source_artist_id = ?1 AND provider = 'last_fm'
+              AND source_identity_generation = ?2 AND expires_at > ?3
+        )",
         params![artist_id, i64::try_from(generation).map_err(storage)?, now],
         |row| row.get(0),
     )
@@ -3383,11 +3388,6 @@ pub fn store_similar_artists(
             identity_value,
         ));
     }
-    let published_items = materialized
-        .iter()
-        .map(|(item, _, _, _)| item.clone())
-        .collect::<Vec<_>>();
-    let payload = serde_json::to_string(&published_items).map_err(storage)?;
     tx.execute(
         "DELETE FROM artist_similarities
          WHERE source_artist_id = ?1 AND provider = 'last_fm'",
@@ -3414,23 +3414,17 @@ pub fn store_similar_artists(
         )
         .map_err(storage)?;
     }
-    let changed = tx
-        .execute(
-            "UPDATE artists SET
-             similar_artists = ?3,
-             similar_artists_generation = ?2,
-             similar_artists_fetched_at = ?4,
-             similar_artists_expires_at = ?5
-         WHERE artist_id = ?1 AND EXISTS (
-             SELECT 1 FROM artist_enrichment_state
-             WHERE artist_id = ?1 AND generation = ?2 AND identity_status = 'resolved'
-         )",
-            params![artist_id, generation, payload, now, expires_at],
-        )
-        .map_err(storage)?;
-    if changed != 1 {
-        return Ok(false);
-    }
+    tx.execute(
+        "INSERT INTO artist_similarity_snapshots
+         (source_artist_id, provider, source_identity_generation, fetched_at, expires_at)
+         VALUES (?1, 'last_fm', ?2, ?3, ?4)
+         ON CONFLICT (source_artist_id, provider) DO UPDATE SET
+             source_identity_generation = excluded.source_identity_generation,
+             fetched_at = excluded.fetched_at,
+             expires_at = excluded.expires_at",
+        params![artist_id, generation, now, expires_at],
+    )
+    .map_err(storage)?;
     tx.commit().map_err(storage)?;
     Ok(true)
 }
