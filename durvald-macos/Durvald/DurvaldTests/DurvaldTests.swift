@@ -604,6 +604,26 @@ final class AlbumGridLayoutTests: XCTestCase {
 
 }
 
+final class ArtistCollectionLayoutTests: XCTestCase {
+    func testArtistPortraitMatchesSimilarArtistSize() {
+        XCTAssertEqual(ArtistsViewLayout.portraitSize, 104)
+        XCTAssertEqual(ArtistsViewLayout.gridMinimumCardWidth, 120)
+    }
+
+    func testArtistsSortAlphabetically() {
+        let artists = [Artist(id: 2, name: "Zulu"), Artist(id: 1, name: "Alpha")]
+        XCTAssertEqual(
+            CollectionListingSorter.artists(
+                artists,
+                order: .alphabetical,
+                releases: [],
+                lastPlayedByRelease: [:]
+            ).map(\.name),
+            ["Alpha", "Zulu"]
+        )
+    }
+}
+
 
 final class ScrollObservationTests: XCTestCase {
     @MainActor

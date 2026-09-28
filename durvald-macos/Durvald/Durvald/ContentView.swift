@@ -19,8 +19,10 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
 
     @AppStorage("albums.listingMode") private var albumListingMode: CollectionListingMode = .standardGrid
+    @AppStorage("artists.listingMode") private var artistListingMode: CollectionListingMode = .standardGrid
     @AppStorage("playlists.listingMode") private var playlistListingMode: CollectionListingMode = .standard
     @AppStorage("albums.listingOrder") private var albumListingOrder: CollectionListingOrder = .recent
+    @AppStorage("artists.listingOrder") private var artistListingOrder: CollectionListingOrder = .alphabetical
     @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
 
     @State private var queueColumnWidth: CGFloat = 300
@@ -286,10 +288,10 @@ struct ContentView: View {
             // toggle stays at the window edge; closing restores the 16 pt gap.
             HStack(spacing: shell.isQueuePresented ? max(16, queueColumnWidth - 36) : 16) {
                 if case .section(let destination) = shell.navigationHistory.currentRoute,
-                   destination == .albums || destination == .playlists {
+                   destination == .albums || destination == .artists || destination == .playlists {
                     CollectionListingMenu(
-                        mode: destination == .albums ? $albumListingMode : $playlistListingMode,
-                        order: destination == .albums ? $albumListingOrder : $playlistListingOrder,
+                        mode: listingModeBinding(for: destination),
+                        order: listingOrderBinding(for: destination),
                         controlSize: 36,
                         controlWidth: 38
                     )
@@ -299,6 +301,22 @@ struct ContentView: View {
             }
         }
         .sharedBackgroundVisibility(.hidden)
+    }
+
+    private func listingModeBinding(for destination: LibraryDestination) -> Binding<CollectionListingMode> {
+        switch destination {
+        case .albums: $albumListingMode
+        case .artists: $artistListingMode
+        default: $playlistListingMode
+        }
+    }
+
+    private func listingOrderBinding(for destination: LibraryDestination) -> Binding<CollectionListingOrder> {
+        switch destination {
+        case .albums: $albumListingOrder
+        case .artists: $artistListingOrder
+        default: $playlistListingOrder
+        }
     }
 
     @ToolbarContentBuilder

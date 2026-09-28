@@ -73,6 +73,36 @@ enum CollectionListingSorter {
         }
     }
 
+    static func artists(
+        _ artists: [Artist],
+        order: CollectionListingOrder,
+        releases: [Release],
+        lastPlayedByRelease: [Int64: String]
+    ) -> [Artist] {
+        let releasesByArtist = Dictionary(grouping: releases, by: \.artistId)
+        return artists.sorted { lhs, rhs in
+            let leftReleases = releasesByArtist[lhs.id] ?? []
+            let rightReleases = releasesByArtist[rhs.id] ?? []
+            switch order {
+            case .recent:
+                let left = leftReleases.compactMap { lastPlayedByRelease[$0.id] }.max()
+                let right = rightReleases.compactMap { lastPlayedByRelease[$0.id] }.max()
+                if left != right { return (left ?? "") > (right ?? "") }
+            case .recentlyAdded:
+                let left = leftReleases.map(\.id).max() ?? lhs.id
+                let right = rightReleases.map(\.id).max() ?? rhs.id
+                if left != right { return left > right }
+            case .releaseDate:
+                let left = leftReleases.compactMap(\.releaseDate).max()
+                let right = rightReleases.compactMap(\.releaseDate).max()
+                if left != right { return (left ?? "") > (right ?? "") }
+            case .alphabetical, .artist:
+                break
+            }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
     static func playlists(
         _ playlists: [Playlist],
         order: CollectionListingOrder,
@@ -291,16 +321,21 @@ struct CollectionListingItem<Artwork: View>: View {
     let mode: CollectionListingMode
     let artworkSize: CGFloat
     var isSelected = false
+    var centersGridText = false
     let action: () -> Void
     @ViewBuilder let artwork: () -> Artwork
     @State private var isHovered = false
     @State private var showsTooltip = false
 
+    private var usesCenteredGridText: Bool {
+        centersGridText && mode == .standardGrid
+    }
+
     var body: some View {
         Button(action: action) {
             Group {
                 if mode.isGrid {
-                    VStack(alignment: .leading, spacing: 7) {
+                    VStack(alignment: usesCenteredGridText ? .center : .leading, spacing: 7) {
                         artwork()
                         if mode == .standardGrid {
                             textDetails
@@ -368,10 +403,16 @@ struct CollectionListingItem<Artwork: View>: View {
                 font: AlbumListingTypography.title
             )
             .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: usesCenteredGridText ? .center : .leading)
             if let subtitle {
-                Text(subtitle).font(AlbumListingTypography.secondary).foregroundStyle(.secondary).lineLimit(1)
+                Text(subtitle)
+                    .font(AlbumListingTypography.secondary)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: usesCenteredGridText ? .center : .leading)
             }
         }
+        .multilineTextAlignment(usesCenteredGridText ? .center : .leading)
     }
 }
 
