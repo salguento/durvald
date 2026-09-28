@@ -32,11 +32,10 @@ struct LibrarySidebarView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .foregroundStyle(appearsActive ? Color.primary : Color.secondary)
             // Keep controls fixed while the scroll view extends behind them.
-            // The system supplies the backdrop and scroll-edge treatment.
             .safeAreaBar(edge: .top, spacing: 0) {
                 fixedControls
             }
-            .scrollEdgeEffectStyle(.soft, for: .top)
+            .scrollEdgeEffectHidden(true, for: .top)
         .task(id: localSearchText) {
             let normalized = localSearchText.trimmingCharacters(
                 in: .whitespacesAndNewlines
