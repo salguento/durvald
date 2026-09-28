@@ -2309,7 +2309,7 @@ pub fn local_release_match_contexts(
     include_attempted: bool,
 ) -> CoreResult<Vec<LocalReleaseMatchContext>> {
     let generation = i64::try_from(identity_generation).map_err(storage)?;
-    let (artist_mbid, artist_name, catalog_generation): (String, String, i64) = conn
+    let catalog_state: Option<(String, String, i64)> = conn
         .query_row(
             "SELECT s.musicbrainz_id, a.name, d.active_generation
              FROM artist_enrichment_state s
@@ -2321,7 +2321,11 @@ pub fn local_release_match_contexts(
             params![artist_id, generation],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
+        .optional()
         .map_err(storage)?;
+    let Some((artist_mbid, artist_name, catalog_generation)) = catalog_state else {
+        return Ok(Vec::new());
+    };
     let catalog = {
         let mut statement = conn
             .prepare(
