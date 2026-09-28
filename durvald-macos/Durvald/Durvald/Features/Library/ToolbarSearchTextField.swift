@@ -7,6 +7,9 @@ struct ToolbarSearchTextField: NSViewRepresentable {
 
     let isPresented: Bool
     let focusRequest: Int
+    var placeholder = "Biblioteca"
+    var accessibilityLabel = "Pesquisar na biblioteca"
+    var accessibilityIdentifier = "search.field"
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -25,11 +28,11 @@ struct ToolbarSearchTextField: NSViewRepresentable {
         textField.cell?.isScrollable = true
         textField.lineBreakMode = .byClipping
         textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textField.placeholderString = "Biblioteca"
+        textField.placeholderString = placeholder
         textField.setAccessibilityElement(true)
         textField.setAccessibilityRole(.textField)
-        textField.setAccessibilityLabel("Pesquisar na biblioteca")
-        textField.setAccessibilityIdentifier("search.field")
+        textField.setAccessibilityLabel(accessibilityLabel)
+        textField.setAccessibilityIdentifier(accessibilityIdentifier)
         context.coordinator.installFocusDismissalMonitor(for: textField)
         return textField
     }
@@ -43,6 +46,11 @@ struct ToolbarSearchTextField: NSViewRepresentable {
 
     func updateNSView(_ textField: NSTextField, context: Context) {
         context.coordinator.parent = self
+        if textField.placeholderString != placeholder {
+            textField.placeholderString = placeholder
+        }
+        textField.setAccessibilityLabel(accessibilityLabel)
+        textField.setAccessibilityIdentifier(accessibilityIdentifier)
         let hasNewFocusRequest = context.coordinator.lastFocusRequest != focusRequest
 
         // While the field editor is active, it is the source of truth. Writing a
@@ -193,7 +201,8 @@ struct ToolbarSearchTextField: NSViewRepresentable {
                 "search.container",
                 "search.clear",
                 "sidebar.sectionSearch.container",
-                "sidebar.sectionSearch.clear"
+                "sidebar.sectionSearch.clear",
+                "artist.tracks.search"
             ]
             var currentView = hitView
 

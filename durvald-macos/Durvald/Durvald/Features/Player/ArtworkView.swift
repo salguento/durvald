@@ -7,6 +7,7 @@ struct ArtworkView: View {
     var aspectRatio: CGFloat = 1
     var alignment: Alignment = .center
     var showsBorder = true
+    var onImageLoaded: ((NSImage) -> Void)? = nil
 
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.displayScale) private var displayScale
@@ -63,6 +64,9 @@ struct ArtworkView: View {
             guard !Task.isCancelled else { return }
             image = loaded
             loadedRequest = request
+            if let loaded {
+                onImageLoaded?(loaded)
+            }
         }
         .accessibilityHidden(true)
     }

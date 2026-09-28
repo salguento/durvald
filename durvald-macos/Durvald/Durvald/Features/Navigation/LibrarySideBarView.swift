@@ -549,7 +549,7 @@ private struct SidebarSectionSearchField: View {
                         .frame(width: 20)
                         .foregroundStyle(.secondary)
 
-                    TextField("Pesquisar em \(scope)", text: $text)
+                    TextField("Pesquisar", text: $text)
                         .textFieldStyle(.plain)
                         .focused($isFocused)
                         .onExitCommand {

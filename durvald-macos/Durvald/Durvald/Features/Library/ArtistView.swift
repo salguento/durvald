@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreImage
 
 struct ArtistView: View {
     private enum TrackOrder: String, CaseIterable, Identifiable {
@@ -21,6 +22,7 @@ struct ArtistView: View {
 
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage("followedArtistIDs") private var followedArtistIDs = ""
     @AppStorage("favoriteArtistIDs") private var favoriteArtistIDs = ""
 
@@ -54,72 +56,61 @@ struct ArtistView: View {
     @State private var selectedCandidateID: String?
     @State private var trackSearchText = ""
     @State private var trackOrder: TrackOrder = .album
-    @FocusState private var isTrackSearchFocused: Bool
+    @State private var isTrackSearchFocused = false
+    @State private var trackSearchFocusRequest = -1
     @State private var isLoading = true
+    @State private var artworkAverageColor: NSColor?
     @ScaledMetric(relativeTo: .largeTitle) private var artistNameFontSize =
         NSFont.preferredFont(forTextStyle: .largeTitle).pointSize * 1.275 * 1.35
+    private let headerControlHeight: CGFloat = 36
+    private let headerIconControlWidth: CGFloat = 38
+
+    private var artistArtworkID: String? {
+        ArtistPresentationPolicy.portraitArtworkID(
+            portrait: details?.portrait,
+            localArtworkIDs: albums.map(\.artworkId)
+                + discographyItems.map { $0.artwork?.image.managedPath }
+        )
+    }
+
+    private var pageBackgroundColor: Color {
+        let baseColor = NSColor.windowBackgroundColor
+        guard let artworkAverageColor else { return Color(nsColor: baseColor) }
+
+        // Keep enough of the system background to preserve contrast while
+        // tinting the page with the portrait's own palette.
+        let tintAmount = colorScheme == .dark ? 0.52 : 0.28
+        return Color(
+            nsColor: baseColor.blended(
+                withFraction: tintAmount,
+                of: artworkAverageColor
+            ) ?? baseColor
+        )
+    }
 
     var body: some View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    ArtworkView(
-                        artworkID: ArtistPresentationPolicy.portraitArtworkID(
-                            portrait: details?.portrait,
-                            localArtworkIDs: albums.map(\.artworkId)
-                                + discographyItems.map { $0.artwork?.image.managedPath }
-                        ),
-                        size: geometry.size.width,
-                        aspectRatio: 16.0 / 11.0,
-                        alignment: .top,
-                        showsBorder: false
-                    )
+                    artistHeaderArtwork(width: geometry.size.width)
                     .backgroundExtensionEffect()
                     .overlay {
                         GeometryReader { header in
                             let titleY = header.size.height * 2 / 3 + 32
                             let controlsY = (titleY + header.size.height) / 2
                             ZStack(alignment: .topLeading) {
-                                HStack(alignment: .lastTextBaseline, spacing: 10) {
-                                    Text(artist.name)
-                                        .font(.system(size: artistNameFontSize, weight: .bold))
-                                        .multilineTextAlignment(.center)
-                                        .accessibilityAddTraits(.isHeader)
-
-                                    if let identity {
-                                        Button {
-                                            isIdentityPopoverPresented.toggle()
-                                        } label: {
-                                            Image(systemName: identity.status == .resolved
-                                                  ? "checkmark.seal.fill"
-                                                  : "person.crop.circle.badge.questionmark")
-                                                .font(.title2)
-                                                .foregroundStyle(identity.status == .resolved ? Color.accentColor : Color.white)
-                                                .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
-                                        }
-                                        .buttonStyle(.plain)
-                                        .alignmentGuide(.lastTextBaseline) { dimensions in
-                                            dimensions[.bottom]
-                                        }
-                                        .help("Ver identidade e conexões de metadados")
-                                        .accessibilityLabel("Ver identidade de \(artist.name)")
-                                        .accessibilityIdentifier("artist.identity.badge")
-                                        .popover(isPresented: $isIdentityPopoverPresented, arrowEdge: .bottom) {
-                                            identityInformationPopover(identity)
-                                        }
-                                    }
-                                }
-                                .foregroundStyle(.white)
-                                .shadow(color: .black.opacity(0.6), radius: 4, y: 2)
-                                .frame(maxWidth: max(1, header.size.width - 48))
-                                .position(
-                                    x: header.size.width / 2,
-                                    y: titleY
-                                )
+                                Text(artist.name)
+                                    .font(.system(size: artistNameFontSize, weight: .bold))
+                                    .multilineTextAlignment(.center)
+                                    .foregroundStyle(.white)
+                                    .accessibilityAddTraits(.isHeader)
+                                    .frame(maxWidth: max(1, header.size.width - 48))
+                                    .position(
+                                        x: header.size.width / 2,
+                                        y: titleY
+                                    )
 
                                 collectionControls
-                                    .foregroundStyle(.white)
-                                    .shadow(color: .black.opacity(0.55), radius: 4, y: 2)
                                     .frame(width: max(1, header.size.width - 48))
                                     .position(
                                         x: header.size.width / 2,
@@ -152,6 +143,7 @@ struct ArtistView: View {
                     artistFooter(width: geometry.size.width)
                 }
                 .frame(minHeight: geometry.size.height, alignment: .top)
+                .background(pageBackgroundColor)
             }
             .preservesLibraryScrollPosition(isContentReady: !isLoading)
         }
@@ -167,6 +159,7 @@ struct ArtistView: View {
         .task(id: artist.id) {
             isLoading = true
             details = nil
+            artworkAverageColor = nil
             identity = nil
             identityCandidates = nil
             selectedCandidateID = nil
@@ -245,6 +238,74 @@ struct ArtistView: View {
             }
         }
         .accessibilityIdentifier("artist.detail.\(artist.id)")
+    }
+
+    private func artistHeaderArtwork(width: CGFloat) -> some View {
+        ZStack {
+            colorSamplingHeaderArtwork(width: width)
+
+            // Blur only the lower portion of the portrait. The mask starts near
+            // the artist title so the sharp image dissolves gradually instead
+            // of switching to a uniformly blurred layer.
+            headerArtwork(width: width)
+                .blur(radius: 30, opaque: true)
+                .mask {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.48),
+                            .init(color: .black.opacity(0.35), location: 0.62),
+                            .init(color: .black, location: 0.82)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+
+            // Finish with the exact page background color, keeping the join
+            // below the header seamless in both light and dark appearances.
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.50),
+                    .init(color: pageBackgroundColor.opacity(0.18), location: 0.63),
+                    .init(color: pageBackgroundColor.opacity(0.72), location: 0.84),
+                    .init(color: pageBackgroundColor, location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .frame(width: width, height: width / (16.0 / 11.0))
+        .clipped()
+    }
+
+    private func headerArtwork(width: CGFloat) -> some View {
+        ArtworkView(
+            artworkID: artistArtworkID,
+            size: width,
+            aspectRatio: 16.0 / 11.0,
+            alignment: .top,
+            showsBorder: false
+        )
+    }
+
+    private func colorSamplingHeaderArtwork(width: CGFloat) -> some View {
+        ArtworkView(
+            artworkID: artistArtworkID,
+            size: width,
+            aspectRatio: 16.0 / 11.0,
+            alignment: .top,
+            showsBorder: false,
+            onImageLoaded: { image in
+                captureBackgroundColor(from: image)
+            }
+        )
+    }
+
+    private func captureBackgroundColor(from image: NSImage) {
+        guard let averageColor = image.averageLowerRegionColor else { return }
+        withAnimation(.easeInOut(duration: 0.45)) {
+            artworkAverageColor = averageColor
+        }
     }
 
     private func identityInformationPopover(_ identity: ArtistIdentity) -> some View {
@@ -1279,21 +1340,62 @@ struct ArtistView: View {
 
     private var collectionControls: some View {
         HStack(spacing: 10) {
-            CollectionPlaybackControls(
-                isEnabled: !isLoading && !tracks.isEmpty,
-                presentation: .groupedCompactShuffle,
-                onPlay: {
-                    Task { await store.playTracks(tracks, shuffleEnabled: false) }
-                },
-                onShuffle: {
-                    Task { await store.playTracks(tracks, shuffleEnabled: true) }
-                }
-            )
-            .glassEffect(.regular.interactive(), in: .capsule)
+            artistPlaybackControls
 
             artistRelationshipControls
 
             Spacer(minLength: 24)
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+
+                ToolbarSearchTextField(
+                    text: $trackSearchText,
+                    isFocused: $isTrackSearchFocused,
+                    isPresented: true,
+                    focusRequest: trackSearchFocusRequest,
+                    placeholder: "Pesquisar faixas",
+                    accessibilityLabel: "Pesquisar faixas do artista",
+                    accessibilityIdentifier: "artist.tracks.search.field"
+                )
+                .frame(maxWidth: .infinity, minHeight: 20, maxHeight: 20)
+            }
+            .padding(.horizontal, 12)
+            .frame(width: 168, height: headerControlHeight)
+            .contentShape(.capsule)
+            .background {
+                Color.clear
+                    .glassEffect(.regular.interactive(), in: .capsule)
+            }
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .opacity(isTrackSearchFocused && appearsActive ? 1 : 0)
+            }
+            .onTapGesture {
+                trackSearchFocusRequest += 1
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("artist.tracks.search")
+
+            Menu {
+                Picker("Organizar", selection: $trackOrder) {
+                    ForEach(TrackOrder.allCases) { order in
+                        Text(order.title).tag(order)
+                    }
+                }
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .frame(width: headerIconControlWidth, height: headerControlHeight)
+                    .contentShape(.capsule)
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .help("Organizar ou filtrar faixas")
+            .accessibilityLabel("Organizar ou filtrar faixas")
+            .accessibilityIdentifier("artist.tracks.organize")
 
             Menu {
                 Button("Adicionar músicas à fila", systemImage: "text.line.last.and.arrowtriangle.forward") {
@@ -1306,50 +1408,48 @@ struct ArtistView: View {
                 .disabled(isLoading || tracks.isEmpty)
             } label: {
                 Image(systemName: "ellipsis")
-                    .frame(width: 34, height: 34)
+                    .frame(width: headerIconControlWidth, height: headerControlHeight)
+                    .contentShape(.capsule)
             }
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .circle)
+            .glassEffect(.regular.interactive(), in: .capsule)
             .help("Opções")
             .accessibilityLabel("Opções")
             .accessibilityIdentifier("artist.options")
+        }
+    }
 
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-
-                TextField("Pesquisar", text: $trackSearchText)
-                    .textFieldStyle(.plain)
-                    .focused($isTrackSearchFocused)
-                    .onExitCommand {
-                        trackSearchText = ""
-                        isTrackSearchFocused = false
-                    }
-            }
-            .padding(.horizontal, 12)
-            .frame(width: 147, height: 34)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("artist.tracks.search")
-
-            Menu {
-                Picker("Organizar", selection: $trackOrder) {
-                    ForEach(TrackOrder.allCases) { order in
-                        Text(order.title).tag(order)
-                    }
-                }
+    private var artistPlaybackControls: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await store.playTracks(tracks, shuffleEnabled: false) }
             } label: {
-                Image(systemName: "line.3.horizontal.decrease")
-                    .frame(width: 34, height: 34)
+                Label("Reproduzir", systemImage: "play.fill")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .frame(height: headerControlHeight)
+                    .background(Color.accentColor, in: .capsule)
+                    .contentShape(.capsule)
             }
-            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("collection.play")
+
+            Button {
+                Task { await store.playTracks(tracks, shuffleEnabled: true) }
+            } label: {
+                Image(systemName: "shuffle")
+                    .frame(width: headerIconControlWidth, height: headerControlHeight)
+                    .contentShape(.capsule)
+            }
             .buttonStyle(.plain)
             .glassEffect(.regular.interactive(), in: .capsule)
-            .help("Organizar ou filtrar faixas")
-            .accessibilityLabel("Organizar ou filtrar faixas")
-            .accessibilityIdentifier("artist.tracks.organize")
+            .help("Reproduzir aleatoriamente")
+            .accessibilityLabel("Reproduzir aleatoriamente")
+            .accessibilityIdentifier("collection.shuffle")
         }
+        .disabled(isLoading || tracks.isEmpty)
     }
 
     private var isFollowing: Bool {
@@ -1390,10 +1490,11 @@ struct ArtistView: View {
                         Image(systemName: "person.badge.plus")
                     }
                 }
-                .frame(width: 34, height: 34)
-                .contentShape(.circle)
+                .frame(width: headerIconControlWidth, height: headerControlHeight)
+                .contentShape(.capsule)
             }
-            .glassEffect(.regular.interactive(), in: .circle)
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
             .help(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
             .accessibilityLabel(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
             .accessibilityValue(isFollowing ? "Seguindo" : "Não seguindo")
@@ -1403,18 +1504,36 @@ struct ArtistView: View {
                 favoriteArtistIDs = togglingArtist(in: favoriteArtistIDs)
             } label: {
                 Image(systemName: isFavorite ? "star.fill" : "star")
-                    .frame(width: 34, height: 34)
-                    .contentShape(.circle)
+                    .frame(width: headerIconControlWidth, height: headerControlHeight)
+                    .contentShape(.capsule)
             }
-            .glassEffect(.regular.interactive(), in: .circle)
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
             .help(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
             .accessibilityLabel(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
             .accessibilityValue(isFavorite ? "Favorito" : "Não favorito")
             .accessibilityIdentifier("artist.favorite")
+
+            if let identity {
+                Button {
+                    isIdentityPopoverPresented.toggle()
+                } label: {
+                    Image(systemName: "info.circle")
+                        .frame(width: headerIconControlWidth, height: headerControlHeight)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .capsule)
+                .help("Ver informações e conexões de metadados")
+                .accessibilityLabel("Ver informações de \(artist.name)")
+                .accessibilityIdentifier("artist.identity.badge")
+                .popover(isPresented: $isIdentityPopoverPresented, arrowEdge: .bottom) {
+                    identityInformationPopover(identity)
+                }
+            }
         }
-        .buttonStyle(.plain)
         .font(.body.weight(.medium))
-        .foregroundStyle(Color.accentColor.opacity(appearsActive ? 1 : 0.63))
+        .tint(Color.accentColor.opacity(appearsActive ? 1 : 0.63))
     }
 
     private var visibleTracks: [Track] {
@@ -1661,7 +1780,7 @@ struct ArtistView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background {
             Rectangle()
-                .fill(.quaternary)
+                .fill(pageBackgroundColor)
                 .backgroundExtensionEffect()
                 .ignoresSafeArea(.container, edges: .bottom)
                 .padding(.bottom, -1000)
@@ -1959,6 +2078,49 @@ struct ArtistView: View {
 
     private func selectArtist(_ artist: Artist) {
         onSelectArtist?(artist)
+    }
+}
+
+private extension NSImage {
+    var averageLowerRegionColor: NSColor? {
+        var proposedRect = CGRect(origin: .zero, size: size)
+        guard let cgImage = cgImage(
+            forProposedRect: &proposedRect,
+            context: nil,
+            hints: nil
+        ) else { return nil }
+
+        let inputImage = CIImage(cgImage: cgImage)
+        let sampleExtent = CGRect(
+            x: inputImage.extent.minX,
+            y: inputImage.extent.minY,
+            width: inputImage.extent.width,
+            height: inputImage.extent.height * 0.35
+        )
+        guard let filter = CIFilter(
+            name: "CIAreaAverage",
+            parameters: [
+                kCIInputImageKey: inputImage,
+                kCIInputExtentKey: CIVector(cgRect: sampleExtent)
+            ]
+        ), let outputImage = filter.outputImage else { return nil }
+
+        var pixel = [UInt8](repeating: 0, count: 4)
+        CIContext(options: [.workingColorSpace: NSNull()]).render(
+            outputImage,
+            toBitmap: &pixel,
+            rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
+        )
+
+        return NSColor(
+            srgbRed: CGFloat(pixel[0]) / 255,
+            green: CGFloat(pixel[1]) / 255,
+            blue: CGFloat(pixel[2]) / 255,
+            alpha: 1
+        )
     }
 }
 
