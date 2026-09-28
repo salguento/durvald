@@ -81,24 +81,21 @@ struct LibrarySidebarView: View {
                         if section == .albums {
                             CollectionListingMenu(
                                 mode: $albumListingMode,
-                                order: $albumListingOrder,
-                                usesGlassEffect: false
+                                order: $albumListingOrder
                             )
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("sidebar.albums.listingMode")
                         } else if section == .artists {
                             CollectionListingMenu(
                                 mode: $artistListingMode,
-                                order: $artistListingOrder,
-                                usesGlassEffect: false
+                                order: $artistListingOrder
                             )
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("sidebar.artists.listingMode")
                         } else if section == .playlists {
                             CollectionListingMenu(
                                 mode: $playlistListingMode,
-                                order: $playlistListingOrder,
-                                usesGlassEffect: false
+                                order: $playlistListingOrder
                             )
                                 .buttonStyle(.plain)
                                 .accessibilityIdentifier("sidebar.playlists.listingMode")
@@ -612,6 +609,7 @@ private struct SidebarSectionSearchField: View {
                 .accessibilityIdentifier(
                     "sidebar.sectionSearch.toggle"
                 )
+                .glassEffect(.regular.interactive(), in: .capsule)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
