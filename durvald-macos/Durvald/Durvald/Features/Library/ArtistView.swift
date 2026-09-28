@@ -1629,15 +1629,24 @@ struct ArtistView: View {
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 20) {
                         ForEach(similarArtists, id: \.artistId) { similar in
-                            Group {
-                                if let local = localArtist(for: similar) {
-                                    Button { selectArtist(local) } label: { similarArtistCard(similar) }
-                                } else if let url = URL(string: similar.lastfmUrl) {
-                                    Link(destination: url) { similarArtistCard(similar) }
+                            VStack(spacing: 6) {
+                                Button {
+                                    selectArtist(Artist(id: similar.artistId, name: similar.name))
+                                } label: {
+                                    similarArtistCard(similar)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Abrir artista \(similar.name)")
+
+                                if let url = URL(string: similar.lastfmUrl) {
+                                    Link(destination: url) {
+                                        Label("Last.fm", systemImage: "arrow.up.right.square")
+                                    }
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityLabel("Abrir fonte de \(similar.name) no Last.fm")
                                 }
                             }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(localArtist(for: similar) != nil ? "Abrir artista \(similar.name)" : "Abrir \(similar.name) no Last.fm")
                             .task(id: similar.artistId) {
                                 await loadSimilarArtistPortrait(similar)
                             }
@@ -1760,16 +1769,19 @@ struct ArtistView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(width: 104)
+            if !similar.hasPlayableSources {
+                Label("Fora da biblioteca", systemImage: "icloud")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
+        .frame(width: 120)
         .contentShape(.rect)
     }
 
     private var similarArtists: [SimilarArtist] {
         details?.similarArtists ?? []
-    }
-
-    private func localArtist(for similar: SimilarArtist) -> Artist? {
-        store.artists.first { $0.name.compare(similar.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
     }
 
     private func similarArtistAvatar(for similar: SimilarArtist) -> some View {
@@ -1801,7 +1813,6 @@ struct ArtistView: View {
         }
     }
 
-    @MainActor
     @MainActor
     private func loadSimilarArtistPortrait(_ similar: SimilarArtist) async {
         if let managedPath = similar.portrait?.managedPath {
