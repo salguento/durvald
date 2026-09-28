@@ -809,14 +809,6 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func releaseTracks(releaseId: Int64) async throws  -> [Track]
 
     /**
-     * Returns all releases in the library.
-     *
-     * Retained for source and FFI compatibility. New consumers must iterate
-     * [`Self::releases_page`] so memory use remains bounded for large libraries.
-     */
-    func releases() async throws  -> [Release]
-
-    /**
      * Returns a bounded page of releases ordered by their stable database ID.
      */
     func releasesPage(pageSize: UInt64, offset: UInt64) async throws  -> ReleasePage
@@ -972,14 +964,6 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Reads indexed metadata, backfilling older libraries once when necessary.
      */
     func trackInfo(trackId: Int64) async throws  -> TrackInfo
-
-    /**
-     * Returns all tracks in the library.
-     *
-     * Retained for source and FFI compatibility. New consumers must iterate
-     * [`Self::tracks_page`] so memory use remains bounded for large libraries.
-     */
-    func tracks() async throws  -> [Track]
 
     /**
      * Returns a bounded page of tracks ordered by their stable database ID.
@@ -2069,29 +2053,6 @@ open func releaseTracks(releaseId: Int64)async throws  -> [Track] {
 }
 
     /**
-     * Returns all releases in the library.
-     *
-     * Retained for source and FFI compatibility. New consumers must iterate
-     * [`Self::releases_page`] so memory use remains bounded for large libraries.
-     */
-open func releases()async throws  -> [Release] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_releases(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeRelease.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
-
-    /**
      * Returns a bounded page of releases ordered by their stable database ID.
      */
 open func releasesPage(pageSize: UInt64, offset: UInt64)async throws  -> ReleasePage {
@@ -2729,29 +2690,6 @@ open func trackInfo(trackId: Int64)async throws  -> TrackInfo {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeTrackInfo.lift,
-            errorHandler: FfiConverterTypeCoreError.lift
-        )
-}
-
-    /**
-     * Returns all tracks in the library.
-     *
-     * Retained for source and FFI compatibility. New consumers must iterate
-     * [`Self::tracks_page`] so memory use remains bounded for large libraries.
-     */
-open func tracks()async throws  -> [Track] {
-    return
-        try  await uniffiRustCallAsync(
-            rustFutureFunc: {
-                uniffi_durvald_core_fn_method_durvaldcore_tracks(
-                    self.uniffiClonePointer()
-
-                )
-            },
-            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
-            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
-            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
-            liftFunc: FfiConverterSequenceTypeTrack.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -9437,9 +9375,6 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_release_tracks() != 5208) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_releases() != 57176) {
-        return InitializationResult.apiChecksumMismatch
-    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_releases_page() != 33341) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -9537,9 +9472,6 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_track_info() != 63609) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_tracks() != 39316) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_tracks_page() != 23995) {

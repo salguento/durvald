@@ -364,15 +364,6 @@ impl LibraryApplication {
         })
     }
 
-    pub(crate) async fn tracks(&self) -> CoreResult<Vec<Track>> {
-        self.persistence
-            .catalog_track_query
-            .all()
-            .await
-            .map(|tracks| tracks.into_iter().map(track_from_catalog).collect())
-            .map_err(catalog_track_storage_error)
-    }
-
     pub(crate) async fn tracks_page(&self, page_size: u64, offset: u64) -> CoreResult<TrackPage> {
         let (fetch_size, page_size) = pagination_window(page_size, offset)?;
         let tracks = self
@@ -386,15 +377,6 @@ impl LibraryApplication {
             .collect();
         let (items, next_offset) = finish_page(tracks, page_size, offset);
         Ok(TrackPage { items, next_offset })
-    }
-
-    pub(crate) async fn releases(&self) -> CoreResult<Vec<Release>> {
-        self.persistence
-            .catalog_release_query
-            .all()
-            .await
-            .map(|releases| releases.into_iter().map(release_from_catalog).collect())
-            .map_err(catalog_release_storage_error)
     }
 
     pub(crate) async fn release_playback_recency(&self) -> CoreResult<Vec<KeyValuePair>> {

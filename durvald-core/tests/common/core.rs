@@ -60,6 +60,21 @@ impl TestCore {
         &self.files
     }
 
+    pub async fn all_tracks_via_pages(
+        &self,
+    ) -> Result<Vec<durvald_core::Track>, durvald_core::CoreError> {
+        let mut tracks = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = self.core.tracks_page(200, offset).await?;
+            tracks.extend(page.items);
+            let Some(next_offset) = page.next_offset else {
+                return Ok(tracks);
+            };
+            offset = next_offset;
+        }
+    }
+
     pub async fn restart(self) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let Self {
             core,

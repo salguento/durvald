@@ -203,35 +203,11 @@ impl DurvaldCore {
         self.library_application.search(query).await
     }
 
-    /// Returns all tracks in the library.
-    ///
-    /// Retained for source and FFI compatibility. New consumers must iterate
-    /// [`Self::tracks_page`] so memory use remains bounded for large libraries.
-    #[deprecated(
-        since = "0.1.0",
-        note = "use tracks_page(page_size, offset) and follow next_offset"
-    )]
-    pub async fn tracks(&self) -> CoreResult<Vec<Track>> {
-        self.library_application.tracks().await
-    }
-
     /// Returns a bounded page of tracks ordered by their stable database ID.
     pub async fn tracks_page(&self, page_size: u64, offset: u64) -> CoreResult<TrackPage> {
         self.library_application
             .tracks_page(page_size, offset)
             .await
-    }
-
-    /// Returns all releases in the library.
-    ///
-    /// Retained for source and FFI compatibility. New consumers must iterate
-    /// [`Self::releases_page`] so memory use remains bounded for large libraries.
-    #[deprecated(
-        since = "0.1.0",
-        note = "use releases_page(page_size, offset) and follow next_offset"
-    )]
-    pub async fn releases(&self) -> CoreResult<Vec<Release>> {
-        self.library_application.releases().await
     }
 
     /// Returns the latest playback timestamp for each release that was played.
@@ -900,6 +876,19 @@ mod tests {
         }
     }
 
+    async fn all_tracks(core: &DurvaldCore) -> Vec<Track> {
+        let mut tracks = Vec::new();
+        let mut offset = 0;
+        loop {
+            let page = core.tracks_page(200, offset).await.unwrap();
+            tracks.extend(page.items);
+            let Some(next_offset) = page.next_offset else {
+                return tracks;
+            };
+            offset = next_offset;
+        }
+    }
+
     #[tokio::test]
     async fn enrichment_foundation_is_offline_and_survives_reopening() {
         let directory = temporary_directory("enrichment-lifecycle");
@@ -1031,7 +1020,7 @@ mod tests {
             }
         );
         assert_eq!(reopened.artist(73).await.unwrap().name, "Existing artist");
-        assert!(reopened.tracks().await.unwrap().is_empty());
+        assert!(all_tracks(&reopened).await.is_empty());
         drop(reopened);
         std::fs::remove_dir_all(directory).unwrap();
     }
@@ -1082,7 +1071,7 @@ mod tests {
             .await
             .expect("scan test library");
         assert_eq!(scan.new_tracks_added, 1);
-        let tracks = core.tracks().await.expect("read scanned tracks");
+        let tracks = all_tracks(&core).await;
         assert_eq!(tracks.len(), 1);
 
         drop(core);
@@ -1105,7 +1094,7 @@ mod tests {
         core.scan_library(vec![music_directory.to_string_lossy().into_owned()])
             .await
             .unwrap();
-        let tracks = core.tracks().await.unwrap();
+        let tracks = all_tracks(&core).await;
         assert_eq!(tracks.len(), 2);
         core.add_to_queue(tracks[0].id).await.unwrap();
         core.add_to_queue(tracks[1].id).await.unwrap();
@@ -1142,7 +1131,7 @@ mod tests {
         core.scan_library(vec![music_directory.to_string_lossy().into_owned()])
             .await
             .unwrap();
-        let track_id = core.tracks().await.unwrap()[0].id;
+        let track_id = all_tracks(&core).await[0].id;
         core.add_to_queue(track_id).await.unwrap();
         core.set_repeat_mode(RepeatMode::One).await.unwrap();
 

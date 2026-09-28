@@ -27,7 +27,7 @@ async fn core_with_one_track() -> TestResult<(TestCore, Track)> {
     assert_eq!(scan.new_tracks_added, 1);
     assert!(scan.errors.is_empty());
 
-    let mut tracks = test_core.core().tracks().await?;
+    let mut tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 1);
 
@@ -56,7 +56,7 @@ async fn core_with_tracks(count: usize) -> TestResult<(TestCore, Vec<Track>)> {
     assert_eq!(scan.new_tracks_added, count as u64);
     assert!(scan.errors.is_empty());
 
-    let mut tracks = test_core.core().tracks().await?;
+    let mut tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), count);
 
@@ -1463,7 +1463,7 @@ async fn resume_continues_restored_session_without_changing_queue_modes() -> Tes
     let scan = test_core.core().scan_library(vec![library_path]).await?;
     assert_eq!(scan.new_tracks_added, 3);
 
-    let mut tracks = test_core.core().tracks().await?;
+    let mut tracks = test_core.all_tracks_via_pages().await?;
     tracks.sort_by_key(|track| track.id);
 
     let first = &tracks[0];

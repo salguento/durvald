@@ -30,7 +30,7 @@ async fn scans_one_valid_audio_file() -> Result<(), Box<dyn Error + Send + Sync>
     assert_eq!(result.updated_tracks, 0);
     assert!(result.errors.is_empty());
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 1);
     assert!(tracks[0].id > 0);
@@ -94,7 +94,7 @@ async fn scans_configured_library_path() -> Result<(), Box<dyn Error + Send + Sy
     assert_eq!(result.new_tracks_added, 1);
     assert!(result.errors.is_empty());
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 1);
 
@@ -237,7 +237,7 @@ async fn paginates_tracks_with_stable_offsets() -> Result<(), Box<dyn Error + Se
 
     assert!(!first_ids.contains(&second_ids[0]));
 
-    let all_tracks = test_core.core().tracks().await?;
+    let all_tracks = test_core.all_tracks_via_pages().await?;
 
     let all_ids: Vec<i64> = all_tracks.iter().map(|track| track.id).collect();
 
@@ -297,7 +297,7 @@ async fn finds_scanned_track_by_id() -> Result<(), Box<dyn Error + Send + Sync>>
     assert_eq!(scan.new_tracks_added, 1);
     assert!(scan.errors.is_empty());
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 1);
 
@@ -335,7 +335,7 @@ async fn finds_scanned_track_after_restart() -> Result<(), Box<dyn Error + Send 
 
     test_core.core().scan_library(vec![library_path]).await?;
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 1);
 
@@ -394,7 +394,7 @@ async fn rescan_does_not_duplicate_unchanged_track() -> Result<(), Box<dyn Error
     assert_eq!(first_scan.new_tracks_added, 1);
     assert!(first_scan.errors.is_empty());
 
-    let first_tracks = test_core.core().tracks().await?;
+    let first_tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(first_tracks.len(), 1);
 
@@ -407,7 +407,7 @@ async fn rescan_does_not_duplicate_unchanged_track() -> Result<(), Box<dyn Error
     assert_eq!(second_scan.updated_tracks, 0);
     assert!(second_scan.errors.is_empty());
 
-    let second_tracks = test_core.core().tracks().await?;
+    let second_tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(second_tracks.len(), 1);
     assert_eq!(second_tracks[0].id, original_id);
@@ -441,7 +441,7 @@ async fn complete_rescan_removes_missing_track() -> Result<(), Box<dyn Error + S
     assert_eq!(first_scan.new_tracks_added, 2);
     assert!(first_scan.errors.is_empty());
 
-    let initial_tracks = test_core.core().tracks().await?;
+    let initial_tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(initial_tracks.len(), 2);
 
@@ -462,7 +462,7 @@ async fn complete_rescan_removes_missing_track() -> Result<(), Box<dyn Error + S
     assert_eq!(second_scan.new_tracks_added, 0);
     assert!(second_scan.errors.is_empty());
 
-    let remaining_tracks = test_core.core().tracks().await?;
+    let remaining_tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(remaining_tracks.len(), 1);
 
@@ -512,7 +512,7 @@ async fn scan_ignores_unsupported_file_extensions() -> Result<(), Box<dyn Error 
     assert_eq!(scan.new_tracks_added, 1);
     assert!(scan.errors.is_empty());
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 1);
 
@@ -559,7 +559,7 @@ async fn scan_ignores_audio_file_symlink() -> Result<(), Box<dyn Error + Send + 
     assert_eq!(scan.new_tracks_added, 1);
     assert!(scan.errors.is_empty());
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 1);
 
@@ -605,7 +605,7 @@ async fn scan_ignores_directory_symlink() -> Result<(), Box<dyn Error + Send + S
     assert_eq!(scan.new_tracks_added, 1);
     assert!(scan.errors.is_empty());
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 1);
 
@@ -751,7 +751,7 @@ async fn cancelling_active_rescan_preserves_previously_indexed_tracks()
             .any(|error| error.contains("Library scan cancelled")),
     );
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
     assert!(
         tracks
             .iter()
@@ -792,7 +792,7 @@ async fn scan_keeps_valid_track_when_another_file_is_corrupt()
     assert_eq!(result.updated_tracks, 0);
     assert!(!result.errors.is_empty());
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 1);
 
@@ -854,7 +854,7 @@ async fn scans_all_configured_library_roots() -> Result<(), Box<dyn Error + Send
     assert_eq!(result.updated_tracks, 0);
     assert!(result.errors.is_empty());
 
-    let tracks = test_core.core().tracks().await?;
+    let tracks = test_core.all_tracks_via_pages().await?;
 
     assert_eq!(tracks.len(), 2);
 

@@ -1196,17 +1196,6 @@ pub fn set_release_rating(
     )? > 0)
 }
 
-pub fn get_all_tracks(conn: &Connection) -> DatabaseResult<Vec<SongItem>> {
-    let mut tracks = conn.prepare(concat!(
-        "SELECT ",
-        song_columns!("songs"),
-        " FROM songs ORDER BY songs.song_id"
-    ))?;
-    Ok(tracks
-        .query_map([], song_item_from_row)?
-        .collect::<Result<_, _>>()?)
-}
-
 pub fn get_tracks_page(
     conn: &Connection,
     limit: u64,
@@ -1219,17 +1208,6 @@ pub fn get_tracks_page(
     ))?;
     Ok(tracks
         .query_map(params![limit, offset], song_item_from_row)?
-        .collect::<Result<_, _>>()?)
-}
-
-pub fn get_all_releases(conn: &Connection) -> DatabaseResult<Vec<Releases>> {
-    let mut releases = conn.prepare(concat!(
-        "SELECT ",
-        release_columns!("releases"),
-        " FROM releases ORDER BY releases.release_id"
-    ))?;
-    Ok(releases
-        .query_map([], release_from_row)?
         .collect::<Result<_, _>>()?)
 }
 
@@ -2868,14 +2846,14 @@ mod tests {
         let track = metadata("Artist", "Album", 2024);
 
         assert!(persist_metadata(&conn, vec![track.clone()], vec![]).is_err());
-        assert!(get_all_tracks(&conn).unwrap().is_empty());
+        assert!(get_tracks_page(&conn, 1_000, 0).unwrap().is_empty());
 
         let first = persist_metadata(&conn, vec![track.clone()], vec![1]).unwrap();
         assert_eq!(first.added_tracks, 1);
         assert_eq!(first.updated_tracks, 0);
         // `duration` is persisted with INTEGER affinity; listing tracks must
         // read that representation without requiring SQLite to coerce it to REAL.
-        assert_eq!(get_all_tracks(&conn).unwrap()[0].duration, 180);
+        assert_eq!(get_tracks_page(&conn, 1_000, 0).unwrap()[0].duration, 180);
 
         let second = persist_metadata(&conn, vec![track], vec![2]).unwrap();
         assert_eq!(second.added_tracks, 0);
@@ -2897,7 +2875,7 @@ mod tests {
         let third = persist_metadata(&conn, vec![second_track], vec![3]).unwrap();
         assert_eq!(third.added_tracks, 1);
         assert_eq!(
-            get_all_tracks(&conn)
+            get_tracks_page(&conn, 1_000, 0)
                 .unwrap()
                 .into_iter()
                 .find(|track| track.title == "Second Track")
@@ -2944,7 +2922,7 @@ mod tests {
             .unwrap(),
             0
         );
-        assert_eq!(get_all_tracks(&conn).unwrap().len(), 1);
+        assert_eq!(get_tracks_page(&conn, 1_000, 0).unwrap().len(), 1);
         let release = get_release_by_id(&conn, "1").unwrap();
         assert_eq!(release.total_tracks, 1);
         assert_eq!(release.duration, 180);
@@ -3070,7 +3048,7 @@ mod tests {
             .unwrap(),
             0
         );
-        assert_eq!(get_all_tracks(&conn).unwrap().len(), 1);
+        assert_eq!(get_tracks_page(&conn, 1_000, 0).unwrap().len(), 1);
         assert_eq!(
             get_release_by_id(&conn, "1").unwrap().artwork,
             "/covers/cover.jpg"
@@ -3167,14 +3145,22 @@ mod tests {
         assert_eq!(short_query.releases.len(), 1);
         assert_eq!(short_query.artists.len(), 1);
         assert_eq!(short_query.playlists.len(), 1);
-        assert!(get_all_tracks(&conn).unwrap()[0].artwork.is_empty());
+        assert!(
+            get_tracks_page(&conn, 1_000, 0).unwrap()[0]
+                .artwork
+                .is_empty()
+        );
         assert!(get_song_by_id(&conn, "1").unwrap()[0].artwork.is_empty());
         assert!(
             get_songs_by_release_id(&conn, "1").unwrap()[0]
                 .artwork
                 .is_empty()
         );
-        assert!(get_all_releases(&conn).unwrap()[0].artwork.is_empty());
+        assert!(
+            get_releases_page(&conn, 1_000, 0).unwrap()[0]
+                .artwork
+                .is_empty()
+        );
         assert_eq!(get_release_by_id(&conn, "1").unwrap().release_date, "2024");
     }
 
@@ -3566,7 +3552,7 @@ mod tests {
         assert!((extracted.metadata[0].duration - 1.0).abs() < 0.01);
         let written = persist_metadata(&conn, extracted.metadata, extracted.mtimes).unwrap();
         assert_eq!(written.added_tracks, 1);
-        let mut tracks = get_all_tracks(&conn).unwrap();
+        let mut tracks = get_tracks_page(&conn, 1_000, 0).unwrap();
         let track = tracks.remove(0);
         assert_eq!(track.title, "tone");
         assert_eq!(track.artist_name, "Unknown Artist");

@@ -79,22 +79,6 @@ impl SqliteCatalogReleaseQuery {
         })?
     }
 
-    pub(crate) async fn all(&self) -> Result<Vec<CatalogRelease>, CatalogReleaseLookupError> {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool
-                .get()
-                .map_err(|error| CatalogReleaseLookupError::Storage(error.to_string()))?;
-            crate::database::operations::get_all_releases(&conn)
-                .map(|releases| releases.into_iter().map(release_from_row).collect())
-                .map_err(|error| CatalogReleaseLookupError::Storage(error.to_string()))
-        })
-        .await
-        .map_err(|error| {
-            CatalogReleaseLookupError::Storage(format!("Blocking database task failed: {error}"))
-        })?
-    }
-
     pub(crate) async fn playback_recency(
         &self,
     ) -> Result<Vec<(ReleaseId, String)>, CatalogReleaseLookupError> {

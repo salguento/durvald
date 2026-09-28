@@ -48,22 +48,6 @@ impl SqliteCatalogTrackQuery {
         })?
     }
 
-    pub(crate) async fn all(&self) -> Result<Vec<CatalogTrack>, CatalogTrackLookupError> {
-        let db_pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = db_pool
-                .get()
-                .map_err(|error| CatalogTrackLookupError::Storage(error.to_string()))?;
-            crate::database::operations::get_all_tracks(&conn)
-                .map(|tracks| tracks.into_iter().map(track_from_row).collect())
-                .map_err(|error| CatalogTrackLookupError::Storage(error.to_string()))
-        })
-        .await
-        .map_err(|error| {
-            CatalogTrackLookupError::Storage(format!("Blocking database task failed: {error}"))
-        })?
-    }
-
     pub(crate) async fn page(
         &self,
         fetch_size: u64,
