@@ -258,6 +258,17 @@ impl DurvaldCore {
             .await
     }
 
+    /// Persists one explicitly selected remote result and returns its canonical
+    /// catalog identity. Merely listing remote search results performs no write.
+    pub async fn materialize_remote_artist(
+        &self,
+        selection: RemoteArtistSelection,
+    ) -> CoreResult<Artist> {
+        self.enrichment_application
+            .materialize_remote_artist(selection)
+            .await
+    }
+
     /// Reads the local enrichment cache, even when enrichment is disabled/offline.
     /// Never resolves identities or makes an HTTP request.
     pub async fn artist_details(
@@ -921,6 +932,31 @@ mod tests {
         };
         core.configure_enrichment(settings).await.unwrap();
 
+        let selected = RemoteArtistSelection {
+            name: "Remote Homonym".into(),
+            provider: "last_fm".into(),
+            external_id: "https://www.last.fm/music/remote-one".into(),
+            musicbrainz_id: Some("22222222-2222-4222-8222-222222222222".into()),
+        };
+        let remote_artist = core
+            .materialize_remote_artist(selected.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            core.materialize_remote_artist(selected).await.unwrap(),
+            remote_artist
+        );
+        let homonym = core
+            .materialize_remote_artist(RemoteArtistSelection {
+                name: "Remote Homonym".into(),
+                provider: "last_fm".into(),
+                external_id: "https://www.last.fm/music/remote-two".into(),
+                musicbrainz_id: Some("33333333-3333-4333-8333-333333333333".into()),
+            })
+            .await
+            .unwrap();
+        assert_ne!(remote_artist.id, homonym.id);
+
         // Cache reads must not touch the audio mutex, even while it is held.
         let player = core.playback_application.audio_player().lock().await;
         let details = tokio::time::timeout(
@@ -982,6 +1018,10 @@ mod tests {
 
         let reopened = DurvaldCore::open_with_mock_audio(config).await.unwrap();
         assert_eq!(reopened.artist_identity(73).await.unwrap(), confirmed);
+        assert_eq!(
+            reopened.artist(remote_artist.id).await.unwrap(),
+            remote_artist
+        );
         assert_eq!(
             reopened.enrichment_settings().await.unwrap(),
             EnrichmentSettings {

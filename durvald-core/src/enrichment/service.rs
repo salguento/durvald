@@ -318,6 +318,33 @@ impl EnrichmentService {
         .await
     }
 
+    /// Persists exactly one remote result after an explicit user selection.
+    /// Fetching or displaying a search page must never call this operation.
+    pub async fn materialize_remote_artist(
+        &self,
+        selection: RemoteArtistSelection,
+    ) -> CoreResult<i64> {
+        let RemoteArtistSelection {
+            name,
+            provider,
+            external_id,
+            musicbrainz_id,
+        } = selection;
+        let now = chrono::Utc::now().timestamp();
+        self.write_database_idempotent("remote_artist.materialize", move |conn| {
+            enrichment::upsert_discovered_artist(
+                conn,
+                &name,
+                &provider,
+                &external_id,
+                musicbrainz_id.as_deref(),
+                "remote_search",
+                now,
+            )
+        })
+        .await
+    }
+
     pub async fn confirm_artist_identity(
         &self,
         artist_id: i64,

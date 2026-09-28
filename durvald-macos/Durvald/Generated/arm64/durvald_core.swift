@@ -707,6 +707,12 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func libraryPaths() async throws  -> [String]
 
     /**
+     * Persists one explicitly selected remote result and returns its canonical
+     * catalog identity. Merely listing remote search results performs no write.
+     */
+    func materializeRemoteArtist(selection: RemoteArtistSelection) async throws  -> Artist
+
+    /**
      * Moves a track entry to another zero-based playlist position.
      */
     func movePlaylistTrack(playlistId: Int64, from: UInt64, to: UInt64) async throws
@@ -1655,6 +1661,27 @@ open func libraryPaths()async throws  -> [String] {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceString.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Persists one explicitly selected remote result and returns its canonical
+     * catalog identity. Merely listing remote search results performs no write.
+     */
+open func materializeRemoteArtist(selection: RemoteArtistSelection)async throws  -> Artist {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_materialize_remote_artist(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeRemoteArtistSelection.lower(selection)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeArtist.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -6282,6 +6309,83 @@ public func FfiConverterTypeReleasePage_lower(_ value: ReleasePage) -> RustBuffe
 
 
 /**
+ * One remote search result explicitly selected for persistence.
+ * Search result lists remain ephemeral until this value is submitted.
+ */
+public struct RemoteArtistSelection {
+    public var name: String
+    public var provider: String
+    public var externalId: String
+    public var musicbrainzId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(name: String, provider: String, externalId: String, musicbrainzId: String?) {
+        self.name = name
+        self.provider = provider
+        self.externalId = externalId
+        self.musicbrainzId = musicbrainzId
+    }
+}
+
+
+
+extension RemoteArtistSelection: Equatable, Hashable {
+    public static func ==(lhs: RemoteArtistSelection, rhs: RemoteArtistSelection) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.externalId != rhs.externalId {
+            return false
+        }
+        if lhs.musicbrainzId != rhs.musicbrainzId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(provider)
+        hasher.combine(externalId)
+        hasher.combine(musicbrainzId)
+    }
+}
+
+
+public struct FfiConverterTypeRemoteArtistSelection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RemoteArtistSelection {
+        return
+            try RemoteArtistSelection(
+                name: FfiConverterString.read(from: &buf),
+                provider: FfiConverterString.read(from: &buf),
+                externalId: FfiConverterString.read(from: &buf),
+                musicbrainzId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RemoteArtistSelection, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.provider, into: &buf)
+        FfiConverterString.write(value.externalId, into: &buf)
+        FfiConverterOptionString.write(value.musicbrainzId, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeRemoteArtistSelection_lift(_ buf: RustBuffer) throws -> RemoteArtistSelection {
+    return try FfiConverterTypeRemoteArtistSelection.lift(buf)
+}
+
+public func FfiConverterTypeRemoteArtistSelection_lower(_ value: RemoteArtistSelection) -> RustBuffer {
+    return FfiConverterTypeRemoteArtistSelection.lower(value)
+}
+
+
+/**
  * Library scan progress
  */
 public struct ScanProgress {
@@ -9271,6 +9375,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_library_paths() != 25229) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_materialize_remote_artist() != 7346) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_move_playlist_track() != 20004) {

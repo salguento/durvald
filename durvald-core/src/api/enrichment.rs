@@ -269,6 +269,17 @@ pub struct SimilarArtist {
     pub has_playable_sources: bool,
 }
 
+/// One remote search result explicitly selected for persistence.
+/// Search result lists remain ephemeral until this value is submitted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RemoteArtistSelection {
+    pub name: String,
+    pub provider: String,
+    pub external_id: String,
+    pub musicbrainz_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ArtistDetails {

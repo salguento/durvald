@@ -6,7 +6,7 @@ use crate::api::{
     ArtistDetails, ArtistDiscographyPage, ArtistFieldOverride, ArtistIdentity,
     ArtistIdentityCandidates, ArtistPopularTracks, ArtistProfileField, ArtistRefreshRequest,
     ArtistRefreshResult, CoreError, CoreResult, EnrichmentProvider, EnrichmentSettings,
-    ExternalReleaseDetails, Release,
+    ExternalReleaseDetails, Release, RemoteArtistSelection,
 };
 use crate::application::library::LibraryApplication;
 use crate::domain::ids::ArtistId;
@@ -67,6 +67,17 @@ impl EnrichmentApplication {
 
     pub(crate) async fn artist_identity(&self, artist_id: ArtistId) -> CoreResult<ArtistIdentity> {
         self.service.artist_identity(artist_id.get() as i64).await
+    }
+
+    pub(crate) async fn materialize_remote_artist(
+        &self,
+        selection: RemoteArtistSelection,
+    ) -> CoreResult<crate::api::Artist> {
+        let artist_id = self.service.materialize_remote_artist(selection).await?;
+        let artist_id = ArtistId::try_from(artist_id).map_err(|_| CoreError::Storage {
+            message: "Materialized artist has an invalid ID".into(),
+        })?;
+        self.library.artist(artist_id).await
     }
 
     pub(crate) async fn resolve_artist_candidates(
