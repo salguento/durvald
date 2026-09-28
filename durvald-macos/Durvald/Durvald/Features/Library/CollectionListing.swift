@@ -233,8 +233,13 @@ private struct CollectionListingGlassEffect: ViewModifier {
 }
 
 struct CollectionListingLayout<Content: View>: View {
+    static var mainGridMinimumCardWidth: CGFloat { 120 }
+    static var mainListArtworkSize: CGFloat { 42 }
+
     let mode: CollectionListingMode
     var isSidebar = false
+    var mainGridMinimumCardWidth = Self.mainGridMinimumCardWidth
+    var mainListArtworkSize = Self.mainListArtworkSize
     @ViewBuilder let content: (CGFloat) -> Content
 
     var body: some View {
@@ -246,7 +251,9 @@ struct CollectionListingLayout<Content: View>: View {
             case .compact, .standard: isSidebar ? 6 : 16
             }
             let width = max(1, geometry.size.width - padding * 2)
-            let target: CGFloat = mode.isGrid ? (isSidebar ? 66 : 120) : (isSidebar ? 110 : 192)
+            let target: CGFloat = mode.isGrid
+                ? (isSidebar ? 66 : mainGridMinimumCardWidth)
+                : (isSidebar ? 110 : 192)
             // Both grid modes keep the same column count. The standard grid
             // spends part of each column on gaps instead of growing the art.
             let count = AlbumGridLayout.columnCount(
@@ -264,7 +271,7 @@ struct CollectionListingLayout<Content: View>: View {
                         }
                     } else {
                         LazyVStack(alignment: .leading, spacing: isSidebar ? 2 : 4) {
-                            content(isSidebar ? 32 : 42)
+                            content(isSidebar ? 32 : mainListArtworkSize)
                         }
                     }
                 }

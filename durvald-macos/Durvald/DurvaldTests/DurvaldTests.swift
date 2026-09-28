@@ -563,6 +563,13 @@ final class LibraryNavigationHistoryTests: XCTestCase {
 }
 
 final class AlbumGridLayoutTests: XCTestCase {
+    func testAlbumsViewUsesRoomierArtworkWithoutChangingSharedDefaults() {
+        XCTAssertEqual(AlbumsViewLayout.listArtworkSize, 96)
+        XCTAssertEqual(AlbumsViewLayout.gridMinimumCardWidth, 240)
+        XCTAssertEqual(CollectionListingLayout<EmptyView>.mainListArtworkSize, 42)
+        XCTAssertEqual(CollectionListingLayout<EmptyView>.mainGridMinimumCardWidth, 120)
+    }
+
     func testColumnCountChangesOnlyAtWholeCardThresholds() {
         XCTAssertEqual(AlbumGridLayout.columnCount(for: 447), 1)
         XCTAssertEqual(AlbumGridLayout.columnCount(for: 448), 2)

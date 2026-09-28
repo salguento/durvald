@@ -55,6 +55,11 @@ enum AlbumListingTypography {
     )
 }
 
+enum AlbumsViewLayout {
+    static let gridMinimumCardWidth: CGFloat = 240
+    static let listArtworkSize: CGFloat = 96
+}
+
 struct AlbumsView: View {
     @AppStorage("albums.listingMode") private var listingMode: CollectionListingMode = .standardGrid
     @AppStorage("albums.listingOrder") private var listingOrder: CollectionListingOrder = .recent
@@ -64,7 +69,11 @@ struct AlbumsView: View {
     let onSelectAlbum: (Release) -> Void
 
     var body: some View {
-        CollectionListingLayout(mode: listingMode) { size in
+        CollectionListingLayout(
+            mode: listingMode,
+            mainGridMinimumCardWidth: AlbumsViewLayout.gridMinimumCardWidth,
+            mainListArtworkSize: AlbumsViewLayout.listArtworkSize
+        ) { size in
             ForEach(orderedReleases, id: \.id) { release in
                 CollectionListingItem(title: release.title, subtitle: release.artist, isFavorite: release.isFavorite, mode: listingMode, artworkSize: size, action: { onSelectAlbum(release) }) {
                     ArtworkView(artworkID: release.artworkId, size: size)
