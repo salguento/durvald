@@ -1533,7 +1533,7 @@ struct ArtistView: View {
             }
         }
         .font(.body.weight(.medium))
-        .tint(Color.accentColor.opacity(appearsActive ? 1 : 0.63))
+        .tint(Color(nsColor: .controlAccentColor).opacity(appearsActive ? 1 : 0.63))
     }
 
     private var visibleTracks: [Track] {

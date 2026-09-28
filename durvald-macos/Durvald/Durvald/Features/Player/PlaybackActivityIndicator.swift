@@ -6,19 +6,17 @@ import SwiftUI
 /// participating in the album's view updates and playback observations.
 struct PlaybackActivityIndicator: NSViewRepresentable {
     let isAnimating: Bool
-    @Environment(\.self) private var environment
 
     func makeNSView(context: Context) -> PlaybackActivityView {
         PlaybackActivityView(frame: .zero)
     }
 
     func updateNSView(_ view: PlaybackActivityView, context: Context) {
-        let accent = Color.accentColor.resolve(in: environment)
-        view.configure(
-            color: NSColor(srgbRed: CGFloat(accent.red), green: CGFloat(accent.green),
-                           blue: CGFloat(accent.blue), alpha: CGFloat(accent.opacity)),
-            isAnimating: isAnimating
-        )
+        var accent = NSColor.controlAccentColor
+        view.effectiveAppearance.performAsCurrentDrawingAppearance {
+            accent = NSColor.controlAccentColor.usingColorSpace(.deviceRGB) ?? .controlAccentColor
+        }
+        view.configure(color: accent, isAnimating: isAnimating)
     }
 
     static func dismantleNSView(_ view: PlaybackActivityView, coordinator: ()) {
@@ -36,6 +34,12 @@ final class PlaybackActivityView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         for (index, bar) in bars.enumerated() {
+            bar.actions = [
+                "backgroundColor": NSNull(),
+                "bounds": NSNull(),
+                "position": NSNull(),
+                "transform": NSNull()
+            ]
             bar.anchorPoint = CGPoint(x: 0.5, y: 0)
             bar.cornerRadius = 1
             bar.transform = CATransform3DMakeScale(1, restingScales[index], 1)
@@ -53,20 +57,14 @@ final class PlaybackActivityView: NSView {
 
     override func layout() {
         super.layout()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
         for (index, bar) in bars.enumerated() {
             bar.bounds = CGRect(x: 0, y: 0, width: 2, height: bounds.height)
             bar.position = CGPoint(x: bounds.midX + (CGFloat(index) - 1.5) * 4, y: 0)
         }
-        CATransaction.commit()
     }
 
     func configure(color: NSColor, isAnimating: Bool) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
         for bar in bars { bar.backgroundColor = color.cgColor }
-        CATransaction.commit()
         shouldAnimate = isAnimating
         updateAnimations()
     }
