@@ -99,6 +99,8 @@ struct PlaylistView: View {
     @State private var trackDropTarget: TrackDropTarget?
     @State private var isCompletingTrackDrop = false
     @State private var isPersistingTrackOrder = false
+    @State private var isExporting = false
+    @State private var exportMessage: String?
     @FocusState private var isTrackSearchFocused: Bool
 
     private let artworkSize: CGFloat = 268
@@ -221,6 +223,13 @@ struct PlaylistView: View {
                             favorite: !currentPlaylist.isFavorite
                         )
                     }
+                    Divider()
+                    Button("Exportar M3U8 — caminhos relativos", systemImage: "square.and.arrow.up") {
+                        export(relativePaths: true)
+                    }
+                    Button("Exportar M3U8 — caminhos absolutos", systemImage: "square.and.arrow.up") {
+                        export(relativePaths: false)
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 36, height: 36)
@@ -267,6 +276,33 @@ struct PlaylistView: View {
                 .help("Organizar ou filtrar faixas")
                 .accessibilityLabel("Organizar ou filtrar faixas")
                 .accessibilityIdentifier("playlist.tracks.organize")
+            }
+        }
+        .alert("Exportação de playlist", isPresented: Binding(
+            get: { exportMessage != nil },
+            set: { if !$0 { exportMessage = nil } }
+        )) {
+            Button("OK") { exportMessage = nil }
+        } message: {
+            Text(exportMessage ?? "")
+        }
+    }
+
+    private func export(relativePaths: Bool) {
+        guard !isExporting else { return }
+        isExporting = true
+        Task {
+            defer { isExporting = false }
+            do {
+                let url = try await store.exportM3U8(
+                    playlist: currentPlaylist,
+                    relativePaths: relativePaths
+                )
+                exportMessage = "Playlist exportada para \(url.path)."
+            } catch PlaylistTransferError.exportCancelled {
+                // The save panel already communicates cancellation.
+            } catch {
+                exportMessage = "Não foi possível exportar: \(error.localizedDescription)"
             }
         }
     }

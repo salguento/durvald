@@ -334,6 +334,76 @@ final class DurvaldCoreStore {
         }
     }
 
+    func importM3U8(from url: URL) async throws -> PlaylistImportReport {
+        guard let core else { throw PlaylistTransferError.cannotCreatePlaylist }
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        let document = try M3U8Playlist(data: Data(contentsOf: url))
+        let requestedURLs = document.resolvedURLs(relativeTo: url)
+
+        var indexedTracks: [Track] = []
+        var offset: UInt64 = 0
+        repeat {
+            let page = try await core.tracksPage(pageSize: Self.libraryPageSize, offset: offset)
+            indexedTracks.append(contentsOf: page.items)
+            guard let next = page.nextOffset else { break }
+            offset = next
+        } while true
+        let tracksByPath = Dictionary(indexedTracks.map {
+            (PlaylistTransferService.canonicalPath(URL(fileURLWithPath: $0.filePath)), $0)
+        }, uniquingKeysWith: { first, _ in first })
+
+        let playlistName = url.deletingPathExtension().lastPathComponent
+        guard let playlist = await createPlaylist(named: playlistName) else {
+            throw PlaylistTransferError.cannotCreatePlaylist
+        }
+        var importedCount = 0
+        var missing: [String] = []
+        var failures: [String] = []
+        for requestedURL in requestedURLs {
+            let path = PlaylistTransferService.canonicalPath(requestedURL)
+            guard let track = tracksByPath[path] else {
+                missing.append(requestedURL.path)
+                continue
+            }
+            do {
+                _ = try await core.addTrackToPlaylist(
+                    playlistId: playlist.id,
+                    trackId: track.id,
+                    position: UInt64(importedCount)
+                )
+                importedCount += 1
+            } catch {
+                failures.append("\(requestedURL.path): \(error.localizedDescription)")
+            }
+        }
+        let refreshed = (try? await core.playlist(playlistId: playlist.id)) ?? playlist
+        if let index = playlists.firstIndex(where: { $0.id == playlist.id }) {
+            playlists[index] = refreshed
+        }
+        return PlaylistImportReport(
+            playlist: refreshed,
+            importedCount: importedCount,
+            missingPaths: missing,
+            failures: failures
+        )
+    }
+
+    func exportM3U8(playlist: Playlist, relativePaths: Bool) async throws -> URL {
+        guard let core else { throw PlaylistTransferError.cannotCreatePlaylist }
+        let tracks = try await core.playlistTracks(playlistId: playlist.id)
+        guard let destination = await PlaylistTransferService.chooseExportURL(defaultName: playlist.name) else {
+            throw PlaylistTransferError.exportCancelled
+        }
+        let content = PlaylistTransferService.m3u8(
+            tracks: tracks,
+            destination: destination,
+            relativePaths: relativePaths
+        )
+        try PlaylistTransferService.write(content, to: destination)
+        return destination
+    }
+
     @discardableResult
     func updatePlaylist(
         id: Int64,

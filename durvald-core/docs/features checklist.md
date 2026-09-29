@@ -83,6 +83,7 @@ Legenda: **✅ implementado**, **🟡 parcial**, **❌ não implementado**.
 | Funcionalidade | Estado | Evidência / limitação atual |
 | --- | --- | --- |
 | Playlists manuais | ✅ | Criar, editar, excluir e adicionar/remover faixas; descrição e artwork próprios. |
+| Importar/exportar playlists | ✅ | M3U8 com caminhos relativos ou absolutos, preservação da ordem e relatório de arquivos ausentes ou não indexados. |
 | Busca dentro da playlist | ✅ | Filtro local por título, artista ou álbum. |
 | Ordenação visual | ✅ | Ordem original, título, artista e duração. |
 | Reordenação permanente por drag and drop | ✅ | A UI chama `movePlaylistTrack` e persiste a nova posição. |
@@ -174,6 +175,7 @@ Objetivo: transformar a boa indexação existente em uma biblioteca fácil de ma
    - começar por M3U8 com caminhos relativos e absolutos;
    - resolver arquivos pelo caminho e oferecer relatório dos ausentes;
    - depois adicionar M3U legado e PLS se houver necessidade.
+   - **Concluído para M3U8:** M3U legado e PLS permanecem condicionados à necessidade real.
 
 4. **Reparo de arquivos movidos e duplicatas**
    - identificar caminhos quebrados;

@@ -929,3 +929,42 @@ final class BatchMetadataDraftTests: XCTestCase {
         XCTAssertEqual(result.discNumber, source.discNumber)
     }
 }
+
+final class PlaylistTransferTests: XCTestCase {
+    func testM3U8ParserResolvesRelativeAbsoluteAndFileURLs() throws {
+        let text = """
+        \u{FEFF}#EXTM3U
+        #EXTINF:12,Example
+        Music/relative.flac
+        /Volumes/Music/absolute.mp3
+        file:///Users/example/encoded%20name.ogg
+        """
+        let playlist = try M3U8Playlist(data: Data(text.utf8))
+        let source = URL(fileURLWithPath: "/Users/example/listas/test.m3u8")
+
+        let paths = playlist.resolvedURLs(relativeTo: source).map(\.path)
+
+        XCTAssertEqual(paths, [
+            "/Users/example/listas/Music/relative.flac",
+            "/Volumes/Music/absolute.mp3",
+            "/Users/example/encoded name.ogg"
+        ])
+    }
+
+    func testM3U8ExportSupportsRelativeAndAbsolutePaths() {
+        var track = Fixtures.track
+        track.filePath = "/Music/Artist/Album/song.flac"
+        let destination = URL(fileURLWithPath: "/Music/Playlists/Favorites.m3u8")
+
+        let relative = PlaylistTransferService.m3u8(
+            tracks: [track], destination: destination, relativePaths: true
+        )
+        let absolute = PlaylistTransferService.m3u8(
+            tracks: [track], destination: destination, relativePaths: false
+        )
+
+        XCTAssertTrue(relative.contains("../Artist/Album/song.flac"))
+        XCTAssertTrue(absolute.contains("/Music/Artist/Album/song.flac"))
+        XCTAssertTrue(relative.hasPrefix("#EXTM3U\n#EXTINF:"))
+    }
+}
