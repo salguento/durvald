@@ -29,6 +29,7 @@ enum CollectionListingOrder: String, CaseIterable, Identifiable {
     case alphabetical
     case artist
     case releaseDate
+    case rating
 
     var id: Self { self }
 
@@ -39,6 +40,7 @@ enum CollectionListingOrder: String, CaseIterable, Identifiable {
         case .alphabetical: "Alfabética"
         case .artist: "Artista"
         case .releaseDate: "Lançamento"
+        case .rating: "Avaliação"
         }
     }
 
@@ -68,6 +70,8 @@ enum CollectionListingSorter {
                 if lhs.releaseDate != rhs.releaseDate {
                     return (lhs.releaseDate ?? "") > (rhs.releaseDate ?? "")
                 }
+            case .rating:
+                if lhs.rating != rhs.rating { return (lhs.rating ?? 0) > (rhs.rating ?? 0) }
             }
             return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
         }
@@ -96,6 +100,10 @@ enum CollectionListingSorter {
                 let left = leftReleases.compactMap(\.releaseDate).max()
                 let right = rightReleases.compactMap(\.releaseDate).max()
                 if left != right { return (left ?? "") > (right ?? "") }
+            case .rating:
+                let left = leftReleases.compactMap(\.rating).max() ?? 0
+                let right = rightReleases.compactMap(\.rating).max() ?? 0
+                if left != right { return left > right }
             case .alphabetical, .artist:
                 break
             }
@@ -138,6 +146,10 @@ enum CollectionListingSorter {
                     releaseDates: releaseDates
                 )
                 if left != right { return (left ?? "") > (right ?? "") }
+            case .rating:
+                let left = (tracksByPlaylist[lhs.id] ?? []).compactMap(\.rating).max() ?? 0
+                let right = (tracksByPlaylist[rhs.id] ?? []).compactMap(\.rating).max() ?? 0
+                if left != right { return left > right }
             }
             return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
@@ -162,10 +174,12 @@ enum CollectionListingSorter {
 struct CollectionListingMenu: View {
     @Binding var mode: CollectionListingMode
     @Binding var order: CollectionListingOrder
+    var minimumRating: Binding<Int>? = nil
     var controlSize: CGFloat = 32
     var controlWidth: CGFloat? = nil
     var usesGlassEffect = true
     @State private var isPresented = false
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
 
     var body: some View {
         Button {
@@ -188,7 +202,7 @@ struct CollectionListingMenu: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                ForEach(CollectionListingOrder.allCases) { option in
+                ForEach(CollectionListingOrder.allCases.filter { ratingsEnabled || $0 != .rating }) { option in
                     Button {
                         order = option
                         isPresented = false
@@ -202,6 +216,20 @@ struct CollectionListingMenu: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                }
+
+                if ratingsEnabled, let minimumRating {
+                    Divider()
+                    Text("Nota mínima")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("Nota mínima", selection: minimumRating) {
+                        Text("Todas").tag(0)
+                        ForEach(1...5, id: \.self) { value in
+                            Text("\(value)+ estrelas").tag(value)
+                        }
+                    }
+                    .labelsHidden()
                 }
 
                 Divider()

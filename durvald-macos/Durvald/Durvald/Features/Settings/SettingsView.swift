@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var crossFadeDuration = 5
     @State private var normalizeVolume = false
     @State private var explicitContent = true
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
 
     var body: some View {
         TabView {
@@ -19,6 +20,8 @@ struct SettingsView: View {
                 .disabled(!crossFade)
                 Toggle("Normalizar volume", isOn: $normalizeVolume)
                 Toggle("Permitir conteúdo explícito", isOn: $explicitContent)
+                Toggle("Exibir avaliações", isOn: $ratingsEnabled)
+                    .accessibilityIdentifier("settings.ratings.enabled")
 
                 HStack {
                     Spacer()

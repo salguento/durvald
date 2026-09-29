@@ -72,7 +72,7 @@ Legenda: **✅ implementado**, **🟡 parcial**, **❌ não implementado**.
 | Navegação por artista, álbum e faixa | ✅ | Telas completas no cliente macOS. |
 | Paginação para bibliotecas grandes | ✅ | Faixas, álbuns e histórico são carregados em páginas; o core limita páginas a 200 itens. |
 | Favoritos | ✅ | Faixas, álbuns e playlists. |
-| Rating de 0 a 5 | 🟡 | Persistência e APIs existem para faixas e álbuns, e o rating já influencia ordenação interna, mas falta um controle de edição claro na UI. |
+| Rating de 0 a 5 | ✅ | Faixas e álbuns podem receber ou limpar notas pela listagem, detalhes, tela de informações e menus; há ordenação, filtro mínimo e uma preferência para ocultar esses controles. |
 | Play count | ✅ | Persistido no modelo de faixa. |
 | Histórico de reprodução | ✅ | Persistente, paginado e com tela própria; permite remoção e limpeza. |
 | Letras | ❌ | Não há leitura de letras locais nem interface de exibição. |
@@ -161,6 +161,7 @@ Objetivo: transformar a boa indexação existente em uma biblioteca fácil de ma
    - editar e limpar notas de faixa e álbum;
    - expor rating em menus e na tela de informações;
    - permitir ordenação e filtros por nota.
+   - **Concluído:** os controles podem ser ocultados nos Ajustes sem remover as notas persistidas.
 
 2. **Edição de metadados em lote**
    - seleção múltipla com campos comuns e estado “valores diferentes”;

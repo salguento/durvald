@@ -15,6 +15,7 @@ enum ArtistsViewLayout {
 struct ArtistsView: View {
     @AppStorage("artists.listingMode") private var listingMode: CollectionListingMode = .standardGrid
     @AppStorage("artists.listingOrder") private var listingOrder: CollectionListingOrder = .alphabetical
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     @Environment(DurvaldCoreStore.self) private var store
     @State private var lastPlayedByRelease: [Int64: String] = [:]
 
@@ -55,7 +56,7 @@ struct ArtistsView: View {
     private var orderedArtists: [Artist] {
         CollectionListingSorter.artists(
             store.artists,
-            order: listingOrder,
+            order: ratingsEnabled || listingOrder != .rating ? listingOrder : .alphabetical,
             releases: store.releases,
             lastPlayedByRelease: lastPlayedByRelease
         )

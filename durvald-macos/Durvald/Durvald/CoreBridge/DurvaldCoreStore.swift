@@ -1374,6 +1374,34 @@ final class DurvaldCoreStore {
         }
     }
 
+    func setTrackRating(trackID: Int64, rating: UInt8?) async {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
+            return
+        }
+        let previous = tracks.first(where: { $0.id == trackID })?.rating
+        let previousPlaybackRating = playback?.currentTrack?.id == trackID
+            ? playback?.currentTrack?.rating
+            : nil
+        if let index = tracks.firstIndex(where: { $0.id == trackID }) {
+            tracks[index].rating = rating
+        }
+        if playback?.currentTrack?.id == trackID {
+            playback?.currentTrack?.rating = rating
+        }
+        do {
+            try await core.setTrackRating(trackId: trackID, rating: rating)
+        } catch {
+            if let index = tracks.firstIndex(where: { $0.id == trackID }) {
+                tracks[index].rating = previous
+            }
+            if playback?.currentTrack?.id == trackID {
+                playback?.currentTrack?.rating = previousPlaybackRating
+            }
+            errorMessage = String(describing: error)
+        }
+    }
+
     func refreshAfterMetadataEdit(_ info: TrackInfo) async {
         guard let core else { return }
         if playback?.currentTrack?.id == info.track.id { playback?.currentTrack = info.track }
@@ -1408,6 +1436,27 @@ final class DurvaldCoreStore {
                     releases[index].isFavorite = favorite
                 }
             } catch {
+                errorMessage = String(describing: error)
+            }
+        }
+    }
+
+    func setReleaseRating(releaseID: Int64, rating: UInt8?) {
+        guard let core else {
+            errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
+            return
+        }
+        let previous = releases.first(where: { $0.id == releaseID })?.rating
+        if let index = releases.firstIndex(where: { $0.id == releaseID }) {
+            releases[index].rating = rating
+        }
+        Task {
+            do {
+                try await core.setReleaseRating(releaseId: releaseID, rating: rating)
+            } catch {
+                if let index = releases.firstIndex(where: { $0.id == releaseID }) {
+                    releases[index].rating = previous
+                }
                 errorMessage = String(describing: error)
             }
         }

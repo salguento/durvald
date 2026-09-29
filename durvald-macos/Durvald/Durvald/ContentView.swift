@@ -24,6 +24,7 @@ struct ContentView: View {
     @AppStorage("albums.listingOrder") private var albumListingOrder: CollectionListingOrder = .recent
     @AppStorage("artists.listingOrder") private var artistListingOrder: CollectionListingOrder = .alphabetical
     @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
+    @AppStorage("albums.minimumRating") private var albumMinimumRating = 0
 
     @State private var queueColumnWidth: CGFloat = 300
     @State private var isTopbarHovered = false
@@ -292,6 +293,7 @@ struct ContentView: View {
                     CollectionListingMenu(
                         mode: listingModeBinding(for: destination),
                         order: listingOrderBinding(for: destination),
+                        minimumRating: destination == .albums ? $albumMinimumRating : nil,
                         controlSize: 36,
                         controlWidth: 38
                     )

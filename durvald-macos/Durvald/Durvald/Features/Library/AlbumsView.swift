@@ -63,6 +63,8 @@ enum AlbumsViewLayout {
 struct AlbumsView: View {
     @AppStorage("albums.listingMode") private var listingMode: CollectionListingMode = .standardGrid
     @AppStorage("albums.listingOrder") private var listingOrder: CollectionListingOrder = .recent
+    @AppStorage("albums.minimumRating") private var minimumRating = 0
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     @Environment(DurvaldCoreStore.self) private var store
     @State private var lastPlayedByRelease: [Int64: String] = [:]
 
@@ -93,8 +95,10 @@ struct AlbumsView: View {
 
     private var orderedReleases: [Release] {
         CollectionListingSorter.albums(
-            store.releases,
-            order: listingOrder,
+            store.releases.filter {
+                !ratingsEnabled || minimumRating == 0 || Int($0.rating ?? 0) >= minimumRating
+            },
+            order: ratingsEnabled || listingOrder != .rating ? listingOrder : .recent,
             lastPlayedByRelease: lastPlayedByRelease
         )
     }

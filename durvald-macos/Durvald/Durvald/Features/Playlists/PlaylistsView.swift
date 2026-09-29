@@ -4,6 +4,7 @@ struct PlaylistsView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @AppStorage("playlists.listingMode") private var listingMode: CollectionListingMode = .standard
     @AppStorage("playlists.listingOrder") private var listingOrder: CollectionListingOrder = .recent
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     @State private var tracksByPlaylist: [Int64: [Track]] = [:]
     let onSelectPlaylist: (Playlist) -> Void
 
@@ -25,7 +26,7 @@ struct PlaylistsView: View {
     private var orderedPlaylists: [Playlist] {
         CollectionListingSorter.playlists(
             store.playlists,
-            order: listingOrder,
+            order: ratingsEnabled || listingOrder != .rating ? listingOrder : .recent,
             tracksByPlaylist: tracksByPlaylist,
             releases: store.releases
         )
@@ -36,7 +37,8 @@ struct PlaylistsView: View {
     }
 
     private func loadOrderingTracksIfNeeded() async {
-        guard listingOrder == .recent || listingOrder == .artist || listingOrder == .releaseDate,
+        guard listingOrder == .recent || listingOrder == .artist || listingOrder == .releaseDate
+                || (ratingsEnabled && listingOrder == .rating),
               let core = store.core else { return }
         var loaded: [Int64: [Track]] = [:]
         for playlist in store.playlists {

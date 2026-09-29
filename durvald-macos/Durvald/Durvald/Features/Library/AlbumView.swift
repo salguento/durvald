@@ -6,6 +6,7 @@ struct AlbumView: View {
         case title
         case artist
         case duration
+        case rating
 
         var id: Self { self }
 
@@ -15,6 +16,7 @@ struct AlbumView: View {
             case .title: "Título"
             case .artist: "Artista"
             case .duration: "Duração"
+            case .rating: "Avaliação"
             }
         }
     }
@@ -32,6 +34,8 @@ struct AlbumView: View {
     @State private var isLoading = true
     @State private var trackSearchText = ""
     @State private var trackOrder: TrackOrder = .album
+    @State private var minimumTrackRating: UInt8 = 0
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     @FocusState private var isTrackSearchFocused: Bool
 
     private let artworkSize: CGFloat = 268
@@ -164,6 +168,17 @@ struct AlbumView: View {
                     if let currentAlbum {
                         localReleaseMetadata(currentAlbum)
                             .padding(.top, 8)
+                        if ratingsEnabled {
+                            RatingControl(
+                                rating: currentAlbum.rating,
+                                isEditable: true,
+                                onChange: { rating in
+                                    store.setReleaseRating(releaseID: currentAlbum.id, rating: rating)
+                                }
+                            )
+                            .padding(.top, 6)
+                            .accessibilityIdentifier("album.rating")
+                        }
                     }
 
                     if let externalRelease {
@@ -239,6 +254,10 @@ struct AlbumView: View {
                         }
                         onSelectArtist(artist)
                     }
+                    if ratingsEnabled {
+                        Divider()
+                        ratingMenu(releaseID: album.id, rating: currentAlbum.rating)
+                    }
                 } label: {
                     Image(systemName: "ellipsis")
                         .frame(width: 36, height: 36)
@@ -271,8 +290,16 @@ struct AlbumView: View {
 
                 Menu {
                     Picker("Organizar", selection: $trackOrder) {
-                        ForEach(TrackOrder.allCases) { order in
+                        ForEach(TrackOrder.allCases.filter { ratingsEnabled || $0 != .rating }) { order in
                             Text(order.title).tag(order)
+                        }
+                    }
+                    if ratingsEnabled {
+                        Picker("Nota mínima", selection: $minimumTrackRating) {
+                            Text("Todas").tag(UInt8(0))
+                            ForEach(1...5, id: \.self) { value in
+                                Text("\(value)+ estrelas").tag(UInt8(value))
+                            }
                         }
                     }
                 } label: {
@@ -285,6 +312,25 @@ struct AlbumView: View {
                 .help("Organizar ou filtrar faixas")
                 .accessibilityLabel("Organizar ou filtrar faixas")
                 .accessibilityIdentifier("album.tracks.organize")
+        }
+    }
+
+    private func ratingMenu(releaseID: Int64, rating: UInt8?) -> some View {
+        Menu("Avaliação") {
+            Button("Sem avaliação") {
+                store.setReleaseRating(releaseID: releaseID, rating: nil)
+            }
+            Divider()
+            ForEach(1...5, id: \.self) { value in
+                Button {
+                    store.setReleaseRating(releaseID: releaseID, rating: UInt8(value))
+                } label: {
+                    Label(
+                        "\(value) de 5",
+                        systemImage: rating == UInt8(value) ? "checkmark" : "star"
+                    )
+                }
+            }
         }
     }
 
@@ -496,6 +542,9 @@ struct AlbumView: View {
                     || $0.artist.localizedStandardContains(query)
             }
         }
+        if ratingsEnabled, minimumTrackRating > 0 {
+            visibleTracks = visibleTracks.filter { ($0.rating ?? 0) >= minimumTrackRating }
+        }
 
         switch trackOrder {
         case .album:
@@ -506,6 +555,8 @@ struct AlbumView: View {
             visibleTracks.sort { $0.artist.localizedStandardCompare($1.artist) == .orderedAscending }
         case .duration:
             visibleTracks.sort { $0.durationSeconds < $1.durationSeconds }
+        case .rating:
+            visibleTracks.sort { ($0.rating ?? 0) > ($1.rating ?? 0) }
         }
 
         return visibleTracks
@@ -533,6 +584,16 @@ struct AlbumView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+
+            if ratingsEnabled {
+                RatingControl(
+                    rating: track.rating,
+                    isEditable: true,
+                    onChange: { rating in
+                        Task { await store.setTrackRating(trackID: track.id, rating: rating) }
+                    }
+                )
+            }
 
             Button {
                 Task { await store.addToQueue(trackID: track.id) }

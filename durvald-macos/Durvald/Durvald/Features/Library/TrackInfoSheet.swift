@@ -72,6 +72,7 @@ struct TrackInfoSheet: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @AppStorage("metadata.writeChangesToFiles") private var writeChangesToFiles = true
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     let trackID: Int64
 
     @State private var info: TrackInfo?
@@ -113,6 +114,16 @@ struct TrackInfoSheet: View {
                         Text(info.track.filePath)
                             .font(.caption)
                             .textSelection(.enabled)
+                    }
+                    if ratingsEnabled {
+                        Section("Avaliação") {
+                            RatingControl(
+                                rating: info.track.rating,
+                                isEditable: true,
+                                onChange: updateRating
+                            )
+                            .accessibilityIdentifier("trackInfo.rating")
+                        }
                     }
                 }
                 .formStyle(.grouped)
@@ -178,6 +189,18 @@ struct TrackInfoSheet: View {
         info = value
         draft = TrackMetadataDraft(value.metadata)
         original = draft
+    }
+
+    private func updateRating(_ rating: UInt8?) {
+        guard var info else { return }
+        info.track.rating = rating
+        self.info = info
+        Task {
+            await store.setTrackRating(trackID: trackID, rating: rating)
+            if let refreshed = try? await store.core?.trackInfo(trackId: trackID) {
+                self.info = refreshed
+            }
+        }
     }
 
     private func load() async {

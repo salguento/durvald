@@ -20,6 +20,22 @@ final class WindowSplitLayoutPolicyTests: XCTestCase {
 
 final class DurvaldCoreStoreTests: XCTestCase {
     @MainActor
+    func testTrackRatingPersistsAndUpdatesLibraryAndPlayer() async {
+        let snapshot = Fixtures.playingSnapshot
+        let fake = FakeDurvaldCore(snapshot: snapshot)
+        let store = DurvaldCoreStore(core: fake, playback: snapshot, tracks: [Fixtures.track])
+
+        await store.setTrackRating(trackID: Fixtures.track.id, rating: 4)
+        await store.setTrackRating(trackID: Fixtures.track.id, rating: nil)
+
+        XCTAssertEqual(fake.trackRatingChanges.count, 2)
+        XCTAssertEqual(fake.trackRatingChanges[0], 4)
+        XCTAssertNil(fake.trackRatingChanges[1])
+        XCTAssertNil(store.tracks.first?.rating)
+        XCTAssertNil(store.playback?.currentTrack?.rating)
+    }
+
+    @MainActor
     func testLatestReleaseReadsBeyondFirstCachedPage() async {
         let fake = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
         fake.discographyPages = [

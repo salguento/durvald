@@ -602,6 +602,9 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
             rootMenu.addItem(actionItem("Adicionar à fila", selector: #selector(addToQueue)))
             rootMenu.addItem(.separator())
             rootMenu.addItem(actionItem(album.isFavorite ? "Desfavoritar" : "Favoritar", selector: #selector(toggleFavorite)))
+            if RatingPreferences.isEnabled {
+                rootMenu.addItem(ratingMenu(current: album.rating))
+            }
             rootMenu.addItem(.separator())
             let share = NSMenuItem(title: "Compartilhar", action: nil, keyEquivalent: "")
             let shareMenu = NSMenu(title: "Compartilhar")
@@ -618,6 +621,9 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         rootMenu.addItem(.separator())
         rootMenu.addItem(actionItem(track?.isFavorite == true ? "Desfavoritar" : "Favoritar",
                                     selector: #selector(toggleFavorite)))
+        if RatingPreferences.isEnabled {
+            rootMenu.addItem(ratingMenu(current: track?.rating))
+        }
         rootMenu.addItem(.separator())
         rootMenu.addItem(actionItem("Ir ao artista", selector: #selector(goToArtist)))
         rootMenu.addItem(actionItem("Ir ao álbum", selector: #selector(goToAlbum)))
@@ -679,6 +685,24 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         return item
     }
 
+    private func ratingMenu(current: UInt8?) -> NSMenuItem {
+        let parent = NSMenuItem(title: "Avaliação", action: nil, keyEquivalent: "")
+        let menu = NSMenu(title: "Avaliação")
+        let clear = actionItem("Sem avaliação", selector: #selector(setRating(_:)))
+        clear.tag = 0
+        clear.state = current == nil ? .on : .off
+        menu.addItem(clear)
+        menu.addItem(.separator())
+        for value in 1...5 {
+            let item = actionItem("\(value) de 5", selector: #selector(setRating(_:)))
+            item.tag = value
+            item.state = current == UInt8(value) ? .on : .off
+            menu.addItem(item)
+        }
+        parent.submenu = menu
+        return parent
+    }
+
     @objc private func playPlaylist() {
         guard let sourcePlaylist, let store else { return }
         Task { await store.playPlaylist(playlistID: sourcePlaylist.id, startingAtPosition: 0, shuffleEnabled: false) }
@@ -723,6 +747,21 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         Task {
             await store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
             self.track = try? await store.core?.track(trackId: track.id)
+            rebuildRootMenu()
+        }
+    }
+    @objc private func setRating(_ sender: NSMenuItem) {
+        let rating = sender.tag == 0 ? nil : UInt8(sender.tag)
+        if let album, let store {
+            store.setReleaseRating(releaseID: album.id, rating: rating)
+            self.album?.rating = rating
+            rebuildRootMenu()
+            return
+        }
+        guard let track, let store else { return }
+        Task {
+            await store.setTrackRating(trackID: track.id, rating: rating)
+            self.track?.rating = rating
             rebuildRootMenu()
         }
     }
