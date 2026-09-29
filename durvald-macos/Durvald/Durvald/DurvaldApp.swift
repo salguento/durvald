@@ -42,6 +42,7 @@ struct DurvaldApp: App {
                         #endif
                         return
                     }
+                    coreStore.activateSystemMediaControls()
                     await coreStore.openCoreIfNeeded()
                 }
         }

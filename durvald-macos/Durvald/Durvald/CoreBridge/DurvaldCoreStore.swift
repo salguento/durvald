@@ -19,6 +19,7 @@ final class DurvaldCoreStore {
             let paused = playback?.isPaused ?? true
             if isPlaybackPaused != paused { isPlaybackPaused = paused }
             if playbackActivityChanged { startPlaybackPolling() }
+            nowPlaying?.update(playback, core: core)
         }
     }
     private(set) var activeTrackID: Int64?
@@ -44,6 +45,7 @@ final class DurvaldCoreStore {
 
     private(set) var core: DurvaldCore?
     @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
+    @ObservationIgnored private var nowPlaying: NowPlayingCoordinator?
     @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
     @ObservationIgnored private var deferredInitializationTask: Task<Void, Never>?
     private static let libraryBookmarksKey = "durvald.library-security-bookmarks"
@@ -93,6 +95,13 @@ final class DurvaldCoreStore {
         self.tracks = tracks
         self.releases = releases
         self.artists = artists
+    }
+
+    func activateSystemMediaControls() {
+        if nowPlaying == nil {
+            nowPlaying = NowPlayingCoordinator()
+        }
+        nowPlaying?.activate(for: self)
     }
 
 
@@ -413,7 +422,13 @@ final class DurvaldCoreStore {
     }
 
     func tracks(forReleaseID releaseID: Int64) async -> [Track] {
-        guard let core else { return [] }
+        guard let core else {
+            return tracks.filter { $0.releaseId == releaseID }.sorted {
+                if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
+                if $0.trackNumber != $1.trackNumber { return $0.trackNumber < $1.trackNumber }
+                return $0.id < $1.id
+            }
+        }
 
         let sendableCore = SendableCore(value: core)
 
@@ -440,7 +455,13 @@ final class DurvaldCoreStore {
     }
 
     func tracks(forArtistID artistID: Int64) async -> [Track] {
-        guard let core else { return [] }
+        guard let core else {
+            return tracks.filter { $0.artistId == artistID }.sorted {
+                if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
+                if $0.trackNumber != $1.trackNumber { return $0.trackNumber < $1.trackNumber }
+                return $0.id < $1.id
+            }
+        }
         let sendableCore = SendableCore(value: core)
 
         do {
@@ -454,7 +475,7 @@ final class DurvaldCoreStore {
     }
 
     func releases(forArtistID artistID: Int64) async -> [Release] {
-        guard let core else { return [] }
+        guard let core else { return releases.filter { $0.artistId == artistID } }
         let sendableCore = SendableCore(value: core)
 
         do {
