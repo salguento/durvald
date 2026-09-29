@@ -49,6 +49,14 @@ final class DurvaldCoreStore {
     @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
     @ObservationIgnored private var nowPlaying: NowPlayingCoordinator?
     @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
+    @ObservationIgnored private var libraryFileWatcher: LibraryFileWatcher?
+    @ObservationIgnored private var libraryWatchDebounceTask: Task<Void, Never>?
+    @ObservationIgnored private var libraryWatcherReconnectTask: Task<Void, Never>?
+    @ObservationIgnored private var periodicLibraryRescanTask: Task<Void, Never>?
+    @ObservationIgnored private var pendingAutomaticScanRoots = Set<String>()
+    @ObservationIgnored private var pendingFullLibraryRescan = false
+    @ObservationIgnored private var monitoredLibraryRoots = Set<String>()
+    @ObservationIgnored private var hasInitializedLibraryMonitoring = false
     @ObservationIgnored private var deferredInitializationTask: Task<Void, Never>?
     private static let libraryBookmarksKey = "durvald.library-security-bookmarks"
     @ObservationIgnored private var activeLibraryScopes: [URL] = []
@@ -71,6 +79,9 @@ final class DurvaldCoreStore {
     // transitions instead of crossing FFI and querying SQLite four times a second.
     private static let activePlaybackPollingInterval = Duration.seconds(1)
     private static let idlePlaybackPollingInterval = Duration.seconds(5)
+    private static let libraryWatchDebounceInterval = Duration.seconds(2)
+    private static let libraryWatcherReconnectInterval = Duration.seconds(30)
+    private static let periodicLibraryRescanInterval = Duration.seconds(6 * 60 * 60)
 
     private struct SeekRequest {
         let id: Int
@@ -201,6 +212,7 @@ final class DurvaldCoreStore {
                 guard !Task.isCancelled else { return }
 
                 self.libraryPaths = try await core.libraryPaths()
+                self.restartLibraryMonitoring()
                 self.appSettings = try await core.settings()
                 self.enrichmentSettings = try? await core.enrichmentSettings()
             } catch {
@@ -560,6 +572,7 @@ final class DurvaldCoreStore {
             guard let core = self.core else { return }
             try await core.addLibraryPath(path: url.path)
             self.libraryPaths = try await core.libraryPaths()
+            self.restartLibraryMonitoring()
         }
     }
 
@@ -569,9 +582,20 @@ final class DurvaldCoreStore {
 
     private func beginLibraryScan(
         allowNoConfiguredPaths: Bool = false,
+        paths: [String]? = nil,
+        isAutomatic: Bool = false,
         beforeScan: @escaping @MainActor () async throws -> Void = {}
     ) {
-        guard !isScanningLibrary else { return }
+        guard !isScanningLibrary else {
+            if isAutomatic {
+                if let paths {
+                    pendingAutomaticScanRoots.formUnion(paths)
+                } else {
+                    pendingFullLibraryRescan = true
+                }
+            }
+            return
+        }
         guard core != nil else {
             errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
             return
@@ -591,12 +615,17 @@ final class DurvaldCoreStore {
                 scanProgressPollingTask?.cancel()
                 scanProgressPollingTask = nil
                 scanProgress = nil
-                isScanningLibrary = false
+                finishLibraryScan()
             }
             do {
                 try await beforeScan()
                 guard let core else { return }
-                let result = try await core.scanConfiguredLibrary()
+                let result: ScanResult
+                if let paths {
+                    result = try await core.scanLibrary(paths: paths)
+                } else {
+                    result = try await core.scanConfiguredLibrary()
+                }
                 lastScanResult = result
                 // The core scan is over at this point. Hide cancellation before
                 // the post-scan catalog reload so a late click cannot target a
@@ -610,7 +639,9 @@ final class DurvaldCoreStore {
                 try await reloadPrimaryLibrary(using: core)
                 // Apply metadata already cached on disk, but never turn a local
                 // library scan into an implicit full-catalog network refresh.
-                await updateLibraryMetadata()
+                if !isAutomatic {
+                    await updateLibraryMetadata()
+                }
                 startDeferredInitialization(using: core)
 
                 if !result.errors.isEmpty {
@@ -620,6 +651,25 @@ final class DurvaldCoreStore {
                 }
             } catch {
                 errorMessage = String(describing: error)
+            }
+        }
+    }
+
+    private func finishLibraryScan() {
+        isScanningLibrary = false
+
+        if pendingFullLibraryRescan {
+            pendingFullLibraryRescan = false
+            pendingAutomaticScanRoots.removeAll()
+            let roots = monitoredLibraryRoots.sorted()
+            if !roots.isEmpty {
+                beginLibraryScan(paths: roots, isAutomatic: true)
+            }
+        } else if !pendingAutomaticScanRoots.isEmpty {
+            let roots = coalescedScanPaths(pendingAutomaticScanRoots)
+            pendingAutomaticScanRoots.removeAll()
+            if !roots.isEmpty {
+                beginLibraryScan(paths: roots, isAutomatic: true)
             }
         }
     }
@@ -639,6 +689,7 @@ final class DurvaldCoreStore {
                     standardizedLibraryPath(configuredPath)
                         == standardizedLibraryPath(path)
                 }
+                restartLibraryMonitoring()
             } catch {
                 errorMessage = String(describing: error)
             }
@@ -841,6 +892,170 @@ final class DurvaldCoreStore {
         }
     }
 
+    private func restartLibraryMonitoring() {
+        libraryFileWatcher?.stop()
+        libraryFileWatcher = nil
+        libraryWatcherReconnectTask?.cancel()
+        libraryWatcherReconnectTask = nil
+
+        restoreLibraryAccess()
+
+        let configuredRoots = Set(libraryPaths.map(standardizedLibraryPath))
+        let accessibleRoots = Set(activeLibraryScopes.compactMap { url -> String? in
+            let path = standardizedLibraryPath(url.path)
+            var isDirectory: ObjCBool = false
+            guard configuredRoots.contains(path),
+                  FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory),
+                  isDirectory.boolValue else { return nil }
+            return path
+        })
+
+        let reconnectedRoots = accessibleRoots.subtracting(monitoredLibraryRoots)
+        monitoredLibraryRoots = accessibleRoots
+        if !accessibleRoots.isEmpty {
+            libraryFileWatcher = LibraryFileWatcher(paths: accessibleRoots.sorted()) { [weak self] events in
+                Task { @MainActor [weak self] in
+                    self?.handleLibraryFileEvents(events)
+                }
+            }
+        }
+
+        if hasInitializedLibraryMonitoring, !reconnectedRoots.isEmpty {
+            pendingAutomaticScanRoots.formUnion(reconnectedRoots)
+            scheduleDebouncedAutomaticScan()
+        }
+        hasInitializedLibraryMonitoring = true
+
+        if accessibleRoots != configuredRoots {
+            scheduleLibraryWatcherReconnect()
+        }
+        if libraryPaths.isEmpty {
+            periodicLibraryRescanTask?.cancel()
+            periodicLibraryRescanTask = nil
+        }
+        startPeriodicLibraryRescanIfNeeded()
+    }
+
+    private func handleLibraryFileEvents(_ events: [LibraryFileWatcher.Event]) {
+        guard !events.isEmpty else { return }
+
+        if events.contains(where: \.requiresReconnect) {
+            restartLibraryMonitoring()
+        }
+
+        if events.contains(where: \.requiresFullRescan) {
+            pendingFullLibraryRescan = true
+            scheduleDebouncedAutomaticScan()
+            return
+        }
+
+        for event in events {
+            guard event.affectsLibraryContent else { continue }
+            guard let root = monitoredLibraryRoots.first(where: {
+                event.path == $0 || event.path.hasPrefix($0 + "/")
+            }) else { continue }
+            let eventURL = URL(fileURLWithPath: event.path)
+            var scanPath = root
+            if event.path != root {
+                var isDirectory: ObjCBool = false
+                let eventStillExists = FileManager.default.fileExists(
+                    atPath: event.path,
+                    isDirectory: &isDirectory
+                )
+                if event.isDirectory, eventStillExists, isDirectory.boolValue {
+                    scanPath = standardizedLibraryPath(event.path)
+                } else {
+                    scanPath = standardizedLibraryPath(
+                        eventURL.deletingLastPathComponent().path
+                    )
+                }
+            }
+            pendingAutomaticScanRoots.insert(scanPath)
+        }
+        scheduleDebouncedAutomaticScan()
+    }
+
+    private func scheduleDebouncedAutomaticScan() {
+        guard pendingFullLibraryRescan || !pendingAutomaticScanRoots.isEmpty else { return }
+        libraryWatchDebounceTask?.cancel()
+        libraryWatchDebounceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: Self.libraryWatchDebounceInterval)
+            } catch {
+                return
+            }
+            guard let self else { return }
+
+            if self.pendingFullLibraryRescan {
+                self.pendingFullLibraryRescan = false
+                self.pendingAutomaticScanRoots.removeAll()
+                let roots = self.monitoredLibraryRoots.sorted()
+                guard !roots.isEmpty else {
+                    self.scheduleLibraryWatcherReconnect()
+                    return
+                }
+                self.beginLibraryScan(paths: roots, isAutomatic: true)
+                return
+            }
+
+            let availableRoots = self.pendingAutomaticScanRoots.filter { path in
+                self.monitoredLibraryRoots.contains(where: { root in
+                    path == root || path.hasPrefix(root + "/")
+                })
+            }
+            self.pendingAutomaticScanRoots.removeAll()
+            guard !availableRoots.isEmpty else { return }
+            self.beginLibraryScan(
+                paths: self.coalescedScanPaths(Set(availableRoots)),
+                isAutomatic: true
+            )
+        }
+    }
+
+    private func coalescedScanPaths(_ paths: Set<String>) -> [String] {
+        let sorted = paths.sorted {
+            $0.split(separator: "/").count < $1.split(separator: "/").count
+        }
+        var result: [String] = []
+        for path in sorted where !result.contains(where: {
+            path == $0 || path.hasPrefix($0 + "/")
+        }) {
+            result.append(path)
+        }
+        return result.sorted()
+    }
+
+    private func scheduleLibraryWatcherReconnect() {
+        libraryWatcherReconnectTask?.cancel()
+        libraryWatcherReconnectTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: Self.libraryWatcherReconnectInterval)
+            } catch {
+                return
+            }
+            self?.restartLibraryMonitoring()
+        }
+    }
+
+    private func startPeriodicLibraryRescanIfNeeded() {
+        guard periodicLibraryRescanTask == nil, !libraryPaths.isEmpty else { return }
+        periodicLibraryRescanTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: Self.periodicLibraryRescanInterval)
+                } catch {
+                    return
+                }
+                guard let availableRoots = self?.monitoredLibraryRoots.sorted() else { return }
+                guard !availableRoots.isEmpty else {
+                    self?.scheduleLibraryWatcherReconnect()
+                    continue
+                }
+                self?.beginLibraryScan(paths: availableRoots, isAutomatic: true)
+            }
+        }
+    }
+
     private func saveAndStartLibraryAccess(for url: URL) throws {
         // Keep the exact URL returned by NSOpenPanel. Normalizing it before
         // opening the security scope can discard the sandbox authorization.
@@ -899,8 +1114,9 @@ final class DurvaldCoreStore {
     }
 
     private func restoreLibraryAccess() {
-        let bookmarks = UserDefaults.standard.dictionary(forKey: Self.libraryBookmarksKey) ?? [:]
-        for value in bookmarks.values {
+        var bookmarks = UserDefaults.standard.dictionary(forKey: Self.libraryBookmarksKey) ?? [:]
+        var refreshedBookmarks: [String: Data] = [:]
+        for (storedPath, value) in bookmarks {
             guard let data = value as? Data else { continue }
             var isStale = false
             guard let url = try? URL(
@@ -909,10 +1125,22 @@ final class DurvaldCoreStore {
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             ) else { continue }
+            if isStale,
+               let refreshed = try? url.bookmarkData(
+                   options: .withSecurityScope,
+                   includingResourceValuesForKeys: nil,
+                   relativeTo: nil
+               ) {
+                refreshedBookmarks[storedPath] = refreshed
+            }
             guard !activeLibraryScopes.contains(where: { $0.standardizedFileURL == url.standardizedFileURL }) else { continue }
             if url.startAccessingSecurityScopedResource() {
                 activeLibraryScopes.append(url.standardizedFileURL)
             }
+        }
+        if !refreshedBookmarks.isEmpty {
+            bookmarks.merge(refreshedBookmarks) { _, refreshed in refreshed }
+            UserDefaults.standard.set(bookmarks, forKey: Self.libraryBookmarksKey)
         }
     }
 
@@ -1815,6 +2043,10 @@ final class DurvaldCoreStore {
     deinit {
         playbackPollingTask?.cancel()
         scanProgressPollingTask?.cancel()
+        libraryFileWatcher?.stop()
+        libraryWatchDebounceTask?.cancel()
+        libraryWatcherReconnectTask?.cancel()
+        periodicLibraryRescanTask?.cancel()
         deferredInitializationTask?.cancel()
         seekTask?.cancel()
         activeLibraryScopes.forEach { $0.stopAccessingSecurityScopedResource() }

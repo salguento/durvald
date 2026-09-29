@@ -58,8 +58,8 @@ Legenda: **✅ implementado**, **🟡 parcial**, **❌ não implementado**.
 | Varredura recursiva | ✅ | Scan das pastas configuradas com fases e progresso. |
 | Cancelar scan | ✅ | Cancelamento cooperativo no core e botão na UI. |
 | Detectar arquivos apagados | ✅ | Scan completo reconcilia os registros; scan parcial ou cancelado não remove dados. |
-| Rescan manual de todas as pastas | 🟡 | `scanConfiguredLibrary` existe e é usado ao adicionar pasta, mas não há botão independente “Atualizar biblioteca” no cliente macOS. |
-| Monitoramento automático das pastas | ❌ | Não há FSEvents/file watcher nem scan incremental acionado por eventos. |
+| Rescan manual de todas as pastas | ✅ | “Atualizar biblioteca” está disponível nos Ajustes e no menu, reutilizando progresso, cancelamento e relatório de resultados. |
+| Monitoramento automático das pastas | ✅ | FSEvents observa as raízes autorizadas; eventos são agrupados e atualizam apenas diretórios afetados, com reconexão e reconciliação periódica. |
 | Leitura de metadados | ✅ | Título, artistas, álbum, gênero, ano, faixa/disco, bitrate, sample rate, bit depth e outros campos via Lofty. |
 | Artwork embutido | ✅ | Extração, validação, deduplicação por hash, cache e thumbnails. |
 | Editor de tags | ✅ | Tela “Info da faixa” edita título, artista, artista do álbum, álbum, gênero, ano, faixa, disco, compositor e comentário. Pode salvar só no banco ou gravar no arquivo. |

@@ -66,7 +66,7 @@ Em linhas gerais:
   * *No código atual:* **❌ Permanece pendente.** Falta integração com `MPNowPlayingInfoCenter` e `MPRemoteCommandCenter` (teclas de mídia de teclado/fones e Central de Controle).
 * **Monitoramento Contínuo da Biblioteca:**
   * *No documento:* ❌
-  * *No código atual:* **❌ Permanece pendente.** Não há file watcher via `FSEvents`; a biblioteca depende de scans manuais ou configurados.
+  * *No código atual:* **✅ Implementado no macOS.** FSEvents monitora as raízes autorizadas, agrupa mudanças com debounce, faz scans incrementais dos diretórios afetados e reconecta volumes/bookmarks indisponíveis; scans completos manuais e periódicos permanecem como reconciliação.
 
 ---
 
