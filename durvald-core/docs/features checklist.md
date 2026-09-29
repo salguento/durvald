@@ -1,114 +1,240 @@
-Avaliei o `main` atual do Durvald, cujo HEAD é `5b3ce071` de 14/09/2026. O quadro geral é: **o Durvald já é um player local funcional**, com uma base de reprodução e biblioteca surpreendentemente ampla, mas ainda não está no nível de acabamento de um Winamp/WMP maduro. A maior parte do que falta agora não é “tocar música”, e sim **integração com o sistema, gerenciamento avançado da biblioteca, formatos, DSP e automação da biblioteca**.
+# Checklist de funcionalidades e roteiro do Durvald
 
-O próprio core já assume responsabilidade por indexação, SQLite, reprodução local, histórico, configurações e Last.fm.
+Análise atualizada em **29/09/2026**, sobre o `main` no commit `d2e7f45`.
 
-| Funcionalidade de um player local                 | Durvald atual       | Comparação / observação                                                                                                                                                                         |
-| ------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Reproduzir arquivo local**                      | ✅ Implementado      | Kira com streaming de arquivo e engine própria no Rust.                                                                                                                                         |
-| **Play / Pause / Resume / Stop**                  | ✅                   | Implementação real no core, não apenas UI.                                                                                                                                                      |
-| **Anterior / Próxima faixa**                      | ✅                   | Inclui histórico interno para Previous.                                                                                                                                                         |
-| **Seek / barra de progresso**                     | ✅                   | Seek absoluto e percentual; cliente macOS tem tratamento específico para evitar glitches de confirmação do decoder.                                                                             |
-| **Controle de volume**                            | ✅                   | 0–1, persistência e atualização otimista da UI.                                                                                                                                                 |
-| **Fila de reprodução**                            | ✅ Forte             | Inserção, remoção, clear, reorder, skip-to e representação da faixa atual + próximas.                                                                                                           |
-| **Shuffle**                                       | ✅                   | Core e UI.                                                                                                                                                                                      |
-| **Repeat Off / All / One**                        | ✅                   | Os três estados estão modelados explicitamente.                                                                                                                                                 |
-| **Retomar sessão após reiniciar**                 | ✅                   | Faixa atual, posição, volume, shuffle, repeat e queue são persistidos.                                                                                                                          |
-| **Crossfade**                                     | ✅                   | Configuração de duração e fade de entrada/saída no engine.                                                                                                                                      |
-| **Gapless playback**                              | ❌ Não encontrei     | Crossfade existe, mas não há uma pipeline explicitamente gapless/prebufferizada como recurso próprio.                                                                                           |
-| **ReplayGain / normalização**                     | ✅                   | Lê `REPLAYGAIN_TRACK_GAIN` e aplica ganho durante playback.                                                                                                                                     |
-| **Equalizador**                                   | ❌                   | Não encontrei EQ paramétrico/gráfico.                                                                                                                                                           |
-| **DSP / efeitos**                                 | ❌                   | Sem cadeia de DSP, compressor, limiter, spatializer etc.                                                                                                                                        |
-| **Plugins de áudio estilo Winamp**                | ❌                   | Arquitetura não expõe plugin ABI para input/output/DSP/visualization.                                                                                                                           |
-| **MP3**                                           | ✅                   |                                                                                                                                                                                                 |
-| **FLAC**                                          | ✅                   |                                                                                                                                                                                                 |
-| **WAV**                                           | ✅                   |                                                                                                                                                                                                 |
-| **Ogg Vorbis / OGA**                              | ✅                   |                                                                                                                                                                                                 |
-| **AAC / M4A**                                     | ❌                   | Explicitamente não compilado.                                                                                                                                                                   |
-| **ALAC**                                          | ❌                   |                                                                                                                                                                                                 |
-| **AIFF**                                          | ❌                   |                                                                                                                                                                                                 |
-| **Opus**                                          | ❌                   |                                                                                                                                                                                                 |
-| **WMA**                                           | ❌                   | O conjunto atual é MP3/WAV/FLAC/Ogg.                                                                                                                                                            |
-| **Adicionar pasta de música**                     | ✅                   | macOS usa `NSOpenPanel` + security-scoped bookmarks.                                                                                                                                            |
-| **Varredura recursiva da biblioteca**             | ✅                   | Scan configurado, progresso e cancelamento.                                                                                                                                                     |
-| **Scan cancelável**                               | ✅                   | Core cooperativo e UI com botão Cancelar.                                                                                                                                                       |
-| **Detectar arquivos apagados**                    | ✅                   | Scan completo reconcilia e remove registros dos arquivos ausentes; scan cancelado não destrói registros.                                                                                        |
-| **Monitoramento automático das pastas**           | ❌ importante        | Não encontrei FSEvents/file watcher. Hoje a lógica é orientada a scan.                                                                                                                          |
-| **Rescan manual evidente de todas as pastas**     | 🟡                  | O core possui `scan_configured_library`, mas na tela atual de biblioteca o fluxo visível de scan está principalmente associado a adicionar uma pasta.                                           |
-| **Metadados ID3/Vorbis/etc.**                     | ✅ leitura           | `lofty` extrai título, artista, album artist, álbum, gênero, ano, track/disc, bitrate, sample rate etc.                                                                                         |
-| **Artwork embutido**                              | ✅ Forte             | Extração, deduplicação por hash, limites de segurança e thumbnail.                                                                                                                              |
-| **Editar tags dos arquivos**                      | ❌                   | A infraestrutura atual é essencialmente de leitura/indexação; não encontrei editor de tags gravando no arquivo.                                                                                 |
-| **Renomear/organizar arquivos automaticamente**   | ❌                   | Sem equivalente a “Organize library” do WMP ou plugins de organização do Winamp.                                                                                                                |
-| **Busca global**                                  | ✅                   | API retorna tracks, releases, artists e playlists; cliente possui UI dedicada.                                                                                                                  |
-| **Biblioteca por artista / álbum / faixa**        | ✅                   | Estrutura já bastante desenvolvida no cliente macOS.                                                                                                                                            |
-| **Bibliotecas grandes / paginação**               | ✅/🟡                | Cliente pagina tracks/releases/history em lotes de 100; core limita página a 200. Isso é uma boa base para escala.                                                                              |
-| **Playlists manuais**                             | ✅                   | Criar, editar, excluir e adicionar músicas; artwork e descrição próprios.                                                                                                                       |
-| **Busca dentro de playlist**                      | ✅                   | Implementada.                                                                                                                                                                                   |
-| **Ordenação visual da playlist**                  | ✅                   | Título, artista e duração, além da ordem original.                                                                                                                                              |
-| **Reordenar permanentemente playlist por drag**   | ❌/🟡                | Não aparece na `PlaylistView` atual.                                                                                                                                                            |
-| **Importar/exportar M3U/M3U8/PLS**                | ❌                   | Não encontrei suporte.                                                                                                                                                                          |
-| **Smart playlists**                               | ❌                   | Não encontrei regras do tipo “rating > 4”, “mais tocadas”, gênero etc.                                                                                                                          |
-| **Favoritos**                                     | ✅                   | Track, release e playlist possuem estado de favorito.                                                                                                                                           |
-| **Rating 0–5**                                    | 🟡 Backend          | O Rust já expõe `set_track_rating` e ratings em DTOs, mas não encontrei fluxo equivalente completo no cliente macOS.                                                                            |
-| **Play count**                                    | ✅                   | Presente no modelo `Track`.                                                                                                                                                                     |
-| **Histórico de reprodução**                       | ✅                   | Persistente, paginado e com tela própria.                                                                                                                                                       |
-| **Last.fm scrobbling**                            | ✅                   | Core já envia Now Playing e scrobble, respeitando tempo efetivamente tocado.                                                                                                                    |
-| **Letras**                                        | ❌                   | Não encontrei lyrics locais ou provedor remoto.                                                                                                                                                 |
-| **Atalhos de teclado**                            | ✅                   | Play/pause, volume, shuffle, repeat, busca, queue etc.                                                                                                                                          |
-| **Menu de reprodução do app**                     | ✅                   | Próxima, anterior, volume, shuffle e repeat.                                                                                                                                                    |
-| **Teclas multimídia globais**                     | ❌                   | Não encontrei integração `MPRemoteCommandCenter`/equivalente.                                                                                                                                   |
-| **macOS Now Playing / Control Center**            | ❌                   | Last.fm “Now Playing” existe, mas é outra coisa; não encontrei publicação no `MPNowPlayingInfoCenter`.                                                                                          |
-| **Controle pela tela bloqueada / headphones**     | ❌                   | Consequência da ausência da integração MediaPlayer/Remote Command.                                                                                                                              |
-| **Seleção de dispositivo de saída**               | ❌                   | O player cria `AudioManager<DefaultBackend>`; não há UI/modelo de output device.                                                                                                                |
-| **Streaming HTTP / rádio online**                 | ❌                   | Playback atual é orientado a `StreamingSoundData::from_file`, isto é, arquivo local.                                                                                                            |
-| **Download de música**                            | ❌                   | Há campos futuros em `Settings`, mas o cliente inclusive registra que fonte, qualidade e outras opções ainda não estão implementadas.                                                           |
-| **Soulseek**                                      | ❌                   | Ainda não faz parte do `main` atual.                                                                                                                                                            |
-| **Visualizações de áudio**                        | ❌                   | Sem spectrum analyzer, oscilloscope ou sistema de visualizations estilo Winamp.                                                                                                                 |
-| **Mini player / compact mode**                    | ❌/não encontrei     | PlayerBar existe, mas não identifiquei janela mini-player independente.                                                                                                                         |
-| **CD ripping**                                    | ❌                   | WMP clássico tem; Durvald não.                                                                                                                                                                  |
-| **Gravação de CD**                                | ❌                   | WMP clássico tem; Durvald não.                                                                                                                                                                  |
-| **Sincronização com player/dispositivo portátil** | ❌                   | Sem equivalente ao Sync do WMP.                                                                                                                                                                 |
-| **Vídeo**                                         | ❌                   | Durvald é hoje explicitamente music/audio player; considero isto mais um não-objetivo do que uma deficiência.                                                                                   |
-| **MusicBrainz / enriquecimento externo**          | ✅ acima do baseline | Artist identity, discografia, perfil e capas estão bem além do que se esperaria de um Winamp clássico. A árvore atual já possui providers MusicBrainz, Cover Art Archive, Wikidata e Wikipedia. |
-| **Testes automatizados do engine**                | ✅                   | Rust tests + mock audio backend; CI executa Linux e macOS.                                                                                                                                      |
-| **Testes do cliente macOS**                       | ✅/🟡                | Unit tests fazem parte da CI e há suíte de UI tests no projeto, embora a CI principal execute explicitamente `DurvaldTests`, não `DurvaldUITests`.                                              |
-| **Cliente Linux**                                 | 🔴 embrionário      | GTK hoje apenas abre o core e mostra quantidade de músicas; importação, listas e controles de reprodução ainda estão explicitamente pendentes.                                                  |
+## Escopo
 
-### Onde o Durvald já está forte
+Este documento avalia o Durvald como **player desktop de música local**, com foco no core em Rust e no cliente macOS. Conforme a decisão de produto, ficam fora desta análise e do roteiro:
 
-O **núcleo essencial de um player local já existe**: importação/indexação, metadados, artwork, play/pause/seek/volume, fila manipulável, shuffle, repeat, playlists, pesquisa, favoritos, histórico, play count, recuperação da sessão, crossfade e ReplayGain. Isso significa que arquiteturalmente ele já passou da fase de “biblioteca de música com botão Play”.
+- rádio e streaming online;
+- Soulseek e download de música;
+- reprodução ou gerenciamento de vídeos.
 
-Também há algumas áreas em que ele já é mais sofisticado que um Winamp básico: **SQLite estruturado, paginação, reconciliação de arquivos apagados, MusicBrainz/enrichment e Last.fm integrado ao core**.
+Legenda: **✅ implementado**, **🟡 parcial**, **❌ não implementado**.
 
-### O que mais impede o Durvald de parecer um player desktop maduro
+## Estado atual
 
-Eu colocaria cinco gaps acima de todos os outros.
+### Reprodução e áudio
 
-**1. Integração nativa do macOS.** `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter` mudaria bastante a percepção do aplicativo: teclas Play/Pause dos teclados e headsets, Control Center, Now Playing, comandos globais e integração com o sistema. Hoje os atalhos são essencialmente comandos do próprio app.
+| Funcionalidade | Estado | Evidência / limitação atual |
+| --- | --- | --- |
+| Reprodução de arquivos locais | ✅ | Engine própria sobre Kira/Symphonia. |
+| Play, pause, resume e stop | ✅ | Core e cliente macOS. |
+| Faixa anterior e próxima | ✅ | Inclui histórico interno de navegação. |
+| Seek e barra de progresso | ✅ | Seek absoluto e UI com tratamento de atualização otimista. |
+| Controle e persistência de volume | ✅ | Restaurado junto com a sessão. |
+| Fila de reprodução | ✅ | Inserção, remoção, limpeza, reordenação, seleção direta e UI dedicada. |
+| Shuffle | ✅ | Core, PlayerBar e atalhos. |
+| Repeat Off / All / One | ✅ | Os três estados estão modelados e expostos na UI. |
+| Retomar sessão | ✅ | Persiste faixa, posição, volume, shuffle, repeat e fila. |
+| Crossfade configurável | ✅ | Configuração de ativação e duração. |
+| Gapless playback | ✅ | Próxima faixa é pré-carregada e a troca ocorre no thread de áudio; metadados de delay/padding do encoder são respeitados quando disponíveis. |
+| ReplayGain / normalização | ✅ | Lê `REPLAYGAIN_TRACK_GAIN` e oferece a opção “Normalizar volume”. |
+| Equalizador | ❌ | Não há EQ gráfico ou paramétrico. |
+| DSP / efeitos | ❌ | Não há cadeia de efeitos, compressor ou limiter. |
+| Seleção de dispositivo de saída | ❌ | O backend de áudio usa o dispositivo padrão, sem seletor no domínio ou na UI. |
+| Arquitetura de plugins de áudio | ❌ | Não há ABI/extensões para input, output, DSP ou visualizações. |
+| Visualizações de áudio | ❌ | Não há spectrum analyzer ou oscilloscope. |
 
-**2. Monitoramento contínuo da biblioteca.** Um player local maduro não deveria depender de “adicionar a pasta novamente” ou de um scan disparado manualmente. O próximo nível seria FSEvents → debounce → scan incremental → reconciliar alterações. O core atual já tem uma boa base para isso porque o scan é cancelável e sabe reconciliar arquivos desaparecidos.
+### Formatos locais
 
-**3. Cobertura de formatos.** MP3/FLAC/WAV/Ogg cobre bastante biblioteca, mas **M4A/AAC/ALAC e AIFF** são especialmente relevantes no macOS. A ausência desses formatos é provavelmente a maior incompatibilidade prática com bibliotecas reais. O README explicitamente confirma que AAC/M4A, AIFF, WMA e Opus não são indexados.
+| Formato | Estado | Observação |
+| --- | --- | --- |
+| MP3 | ✅ | Indexação, metadados e reprodução. |
+| FLAC | ✅ | Indexação, metadados e reprodução. |
+| WAV | ✅ | Indexação, metadados e reprodução. |
+| Ogg Vorbis / OGA | ✅ | Indexação, metadados e reprodução. |
+| AAC / M4A | ❌ | Decoder não compilado. |
+| ALAC | ❌ | Sem suporte de reprodução. |
+| AIFF | ❌ | Sem suporte de reprodução. |
+| Opus | ❌ | Sem suporte de reprodução. |
+| WMA | ❌ | Sem suporte de reprodução. |
 
-**4. Ferramentas de biblioteca.** Falta o conjunto que transformaria o Durvald de player em _music library manager_: editor de tags, rescan explícito, localização/relink de arquivos, import/export M3U, smart playlists, edição em lote, organização/rename de arquivos e tratamento de duplicatas.
+### Biblioteca e metadados
 
-**5. Pipeline de áudio avançada.** Crossfade e ReplayGain já são bons diferenciais, mas Winamp imediatamente remete a EQ/DSP/visualizer/plugins. Um Durvald moderno não precisa copiar o sistema de plugins do Winamp, mas **EQ + gapless + seleção de output + eventualmente analyzer** preencheriam quase todo o gap perceptível.
+| Funcionalidade | Estado | Evidência / limitação atual |
+| --- | --- | --- |
+| Adicionar e remover pastas | ✅ | `NSOpenPanel`, bookmarks com security scope e tela de ajustes. Remover uma pasta não apaga automaticamente as faixas já indexadas. |
+| Varredura recursiva | ✅ | Scan das pastas configuradas com fases e progresso. |
+| Cancelar scan | ✅ | Cancelamento cooperativo no core e botão na UI. |
+| Detectar arquivos apagados | ✅ | Scan completo reconcilia os registros; scan parcial ou cancelado não remove dados. |
+| Rescan manual de todas as pastas | 🟡 | `scanConfiguredLibrary` existe e é usado ao adicionar pasta, mas não há botão independente “Atualizar biblioteca” no cliente macOS. |
+| Monitoramento automático das pastas | ❌ | Não há FSEvents/file watcher nem scan incremental acionado por eventos. |
+| Leitura de metadados | ✅ | Título, artistas, álbum, gênero, ano, faixa/disco, bitrate, sample rate, bit depth e outros campos via Lofty. |
+| Artwork embutido | ✅ | Extração, validação, deduplicação por hash, cache e thumbnails. |
+| Editor de tags | ✅ | Tela “Info da faixa” edita título, artista, artista do álbum, álbum, gênero, ano, faixa, disco, compositor e comentário. Pode salvar só no banco ou gravar no arquivo. |
+| Desfazer edição de tags | ✅ | Journal persistente, backup e ação de desfazer a última alteração. |
+| Edição de tags em lote | ❌ | O editor opera em uma faixa por vez. |
+| Renomear/organizar arquivos | ❌ | Não há regras de organização física por artista/álbum/faixa. |
+| Detectar e mesclar duplicatas | ❌ | Não há fluxo dedicado de duplicatas. |
+| Localizar/revincular arquivos movidos | ❌ | Não há reparo de caminhos quebrados. |
+| Busca global | ✅ | Busca por faixas, álbuns, artistas e playlists, com UI dedicada. |
+| Navegação por artista, álbum e faixa | ✅ | Telas completas no cliente macOS. |
+| Paginação para bibliotecas grandes | ✅ | Faixas, álbuns e histórico são carregados em páginas; o core limita páginas a 200 itens. |
+| Favoritos | ✅ | Faixas, álbuns e playlists. |
+| Rating de 0 a 5 | 🟡 | Persistência e APIs existem para faixas e álbuns, e o rating já influencia ordenação interna, mas falta um controle de edição claro na UI. |
+| Play count | ✅ | Persistido no modelo de faixa. |
+| Histórico de reprodução | ✅ | Persistente, paginado e com tela própria; permite remoção e limpeza. |
+| Letras | ❌ | Não há leitura de letras locais nem interface de exibição. |
+| MusicBrainz e enriquecimento | ✅ | Identidade de artista, discografia, perfis, artistas similares e capas com cache e políticas próprias. |
 
-### Avaliação de maturidade
+### Playlists
 
-Considerando **apenas a missão “player de música local desktop”**, eu colocaria o Durvald aproximadamente assim:
+| Funcionalidade | Estado | Evidência / limitação atual |
+| --- | --- | --- |
+| Playlists manuais | ✅ | Criar, editar, excluir e adicionar/remover faixas; descrição e artwork próprios. |
+| Busca dentro da playlist | ✅ | Filtro local por título, artista ou álbum. |
+| Ordenação visual | ✅ | Ordem original, título, artista e duração. |
+| Reordenação permanente por drag and drop | ✅ | A UI chama `movePlaylistTrack` e persiste a nova posição. |
+| Importar/exportar M3U, M3U8 ou PLS | ❌ | Não há parser, exportador ou UI. |
+| Smart playlists | ❌ | Não há modelo de regras ou atualização automática. |
 
-**Playback fundamental: 85–90%** — os controles e estados importantes já estão lá.
+### Integração desktop e clientes
 
-**Fila e playlists: 75–80%** — muito funcional, faltando principalmente recursos avançados e interoperabilidade.
+| Funcionalidade | Estado | Evidência / limitação atual |
+| --- | --- | --- |
+| Atalhos de teclado do app | ✅ | Busca, play/pause, volume, shuffle, repeat, fila e navegação. |
+| Menu de reprodução | ✅ | Comandos de anterior, próxima, volume, shuffle e repeat. |
+| Teclas multimídia globais | ✅ | `MPRemoteCommandCenter` encaminha play, pause, toggle, anterior, próxima e seek ao store. |
+| macOS Now Playing / Control Center | ✅ | `MPNowPlayingInfoCenter` publica metadados, artwork, duração, posição e estado. |
+| Controles por headset e tela bloqueada | ✅ | Disponíveis pelos comandos remotos nativos do MediaPlayer. |
+| Mini player em janela própria | ❌ | A PlayerBar se adapta a larguras menores, mas não existe janela compacta independente. |
+| Testes automatizados do core | ✅ | Suíte Rust cobre biblioteca, reprodução, sessão, histórico e contratos públicos; CI roda em Linux e macOS. |
+| Testes do cliente macOS | 🟡 | Há testes unitários e uma suíte de UI, mas a CI principal não executa explicitamente toda a suíte `DurvaldUITests`. |
+| Cliente Linux | 🟡 inicial | Abre o core, mostra a quantidade de músicas e permite atualizar a leitura do banco; importação, listagem e reprodução ainda faltam. |
 
-**Biblioteca local: 70–75%** — indexação e modelo são bons; watcher, edição e manutenção ainda faltam.
+### Recursos clássicos de gerenciamento físico
 
-**Formatos de áudio: 55–60%** — FLAC/MP3/Ogg/WAV são bons, mas M4A/AAC/ALAC é uma lacuna importante.
+| Funcionalidade | Estado | Prioridade sugerida |
+| --- | --- | --- |
+| CD ripping | ❌ | Baixa; só implementar se houver demanda comprovada. |
+| Gravação de CD | ❌ | Fora do horizonte próximo. |
+| Sincronização com dispositivo portátil | ❌ | Baixa; exige definição prévia de dispositivos e fluxo de arquivos. |
 
-**Áudio avançado: 35–40%** — ReplayGain e crossfade existem; EQ, DSP, gapless e escolha de saída não.
+## Síntese de maturidade
 
-**Integração desktop: 40–45%** — boa UI e atalhos internos, pouca integração com o subsistema multimídia do macOS.
+O Durvald já é um player local funcional e tem uma base forte: reprodução completa, gapless, crossfade, ReplayGain, fila, sessão restaurável, biblioteca paginada, playlists reordenáveis, busca, histórico, edição segura de tags, Last.fm e enriquecimento externo.
 
-**Recursos “Winamp/WMP completos”: ~60–65%**. Esse número cai se CD/device sync/video forem considerados requisitos e sobe para cerca de **70–75% se o objetivo for estritamente um player moderno de arquivos musicais locais**, porque ripping, burning e vídeo hoje são muito menos centrais.
+Os principais gaps já não estão no playback básico. Eles se concentram em:
 
-A consequência mais importante é que **eu não priorizaria mais funcionalidades de reprodução básica**. A próxima fase deveria ser, nesta ordem: **integração macOS → watcher/rescan incremental → M4A/AAC/ALAC → gapless/output device → tag editor e smart playlists → EQ/DSP → streaming/download/Soulseek**. Esse caminho faria o Durvald sair de “player funcional em desenvolvimento” para algo comparável, na experiência cotidiana, a um player desktop local estabelecido.
+1. atualização automática e manutenção da biblioteca;
+2. formatos comuns no ecossistema Apple;
+3. ferramentas avançadas de organização e descoberta;
+4. áudio avançado e escolha de hardware.
+
+## Roteiro priorizado de features
+
+### P0 — Fechar lacunas de uso cotidiano
+
+Objetivo: remover atritos que aparecem diariamente e dar acabamento de aplicativo macOS.
+
+1. **Now Playing e comandos remotos do macOS — concluído**
+   - publicar título, artista, álbum, artwork, duração, posição e estado;
+   - integrar play/pause, anterior, próxima e seek com `MPRemoteCommandCenter`;
+   - validar teclas multimídia, headset, Control Center e tela bloqueada;
+   - manter o estado sincronizado após avanço gapless, seek e restauração de sessão.
+
+2. **Rescan manual explícito**
+   - adicionar “Atualizar biblioteca” nos ajustes e/ou menu;
+   - reutilizar progresso, cancelamento e tratamento de erros existentes;
+   - informar resultado: novas, atualizadas, removidas e falhas;
+   - impedir scans concorrentes e preservar o comportamento seguro de cancelamento.
+
+3. **Monitoramento automático da biblioteca**
+   - observar cada raiz autorizada com FSEvents;
+   - agrupar eventos com debounce e disparar atualização incremental;
+   - tratar criação, alteração, remoção e renomeação;
+   - pausar/reconectar watchers quando bookmarks ou volumes ficarem indisponíveis;
+   - manter um rescan completo periódico ou manual como mecanismo de reconciliação.
+
+4. **Suporte a M4A/AAC e ALAC**
+   - escolher e validar uma pipeline de decode compatível com a arquitetura gapless;
+   - alinhar extensões aceitas, extração de metadados e playback;
+   - criar fixtures para AAC-LC e ALAC, incluindo artwork e gapless metadata;
+   - só anunciar o formato depois de indexação, playback, seek e transição estarem cobertos.
+
+### P1 — Completar a gestão da biblioteca
+
+Objetivo: transformar a boa indexação existente em uma biblioteca fácil de manter.
+
+1. **Rating completo na UI**
+   - editar e limpar notas de faixa e álbum;
+   - expor rating em menus e na tela de informações;
+   - permitir ordenação e filtros por nota.
+
+2. **Edição de metadados em lote**
+   - seleção múltipla com campos comuns e estado “valores diferentes”;
+   - alteração parcial sem apagar tags não selecionadas;
+   - journal e undo por operação em lote;
+   - progresso e relatório de falhas por arquivo.
+
+3. **Importação e exportação de playlists**
+   - começar por M3U8 com caminhos relativos e absolutos;
+   - resolver arquivos pelo caminho e oferecer relatório dos ausentes;
+   - depois adicionar M3U legado e PLS se houver necessidade.
+
+4. **Reparo de arquivos movidos e duplicatas**
+   - identificar caminhos quebrados;
+   - sugerir relink por metadados e fingerprint/hash adequado;
+   - detectar duplicatas sem apagar automaticamente;
+   - preservar playlists, histórico, favoritos e ratings ao mesclar registros.
+
+5. **Smart playlists**
+   - definir regras sobre rating, favorito, gênero, ano, play count, última reprodução e data de inclusão;
+   - combinar regras com AND/OR e limite/ordenação;
+   - atualizar resultados sem materializar cópias das faixas.
+
+### P2 — Áudio e experiência avançada
+
+Objetivo: aumentar controle e diferenciação sem comprometer a estabilidade do engine.
+
+1. **Seleção de dispositivo de saída**
+   - listar dispositivos e acompanhar conexão/desconexão;
+   - persistir preferência com fallback seguro ao dispositivo padrão;
+   - testar troca durante pause, playback, crossfade e gapless.
+
+2. **Equalizador**
+   - começar com EQ de 10 bandas, preamp, bypass e presets;
+   - evitar clipping com headroom/limiter simples;
+   - persistir configuração e manter custo de CPU mensurável.
+
+3. **Letras locais**
+   - ler tags embutidas e arquivos `.lrc`/texto ao lado da faixa;
+   - começar com letras não sincronizadas;
+   - adicionar sincronização temporal apenas depois de estabilizar leitura e UI.
+
+4. **Mini player**
+   - janela compacta independente com faixa, artwork e controles essenciais;
+   - preservar fila e janela principal como uma única sessão;
+   - suportar “sempre visível” como opção, sem duplicar lógica de playback.
+
+5. **Visualização de áudio**
+   - expor dados de análise do engine de forma limitada e segura;
+   - começar com spectrum analyzer eficiente e desativável;
+   - evitar que a renderização afete gapless ou o thread de áudio.
+
+### P3 — Expansão e itens condicionais
+
+Objetivo: ampliar cobertura depois que os fluxos principais estiverem maduros.
+
+1. **AIFF e Opus**, priorizando conforme bibliotecas reais dos usuários.
+2. **Organização física de arquivos**, sempre com preview, resolução de conflitos e undo.
+3. **Cliente Linux funcional**, na ordem: importação, biblioteca, PlayerBar, fila e playlists.
+4. **DSP adicional ou API de extensões**, somente após estabilizar uma cadeia interna de processamento.
+5. **CD ripping, gravação e sincronização de dispositivos**, apenas com demanda e escopo de produto definidos.
+
+## Ordem recomendada de execução
+
+Para reduzir risco e entregar valor em incrementos pequenos:
+
+1. botão de rescan manual;
+2. watcher com reconciliação incremental;
+3. M4A/AAC e ALAC;
+4. rating completo na UI;
+5. import/export M3U8;
+6. edição de tags em lote;
+7. seleção de saída;
+8. smart playlists e reparo de biblioteca;
+9. EQ, letras e mini player.
+
+Cada etapa deve incluir testes do core quando houver regra de negócio, testes do cliente para os fluxos visíveis e atualização desta matriz quando a funcionalidade chegar ao `main`.
