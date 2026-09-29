@@ -188,6 +188,7 @@ Objetivo: transformar a boa indexação existente em uma biblioteca fácil de ma
    - definir regras sobre rating, favorito, gênero, ano, play count, última reprodução e data de inclusão;
    - combinar regras com AND/OR e limite/ordenação;
    - atualizar resultados sem materializar cópias das faixas.
+   - **Concluído:** regras e ordenação ficam persistidas, enquanto os resultados são consultados dinamicamente na biblioteca.
 
 ### P2 — Áudio e experiência avançada
 

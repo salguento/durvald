@@ -340,6 +340,41 @@ final class DurvaldCoreStore {
         }
     }
 
+    @discardableResult
+    func createSmartPlaylist(
+        named name: String,
+        description: String,
+        definition: SmartPlaylistDefinition
+    ) async -> Playlist? {
+        guard let core else { errorMessage = "O core ainda está abrindo."; return nil }
+        do {
+            let playlist = try await core.createSmartPlaylist(
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                description: description.trimmingCharacters(in: .whitespacesAndNewlines),
+                definition: definition
+            )
+            playlists.append(playlist)
+            return playlist
+        } catch { errorMessage = String(describing: error); return nil }
+    }
+
+    func updateSmartPlaylist(
+        id: Int64,
+        name: String,
+        description: String,
+        definition: SmartPlaylistDefinition
+    ) async -> Playlist? {
+        guard let core else { return nil }
+        do {
+            try await core.updateSmartPlaylist(
+                playlistId: id, name: name, description: description, definition: definition
+            )
+            let updated = try await core.playlist(playlistId: id)
+            if let index = playlists.firstIndex(where: { $0.id == id }) { playlists[index] = updated }
+            return updated
+        } catch { errorMessage = String(describing: error); return nil }
+    }
+
     func importM3U8(from url: URL) async throws -> PlaylistImportReport {
         guard let core else { throw PlaylistTransferError.cannotCreatePlaylist }
         let accessing = url.startAccessingSecurityScopedResource()

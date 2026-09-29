@@ -301,6 +301,18 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
     )?;
 
     conn.execute(
+        "CREATE TABLE IF NOT EXISTS smart_playlist_definitions (
+            playlist_id INTEGER PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE,
+            match_all BOOL NOT NULL,
+            rules_json TEXT NOT NULL CHECK(json_valid(rules_json)),
+            result_limit INTEGER CHECK(result_limit IS NULL OR result_limit BETWEEN 1 AND 10000),
+            sort_by TEXT NOT NULL,
+            descending BOOL NOT NULL
+        )",
+        (),
+    )?;
+
+    conn.execute(
         "CREATE TABLE IF NOT EXISTS songs (
             song_id   INTEGER PRIMARY KEY,
             title TEXT NOT NULL,
@@ -1561,6 +1573,325 @@ pub fn create_playlist(
     })?;
 
     Ok(playlist)
+}
+
+const SMART_FIELDS: &[&str] = &[
+    "rating",
+    "favorite",
+    "genre",
+    "year",
+    "play_count",
+    "last_played",
+    "date_added",
+];
+const SMART_COMPARISONS: &[&str] = &[
+    "equals",
+    "not_equals",
+    "greater",
+    "greater_or_equal",
+    "less",
+    "less_or_equal",
+    "contains",
+    "before",
+    "after",
+    "is_empty",
+    "is_not_empty",
+];
+const SMART_SORT_FIELDS: &[&str] = &[
+    "title",
+    "artist",
+    "album",
+    "rating",
+    "play_count",
+    "last_played",
+    "date_added",
+    "year",
+];
+
+pub(crate) fn validate_smart_playlist_definition(
+    definition: &crate::api::SmartPlaylistDefinition,
+) -> Result<(), String> {
+    if definition.rules.is_empty() {
+        return Err("A smart playlist must contain at least one rule".into());
+    }
+    if definition.rules.len() > 32 {
+        return Err("A smart playlist cannot contain more than 32 rules".into());
+    }
+    if definition.limit == Some(0) || definition.limit.is_some_and(|value| value > 10_000) {
+        return Err("Smart playlist limit must be between 1 and 10000".into());
+    }
+    if !SMART_SORT_FIELDS.contains(&definition.sort_by.as_str()) {
+        return Err("Unsupported smart playlist sort field".into());
+    }
+    for rule in &definition.rules {
+        if !SMART_FIELDS.contains(&rule.field.as_str()) {
+            return Err(format!("Unsupported smart playlist field: {}", rule.field));
+        }
+        if !SMART_COMPARISONS.contains(&rule.comparison.as_str()) {
+            return Err(format!(
+                "Unsupported smart playlist comparison: {}",
+                rule.comparison
+            ));
+        }
+        let no_value = matches!(rule.comparison.as_str(), "is_empty" | "is_not_empty");
+        let comparison_allowed = match rule.field.as_str() {
+            "favorite" => matches!(rule.comparison.as_str(), "equals" | "not_equals"),
+            "genre" => matches!(
+                rule.comparison.as_str(),
+                "equals" | "not_equals" | "contains" | "is_empty" | "is_not_empty"
+            ),
+            "last_played" | "date_added" => matches!(
+                rule.comparison.as_str(),
+                "before" | "after" | "is_empty" | "is_not_empty"
+            ),
+            _ => matches!(
+                rule.comparison.as_str(),
+                "equals"
+                    | "not_equals"
+                    | "greater"
+                    | "greater_or_equal"
+                    | "less"
+                    | "less_or_equal"
+                    | "is_empty"
+                    | "is_not_empty"
+            ),
+        };
+        if !comparison_allowed {
+            return Err(format!(
+                "Comparison {} is not valid for {}",
+                rule.comparison, rule.field
+            ));
+        }
+        if !no_value && rule.value.trim().is_empty() {
+            return Err("Smart playlist rule value cannot be empty".into());
+        }
+        if matches!(rule.field.as_str(), "rating" | "year" | "play_count")
+            && !no_value
+            && rule.value.parse::<i64>().is_err()
+        {
+            return Err(format!("{} rules require a whole number", rule.field));
+        }
+        if !no_value {
+            let numeric = rule.value.parse::<i64>().ok();
+            if rule.field == "rating" && numeric.is_some_and(|value| !(0..=5).contains(&value)) {
+                return Err("Rating rules require a value between 0 and 5".into());
+            }
+            if rule.field == "year" && numeric.is_some_and(|value| !(1..=9999).contains(&value)) {
+                return Err("Year rules require a value between 1 and 9999".into());
+            }
+            if rule.field == "play_count" && numeric.is_some_and(|value| value < 0) {
+                return Err("Play count rules cannot use a negative value".into());
+            }
+        }
+        if rule.field == "favorite" && !no_value && !matches!(rule.value.as_str(), "true" | "false")
+        {
+            return Err("Favorite rules require true or false".into());
+        }
+        if matches!(rule.field.as_str(), "last_played" | "date_added")
+            && !no_value
+            && chrono::NaiveDate::parse_from_str(&rule.value, "%Y-%m-%d").is_err()
+        {
+            return Err("Date rules require the YYYY-MM-DD format".into());
+        }
+    }
+    Ok(())
+}
+
+pub fn create_smart_playlist(
+    conn: &Connection,
+    name: String,
+    description: String,
+    definition: &crate::api::SmartPlaylistDefinition,
+) -> DatabaseResult<Playlist> {
+    validate_smart_playlist_definition(definition).map_err(DatabaseError::Custom)?;
+    let tx = conn.unchecked_transaction()?;
+    let playlist = create_playlist(&tx, name, String::new(), description)?;
+    persist_smart_definition(&tx, playlist.id, definition)?;
+    tx.commit()?;
+    Ok(playlist)
+}
+
+pub fn update_smart_playlist(
+    conn: &Connection,
+    playlist_id: u64,
+    name: String,
+    description: String,
+    definition: &crate::api::SmartPlaylistDefinition,
+) -> DatabaseResult<bool> {
+    validate_smart_playlist_definition(definition).map_err(DatabaseError::Custom)?;
+    let tx = conn.unchecked_transaction()?;
+    let updated = tx.execute(
+        "UPDATE playlists SET name=?1,description=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?3",
+        params![name, description, playlist_id],
+    )? > 0;
+    if updated {
+        persist_smart_definition(&tx, playlist_id, definition)?;
+    }
+    tx.commit()?;
+    Ok(updated)
+}
+
+fn persist_smart_definition(
+    conn: &Connection,
+    playlist_id: u64,
+    definition: &crate::api::SmartPlaylistDefinition,
+) -> DatabaseResult<()> {
+    let rules = serde_json::to_string(&definition.rules)
+        .map_err(|error| DatabaseError::Custom(error.to_string()))?;
+    conn.execute(
+        "INSERT INTO smart_playlist_definitions(playlist_id,match_all,rules_json,result_limit,sort_by,descending)
+         VALUES(?1,?2,?3,?4,?5,?6)
+         ON CONFLICT(playlist_id) DO UPDATE SET match_all=excluded.match_all,
+            rules_json=excluded.rules_json,result_limit=excluded.result_limit,
+            sort_by=excluded.sort_by,descending=excluded.descending",
+        params![playlist_id, definition.match_all, rules, definition.limit, definition.sort_by, definition.descending],
+    )?;
+    Ok(())
+}
+
+pub fn get_smart_playlist_definition(
+    conn: &Connection,
+    playlist_id: u64,
+) -> DatabaseResult<Option<crate::api::SmartPlaylistDefinition>> {
+    conn.query_row(
+        "SELECT match_all,rules_json,result_limit,sort_by,descending
+         FROM smart_playlist_definitions WHERE playlist_id=?1",
+        [playlist_id],
+        |row| {
+            let json: String = row.get(1)?;
+            let rules = serde_json::from_str(&json).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    json.len(),
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            Ok(crate::api::SmartPlaylistDefinition {
+                match_all: row.get(0)?,
+                rules,
+                limit: row.get(2)?,
+                sort_by: row.get(3)?,
+                descending: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(DatabaseError::from)
+}
+
+pub fn get_smart_playlist_tracks(
+    conn: &Connection,
+    definition: &crate::api::SmartPlaylistDefinition,
+) -> DatabaseResult<Vec<SongItem>> {
+    validate_smart_playlist_definition(definition).map_err(DatabaseError::Custom)?;
+    use rusqlite::types::Value;
+    let mut clauses = Vec::new();
+    let mut values = Vec::<Value>::new();
+    for rule in &definition.rules {
+        let expression = match rule.field.as_str() {
+            "rating" => "s.rating",
+            "favorite" => "s.is_favorite",
+            "genre" => "json_extract(c.payload,'$.genre')",
+            "year" => "json_extract(c.payload,'$.year')",
+            "play_count" => "s.play_count",
+            "last_played" => "s.last_played",
+            "date_added" => "s.created_at",
+            _ => unreachable!(),
+        };
+        let clause = match rule.comparison.as_str() {
+            "is_empty" => format!("{expression} IS NULL"),
+            "is_not_empty" => format!("{expression} IS NOT NULL"),
+            "contains" => {
+                values.push(Value::Text(format!("%{}%", smart_escape_like(&rule.value))));
+                format!("{expression} LIKE ? ESCAPE '\\' COLLATE NOCASE")
+            }
+            comparison => {
+                let operator = match comparison {
+                    "equals" => "=",
+                    "not_equals" => "!=",
+                    "greater" | "after" => ">",
+                    "greater_or_equal" => ">=",
+                    "less" | "before" => "<",
+                    "less_or_equal" => "<=",
+                    _ => unreachable!(),
+                };
+                let value = match rule.field.as_str() {
+                    "rating" | "year" | "play_count" => Value::Integer(rule.value.parse().unwrap()),
+                    "favorite" => Value::Integer(i64::from(rule.value == "true")),
+                    _ => Value::Text(rule.value.clone()),
+                };
+                values.push(value);
+                format!("{expression} {operator} ?")
+            }
+        };
+        clauses.push(clause);
+    }
+    let joiner = if definition.match_all {
+        " AND "
+    } else {
+        " OR "
+    };
+    let sort = match definition.sort_by.as_str() {
+        "title" => "s.title COLLATE NOCASE",
+        "artist" => "s.artist_name COLLATE NOCASE",
+        "album" => "s.release_title COLLATE NOCASE",
+        "rating" => "s.rating",
+        "play_count" => "s.play_count",
+        "last_played" => "s.last_played",
+        "date_added" => "s.created_at",
+        "year" => "json_extract(c.payload,'$.year')",
+        _ => unreachable!(),
+    };
+    let direction = if definition.descending { "DESC" } else { "ASC" };
+    let mut sql = format!(
+        "SELECT {} FROM songs s LEFT JOIN track_metadata_cache c USING(song_id) WHERE ({}) ORDER BY {sort} {direction},s.song_id",
+        song_columns!("s"),
+        clauses.join(joiner)
+    );
+    if let Some(limit) = definition.limit {
+        sql.push_str(" LIMIT ?");
+        values.push(Value::Integer(i64::from(limit)));
+    }
+    let mut stmt = conn.prepare(&sql)?;
+    let tracks = stmt
+        .query_map(rusqlite::params_from_iter(values), song_from_row)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(tracks)
+}
+
+fn smart_escape_like(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
+}
+
+fn song_from_row(row: &Row<'_>) -> rusqlite::Result<SongItem> {
+    Ok(SongItem {
+        song_id: row.get(0)?,
+        title: row.get(1)?,
+        artwork: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+        artist_id: row.get(3)?,
+        artist_name: row.get(4)?,
+        release_id: row.get(5)?,
+        release_title: row.get(6)?,
+        track_number: row.get(7)?,
+        disc_number: row.get(8)?,
+        duration: row.get::<_, f64>(9)? as u64,
+        bitrate: row.get(10)?,
+        sample_rate: row.get(11)?,
+        play_count: row.get(12)?,
+        last_played: row.get(13)?,
+        rating: row.get(14)?,
+        lyrics: row.get(15)?,
+        is_favorite: row.get(16)?,
+        is_hidden: row.get(17)?,
+        suggest_less: row.get(18)?,
+        file_path: row.get(19)?,
+        created_at: row.get(20)?,
+        updated_at: row.get(21)?,
+        bit_depth: row.get(22)?,
+    })
 }
 
 fn decode_playlist_cover(cover: &str) -> DatabaseResult<Option<Vec<u8>>> {
@@ -3157,6 +3488,81 @@ mod tests {
         assert!(remove_library_path(&conn, "/music/a").unwrap());
         assert!(!remove_library_path(&conn, "/music/a").unwrap());
         assert_eq!(get_library_paths(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn smart_playlists_are_evaluated_dynamically_with_rules_sorting_and_limit() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_tables(&conn).unwrap();
+        crate::metadata_edit::create_tables(&conn).unwrap();
+        for (id, title, rating, favorite, plays, year, genre) in [
+            (1, "First", 5, true, 10, 2024, "Jazz"),
+            (2, "Second", 4, true, 30, 2023, "Jazz Fusion"),
+            (3, "Third", 5, false, 50, 2024, "Rock"),
+        ] {
+            conn.execute(
+                "INSERT INTO songs(song_id,title,artist_id,artist_name,release_id,release_title,
+                    track_number,disc_number,duration,file_path,rating,is_favorite,play_count)
+                 VALUES(?1,?2,1,'Artist',1,'Album',1,1,180,?3,?4,?5,?6)",
+                params![
+                    id,
+                    title,
+                    format!("/music/{id}.flac"),
+                    rating,
+                    favorite,
+                    plays
+                ],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO track_metadata_cache(song_id,payload) VALUES(?1,?2)",
+                params![
+                    id,
+                    serde_json::json!({"year": year, "genre": genre}).to_string()
+                ],
+            )
+            .unwrap();
+        }
+        let definition = crate::api::SmartPlaylistDefinition {
+            match_all: true,
+            rules: vec![
+                crate::api::SmartPlaylistRule {
+                    field: "favorite".into(),
+                    comparison: "equals".into(),
+                    value: "true".into(),
+                },
+                crate::api::SmartPlaylistRule {
+                    field: "genre".into(),
+                    comparison: "contains".into(),
+                    value: "jazz".into(),
+                },
+            ],
+            limit: Some(1),
+            sort_by: "play_count".into(),
+            descending: true,
+        };
+        let playlist =
+            create_smart_playlist(&conn, "Smart".into(), String::new(), &definition).unwrap();
+        assert!(get_playlist_tracks(&conn, playlist.id).unwrap().is_empty());
+        let tracks = get_smart_playlist_tracks(&conn, &definition).unwrap();
+        assert_eq!(
+            tracks
+                .iter()
+                .map(|track| track.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Second"]
+        );
+
+        conn.execute("UPDATE songs SET is_favorite=0 WHERE song_id=2", [])
+            .unwrap();
+        let tracks = get_smart_playlist_tracks(&conn, &definition).unwrap();
+        assert_eq!(
+            tracks
+                .iter()
+                .map(|track| track.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["First"]
+        );
     }
 
     #[test]

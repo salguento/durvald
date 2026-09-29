@@ -101,6 +101,7 @@ struct PlaylistView: View {
     @State private var isPersistingTrackOrder = false
     @State private var isExporting = false
     @State private var exportMessage: String?
+    @State private var isEditingSmartPlaylist = false
     @FocusState private var isTrackSearchFocused: Bool
 
     private let artworkSize: CGFloat = 268
@@ -114,10 +115,12 @@ struct PlaylistView: View {
             VStack(alignment: .leading, spacing: 28) {
                 header
                 trackList
-                VStack(alignment: .leading, spacing: 10) {
-                    Divider()
-                    PlaylistMusicPicker(playlist: currentPlaylist) { track in
-                        tracks.append(track)
+                if !currentPlaylist.isSmart {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Divider()
+                        PlaylistMusicPicker(playlist: currentPlaylist) { track in
+                            tracks.append(track)
+                        }
                     }
                 }
             }
@@ -135,6 +138,16 @@ struct PlaylistView: View {
             guard store.metadataRevision > 0 else { return }
             tracks = await store.tracks(forPlaylistID: playlist.id)
         }
+        .sheet(isPresented: $isEditingSmartPlaylist) {
+            SmartPlaylistSheet(playlist: currentPlaylist) { name, description, definition in
+                guard await store.updateSmartPlaylist(
+                    id: currentPlaylist.id, name: name,
+                    description: description, definition: definition
+                ) != nil else { return false }
+                tracks = await store.tracks(forPlaylistID: currentPlaylist.id)
+                return true
+            }
+        }
     }
 
     private var header: some View {
@@ -149,7 +162,8 @@ struct PlaylistView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
-                        playlistCreation.requestEdit(currentPlaylist)
+                        if currentPlaylist.isSmart { isEditingSmartPlaylist = true }
+                        else { playlistCreation.requestEdit(currentPlaylist) }
                     } label: {
                         Text(currentPlaylist.name)
                             .font(.largeTitle)
@@ -213,8 +227,9 @@ struct PlaylistView: View {
                 Spacer(minLength: 24)
 
                 Menu {
-                    Button("Editar playlist", systemImage: "pencil") {
-                        playlistCreation.requestEdit(currentPlaylist)
+                    Button(currentPlaylist.isSmart ? "Editar regras" : "Editar playlist", systemImage: "pencil") {
+                        if currentPlaylist.isSmart { isEditingSmartPlaylist = true }
+                        else { playlistCreation.requestEdit(currentPlaylist) }
                     }
                     Button(currentPlaylist.isFavorite ? "Desfavoritar playlist" : "Favoritar playlist",
                            systemImage: currentPlaylist.isFavorite ? "star.slash" : "star") {
@@ -336,7 +351,9 @@ struct PlaylistView: View {
             && trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var canReorderTracks: Bool { isReorderMode && !isPersistingTrackOrder }
+    private var canReorderTracks: Bool {
+        !currentPlaylist.isSmart && isReorderMode && !isPersistingTrackOrder
+    }
 
     @ViewBuilder
     private func reorderableTrackRow(_ entry: TrackEntry) -> some View {

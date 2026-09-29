@@ -413,6 +413,36 @@ impl DurvaldCore {
             .await
     }
 
+    /// Creates a dynamic playlist whose tracks are evaluated when read.
+    pub async fn create_smart_playlist(
+        &self,
+        name: String,
+        description: String,
+        definition: SmartPlaylistDefinition,
+    ) -> CoreResult<Playlist> {
+        self.playlist_application
+            .create_smart_playlist(name, description, definition)
+            .await
+    }
+
+    /// Updates a smart playlist definition without materializing its tracks.
+    pub async fn update_smart_playlist(
+        &self,
+        playlist_id: i64,
+        name: String,
+        description: String,
+        definition: SmartPlaylistDefinition,
+    ) -> CoreResult<()> {
+        self.playlist_application
+            .update_smart_playlist(
+                playlist_id_from_api(playlist_id)?,
+                name,
+                description,
+                definition,
+            )
+            .await
+    }
+
     /// Gets one playlist by ID.
     pub async fn playlist(&self, playlist_id: i64) -> CoreResult<Playlist> {
         self.playlist_application

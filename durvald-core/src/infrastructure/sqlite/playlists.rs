@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use crate::{
+    api::SmartPlaylistDefinition,
     database::models::Playlist,
     domain::catalog::CatalogTrack,
     domain::ids::PlaylistId,
@@ -41,9 +42,29 @@ impl SqlitePlaylistRepository {
             crate::database::operations::get_all_playlists_with_track_counts(&conn)
                 .map(|rows| {
                     rows.into_iter()
-                        .map(|row| PlaylistSummary {
-                            playlist: playlist_from_row(row.playlist),
-                            track_count: row.track_count,
+                        .map(|row| {
+                            let mut playlist = playlist_from_row(row.playlist);
+                            playlist.smart_definition =
+                                crate::database::operations::get_smart_playlist_definition(
+                                    &conn,
+                                    playlist.id.get(),
+                                )
+                                .ok()
+                                .flatten();
+                            let track_count = playlist
+                                .smart_definition
+                                .as_ref()
+                                .and_then(|definition| {
+                                    crate::database::operations::get_smart_playlist_tracks(
+                                        &conn, definition,
+                                    )
+                                    .ok()
+                                })
+                                .map_or(row.track_count, |tracks| tracks.len() as u64);
+                            PlaylistSummary {
+                                playlist,
+                                track_count,
+                            }
                         })
                         .collect()
                 })
@@ -51,6 +72,64 @@ impl SqlitePlaylistRepository {
         })
         .await
         .map_err(|error| format!("Playlist query task failed: {error}"))?
+    }
+
+    pub(crate) async fn create_smart(
+        &self,
+        name: String,
+        description: String,
+        definition: SmartPlaylistDefinition,
+    ) -> Result<PlaylistDetails, String> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::operations::create_smart_playlist(
+                &conn,
+                name,
+                description,
+                &definition,
+            )
+            .map(|row| {
+                let mut playlist = playlist_from_row(row);
+                playlist.smart_definition = Some(definition);
+                playlist
+            })
+            .map_err(|error| error.to_string())
+        })
+        .await
+        .map_err(|error| format!("Smart playlist creation task failed: {error}"))?
+    }
+
+    pub(crate) async fn update_smart(
+        &self,
+        playlist_id: PlaylistId,
+        name: String,
+        description: String,
+        definition: SmartPlaylistDefinition,
+    ) -> Result<(), PlaylistMutationError> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool
+                .get()
+                .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            let updated = crate::database::operations::update_smart_playlist(
+                &conn,
+                playlist_id.get(),
+                name,
+                description,
+                &definition,
+            )
+            .map_err(|error| PlaylistMutationError::Storage(error.to_string()))?;
+            if updated {
+                Ok(())
+            } else {
+                Err(PlaylistMutationError::NotFound)
+            }
+        })
+        .await
+        .map_err(|error| {
+            PlaylistMutationError::Storage(format!("Smart playlist update task failed: {error}"))
+        })?
     }
 
     pub(crate) async fn create(
@@ -186,6 +265,12 @@ impl SqlitePlaylistRepository {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
+            if crate::database::operations::get_smart_playlist_definition(&conn, playlist_id.get())
+                .map_err(|error| error.to_string())?
+                .is_some()
+            {
+                return Err("Smart playlists cannot receive materialized tracks".into());
+            }
             crate::database::operations::add_track_to_playlist_songs(
                 &conn,
                 playlist_id.get(),
@@ -213,6 +298,12 @@ impl SqlitePlaylistRepository {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
+            if crate::database::operations::get_smart_playlist_definition(&conn, playlist_id.get())
+                .map_err(|error| error.to_string())?
+                .is_some()
+            {
+                return Err("Smart playlists do not contain materialized tracks".into());
+            }
             crate::database::operations::remove_track_from_playlist(
                 &conn,
                 playlist_id.get(),
@@ -234,6 +325,12 @@ impl SqlitePlaylistRepository {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
+            if crate::database::operations::get_smart_playlist_definition(&conn, playlist_id.get())
+                .map_err(|error| error.to_string())?
+                .is_some()
+            {
+                return Err("Smart playlist order is defined by its rules".into());
+            }
             crate::database::operations::move_playlist_track(&conn, playlist_id.get(), from, to)
                 .map_err(|error| error.to_string())
         })
@@ -264,11 +361,20 @@ impl SqlitePlaylistRepository {
                         PlaylistLookupError::Storage(error.to_string())
                     }
                 })?;
-            let track_count =
-                crate::database::operations::get_playlist_track_count(&conn, playlist_id)
+            let mut playlist = playlist_from_row(playlist);
+            playlist.smart_definition =
+                crate::database::operations::get_smart_playlist_definition(&conn, playlist_id)
                     .map_err(|error| PlaylistLookupError::Storage(error.to_string()))?;
+            let track_count = if let Some(definition) = &playlist.smart_definition {
+                crate::database::operations::get_smart_playlist_tracks(&conn, definition)
+                    .map_err(|error| PlaylistLookupError::Storage(error.to_string()))?
+                    .len() as u64
+            } else {
+                crate::database::operations::get_playlist_track_count(&conn, playlist_id)
+                    .map_err(|error| PlaylistLookupError::Storage(error.to_string()))?
+            };
             Ok(PlaylistSummary {
-                playlist: playlist_from_row(playlist),
+                playlist,
                 track_count,
             })
         })
@@ -285,7 +391,17 @@ impl SqlitePlaylistRepository {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
-            crate::database::operations::get_playlist_tracks(&conn, playlist_id.get())
+            let definition = crate::database::operations::get_smart_playlist_definition(
+                &conn,
+                playlist_id.get(),
+            )
+            .map_err(|error| error.to_string())?;
+            let tracks = if let Some(definition) = definition {
+                crate::database::operations::get_smart_playlist_tracks(&conn, &definition)
+            } else {
+                crate::database::operations::get_playlist_tracks(&conn, playlist_id.get())
+            };
+            tracks
                 .map(|tracks| tracks.into_iter().map(track_from_row).collect())
                 .map_err(|error| error.to_string())
         })
@@ -316,5 +432,6 @@ pub(crate) fn playlist_from_row(row: Playlist) -> PlaylistDetails {
         suggest_less: row.suggest_less,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        smart_definition: None,
     }
 }

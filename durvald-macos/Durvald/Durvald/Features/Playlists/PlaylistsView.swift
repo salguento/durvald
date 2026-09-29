@@ -11,6 +11,7 @@ struct PlaylistsView: View {
     @State private var isImporting = false
     @State private var importReport: PlaylistImportReport?
     @State private var importError: String?
+    @State private var isShowingSmartPlaylist = false
     let onSelectPlaylist: (Playlist) -> Void
 
     var body: some View {
@@ -25,6 +26,9 @@ struct PlaylistsView: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             HStack {
+                Button("Nova smart playlist", systemImage: "wand.and.stars") {
+                    isShowingSmartPlaylist = true
+                }
                 Button("Importar M3U8…", systemImage: "square.and.arrow.down") {
                     isChoosingImport = true
                 }
@@ -43,6 +47,13 @@ struct PlaylistsView: View {
             onCompletion: importPlaylist
         )
         .sheet(item: $importReport) { PlaylistImportReportSheet(report: $0) }
+        .sheet(isPresented: $isShowingSmartPlaylist) {
+            SmartPlaylistSheet { name, description, definition in
+                await store.createSmartPlaylist(
+                    named: name, description: description, definition: definition
+                ) != nil
+            }
+        }
         .alert("Não foi possível importar", isPresented: Binding(
             get: { importError != nil },
             set: { if !$0 { importError = nil } }

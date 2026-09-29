@@ -136,7 +136,8 @@ final class DurvaldCoreStoreTests: XCTestCase {
     @MainActor
     func testPlaylistQueueAndCopyActionsPreserveOrderAndRepeatedTracks() async {
         let playlist = Playlist(id: 2, name: "Destino", description: "", artworkId: nil,
-            isFavorite: false, suggestLess: false, trackCount: 1, createdAt: "", updatedAt: "")
+            isFavorite: false, suggestLess: false, trackCount: 1, createdAt: "", updatedAt: "",
+            isSmart: false, smartDefinition: nil)
         for playNext in [false, true] {
             var snapshot = Fixtures.playingSnapshot
             snapshot.queue = [QueueItem(trackId: 1, position: 0), QueueItem(trackId: 9, position: 1)]
@@ -164,7 +165,8 @@ final class DurvaldCoreStoreTests: XCTestCase {
     @MainActor
     func testPlaylistMenuHasRequestedOrderAndCreationContext() {
         let playlist = Playlist(id: 1, name: "Origem", description: "", artworkId: nil,
-            isFavorite: false, suggestLess: false, trackCount: 1, createdAt: "", updatedAt: "")
+            isFavorite: false, suggestLess: false, trackCount: 1, createdAt: "", updatedAt: "",
+            isSmart: false, smartDefinition: nil)
         let controller = TrackMenuController()
         let creation = PlaylistCreationCoordinator()
         controller.configure(playlist: playlist, store: DurvaldCoreStore(), creation: creation,
@@ -214,7 +216,8 @@ final class DurvaldCoreStoreTests: XCTestCase {
         ]
         let store = DurvaldCoreStore(core: fake)
         let playlist = Playlist(id: 1, name: "Teste", description: "", artworkId: nil,
-            isFavorite: false, suggestLess: false, trackCount: 1, createdAt: "", updatedAt: "")
+            isFavorite: false, suggestLess: false, trackCount: 1, createdAt: "", updatedAt: "",
+            isSmart: false, smartDefinition: nil)
 
         let added = await store.addRelease(1, to: playlist)
 

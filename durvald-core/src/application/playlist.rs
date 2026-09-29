@@ -3,7 +3,7 @@
 use base64::Engine;
 
 use crate::{
-    api::{CoreError, CoreResult, Playlist, PlaylistTrack, Track},
+    api::{CoreError, CoreResult, Playlist, PlaylistTrack, SmartPlaylistDefinition, Track},
     application::library::track_from_catalog,
     domain::ids::{PlaylistId, TrackId},
     domain::playlist::PlaylistDetails,
@@ -50,6 +50,39 @@ impl PlaylistApplication {
             .await
             .map(|playlist| playlist_from_domain(playlist, 0))
             .map_err(|message| CoreError::Storage { message })
+    }
+
+    pub(crate) async fn create_smart_playlist(
+        &self,
+        name: String,
+        description: String,
+        definition: SmartPlaylistDefinition,
+    ) -> CoreResult<Playlist> {
+        validate_smart_definition(&name, &definition)?;
+        let created = self
+            .repository
+            .create_smart(name, description, definition)
+            .await
+            .map_err(|message| CoreError::Storage { message })?;
+        self.repository
+            .find(created.id)
+            .await
+            .map(|summary| playlist_from_domain(summary.playlist, summary.track_count))
+            .map_err(|error| playlist_lookup_error(error, created.id))
+    }
+
+    pub(crate) async fn update_smart_playlist(
+        &self,
+        playlist_id: PlaylistId,
+        name: String,
+        description: String,
+        definition: SmartPlaylistDefinition,
+    ) -> CoreResult<()> {
+        validate_smart_definition(&name, &definition)?;
+        self.repository
+            .update_smart(playlist_id, name, description, definition)
+            .await
+            .map_err(|error| playlist_mutation_error(error, playlist_id))
     }
 
     pub(crate) async fn playlist(&self, playlist_id: PlaylistId) -> CoreResult<Playlist> {
@@ -186,7 +219,19 @@ fn playlist_from_domain(playlist: PlaylistDetails, track_count: u64) -> Playlist
         track_count,
         created_at: playlist.created_at,
         updated_at: playlist.updated_at,
+        is_smart: playlist.smart_definition.is_some(),
+        smart_definition: playlist.smart_definition,
     }
+}
+
+fn validate_smart_definition(name: &str, definition: &SmartPlaylistDefinition) -> CoreResult<()> {
+    if name.trim().is_empty() {
+        return Err(CoreError::InvalidInput {
+            message: "Playlist name cannot be empty".into(),
+        });
+    }
+    crate::database::operations::validate_smart_playlist_definition(definition)
+        .map_err(|message| CoreError::InvalidInput { message })
 }
 
 fn playlist_lookup_error(error: PlaylistLookupError, playlist_id: PlaylistId) -> CoreError {

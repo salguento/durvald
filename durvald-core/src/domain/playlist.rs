@@ -1,5 +1,6 @@
 //! Playlist domain values shared across application and infrastructure.
 
+use crate::api::SmartPlaylistDefinition;
 use crate::domain::ids::{PlaylistId, TrackId};
 
 pub(crate) struct PlaylistDetails {
@@ -11,6 +12,7 @@ pub(crate) struct PlaylistDetails {
     pub(crate) suggest_less: bool,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
+    pub(crate) smart_definition: Option<SmartPlaylistDefinition>,
 }
 
 pub(crate) struct PlaylistSummary {

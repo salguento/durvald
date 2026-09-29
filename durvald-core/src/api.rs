@@ -222,6 +222,26 @@ pub struct Playlist {
     pub track_count: u64,
     pub created_at: String,
     pub updated_at: String,
+    pub is_smart: bool,
+    pub smart_definition: Option<SmartPlaylistDefinition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SmartPlaylistRule {
+    pub field: String,
+    pub comparison: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SmartPlaylistDefinition {
+    pub match_all: bool,
+    pub rules: Vec<SmartPlaylistRule>,
+    pub limit: Option<u32>,
+    pub sort_by: String,
+    pub descending: bool,
 }
 
 /// Playlist track entry

@@ -666,6 +666,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func createPlaylist(name: String, description: String, artworkBase64: String?) async throws  -> Playlist
 
     /**
+     * Creates a dynamic playlist whose tracks are evaluated when read.
+     */
+    func createSmartPlaylist(name: String, description: String, definition: SmartPlaylistDefinition) async throws  -> Playlist
+
+    /**
      * Deletes a playlist and its track entries.
      */
     func deletePlaylist(playlistId: Int64) async throws
@@ -985,6 +990,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Updates application settings.
      */
     func updateSettings(settings: Settings) async throws
+
+    /**
+     * Updates a smart playlist definition without materializing its tracks.
+     */
+    func updateSmartPlaylist(playlistId: Int64, name: String, description: String, definition: SmartPlaylistDefinition) async throws
 
 }
 
@@ -1482,6 +1492,26 @@ open func createPlaylist(name: String, description: String, artworkBase64: Strin
                 uniffi_durvald_core_fn_method_durvaldcore_create_playlist(
                     self.uniffiClonePointer(),
                     FfiConverterString.lower(name),FfiConverterString.lower(description),FfiConverterOptionString.lower(artworkBase64)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaylist.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Creates a dynamic playlist whose tracks are evaluated when read.
+     */
+open func createSmartPlaylist(name: String, description: String, definition: SmartPlaylistDefinition)async throws  -> Playlist {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_create_smart_playlist(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(name),FfiConverterString.lower(description),FfiConverterTypeSmartPlaylistDefinition.lower(definition)
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -2799,6 +2829,26 @@ open func updateSettings(settings: Settings)async throws  {
                 uniffi_durvald_core_fn_method_durvaldcore_update_settings(
                     self.uniffiClonePointer(),
                     FfiConverterTypeSettings.lower(settings)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Updates a smart playlist definition without materializing its tracks.
+     */
+open func updateSmartPlaylist(playlistId: Int64, name: String, description: String, definition: SmartPlaylistDefinition)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_update_smart_playlist(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(playlistId),FfiConverterString.lower(name),FfiConverterString.lower(description),FfiConverterTypeSmartPlaylistDefinition.lower(definition)
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -6113,10 +6163,12 @@ public struct Playlist {
     public var trackCount: UInt64
     public var createdAt: String
     public var updatedAt: String
+    public var isSmart: Bool
+    public var smartDefinition: SmartPlaylistDefinition?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, name: String, description: String, artworkId: String?, isFavorite: Bool, suggestLess: Bool, trackCount: UInt64, createdAt: String, updatedAt: String) {
+    public init(id: Int64, name: String, description: String, artworkId: String?, isFavorite: Bool, suggestLess: Bool, trackCount: UInt64, createdAt: String, updatedAt: String, isSmart: Bool, smartDefinition: SmartPlaylistDefinition?) {
         self.id = id
         self.name = name
         self.description = description
@@ -6126,6 +6178,8 @@ public struct Playlist {
         self.trackCount = trackCount
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.isSmart = isSmart
+        self.smartDefinition = smartDefinition
     }
 }
 
@@ -6160,6 +6214,12 @@ extension Playlist: Equatable, Hashable {
         if lhs.updatedAt != rhs.updatedAt {
             return false
         }
+        if lhs.isSmart != rhs.isSmart {
+            return false
+        }
+        if lhs.smartDefinition != rhs.smartDefinition {
+            return false
+        }
         return true
     }
 
@@ -6173,6 +6233,8 @@ extension Playlist: Equatable, Hashable {
         hasher.combine(trackCount)
         hasher.combine(createdAt)
         hasher.combine(updatedAt)
+        hasher.combine(isSmart)
+        hasher.combine(smartDefinition)
     }
 }
 
@@ -6189,7 +6251,9 @@ public struct FfiConverterTypePlaylist: FfiConverterRustBuffer {
                 suggestLess: FfiConverterBool.read(from: &buf),
                 trackCount: FfiConverterUInt64.read(from: &buf),
                 createdAt: FfiConverterString.read(from: &buf),
-                updatedAt: FfiConverterString.read(from: &buf)
+                updatedAt: FfiConverterString.read(from: &buf),
+                isSmart: FfiConverterBool.read(from: &buf),
+                smartDefinition: FfiConverterOptionTypeSmartPlaylistDefinition.read(from: &buf)
         )
     }
 
@@ -6203,6 +6267,8 @@ public struct FfiConverterTypePlaylist: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.trackCount, into: &buf)
         FfiConverterString.write(value.createdAt, into: &buf)
         FfiConverterString.write(value.updatedAt, into: &buf)
+        FfiConverterBool.write(value.isSmart, into: &buf)
+        FfiConverterOptionTypeSmartPlaylistDefinition.write(value.smartDefinition, into: &buf)
     }
 }
 
@@ -7215,6 +7281,152 @@ public func FfiConverterTypeSimilarArtist_lift(_ buf: RustBuffer) throws -> Simi
 
 public func FfiConverterTypeSimilarArtist_lower(_ value: SimilarArtist) -> RustBuffer {
     return FfiConverterTypeSimilarArtist.lower(value)
+}
+
+
+public struct SmartPlaylistDefinition {
+    public var matchAll: Bool
+    public var rules: [SmartPlaylistRule]
+    public var limit: UInt32?
+    public var sortBy: String
+    public var descending: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(matchAll: Bool, rules: [SmartPlaylistRule], limit: UInt32?, sortBy: String, descending: Bool) {
+        self.matchAll = matchAll
+        self.rules = rules
+        self.limit = limit
+        self.sortBy = sortBy
+        self.descending = descending
+    }
+}
+
+
+
+extension SmartPlaylistDefinition: Equatable, Hashable {
+    public static func ==(lhs: SmartPlaylistDefinition, rhs: SmartPlaylistDefinition) -> Bool {
+        if lhs.matchAll != rhs.matchAll {
+            return false
+        }
+        if lhs.rules != rhs.rules {
+            return false
+        }
+        if lhs.limit != rhs.limit {
+            return false
+        }
+        if lhs.sortBy != rhs.sortBy {
+            return false
+        }
+        if lhs.descending != rhs.descending {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(matchAll)
+        hasher.combine(rules)
+        hasher.combine(limit)
+        hasher.combine(sortBy)
+        hasher.combine(descending)
+    }
+}
+
+
+public struct FfiConverterTypeSmartPlaylistDefinition: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SmartPlaylistDefinition {
+        return
+            try SmartPlaylistDefinition(
+                matchAll: FfiConverterBool.read(from: &buf),
+                rules: FfiConverterSequenceTypeSmartPlaylistRule.read(from: &buf),
+                limit: FfiConverterOptionUInt32.read(from: &buf),
+                sortBy: FfiConverterString.read(from: &buf),
+                descending: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SmartPlaylistDefinition, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.matchAll, into: &buf)
+        FfiConverterSequenceTypeSmartPlaylistRule.write(value.rules, into: &buf)
+        FfiConverterOptionUInt32.write(value.limit, into: &buf)
+        FfiConverterString.write(value.sortBy, into: &buf)
+        FfiConverterBool.write(value.descending, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeSmartPlaylistDefinition_lift(_ buf: RustBuffer) throws -> SmartPlaylistDefinition {
+    return try FfiConverterTypeSmartPlaylistDefinition.lift(buf)
+}
+
+public func FfiConverterTypeSmartPlaylistDefinition_lower(_ value: SmartPlaylistDefinition) -> RustBuffer {
+    return FfiConverterTypeSmartPlaylistDefinition.lower(value)
+}
+
+
+public struct SmartPlaylistRule {
+    public var field: String
+    public var comparison: String
+    public var value: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(field: String, comparison: String, value: String) {
+        self.field = field
+        self.comparison = comparison
+        self.value = value
+    }
+}
+
+
+
+extension SmartPlaylistRule: Equatable, Hashable {
+    public static func ==(lhs: SmartPlaylistRule, rhs: SmartPlaylistRule) -> Bool {
+        if lhs.field != rhs.field {
+            return false
+        }
+        if lhs.comparison != rhs.comparison {
+            return false
+        }
+        if lhs.value != rhs.value {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(field)
+        hasher.combine(comparison)
+        hasher.combine(value)
+    }
+}
+
+
+public struct FfiConverterTypeSmartPlaylistRule: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SmartPlaylistRule {
+        return
+            try SmartPlaylistRule(
+                field: FfiConverterString.read(from: &buf),
+                comparison: FfiConverterString.read(from: &buf),
+                value: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SmartPlaylistRule, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.field, into: &buf)
+        FfiConverterString.write(value.comparison, into: &buf)
+        FfiConverterString.write(value.value, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeSmartPlaylistRule_lift(_ buf: RustBuffer) throws -> SmartPlaylistRule {
+    return try FfiConverterTypeSmartPlaylistRule.lift(buf)
+}
+
+public func FfiConverterTypeSmartPlaylistRule_lower(_ value: SmartPlaylistRule) -> RustBuffer {
+    return FfiConverterTypeSmartPlaylistRule.lower(value)
 }
 
 
@@ -9002,6 +9214,27 @@ fileprivate struct FfiConverterOptionTypeScanProgress: FfiConverterRustBuffer {
     }
 }
 
+fileprivate struct FfiConverterOptionTypeSmartPlaylistDefinition: FfiConverterRustBuffer {
+    typealias SwiftType = SmartPlaylistDefinition?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSmartPlaylistDefinition.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSmartPlaylistDefinition.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionTypeTrack: FfiConverterRustBuffer {
     typealias SwiftType = Track?
 
@@ -9504,6 +9737,28 @@ fileprivate struct FfiConverterSequenceTypeSimilarArtist: FfiConverterRustBuffer
     }
 }
 
+fileprivate struct FfiConverterSequenceTypeSmartPlaylistRule: FfiConverterRustBuffer {
+    typealias SwiftType = [SmartPlaylistRule]
+
+    public static func write(_ value: [SmartPlaylistRule], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeSmartPlaylistRule.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [SmartPlaylistRule] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [SmartPlaylistRule]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeSmartPlaylistRule.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 fileprivate struct FfiConverterSequenceTypeTrack: FfiConverterRustBuffer {
     typealias SwiftType = [Track]
 
@@ -9701,6 +9956,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_create_playlist() != 63354) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_create_smart_playlist() != 13203) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_delete_playlist() != 36449) {
@@ -9902,6 +10160,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_update_settings() != 48218) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_update_smart_playlist() != 23842) {
         return InitializationResult.apiChecksumMismatch
     }
 
