@@ -66,8 +66,8 @@ Legenda: **✅ implementado**, **🟡 parcial**, **❌ não implementado**.
 | Desfazer edição de tags | ✅ | Journal persistente, backup e ação de desfazer a última alteração. |
 | Edição de tags em lote | ✅ | Seleção múltipla com valores comuns/diferentes, alterações parciais, progresso, relatório por arquivo e undo da operação apoiado no journal persistente existente. |
 | Renomear/organizar arquivos | ❌ | Não há regras de organização física por artista/álbum/faixa. |
-| Detectar e mesclar duplicatas | ❌ | Não há fluxo dedicado de duplicatas. |
-| Localizar/revincular arquivos movidos | ❌ | Não há reparo de caminhos quebrados. |
+| Detectar e mesclar duplicatas | ✅ | Análise explícita por SHA-256 e mesclagem somente após confirmação, sem apagar o arquivo físico. |
+| Localizar/revincular arquivos movidos | ✅ | Caminhos removidos são preservados para relink por hash e metadados. |
 | Busca global | ✅ | Busca por faixas, álbuns, artistas e playlists, com UI dedicada. |
 | Navegação por artista, álbum e faixa | ✅ | Telas completas no cliente macOS. |
 | Paginação para bibliotecas grandes | ✅ | Faixas, álbuns e histórico são carregados em páginas; o core limita páginas a 200 itens. |
@@ -182,6 +182,7 @@ Objetivo: transformar a boa indexação existente em uma biblioteca fácil de ma
    - sugerir relink por metadados e fingerprint/hash adequado;
    - detectar duplicatas sem apagar automaticamente;
    - preservar playlists, histórico, favoritos e ratings ao mesclar registros.
+   - **Concluído:** o reparo é iniciado nos Ajustes, nunca mescla automaticamente e mantém os dados de uso na consolidação.
 
 5. **Smart playlists**
    - definir regras sobre rating, favorito, gênero, ano, play count, última reprodução e data de inclusão;

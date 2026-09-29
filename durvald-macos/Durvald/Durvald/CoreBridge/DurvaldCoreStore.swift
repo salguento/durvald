@@ -191,6 +191,12 @@ final class DurvaldCoreStore {
         artists = result.2
     }
 
+    func refreshLibraryCatalog() async {
+        guard let core else { return }
+        do { try await reloadPrimaryLibrary(using: core) }
+        catch { errorMessage = String(describing: error) }
+    }
+
     private func startDeferredInitialization(using core: DurvaldCore) {
         deferredInitializationTask?.cancel()
         deferredInitializationTask = Task { [weak self] in

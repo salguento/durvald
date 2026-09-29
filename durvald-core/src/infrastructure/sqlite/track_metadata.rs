@@ -3,7 +3,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-    api::{CoreError, CoreResult, TrackInfo, TrackMetadataEdit},
+    api::{CoreError, CoreResult, LibraryRepairAnalysis, TrackInfo, TrackMetadataEdit},
     domain::ids::TrackId,
 };
 
@@ -45,6 +45,22 @@ impl SqliteTrackMetadataRepository {
     pub(crate) async fn undo(&self, track_id: TrackId) -> CoreResult<TrackInfo> {
         self.run(move |conn| crate::metadata_edit::undo(conn, track_id.get() as i64))
             .await
+    }
+
+    pub(crate) async fn analyze_library(&self) -> CoreResult<LibraryRepairAnalysis> {
+        self.run(crate::library_repair::analyze).await
+    }
+
+    pub(crate) async fn merge_library_records(
+        &self,
+        source_id: i64,
+        target_id: i64,
+        source_is_missing: bool,
+    ) -> CoreResult<()> {
+        self.run(move |conn| {
+            crate::library_repair::merge(conn, source_id, target_id, source_is_missing)
+        })
+        .await
     }
 
     async fn run<T, F>(&self, operation: F) -> CoreResult<T>

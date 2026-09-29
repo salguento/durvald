@@ -4,6 +4,7 @@ import SwiftUI
 struct LibrarySettingsView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @State private var pathPendingRemoval: String?
+    @State private var isShowingRepair = false
     @AppStorage("metadata.writeChangesToFiles") private var writeChangesToFiles = true
 
     var body: some View {
@@ -14,6 +15,13 @@ struct LibrarySettingsView: View {
                 Text("Ativado: salva nas tags e atualiza a biblioteca. Desativado: mantém alterações apenas no Durvald, inclusive após novos scans.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            Section("Manutenção") {
+                Button("Reparar arquivos e duplicatas…") { isShowingRepair = true }
+                    .disabled(store.isScanningLibrary)
+                    .accessibilityIdentifier("settings.library.repair")
+                Text("Identifica caminhos quebrados e duplicatas. Nenhum registro é mesclado automaticamente.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Pastas da biblioteca") {
                 if store.libraryPaths.isEmpty {
@@ -106,6 +114,9 @@ struct LibrarySettingsView: View {
                     .accessibilityIdentifier("settings.library.scanResult")
                 }
             }
+        }
+        .sheet(isPresented: $isShowingRepair) {
+            LibraryRepairView().environment(store)
         }
         .confirmationDialog(
             "Remover pasta da biblioteca?",

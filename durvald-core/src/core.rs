@@ -798,6 +798,26 @@ impl DurvaldCore {
             .await
     }
 
+    pub async fn analyze_library_repairs(&self) -> CoreResult<LibraryRepairAnalysis> {
+        self.metadata_application.analyze_library_repairs().await
+    }
+
+    pub async fn merge_library_records(
+        &self,
+        source_id: i64,
+        target_id: i64,
+        source_is_missing: bool,
+    ) -> CoreResult<()> {
+        if source_id < 0 || target_id < 0 {
+            return Err(CoreError::InvalidInput {
+                message: "Track IDs must not be negative".into(),
+            });
+        }
+        self.metadata_application
+            .merge_library_records(source_id, target_id, source_is_missing)
+            .await
+    }
+
     /// Gets a release by ID.
     pub async fn release(&self, release_id: i64) -> CoreResult<Release> {
         self.library_application

@@ -331,6 +331,36 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
         (),
     )?;
 
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS track_file_identity (
+            song_id INTEGER PRIMARY KEY REFERENCES songs(song_id) ON DELETE CASCADE,
+            content_hash TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            hashed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS missing_tracks (
+            missing_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            original_song_id INTEGER NOT NULL,
+            title TEXT NOT NULL, artist_name TEXT NOT NULL, release_title TEXT NOT NULL,
+            track_number INTEGER NOT NULL, disc_number INTEGER NOT NULL,
+            duration INTEGER NOT NULL, file_path TEXT NOT NULL UNIQUE,
+            play_count INTEGER NOT NULL, last_played TEXT, rating INTEGER,
+            is_favorite INTEGER NOT NULL, is_hidden INTEGER NOT NULL, suggest_less INTEGER NOT NULL,
+            content_hash TEXT, missing_since DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS missing_playlist_songs (
+            missing_id INTEGER NOT NULL REFERENCES missing_tracks(missing_id) ON DELETE CASCADE,
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL, added_at TEXT,
+            PRIMARY KEY(missing_id, playlist_id, position)
+        );
+        CREATE TABLE IF NOT EXISTS missing_play_history (
+            missing_id INTEGER NOT NULL REFERENCES missing_tracks(missing_id) ON DELETE CASCADE,
+            original_history_id INTEGER NOT NULL UNIQUE,
+            played_at TEXT NOT NULL, play_duration INTEGER
+        );",
+    )?;
+
     let has_metadata_version = conn
         .prepare("PRAGMA table_info(songs)")?
         .query_map([], |row| row.get::<_, String>(1))?
@@ -2569,6 +2599,32 @@ pub(crate) fn remove_missing_songs_in_folder(
         root_prefix.push(std::path::MAIN_SEPARATOR);
     }
     let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
+        "INSERT OR IGNORE INTO missing_tracks(
+            original_song_id,title,artist_name,release_title,track_number,disc_number,duration,
+            file_path,play_count,last_played,rating,is_favorite,is_hidden,suggest_less,content_hash)
+         SELECT s.song_id,s.title,s.artist_name,s.release_title,s.track_number,s.disc_number,s.duration,
+            s.file_path,s.play_count,s.last_played,s.rating,s.is_favorite,s.is_hidden,s.suggest_less,i.content_hash
+         FROM songs s LEFT JOIN track_file_identity i USING(song_id)
+         WHERE substr(s.file_path, 1, length(?1)) = ?1
+           AND NOT EXISTS (SELECT 1 FROM scan_discovered_paths d
+               WHERE d.scan_id=?2 AND d.file_path=s.file_path)",
+        params![root_prefix, reconciliation.scan_id],
+    )?;
+    transaction.execute(
+        "INSERT OR IGNORE INTO missing_playlist_songs(missing_id,playlist_id,position,added_at)
+         SELECT m.missing_id,p.playlist_id,p.position,p.added_at
+         FROM missing_tracks m JOIN playlist_songs p ON p.song_id=m.original_song_id
+         JOIN songs s ON s.song_id=p.song_id AND s.file_path=m.file_path",
+        [],
+    )?;
+    transaction.execute(
+        "INSERT OR IGNORE INTO missing_play_history(missing_id,original_history_id,played_at,play_duration)
+         SELECT m.missing_id,h.history_id,h.played_at,h.play_duration
+         FROM missing_tracks m JOIN play_history h ON h.song_id=m.original_song_id
+         JOIN songs s ON s.song_id=h.song_id AND s.file_path=m.file_path",
+        [],
+    )?;
     let affected_release_ids = transaction
         .prepare(
             "SELECT DISTINCT release_id FROM songs

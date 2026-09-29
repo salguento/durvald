@@ -108,6 +108,43 @@ pub struct TrackInfo {
     pub can_undo: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct LibraryRepairTrack {
+    pub id: i64,
+    pub title: String,
+    pub artist: String,
+    pub release: String,
+    pub file_path: String,
+    pub rating: Option<u8>,
+    pub is_favorite: bool,
+    pub is_missing: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct LibraryRepairSuggestion {
+    pub missing_id: i64,
+    pub candidate_track_id: i64,
+    pub confidence: f64,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DuplicateTrackGroup {
+    pub tracks: Vec<LibraryRepairTrack>,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct LibraryRepairAnalysis {
+    pub broken_files: Vec<LibraryRepairTrack>,
+    pub relink_suggestions: Vec<LibraryRepairSuggestion>,
+    pub duplicate_groups: Vec<DuplicateTrackGroup>,
+}
+
 /// One completed playback event.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

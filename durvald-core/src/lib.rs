@@ -20,6 +20,7 @@ mod domain;
 mod enrichment;
 mod infrastructure;
 mod lastfm;
+mod library_repair;
 mod metadata;
 mod metadata_edit;
 mod secure_store;

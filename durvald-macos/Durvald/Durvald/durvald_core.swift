@@ -572,6 +572,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws  -> PlaylistTrack
 
+    func analyzeLibraryRepairs() async throws  -> LibraryRepairAnalysis
+
     /**
      * Gets an artist by ID.
      */
@@ -711,6 +713,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * catalog identity. Merely listing remote search results performs no write.
      */
     func materializeRemoteArtist(selection: RemoteArtistSelection) async throws  -> Artist
+
+    func mergeLibraryRecords(sourceId: Int64, targetId: Int64, sourceIsMissing: Bool) async throws
 
     /**
      * Moves a track entry to another zero-based playlist position.
@@ -1087,6 +1091,23 @@ open func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypePlaylistTrack.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func analyzeLibraryRepairs()async throws  -> LibraryRepairAnalysis {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_analyze_library_repairs(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeLibraryRepairAnalysis.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -1666,6 +1687,23 @@ open func materializeRemoteArtist(selection: RemoteArtistSelection)async throws 
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeArtist.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func mergeLibraryRecords(sourceId: Int64, targetId: Int64, sourceIsMissing: Bool)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_merge_library_records(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(sourceId),FfiConverterInt64.lower(targetId),FfiConverterBool.lower(sourceIsMissing)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -4704,6 +4742,63 @@ public func FfiConverterTypeCoverRefreshProgress_lower(_ value: CoverRefreshProg
 }
 
 
+public struct DuplicateTrackGroup {
+    public var tracks: [LibraryRepairTrack]
+    public var reason: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tracks: [LibraryRepairTrack], reason: String) {
+        self.tracks = tracks
+        self.reason = reason
+    }
+}
+
+
+
+extension DuplicateTrackGroup: Equatable, Hashable {
+    public static func ==(lhs: DuplicateTrackGroup, rhs: DuplicateTrackGroup) -> Bool {
+        if lhs.tracks != rhs.tracks {
+            return false
+        }
+        if lhs.reason != rhs.reason {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(tracks)
+        hasher.combine(reason)
+    }
+}
+
+
+public struct FfiConverterTypeDuplicateTrackGroup: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DuplicateTrackGroup {
+        return
+            try DuplicateTrackGroup(
+                tracks: FfiConverterSequenceTypeLibraryRepairTrack.read(from: &buf),
+                reason: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DuplicateTrackGroup, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeLibraryRepairTrack.write(value.tracks, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDuplicateTrackGroup_lift(_ buf: RustBuffer) throws -> DuplicateTrackGroup {
+    return try FfiConverterTypeDuplicateTrackGroup.lift(buf)
+}
+
+public func FfiConverterTypeDuplicateTrackGroup_lower(_ value: DuplicateTrackGroup) -> RustBuffer {
+    return FfiConverterTypeDuplicateTrackGroup.lower(value)
+}
+
+
 public struct EnrichmentAttribution {
     public var sourceUrl: String
     public var author: String?
@@ -5499,6 +5594,249 @@ public func FfiConverterTypeLastSession_lift(_ buf: RustBuffer) throws -> LastSe
 
 public func FfiConverterTypeLastSession_lower(_ value: LastSession) -> RustBuffer {
     return FfiConverterTypeLastSession.lower(value)
+}
+
+
+public struct LibraryRepairAnalysis {
+    public var brokenFiles: [LibraryRepairTrack]
+    public var relinkSuggestions: [LibraryRepairSuggestion]
+    public var duplicateGroups: [DuplicateTrackGroup]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(brokenFiles: [LibraryRepairTrack], relinkSuggestions: [LibraryRepairSuggestion], duplicateGroups: [DuplicateTrackGroup]) {
+        self.brokenFiles = brokenFiles
+        self.relinkSuggestions = relinkSuggestions
+        self.duplicateGroups = duplicateGroups
+    }
+}
+
+
+
+extension LibraryRepairAnalysis: Equatable, Hashable {
+    public static func ==(lhs: LibraryRepairAnalysis, rhs: LibraryRepairAnalysis) -> Bool {
+        if lhs.brokenFiles != rhs.brokenFiles {
+            return false
+        }
+        if lhs.relinkSuggestions != rhs.relinkSuggestions {
+            return false
+        }
+        if lhs.duplicateGroups != rhs.duplicateGroups {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(brokenFiles)
+        hasher.combine(relinkSuggestions)
+        hasher.combine(duplicateGroups)
+    }
+}
+
+
+public struct FfiConverterTypeLibraryRepairAnalysis: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryRepairAnalysis {
+        return
+            try LibraryRepairAnalysis(
+                brokenFiles: FfiConverterSequenceTypeLibraryRepairTrack.read(from: &buf),
+                relinkSuggestions: FfiConverterSequenceTypeLibraryRepairSuggestion.read(from: &buf),
+                duplicateGroups: FfiConverterSequenceTypeDuplicateTrackGroup.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryRepairAnalysis, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeLibraryRepairTrack.write(value.brokenFiles, into: &buf)
+        FfiConverterSequenceTypeLibraryRepairSuggestion.write(value.relinkSuggestions, into: &buf)
+        FfiConverterSequenceTypeDuplicateTrackGroup.write(value.duplicateGroups, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeLibraryRepairAnalysis_lift(_ buf: RustBuffer) throws -> LibraryRepairAnalysis {
+    return try FfiConverterTypeLibraryRepairAnalysis.lift(buf)
+}
+
+public func FfiConverterTypeLibraryRepairAnalysis_lower(_ value: LibraryRepairAnalysis) -> RustBuffer {
+    return FfiConverterTypeLibraryRepairAnalysis.lower(value)
+}
+
+
+public struct LibraryRepairSuggestion {
+    public var missingId: Int64
+    public var candidateTrackId: Int64
+    public var confidence: Double
+    public var reason: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(missingId: Int64, candidateTrackId: Int64, confidence: Double, reason: String) {
+        self.missingId = missingId
+        self.candidateTrackId = candidateTrackId
+        self.confidence = confidence
+        self.reason = reason
+    }
+}
+
+
+
+extension LibraryRepairSuggestion: Equatable, Hashable {
+    public static func ==(lhs: LibraryRepairSuggestion, rhs: LibraryRepairSuggestion) -> Bool {
+        if lhs.missingId != rhs.missingId {
+            return false
+        }
+        if lhs.candidateTrackId != rhs.candidateTrackId {
+            return false
+        }
+        if lhs.confidence != rhs.confidence {
+            return false
+        }
+        if lhs.reason != rhs.reason {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(missingId)
+        hasher.combine(candidateTrackId)
+        hasher.combine(confidence)
+        hasher.combine(reason)
+    }
+}
+
+
+public struct FfiConverterTypeLibraryRepairSuggestion: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryRepairSuggestion {
+        return
+            try LibraryRepairSuggestion(
+                missingId: FfiConverterInt64.read(from: &buf),
+                candidateTrackId: FfiConverterInt64.read(from: &buf),
+                confidence: FfiConverterDouble.read(from: &buf),
+                reason: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryRepairSuggestion, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.missingId, into: &buf)
+        FfiConverterInt64.write(value.candidateTrackId, into: &buf)
+        FfiConverterDouble.write(value.confidence, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeLibraryRepairSuggestion_lift(_ buf: RustBuffer) throws -> LibraryRepairSuggestion {
+    return try FfiConverterTypeLibraryRepairSuggestion.lift(buf)
+}
+
+public func FfiConverterTypeLibraryRepairSuggestion_lower(_ value: LibraryRepairSuggestion) -> RustBuffer {
+    return FfiConverterTypeLibraryRepairSuggestion.lower(value)
+}
+
+
+public struct LibraryRepairTrack {
+    public var id: Int64
+    public var title: String
+    public var artist: String
+    public var release: String
+    public var filePath: String
+    public var rating: UInt8?
+    public var isFavorite: Bool
+    public var isMissing: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, title: String, artist: String, release: String, filePath: String, rating: UInt8?, isFavorite: Bool, isMissing: Bool) {
+        self.id = id
+        self.title = title
+        self.artist = artist
+        self.release = release
+        self.filePath = filePath
+        self.rating = rating
+        self.isFavorite = isFavorite
+        self.isMissing = isMissing
+    }
+}
+
+
+
+extension LibraryRepairTrack: Equatable, Hashable {
+    public static func ==(lhs: LibraryRepairTrack, rhs: LibraryRepairTrack) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.release != rhs.release {
+            return false
+        }
+        if lhs.filePath != rhs.filePath {
+            return false
+        }
+        if lhs.rating != rhs.rating {
+            return false
+        }
+        if lhs.isFavorite != rhs.isFavorite {
+            return false
+        }
+        if lhs.isMissing != rhs.isMissing {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(title)
+        hasher.combine(artist)
+        hasher.combine(release)
+        hasher.combine(filePath)
+        hasher.combine(rating)
+        hasher.combine(isFavorite)
+        hasher.combine(isMissing)
+    }
+}
+
+
+public struct FfiConverterTypeLibraryRepairTrack: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LibraryRepairTrack {
+        return
+            try LibraryRepairTrack(
+                id: FfiConverterInt64.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                artist: FfiConverterString.read(from: &buf),
+                release: FfiConverterString.read(from: &buf),
+                filePath: FfiConverterString.read(from: &buf),
+                rating: FfiConverterOptionUInt8.read(from: &buf),
+                isFavorite: FfiConverterBool.read(from: &buf),
+                isMissing: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LibraryRepairTrack, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artist, into: &buf)
+        FfiConverterString.write(value.release, into: &buf)
+        FfiConverterString.write(value.filePath, into: &buf)
+        FfiConverterOptionUInt8.write(value.rating, into: &buf)
+        FfiConverterBool.write(value.isFavorite, into: &buf)
+        FfiConverterBool.write(value.isMissing, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeLibraryRepairTrack_lift(_ buf: RustBuffer) throws -> LibraryRepairTrack {
+    return try FfiConverterTypeLibraryRepairTrack.lift(buf)
+}
+
+public func FfiConverterTypeLibraryRepairTrack_lower(_ value: LibraryRepairTrack) -> RustBuffer {
+    return FfiConverterTypeLibraryRepairTrack.lower(value)
 }
 
 
@@ -8924,6 +9262,28 @@ fileprivate struct FfiConverterSequenceTypeArtistRefreshSectionResult: FfiConver
     }
 }
 
+fileprivate struct FfiConverterSequenceTypeDuplicateTrackGroup: FfiConverterRustBuffer {
+    typealias SwiftType = [DuplicateTrackGroup]
+
+    public static func write(_ value: [DuplicateTrackGroup], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDuplicateTrackGroup.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DuplicateTrackGroup] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DuplicateTrackGroup]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDuplicateTrackGroup.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 fileprivate struct FfiConverterSequenceTypeExternalReleaseGroup: FfiConverterRustBuffer {
     typealias SwiftType = [ExternalReleaseGroup]
 
@@ -8985,6 +9345,50 @@ fileprivate struct FfiConverterSequenceTypeKeyValuePair: FfiConverterRustBuffer 
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeKeyValuePair.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeLibraryRepairSuggestion: FfiConverterRustBuffer {
+    typealias SwiftType = [LibraryRepairSuggestion]
+
+    public static func write(_ value: [LibraryRepairSuggestion], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibraryRepairSuggestion.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibraryRepairSuggestion] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibraryRepairSuggestion]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibraryRepairSuggestion.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeLibraryRepairTrack: FfiConverterRustBuffer {
+    typealias SwiftType = [LibraryRepairTrack]
+
+    public static func write(_ value: [LibraryRepairTrack], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLibraryRepairTrack.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LibraryRepairTrack] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LibraryRepairTrack]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLibraryRepairTrack.read(from: &buf))
         }
         return seq
     }
@@ -9236,6 +9640,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_add_track_to_playlist() != 52605) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_analyze_library_repairs() != 58181) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_artist() != 38977) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -9324,6 +9731,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_materialize_remote_artist() != 7346) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_merge_library_records() != 7483) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_move_playlist_track() != 20004) {

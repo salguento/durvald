@@ -3,7 +3,8 @@
 use std::sync::Arc;
 
 use crate::api::{
-    AudioMetadata, CoreError, CoreResult, KeyValuePair, TrackInfo, TrackMetadataEdit,
+    AudioMetadata, CoreError, CoreResult, KeyValuePair, LibraryRepairAnalysis, TrackInfo,
+    TrackMetadataEdit,
 };
 use crate::domain::ids::TrackId;
 use crate::infrastructure::sqlite::track_metadata::SqliteTrackMetadataRepository;
@@ -81,6 +82,23 @@ impl MetadataApplication {
     pub(crate) async fn undo_track_metadata(&self, track_id: TrackId) -> CoreResult<TrackInfo> {
         let _queue = self.metadata_edit_queue.lock().await;
         self.repository.undo(track_id).await
+    }
+
+    pub(crate) async fn analyze_library_repairs(&self) -> CoreResult<LibraryRepairAnalysis> {
+        let _queue = self.metadata_edit_queue.lock().await;
+        self.repository.analyze_library().await
+    }
+
+    pub(crate) async fn merge_library_records(
+        &self,
+        source_id: i64,
+        target_id: i64,
+        source_is_missing: bool,
+    ) -> CoreResult<()> {
+        let _queue = self.metadata_edit_queue.lock().await;
+        self.repository
+            .merge_library_records(source_id, target_id, source_is_missing)
+            .await
     }
 }
 
