@@ -269,6 +269,7 @@ pub struct ScanResult {
     pub total_files_found: u64,
     pub new_tracks_added: u64,
     pub updated_tracks: u64,
+    pub removed_tracks: u64,
     pub errors: Vec<String>,
 }
 

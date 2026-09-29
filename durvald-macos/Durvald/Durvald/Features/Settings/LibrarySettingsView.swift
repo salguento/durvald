@@ -40,7 +40,7 @@ struct LibrarySettingsView: View {
                                 pathPendingRemoval = path
                             }
                             .buttonStyle(.borderless)
-                            .disabled(store.scanProgress != nil)
+                            .disabled(store.isScanningLibrary)
                             .accessibilityIdentifier(
                                 "settings.library.removeFolder.\(path)"
                             )
@@ -49,12 +49,20 @@ struct LibrarySettingsView: View {
                 }
 
                 HStack {
+                    Button("Atualizar biblioteca") {
+                        store.updateLibrary()
+                    }
+                    .disabled(store.isScanningLibrary || store.libraryPaths.isEmpty)
+                    .accessibilityIdentifier(
+                        "settings.library.update"
+                    )
+
                     Spacer()
 
                     Button("Adicionar pasta…") {
                         chooseLibraryFolder()
                     }
-                    .disabled(store.scanProgress != nil)
+                    .disabled(store.isScanningLibrary)
                     .accessibilityIdentifier(
                         "settings.library.addFolder"
                     )
@@ -87,6 +95,15 @@ struct LibrarySettingsView: View {
                             "settings.library.cancelScan"
                         )
                     }
+                }
+            }
+
+            if let result = store.lastScanResult {
+                Section("Resultado da última atualização") {
+                    Text(
+                        "\(result.newTracksAdded) novas, \(result.updatedTracks) atualizadas, \(result.removedTracks) removidas e \(result.errors.count) falhas."
+                    )
+                    .accessibilityIdentifier("settings.library.scanResult")
                 }
             }
         }

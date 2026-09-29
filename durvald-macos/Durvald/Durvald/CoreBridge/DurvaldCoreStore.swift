@@ -27,6 +27,8 @@ final class DurvaldCoreStore {
     private(set) var isPlaybackPaused = true
     private(set) var isSeeking = false
     private(set) var scanProgress: ScanProgress?
+    private(set) var isScanningLibrary = false
+    private(set) var lastScanResult: ScanResult?
     private(set) var tracks: [Track] = []
     private(set) var releases: [Release] = []
     private(set) var artists: [Artist] = []
@@ -545,6 +547,7 @@ final class DurvaldCoreStore {
     }
 
     func addAndScanLibraryFolder(_ url: URL) {
+        guard !isScanningLibrary else { return }
         do {
             try saveAndStartLibraryAccess(for: url)
         } catch {
@@ -552,24 +555,57 @@ final class DurvaldCoreStore {
             return
         }
 
+        print("Durvald: pasta selecionada para scan: \(url.path)")
+        beginLibraryScan(allowNoConfiguredPaths: true) {
+            guard let core = self.core else { return }
+            try await core.addLibraryPath(path: url.path)
+            self.libraryPaths = try await core.libraryPaths()
+        }
+    }
+
+    func updateLibrary() {
+        beginLibraryScan()
+    }
+
+    private func beginLibraryScan(
+        allowNoConfiguredPaths: Bool = false,
+        beforeScan: @escaping @MainActor () async throws -> Void = {}
+    ) {
+        guard !isScanningLibrary else { return }
+        guard core != nil else {
+            errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
+            return
+        }
+        guard allowNoConfiguredPaths || !libraryPaths.isEmpty else {
+            errorMessage = "Adicione uma pasta à biblioteca antes de atualizar."
+            return
+        }
+
+        isScanningLibrary = true
+        lastScanResult = nil
+        errorMessage = nil
+        startScanProgressPolling()
+
         Task {
-            print("Durvald: pasta selecionada para scan: \(url.path)")
-            guard let core else {
-                errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
-                return
+            defer {
+                scanProgressPollingTask?.cancel()
+                scanProgressPollingTask = nil
+                scanProgress = nil
+                isScanningLibrary = false
             }
-            startScanProgressPolling()
             do {
-                defer {
-                    scanProgressPollingTask?.cancel()
-                    scanProgressPollingTask = nil
-                    scanProgress = nil
-                }
-                try await core.addLibraryPath(path: url.path)
-                libraryPaths = try await core.libraryPaths()
+                try await beforeScan()
+                guard let core else { return }
                 let result = try await core.scanConfiguredLibrary()
+                lastScanResult = result
+                // The core scan is over at this point. Hide cancellation before
+                // the post-scan catalog reload so a late click cannot target a
+                // scan that has already completed.
+                scanProgressPollingTask?.cancel()
+                scanProgressPollingTask = nil
+                scanProgress = nil
                 print(
-                    "Durvald: scan concluído — encontrados: \(result.totalFilesFound), novos: \(result.newTracksAdded), atualizados: \(result.updatedTracks), erros: \(result.errors)"
+                    "Durvald: scan concluído — encontrados: \(result.totalFilesFound), novos: \(result.newTracksAdded), atualizados: \(result.updatedTracks), removidos: \(result.removedTracks), erros: \(result.errors)"
                 )
                 try await reloadPrimaryLibrary(using: core)
                 // Apply metadata already cached on disk, but never turn a local
@@ -581,8 +617,6 @@ final class DurvaldCoreStore {
                     errorMessage = result.errors.joined(separator: "\n")
                 } else if result.totalFilesFound == 0 {
                     errorMessage = "Nenhum arquivo suportado foi encontrado. O MVP aceita MP3, WAV, FLAC, Ogg Vorbis e OGA."
-                } else {
-                    print("Scan concluído: \(result.newTracksAdded) nova(s), \(result.updatedTracks) atualizada(s), \(tracks.count) faixa(s) na biblioteca.")
                 }
             } catch {
                 errorMessage = String(describing: error)

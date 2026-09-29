@@ -107,6 +107,7 @@ impl LibraryApplication {
         let mut total_files = 0_u64;
         let mut new_tracks = 0_u64;
         let mut updated_tracks = 0_u64;
+        let mut removed_tracks = 0_u64;
         let mut errors = Vec::new();
         let mut paths_scanned = 0;
 
@@ -215,14 +216,17 @@ impl LibraryApplication {
             }
 
             if let Some(reconciliation) = reconciliation {
-                if let Err(error) = self
+                match self
                     .persistence
                     .library_scan_repository
                     .reconcile(reconciliation)
                     .await
                 {
-                    errors.push(format!("{path}: {error}"));
-                    continue;
+                    Ok(removed) => removed_tracks += removed,
+                    Err(error) => {
+                        errors.push(format!("{path}: {error}"));
+                        continue;
+                    }
                 }
             }
             total_files += path_total;
@@ -242,6 +246,7 @@ impl LibraryApplication {
             total_files_found: total_files,
             new_tracks_added: new_tracks,
             updated_tracks,
+            removed_tracks,
             errors,
         })
     }

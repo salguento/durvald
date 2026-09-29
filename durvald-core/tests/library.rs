@@ -460,6 +460,7 @@ async fn complete_rescan_removes_missing_track() -> Result<(), Box<dyn Error + S
 
     assert_eq!(second_scan.total_files_found, 1);
     assert_eq!(second_scan.new_tracks_added, 0);
+    assert_eq!(second_scan.removed_tracks, 1);
     assert!(second_scan.errors.is_empty());
 
     let remaining_tracks = test_core.all_tracks_via_pages().await?;

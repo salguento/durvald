@@ -24,6 +24,13 @@ struct AppCommands: Commands {
             .disabled(openSearch == nil)
         }
 
+        CommandGroup(after: .newItem) {
+            Button("Atualizar biblioteca") {
+                store.updateLibrary()
+            }
+            .disabled(store.isScanningLibrary || store.libraryPaths.isEmpty)
+        }
+
         CommandMenu("Reprodução") {
             Button("Reproduzir ou pausar") {
                 Task { await store.togglePause() }

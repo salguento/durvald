@@ -6415,15 +6415,17 @@ public struct ScanResult {
     public var totalFilesFound: UInt64
     public var newTracksAdded: UInt64
     public var updatedTracks: UInt64
+    public var removedTracks: UInt64
     public var errors: [String]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(pathsScanned: UInt64, totalFilesFound: UInt64, newTracksAdded: UInt64, updatedTracks: UInt64, errors: [String]) {
+    public init(pathsScanned: UInt64, totalFilesFound: UInt64, newTracksAdded: UInt64, updatedTracks: UInt64, removedTracks: UInt64, errors: [String]) {
         self.pathsScanned = pathsScanned
         self.totalFilesFound = totalFilesFound
         self.newTracksAdded = newTracksAdded
         self.updatedTracks = updatedTracks
+        self.removedTracks = removedTracks
         self.errors = errors
     }
 }
@@ -6444,6 +6446,9 @@ extension ScanResult: Equatable, Hashable {
         if lhs.updatedTracks != rhs.updatedTracks {
             return false
         }
+        if lhs.removedTracks != rhs.removedTracks {
+            return false
+        }
         if lhs.errors != rhs.errors {
             return false
         }
@@ -6455,6 +6460,7 @@ extension ScanResult: Equatable, Hashable {
         hasher.combine(totalFilesFound)
         hasher.combine(newTracksAdded)
         hasher.combine(updatedTracks)
+        hasher.combine(removedTracks)
         hasher.combine(errors)
     }
 }
@@ -6468,6 +6474,7 @@ public struct FfiConverterTypeScanResult: FfiConverterRustBuffer {
                 totalFilesFound: FfiConverterUInt64.read(from: &buf),
                 newTracksAdded: FfiConverterUInt64.read(from: &buf),
                 updatedTracks: FfiConverterUInt64.read(from: &buf),
+                removedTracks: FfiConverterUInt64.read(from: &buf),
                 errors: FfiConverterSequenceString.read(from: &buf)
         )
     }
@@ -6477,6 +6484,7 @@ public struct FfiConverterTypeScanResult: FfiConverterRustBuffer {
         FfiConverterUInt64.write(value.totalFilesFound, into: &buf)
         FfiConverterUInt64.write(value.newTracksAdded, into: &buf)
         FfiConverterUInt64.write(value.updatedTracks, into: &buf)
+        FfiConverterUInt64.write(value.removedTracks, into: &buf)
         FfiConverterSequenceString.write(value.errors, into: &buf)
     }
 }
