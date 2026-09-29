@@ -883,3 +883,49 @@ private final class ArtworkTestCore: DurvaldCore {
         return data
     }
 }
+
+final class BatchMetadataDraftTests: XCTestCase {
+    private let source = TrackMetadataEdit(
+        title: "Título original",
+        artist: "Artista original",
+        albumArtist: "Artista do álbum",
+        album: "Álbum original",
+        genre: "Rock",
+        year: 2024,
+        trackNumber: 7,
+        discNumber: 2,
+        composer: "Compositor",
+        comment: "Comentário"
+    )
+
+    func testApplyingOnlySelectedFieldPreservesEveryOtherValue() throws {
+        var draft = BatchMetadataDraft()
+        draft.genre.isEnabled = true
+        draft.genre.text = "Jazz"
+
+        let result = try draft.applying(to: source)
+
+        XCTAssertEqual(result.genre, "Jazz")
+        XCTAssertEqual(result.title, source.title)
+        XCTAssertEqual(result.artist, source.artist)
+        XCTAssertEqual(result.albumArtist, source.albumArtist)
+        XCTAssertEqual(result.album, source.album)
+        XCTAssertEqual(result.year, source.year)
+        XCTAssertEqual(result.trackNumber, source.trackNumber)
+        XCTAssertEqual(result.discNumber, source.discNumber)
+        XCTAssertEqual(result.composer, source.composer)
+        XCTAssertEqual(result.comment, source.comment)
+    }
+
+    func testSelectedOptionalNumberCanBeClearedWithoutChangingOtherNumbers() throws {
+        var draft = BatchMetadataDraft()
+        draft.year.isEnabled = true
+        draft.year.text = ""
+
+        let result = try draft.applying(to: source)
+
+        XCTAssertNil(result.year)
+        XCTAssertEqual(result.trackNumber, source.trackNumber)
+        XCTAssertEqual(result.discNumber, source.discNumber)
+    }
+}

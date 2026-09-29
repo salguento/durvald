@@ -64,7 +64,7 @@ Legenda: **✅ implementado**, **🟡 parcial**, **❌ não implementado**.
 | Artwork embutido | ✅ | Extração, validação, deduplicação por hash, cache e thumbnails. |
 | Editor de tags | ✅ | Tela “Info da faixa” edita título, artista, artista do álbum, álbum, gênero, ano, faixa, disco, compositor e comentário. Pode salvar só no banco ou gravar no arquivo. |
 | Desfazer edição de tags | ✅ | Journal persistente, backup e ação de desfazer a última alteração. |
-| Edição de tags em lote | ❌ | O editor opera em uma faixa por vez. |
+| Edição de tags em lote | ✅ | Seleção múltipla com valores comuns/diferentes, alterações parciais, progresso, relatório por arquivo e undo da operação apoiado no journal persistente existente. |
 | Renomear/organizar arquivos | ❌ | Não há regras de organização física por artista/álbum/faixa. |
 | Detectar e mesclar duplicatas | ❌ | Não há fluxo dedicado de duplicatas. |
 | Localizar/revincular arquivos movidos | ❌ | Não há reparo de caminhos quebrados. |
@@ -168,6 +168,7 @@ Objetivo: transformar a boa indexação existente em uma biblioteca fácil de ma
    - alteração parcial sem apagar tags não selecionadas;
    - journal e undo por operação em lote;
    - progresso e relatório de falhas por arquivo.
+   - **Concluído:** a operação preserva campos não marcados e permite desfazer apenas as faixas efetivamente alteradas.
 
 3. **Importação e exportação de playlists**
    - começar por M3U8 com caminhos relativos e absolutos;

@@ -22,6 +22,7 @@ struct MusicLibraryView: View {
     }
 
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(TrackInfoCoordinator.self) private var trackInfo
     @State private var selectedTrackIDs = Set<Int64>()
     @State private var order: Order = .library
     @State private var minimumRating: UInt8 = 0
@@ -29,6 +30,17 @@ struct MusicLibraryView: View {
 
     var body: some View {
         List(selection: $selectedTrackIDs) {
+            if selectedTrackIDs.count > 1 {
+                HStack {
+                    Text("\(selectedTrackIDs.count) faixas selecionadas")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Editar metadados…") {
+                        trackInfo.openBatch(trackIDs: selectedTrackIDs)
+                    }
+                    .accessibilityIdentifier("library.batchMetadata")
+                }
+            }
             if ratingsEnabled {
                 HStack {
                     Picker("Ordenar", selection: $order) {

@@ -54,7 +54,11 @@ struct DurvaldApp: App {
             AppCommands(store: coreStore)
         }
         Window("Info da faixa", id: "track-info") {
-            if let trackID = trackInfo.trackID {
+            if trackInfo.trackIDs.count > 1 {
+                BatchMetadataSheet(trackIDs: trackInfo.trackIDs)
+                    .id(trackInfo.trackIDs)
+                    .environment(coreStore)
+            } else if let trackID = trackInfo.trackID {
                 TrackInfoSheet(trackID: trackID)
                     .id(trackID)
                     .environment(coreStore)

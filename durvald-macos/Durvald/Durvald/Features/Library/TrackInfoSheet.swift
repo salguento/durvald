@@ -5,11 +5,18 @@ import SwiftUI
 @MainActor
 @Observable
 final class TrackInfoCoordinator {
-    var trackID: Int64?
+    var trackIDs: [Int64] = []
     @ObservationIgnored var presentWindow: (() -> Void)?
 
+    var trackID: Int64? { trackIDs.count == 1 ? trackIDs[0] : nil }
+
     func open(trackID: Int64) {
-        self.trackID = trackID
+        trackIDs = [trackID]
+        presentWindow?()
+    }
+
+    func openBatch(trackIDs: Set<Int64>) {
+        self.trackIDs = trackIDs.sorted()
         presentWindow?()
     }
 }
@@ -221,6 +228,7 @@ struct TrackInfoSheet: View {
             isSaving = true
             defer { isSaving = false }
             let value = try await core.saveTrackMetadata(trackId: trackID, metadata: metadata, writeToFile: writeChangesToFiles)
+            BatchMetadataOperationReceipt.clear()
             accept(value)
             await store.refreshAfterMetadataEdit(value)
             statusMessage = "Salvo."
@@ -235,6 +243,7 @@ struct TrackInfoSheet: View {
         defer { isSaving = false }
         do {
             let value = try await core.undoTrackMetadata(trackId: trackID)
+            BatchMetadataOperationReceipt.clear()
             accept(value)
             await store.refreshAfterMetadataEdit(value)
             statusMessage = "Alteração desfeita."
