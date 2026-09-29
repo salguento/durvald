@@ -105,7 +105,7 @@ struct ContentView: View {
                 )
         }
         .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(isPageScrolled && isTopbarHovered ? .visible : .hidden, for: .windowToolbar)
+        .toolbarBackgroundVisibility(isPageScrolled ? .visible : .automatic, for: .windowToolbar)
         .background {
             TopbarHoverObserver(isHovered: $isTopbarHovered)
                 .allowsHitTesting(false)

@@ -145,7 +145,6 @@ struct ArtistView: View {
                 .frame(minHeight: geometry.size.height, alignment: .top)
                 .background(pageBackgroundColor)
             }
-            .preservesLibraryScrollPosition(isContentReady: !isLoading)
         }
         .ignoresSafeArea(.container, edges: [.top, .bottom])
         .task(id: store.metadataRevision) {
