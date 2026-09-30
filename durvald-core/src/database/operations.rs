@@ -2974,6 +2974,23 @@ pub(crate) fn remove_missing_songs_in_folder(
     if !root_prefix.ends_with(std::path::MAIN_SEPARATOR) {
         root_prefix.push(std::path::MAIN_SEPARATOR);
     }
+    let discovered_tracks = conn.query_row(
+        "SELECT COUNT(*) FROM scan_discovered_paths WHERE scan_id = ?1",
+        [&reconciliation.scan_id],
+        |row| row.get::<_, u64>(0),
+    )?;
+    let indexed_tracks = conn.query_row(
+        "SELECT COUNT(*) FROM songs WHERE substr(file_path, 1, length(?1)) = ?1",
+        [&root_prefix],
+        |row| row.get::<_, u64>(0),
+    )?;
+    if discovered_tracks == 0 && indexed_tracks > 0 {
+        conn.execute_batch("DROP TABLE scan_discovered_paths")?;
+        return Err(DatabaseError::Custom(format!(
+            "Refusing to remove {indexed_tracks} indexed tracks after an empty scan of {}",
+            reconciliation.root.display()
+        )));
+    }
     let transaction = conn.unchecked_transaction()?;
     transaction.execute(
         "INSERT OR IGNORE INTO missing_tracks(
@@ -3044,7 +3061,8 @@ pub(crate) fn remove_missing_songs_in_folder(
     )?;
     transaction.execute(
         "DELETE FROM artists
-         WHERE NOT EXISTS (SELECT 1 FROM releases WHERE releases.artist_id = artists.artist_id)
+         WHERE artists.catalog_origin = 'local_scan'
+           AND NOT EXISTS (SELECT 1 FROM releases WHERE releases.artist_id = artists.artist_id)
            AND NOT EXISTS (SELECT 1 FROM songs WHERE songs.artist_id = artists.artist_id)
            AND NOT EXISTS (SELECT 1 FROM song_artists WHERE song_artists.artist_id = artists.artist_id)",
         [],
@@ -3409,6 +3427,111 @@ mod tests {
         assert!(record_completed_playback(&conn, 1, 180).unwrap());
         assert_eq!(clear_play_history(&conn).unwrap(), 2);
         assert!(get_play_history(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn empty_scan_does_not_remove_an_existing_library() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        create_tables(&conn).unwrap();
+        crate::database::migrations::migrate_enrichment(&mut conn).unwrap();
+        persist_metadata(&conn, vec![metadata("Artist", "Album", 2024)], vec![1]).unwrap();
+
+        reset_scan_discovery_table(&conn).unwrap();
+        let error = remove_missing_songs_in_folder(
+            &conn,
+            ScanReconciliation {
+                scan_id: "empty-scan".into(),
+                root: PathBuf::from("/music"),
+            },
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Refusing to remove 1 indexed tracks")
+        );
+        assert_eq!(get_tracks_page(&conn, 1_000, 0).unwrap().len(), 1);
+        assert_eq!(get_releases_page(&conn, 1_000, 0).unwrap().len(), 1);
+        assert_eq!(get_all_artists(&conn).unwrap().len(), 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'table' AND name = 'scan_discovered_paths'",
+                [],
+                |row| row.get::<_, u64>(0),
+            )
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn reconciliation_preserves_remote_only_artists() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        create_tables(&conn).unwrap();
+        crate::database::migrations::migrate_enrichment(&mut conn).unwrap();
+
+        let keep = metadata("Local Artist", "Kept Album", 2024);
+        let mut removed = metadata("Removed Artist", "Removed Album", 2023);
+        removed.title = Some("Removed Track".into());
+        removed.file_path = "/music/removed.mp3".into();
+        persist_metadata(&conn, vec![keep, removed], vec![1, 1]).unwrap();
+        conn.execute(
+            "INSERT INTO artists
+             (artist_id, name, catalog_origin, catalog_created_at, catalog_updated_at)
+             VALUES (999, 'Remote Artist', 'similar_artist', 1, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO artist_identity_keys
+             (provider, external_id, artist_id, origin, created_at, updated_at)
+             VALUES ('lastfm', 'remote-artist', 999, 'similar_artist', 1, 1)",
+            [],
+        )
+        .unwrap();
+
+        reset_scan_discovery_table(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO scan_discovered_paths
+             (scan_id, file_path, name, size, extension, file_mtime)
+             VALUES ('partial-scan', '/music/track.mp3', 'track.mp3', 1, 'mp3', 1)",
+            [],
+        )
+        .unwrap();
+
+        assert_eq!(
+            remove_missing_songs_in_folder(
+                &conn,
+                ScanReconciliation {
+                    scan_id: "partial-scan".into(),
+                    root: PathBuf::from("/music"),
+                },
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artists WHERE artist_id = 999",
+                [],
+                |row| row.get::<_, u64>(0),
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artist_identity_keys WHERE artist_id = 999",
+                [],
+                |row| row.get::<_, u64>(0),
+            )
+            .unwrap(),
+            1
+        );
     }
 
     #[test]
