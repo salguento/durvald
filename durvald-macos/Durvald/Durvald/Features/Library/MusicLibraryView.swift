@@ -78,24 +78,39 @@ struct MusicLibraryView: View {
                     .accessibilityIdentifier("track.\(track.id)")
                     .accessibilityHint("Reproduz esta faixa agora")
 
-                    Button {
-                        Task { await store.addToQueue(trackID: track.id) }
-                    } label: {
-                        Image(systemName: "plus.circle")
-                    }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel("Adicionar \(track.title) à fila")
-                    .accessibilityIdentifier("track.\(track.id).addToQueue")
-                    .accessibilityHint("Adiciona esta faixa ao fim da fila")
-
-                    if ratingsEnabled {
-                        RatingControl(
-                            rating: track.rating,
-                            isEditable: true,
-                            onChange: { rating in
-                                Task { await store.setTrackRating(trackID: track.id, rating: rating) }
+                    TrackListTrailingControls(
+                        track: track,
+                        onPlay: {
+                            Task { await store.play(trackID: track.id) }
+                        },
+                        onToggleFavorite: { isFavorite in
+                            Task {
+                                await store.setTrackFavorite(
+                                    trackID: track.id,
+                                    favorite: isFavorite
+                                )
                             }
-                        )
+                        }
+                    ) {
+                        if ratingsEnabled {
+                            RatingControl(
+                                rating: track.rating,
+                                isEditable: true,
+                                onChange: { rating in
+                                    Task { await store.setTrackRating(trackID: track.id, rating: rating) }
+                                }
+                            )
+                        }
+
+                        Button {
+                            Task { await store.addToQueue(trackID: track.id) }
+                        } label: {
+                            Image(systemName: "plus.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Adicionar \(track.title) à fila")
+                        .accessibilityIdentifier("track.\(track.id).addToQueue")
+                        .accessibilityHint("Adiciona esta faixa ao fim da fila")
                     }
                 }
                 .tag(track.id)

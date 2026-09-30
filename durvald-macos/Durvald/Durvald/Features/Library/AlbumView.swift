@@ -142,12 +142,9 @@ struct AlbumView: View {
                 .albumContextMenu(album: currentAlbum)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    AlbumTitleLabel(
-                        title: title,
-                        isFavorite: currentAlbum?.isFavorite == true,
-                        font: .largeTitle,
-                        weight: .bold
-                    )
+                    Text(title)
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
                         .multilineTextAlignment(.leading)
                         .padding(.top, 24)
 
@@ -580,31 +577,40 @@ struct AlbumView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(durationText(track.durationSeconds))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-
-            if ratingsEnabled {
-                RatingControl(
-                    rating: track.rating,
-                    isEditable: true,
-                    onChange: { rating in
-                        if let index = tracks.firstIndex(where: { $0.id == track.id }) {
-                            tracks[index].rating = rating
-                        }
-                        Task { await store.setTrackRating(trackID: track.id, rating: rating) }
+            TrackListTrailingControls(
+                track: track,
+                onPlay: {
+                    guard let album else { return }
+                    Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
+                },
+                onToggleFavorite: { isFavorite in
+                    if let index = tracks.firstIndex(where: { $0.id == track.id }) {
+                        tracks[index].isFavorite = isFavorite
                     }
-                )
-            }
+                    Task { await store.setTrackFavorite(trackID: track.id, favorite: isFavorite) }
+                }
+            ) {
+                if ratingsEnabled {
+                    RatingControl(
+                        rating: track.rating,
+                        isEditable: true,
+                        onChange: { rating in
+                            if let index = tracks.firstIndex(where: { $0.id == track.id }) {
+                                tracks[index].rating = rating
+                            }
+                            Task { await store.setTrackRating(trackID: track.id, rating: rating) }
+                        }
+                    )
+                }
 
-            Button {
-                Task { await store.addToQueue(trackID: track.id) }
-            } label: {
-                Image(systemName: "plus.circle")
+                Button {
+                    Task { await store.addToQueue(trackID: track.id) }
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Adicionar \(track.title) à fila")
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Adicionar \(track.title) à fila")
         }
         .padding(.vertical, 9)
         .playTrackOnDoubleClick {

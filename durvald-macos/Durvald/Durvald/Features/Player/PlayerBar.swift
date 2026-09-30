@@ -41,6 +41,7 @@ struct PlayerBar: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .center)
                 }
+                .frame(height: 40)
 
                 HStack(spacing: 16) {
                     Color.clear

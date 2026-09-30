@@ -102,6 +102,7 @@ struct PlaylistView: View {
     @State private var isExporting = false
     @State private var exportMessage: String?
     @State private var isEditingSmartPlaylist = false
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     @FocusState private var isTrackSearchFocused: Bool
 
     private let artworkSize: CGFloat = 268
@@ -539,18 +540,44 @@ struct PlaylistView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(durationText(track.durationSeconds))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
+            TrackListTrailingControls(
+                track: track,
+                onPlay: {
+                    Task {
+                        await store.playPlaylist(
+                            playlistID: playlist.id,
+                            startingAtPosition: position - 1
+                        )
+                    }
+                },
+                onToggleFavorite: { isFavorite in
+                    if let index = tracks.firstIndex(where: { $0.id == track.id }) {
+                        tracks[index].isFavorite = isFavorite
+                    }
+                    Task { await store.setTrackFavorite(trackID: track.id, favorite: isFavorite) }
+                }
+            ) {
+                if ratingsEnabled {
+                    RatingControl(
+                        rating: track.rating,
+                        isEditable: true,
+                        onChange: { rating in
+                            if let index = tracks.firstIndex(where: { $0.id == track.id }) {
+                                tracks[index].rating = rating
+                            }
+                            Task { await store.setTrackRating(trackID: track.id, rating: rating) }
+                        }
+                    )
+                }
 
-            Button {
-                Task { await store.addToQueue(trackID: track.id) }
-            } label: {
-                Image(systemName: "plus.circle")
+                Button {
+                    Task { await store.addToQueue(trackID: track.id) }
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Adicionar \(track.title) à fila")
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Adicionar \(track.title) à fila")
         }
         .padding(.vertical, 8)
         .padding(.trailing, 16)

@@ -273,7 +273,7 @@ struct ArtistView: View {
                 endPoint: .bottom
             )
         }
-        .frame(width: width, height: width / (16.0 / 11.0))
+        .frame(width: width, height: width / 1.4)
         .clipped()
     }
 
@@ -281,7 +281,7 @@ struct ArtistView: View {
         ArtworkView(
             artworkID: artistArtworkID,
             size: width,
-            aspectRatio: 16.0 / 11.0,
+            aspectRatio: 1.4,
             alignment: .top,
             showsBorder: false
         )
@@ -291,7 +291,7 @@ struct ArtistView: View {
         ArtworkView(
             artworkID: artistArtworkID,
             size: width,
-            aspectRatio: 16.0 / 11.0,
+            aspectRatio: 1.4,
             alignment: .top,
             showsBorder: false,
             onImageLoaded: { image in
@@ -1503,6 +1503,7 @@ struct ArtistView: View {
                 favoriteArtistIDs = togglingArtist(in: favoriteArtistIDs)
             } label: {
                 Image(systemName: isFavorite ? "star.fill" : "star")
+                    .foregroundStyle(isFavorite ? Color.accentColor : .secondary)
                     .frame(width: headerIconControlWidth, height: headerControlHeight)
                     .contentShape(.capsule)
             }
@@ -2176,12 +2177,6 @@ private struct PopularTrackListRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 8) {
-                Text(durationText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                    .frame(width: 44, alignment: .trailing)
-
                 Button {
                     onToggleFavorite?()
                 } label: {
@@ -2196,6 +2191,12 @@ private struct PopularTrackListRow: View {
                 .allowsHitTesting(isFavorite || isHovered)
                 .accessibilityHidden(!isFavorite && !isHovered)
                 .help(isFavorite ? "Desfavoritar faixa" : "Favoritar faixa")
+
+                Text(durationText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .frame(width: 44, alignment: .trailing)
 
                 Menu {
                     if let onPlay {

@@ -375,12 +375,13 @@ struct CollectionListingItem<Artwork: View>: View {
                         if mode == .standard { artwork() }
                         if mode == .compact {
                             HStack(spacing: 4) {
+                                Text("\(title)\(Text(subtitle.map { " · \($0)" } ?? "").foregroundColor(.secondary))")
+                                    .lineLimit(1)
                                 if isFavorite {
                                     Image(systemName: "star.fill")
                                         .font(.body)
+                                        .foregroundStyle(Color.accentColor)
                                 }
-                                Text("\(title)\(Text(subtitle.map { " · \($0)" } ?? "").foregroundColor(.secondary))")
-                                    .lineLimit(1)
                             }
                         } else {
                             textDetails
@@ -452,10 +453,11 @@ struct AlbumTitleLabel: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(title)
             if isFavorite {
                 Image(systemName: "star.fill")
+                    .foregroundStyle(Color.accentColor)
             }
-            Text(title)
         }
         .font(font)
         .fontWeight(weight)

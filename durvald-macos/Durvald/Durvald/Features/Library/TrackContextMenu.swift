@@ -71,6 +71,82 @@ extension View {
     }
 }
 
+struct TrackListTrailingControls<AdditionalControls: View>: View {
+    @Environment(DurvaldCoreStore.self) private var store
+    @State private var optimisticFavorite: Bool? = nil
+
+    let track: Track
+    let onPlay: () -> Void
+    let onToggleFavorite: (Bool) -> Void
+    @ViewBuilder let additionalControls: () -> AdditionalControls
+
+    private var isFavorite: Bool {
+        optimisticFavorite ?? track.isFavorite
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                let newValue = !isFavorite
+                optimisticFavorite = newValue
+                onToggleFavorite(newValue)
+            } label: {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .foregroundStyle(isFavorite ? Color.accentColor : .secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .help(isFavorite ? "Desfavoritar faixa" : "Favoritar faixa")
+            .accessibilityLabel(isFavorite ? "Desfavoritar faixa" : "Favoritar faixa")
+
+            Text(durationText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .frame(width: 44, alignment: .trailing)
+
+            additionalControls()
+
+            Menu {
+                Button("Reproduzir", systemImage: "play.fill", action: onPlay)
+                Button("Adicionar à fila", systemImage: "text.badge.plus") {
+                    Task { await store.addToQueue(trackID: track.id) }
+                }
+                Button(
+                    isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
+                    systemImage: isFavorite ? "star.slash" : "star"
+                ) {
+                    let newValue = !isFavorite
+                    optimisticFavorite = newValue
+                    onToggleFavorite(newValue)
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(.rect)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Opções da faixa")
+            .accessibilityLabel("Opções da faixa")
+            .trackOptionsMenu(track: track, onPlay: onPlay)
+        }
+        .onChange(of: track.isFavorite) { _, newValue in
+            if optimisticFavorite == newValue {
+                optimisticFavorite = nil
+            }
+        }
+    }
+
+    private var durationText: String {
+        let totalSeconds = max(0, Int(track.durationSeconds.rounded()))
+        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
 struct TrackMenuNavigation {
     var artist: (Artist) -> Void = { _ in }
     var album: (Release) -> Void = { _ in }
