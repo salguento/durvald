@@ -30,7 +30,7 @@ Legenda: **✅ implementado**, **🟡 parcial**, **❌ não implementado**.
 | Crossfade configurável | ✅ | Configuração de ativação e duração. |
 | Gapless playback | ✅ | Próxima faixa é pré-carregada e a troca ocorre no thread de áudio; metadados de delay/padding do encoder são respeitados quando disponíveis. |
 | ReplayGain / normalização | ✅ | Lê `REPLAYGAIN_TRACK_GAIN` e oferece a opção “Normalizar volume”. |
-| Equalizador | ❌ | Não há EQ gráfico ou paramétrico. |
+| Equalizador | ✅ | EQ gráfico de 10 bandas com preamp, bypass, presets, headroom automático, limiter e telemetria de custo DSP. |
 | DSP / efeitos | ❌ | Não há cadeia de efeitos, compressor ou limiter. |
 | Seleção de dispositivo de saída | ✅ | Dispositivos são acompanhados nos ajustes; a preferência persiste e usa fallback automático ao padrão durante desconexões. |
 | Arquitetura de plugins de áudio | ❌ | Não há ABI/extensões para input, output, DSP ou visualizações. |
@@ -204,6 +204,7 @@ Objetivo: aumentar controle e diferenciação sem comprometer a estabilidade do 
    - começar com EQ de 10 bandas, preamp, bypass e presets;
    - evitar clipping com headroom/limiter simples;
    - persistir configuração e manter custo de CPU mensurável.
+   - **Concluído:** filtros biquad estéreo no decoder gapless, configuração persistida, presets na UI e métricas acumuladas em nanossegundos por quadro.
 
 3. **Letras locais**
    - ler tags embutidas e arquivos `.lrc`/texto ao lado da faixa;

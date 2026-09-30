@@ -361,6 +361,37 @@ pub struct Settings {
     pub minimize_on_close: bool,
     pub onboarding_complete: bool,
     pub preferred_output_device_id: Option<String>,
+    pub equalizer: EqualizerSettings,
+}
+
+/// Ten-band graphic equalizer configuration. Band gains follow the fixed
+/// frequencies 31, 62, 125, 250, 500, 1k, 2k, 4k, 8k and 16k Hz.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct EqualizerSettings {
+    pub enabled: bool,
+    pub preamp_db: f32,
+    pub band_gains_db: Vec<f32>,
+    pub preset: String,
+}
+
+impl Default for EqualizerSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            preamp_db: 0.0,
+            band_gains_db: vec![0.0; 10],
+            preset: "Flat".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct EqualizerMetrics {
+    pub processed_frames: u64,
+    pub processing_nanoseconds: u64,
+    pub average_nanoseconds_per_frame: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

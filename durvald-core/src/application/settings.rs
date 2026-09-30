@@ -39,6 +39,7 @@ impl SettingsApplication {
             minimize_on_close: settings.minimize_on_close,
             onboarding_complete: settings.onboarding_complete,
             preferred_output_device_id: settings.preferred_output_device_id,
+            equalizer: settings.equalizer,
         })
     }
 
@@ -57,11 +58,18 @@ impl SettingsApplication {
             minimize_on_close: settings.minimize_on_close,
             onboarding_complete: settings.onboarding_complete,
             preferred_output_device_id: settings.preferred_output_device_id.clone(),
+            equalizer: settings.equalizer.clone(),
         };
 
         let mut player = self.audio_player.lock().await;
         player.set_crossfade(settings.cross_fade, settings.cross_fade_duration);
         player.set_volume_normalization(settings.normalize_volume);
+        player
+            .apply_equalizer(settings.equalizer.clone())
+            .await
+            .map_err(|error| CoreError::Playback {
+                message: error.to_string(),
+            })?;
         player
             .reconcile_output_device(settings.preferred_output_device_id.clone())
             .await
@@ -152,6 +160,30 @@ pub(crate) fn validate_settings(settings: &Settings) -> CoreResult<()> {
     {
         return Err(CoreError::InvalidInput {
             message: "Audio output device contains invalid text".into(),
+        });
+    }
+    if settings.equalizer.band_gains_db.len() != 10 {
+        return Err(CoreError::InvalidInput {
+            message: "Equalizer must contain exactly 10 bands".into(),
+        });
+    }
+    if !settings.equalizer.preamp_db.is_finite()
+        || !(-12.0..=12.0).contains(&settings.equalizer.preamp_db)
+        || settings
+            .equalizer
+            .band_gains_db
+            .iter()
+            .any(|gain| !gain.is_finite() || !(-12.0..=12.0).contains(gain))
+    {
+        return Err(CoreError::InvalidInput {
+            message: "Equalizer gains must be finite values between -12 and 12 dB".into(),
+        });
+    }
+    if settings.equalizer.preset.len() > 64
+        || settings.equalizer.preset.chars().any(char::is_control)
+    {
+        return Err(CoreError::InvalidInput {
+            message: "Equalizer preset contains invalid text".into(),
         });
     }
     Ok(())

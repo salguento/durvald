@@ -40,6 +40,8 @@ struct SettingsView: View {
             AudioOutputSettingsView()
                 .padding()
                 .tabItem { Label("Áudio", systemImage: "hifispeaker") }
+            EqualizerSettingsView()
+                .tabItem { Label("Equalizador", systemImage: "slider.vertical.3") }
             LibrarySettingsView()
                 .padding()
                 .tabItem {

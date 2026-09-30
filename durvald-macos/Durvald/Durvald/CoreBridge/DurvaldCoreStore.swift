@@ -38,6 +38,7 @@ final class DurvaldCoreStore {
     var errorMessage: String?
     private(set) var appSettings: Settings?
     private(set) var audioOutputState: AudioOutputState?
+    private(set) var equalizerMetrics: EqualizerMetrics?
     private(set) var libraryPaths: [String] = []
     /// Configurações de enriquecimento de metadados. Nil até o core ser inicializado.
     private(set) var enrichmentSettings: EnrichmentSettings?
@@ -1932,6 +1933,24 @@ final class DurvaldCoreStore {
         } catch {
             errorMessage = String(describing: error)
         }
+    }
+
+    func updateEqualizer(_ equalizer: EqualizerSettings) async {
+        guard let core else { return }
+        do {
+            var settings = try await core.settings()
+            settings.equalizer = equalizer
+            try await core.updateSettings(settings: settings)
+            appSettings = settings
+            equalizerMetrics = await core.equalizerMetrics()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    func refreshEqualizerMetrics() async {
+        guard let core else { return }
+        equalizerMetrics = await core.equalizerMetrics()
     }
 
     // MARK: - Enriquecimento de metadados

@@ -770,6 +770,15 @@ impl DurvaldCore {
             .await
     }
 
+    /// Returns cumulative DSP cost since this core instance was opened.
+    pub async fn equalizer_metrics(&self) -> EqualizerMetrics {
+        self.playback_application
+            .audio_player()
+            .lock()
+            .await
+            .equalizer_metrics()
+    }
+
     /// Adds a track to the playback queue.
     pub async fn add_to_queue(&self, track_id: i64) -> CoreResult<()> {
         self.playback_application
@@ -939,6 +948,7 @@ mod tests {
             minimize_on_close: false,
             onboarding_complete: false,
             preferred_output_device_id: None,
+            equalizer: EqualizerSettings::default(),
         }
     }
 
@@ -1231,6 +1241,14 @@ mod tests {
 
         invalid = settings();
         invalid.preferred_audio_source = "local\nremote".to_string();
+        assert!(validate_settings(&invalid).is_err());
+
+        invalid = settings();
+        invalid.equalizer.band_gains_db.pop();
+        assert!(validate_settings(&invalid).is_err());
+
+        invalid = settings();
+        invalid.equalizer.preamp_db = 13.0;
         assert!(validate_settings(&invalid).is_err());
     }
 

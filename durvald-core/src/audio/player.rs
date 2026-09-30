@@ -1,4 +1,4 @@
-use crate::api::RepeatMode;
+use crate::api::{EqualizerMetrics, EqualizerSettings, RepeatMode};
 use cpal::traits::{DeviceTrait, HostTrait};
 use kira::Tween;
 use kira::sound::FromFileError;
@@ -9,7 +9,7 @@ use std::time::Duration;
 use thiserror::Error;
 
 use super::gapless::{GaplessData, StreamHandle, Transport, Voice};
-use std::sync::atomic::Ordering;
+use std::sync::{Arc, atomic::Ordering};
 type SoundHandle = StreamHandle;
 
 #[derive(Debug, Clone)]
@@ -22,7 +22,7 @@ const MAX_PLAYBACK_HISTORY_ITEMS: usize = 100;
 
 pub(crate) struct PreparedSound {
     path: String,
-    decoder: super::decoder::GaplessDecoder,
+    decoder: super::equalizer::EqualizedDecoder<super::decoder::GaplessDecoder>,
     duration: Duration,
     sample_rate: u32,
     tail: Vec<kira::Frame>,
@@ -122,6 +122,8 @@ pub struct AudioPlayer {
     preferred_output_device_id: Option<String>,
     active_output_device_id: Option<String>,
     using_output_fallback: bool,
+    equalizer_settings: EqualizerSettings,
+    equalizer_meter: Arc<super::equalizer::EqualizerMeter>,
     #[cfg(any(test, feature = "test-support"))]
     mock_output_devices: Option<Vec<crate::api::AudioOutputDevice>>,
 }
@@ -266,6 +268,8 @@ impl AudioPlayer {
             preferred_output_device_id: None,
             active_output_device_id: None,
             using_output_fallback: false,
+            equalizer_settings: EqualizerSettings::default(),
+            equalizer_meter: Arc::new(super::equalizer::EqualizerMeter::default()),
             #[cfg(any(test, feature = "test-support"))]
             mock_output_devices: None,
         }
@@ -344,7 +348,15 @@ impl AudioPlayer {
         let should_restore = self.current_sound.is_some();
         let prepared = if should_restore {
             if let Some((_, path)) = &current {
-                Some(Self::prepare_sound(path.clone(), self.normalize_volume).await?)
+                Some(
+                    Self::prepare_sound(
+                        path.clone(),
+                        self.normalize_volume,
+                        self.equalizer_settings.clone(),
+                        self.equalizer_meter.clone(),
+                    )
+                    .await?,
+                )
             } else {
                 None
             }
@@ -380,6 +392,8 @@ impl AudioPlayer {
     pub(crate) async fn prepare_sound(
         path: String,
         normalize_volume: bool,
+        equalizer_settings: EqualizerSettings,
+        equalizer_meter: Arc<super::equalizer::EqualizerMeter>,
     ) -> Result<PreparedSound, AudioError> {
         let path_clone = path.clone();
         let (decoder, duration, sample_rate, tail, gain_db) =
@@ -400,7 +414,11 @@ impl AudioPlayer {
 
         Ok(PreparedSound {
             path,
-            decoder,
+            decoder: super::equalizer::EqualizedDecoder::new(
+                decoder,
+                &equalizer_settings,
+                equalizer_meter,
+            ),
             duration,
             sample_rate,
             tail,
@@ -410,6 +428,59 @@ impl AudioPlayer {
 
     pub(crate) fn normalize_volume_enabled(&self) -> bool {
         self.normalize_volume
+    }
+
+    pub(crate) fn equalizer_processing(
+        &self,
+    ) -> (EqualizerSettings, Arc<super::equalizer::EqualizerMeter>) {
+        (
+            self.equalizer_settings.clone(),
+            self.equalizer_meter.clone(),
+        )
+    }
+
+    pub(crate) fn set_equalizer(&mut self, settings: EqualizerSettings) {
+        self.equalizer_settings = settings;
+    }
+
+    pub(crate) async fn apply_equalizer(
+        &mut self,
+        settings: EqualizerSettings,
+    ) -> Result<(), AudioError> {
+        self.synchronize_gapless();
+        let was_paused = self.is_paused();
+        let position = self.get_position().as_secs_f64();
+        let current = self.current_song_id.zip(self.current_path.clone());
+        let prepared = if self.current_sound.is_some() {
+            if let Some((_, path)) = &current {
+                Some(
+                    Self::prepare_sound(
+                        path.clone(),
+                        self.normalize_volume,
+                        settings.clone(),
+                        self.equalizer_meter.clone(),
+                    )
+                    .await?,
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        self.equalizer_settings = settings;
+        self.scheduled_next = None;
+        if let (Some((song_id, _)), Some(prepared)) = (current, prepared) {
+            self.play_song_prepared_from(song_id, prepared, position)?;
+            if was_paused {
+                self.pause();
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn equalizer_metrics(&self) -> EqualizerMetrics {
+        self.equalizer_meter.snapshot()
     }
 
     #[cfg(feature = "test-support")]
@@ -496,7 +567,13 @@ impl AudioPlayer {
     pub async fn play(&mut self, path: String) -> Result<(), AudioError> {
         // Load before stopping the active track so a missing or invalid
         // replacement does not destroy an otherwise recoverable session.
-        let prepared = Self::prepare_sound(path, self.normalize_volume).await?;
+        let prepared = Self::prepare_sound(
+            path,
+            self.normalize_volume,
+            self.equalizer_settings.clone(),
+            self.equalizer_meter.clone(),
+        )
+        .await?;
         self.play_prepared(prepared)
     }
 
@@ -964,8 +1041,13 @@ impl AudioPlayer {
     async fn prepare_gapless_next(&mut self) -> Result<(), AudioError> {
         self.synchronize_gapless();
         if let Some(plan) = self.gapless_plan() {
-            let prepared =
-                Self::prepare_sound(plan.path().to_string(), self.normalize_volume).await?;
+            let prepared = Self::prepare_sound(
+                plan.path().to_string(),
+                self.normalize_volume,
+                self.equalizer_settings.clone(),
+                self.equalizer_meter.clone(),
+            )
+            .await?;
             self.schedule_gapless(plan, prepared)?;
         }
         Ok(())
@@ -1158,7 +1240,7 @@ impl AudioPlayer {
 #[cfg(test)]
 mod tests {
     use super::{AudioPlayer, MAX_PLAYBACK_HISTORY_ITEMS, PlayerBackend, QueueItem};
-    use crate::api::{AudioOutputDevice, RepeatMode};
+    use crate::api::{AudioOutputDevice, EqualizerSettings, RepeatMode};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     fn wav_fixture() -> Vec<u8> {
@@ -1306,6 +1388,44 @@ mod tests {
         assert_eq!(player.get_current_song_id(), Some(2));
         assert_eq!(player.get_queue(), vec![(3, paths[2].clone())]);
         assert!(player.scheduled_next.is_some());
+
+        player.stop();
+        std::fs::remove_dir_all(directory).expect("remove temporary test directory");
+    }
+
+    #[tokio::test]
+    async fn equalizer_update_preserves_track_position_and_pause_state() {
+        let (directory, paths) = temporary_tracks("equalizer-update", 1);
+        let mut player = AudioPlayer::new_mock().expect("create mock player");
+        player
+            .play_song(1, paths[0].clone())
+            .await
+            .expect("start playback");
+        player.process_mock_audio(2);
+        player.pause();
+        player.process_mock_audio(1);
+        let position = player.get_position();
+
+        player
+            .apply_equalizer(EqualizerSettings {
+                enabled: true,
+                preamp_db: -2.0,
+                band_gains_db: vec![3.0, 2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+                preset: "Test".into(),
+            })
+            .await
+            .expect("apply equalizer");
+        player.process_mock_audio(1);
+
+        assert_eq!(player.get_current_song_id(), Some(1));
+        assert!(player.is_paused());
+        assert!(player.get_position() >= position);
+        assert!(player.equalizer_settings.enabled);
+
+        player.resume();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        player.process_mock_audio(5);
+        assert!(player.equalizer_metrics().processed_frames > 0);
 
         player.stop();
         std::fs::remove_dir_all(directory).expect("remove temporary test directory");

@@ -183,6 +183,7 @@ where
     audio_player.set_crossfade(settings.cross_fade, settings.cross_fade_duration);
     audio_player.set_volume_normalization(settings.normalize_volume);
     audio_player.set_preferred_output_device(settings.preferred_output_device_id.clone());
+    audio_player.set_equalizer(settings.equalizer.clone());
     audio_player.restore_session(
         playback.current_track,
         playback.upcoming_tracks,

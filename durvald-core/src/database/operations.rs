@@ -248,7 +248,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
     )?;
 
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS settings (
+        r#"CREATE TABLE IF NOT EXISTS settings (
             settings_id   INTEGER PRIMARY KEY,
             cross_fade BOOL DEFAULT TRUE,
             cross_fade_duration INTEGER DEFAULT 5 CHECK (cross_fade_duration BETWEEN 0 AND 60),
@@ -261,8 +261,9 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             open_on_startup BOOL DEFAULT FALSE,
             minimize_on_close BOOL DEFAULT FALSE,
             onboarding BOOL DEFAULT TRUE,
-            preferred_output_device_id TEXT DEFAULT NULL
-        )",
+            preferred_output_device_id TEXT DEFAULT NULL,
+            equalizer_json TEXT NOT NULL DEFAULT '{"enabled":false,"preamp_db":0.0,"band_gains_db":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],"preset":"Flat"}'
+        )"#,
         (),
     )?;
     let has_output_device = conn
@@ -274,6 +275,18 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
     if !has_output_device {
         conn.execute(
             "ALTER TABLE settings ADD COLUMN preferred_output_device_id TEXT",
+            [],
+        )?;
+    }
+    let has_equalizer = conn
+        .prepare("PRAGMA table_info(settings)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .any(|column| column == "equalizer_json");
+    if !has_equalizer {
+        conn.execute(
+            "ALTER TABLE settings ADD COLUMN equalizer_json TEXT NOT NULL DEFAULT '{\"enabled\":false,\"preamp_db\":0.0,\"band_gains_db\":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],\"preset\":\"Flat\"}'",
             [],
         )?;
     }
@@ -720,7 +733,8 @@ pub fn get_settings(conn: &Connection) -> DatabaseResult<Settings> {
         "SELECT settings_id, cross_fade, cross_fade_duration, normalize_volume,
                 explicit_content, autoplay, preferred_audio_quality,
                 preferred_audio_source, download_path, open_on_startup,
-                minimize_on_close, onboarding, preferred_output_device_id
+                minimize_on_close, onboarding, preferred_output_device_id,
+                equalizer_json
          FROM settings",
     )?;
     let mut rows = stmt.query_map([], |row| {
@@ -738,6 +752,7 @@ pub fn get_settings(conn: &Connection) -> DatabaseResult<Settings> {
             minimize_on_close: row.get(10)?,
             onboarding: row.get(11)?,
             preferred_output_device_id: row.get(12)?,
+            equalizer_json: row.get(13)?,
         })
     })?;
 
@@ -770,7 +785,8 @@ pub fn save_settings(conn: &Connection, settings: &Settings) -> DatabaseResult<(
             open_on_startup = ?9,
             minimize_on_close = ?10,
             onboarding = ?11,
-            preferred_output_device_id = ?12
+            preferred_output_device_id = ?12,
+            equalizer_json = ?13
          WHERE settings_id = 1",
         params![
             settings.cross_fade,
@@ -785,6 +801,7 @@ pub fn save_settings(conn: &Connection, settings: &Settings) -> DatabaseResult<(
             settings.minimize_on_close,
             settings.onboarding,
             settings.preferred_output_device_id,
+            settings.equalizer_json,
         ],
     )?;
     if changed == 0 {
@@ -3158,6 +3175,13 @@ mod tests {
             minimize_on_close: true,
             onboarding: false,
             preferred_output_device_id: Some("Studio Output".into()),
+            equalizer_json: serde_json::to_string(&crate::api::EqualizerSettings {
+                enabled: true,
+                preamp_db: -3.0,
+                band_gains_db: vec![1.0; 10],
+                preset: "Custom".into(),
+            })
+            .unwrap(),
         };
         save_settings(&conn, &updated_settings).unwrap();
         let persisted_settings = get_settings(&conn).unwrap();
@@ -3169,6 +3193,7 @@ mod tests {
             persisted_settings.preferred_output_device_id.as_deref(),
             Some("Studio Output")
         );
+        assert!(persisted_settings.equalizer_json.contains("Custom"));
         assert!(
             conn.execute("UPDATE settings SET cross_fade_duration = 61", [])
                 .is_err()

@@ -21,6 +21,7 @@ pub struct Settings {
     pub minimize_on_close: bool,
     pub onboarding: bool,
     pub preferred_output_device_id: Option<String>,
+    pub equalizer_json: String,
 }
 
 #[derive(Serialize, Clone, Debug)]

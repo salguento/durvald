@@ -689,6 +689,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func enrichmentSettings() async throws  -> EnrichmentSettings
 
     /**
+     * Returns cumulative DSP cost since this core instance was opened.
+     */
+    func equalizerMetrics() async  -> EqualizerMetrics
+
+    /**
      * Loads track and edition metadata for one online-only MusicBrainz item.
      */
     func externalReleaseDetails(artistId: Int64, releaseGroupMbid: String) async throws  -> ExternalReleaseDetails
@@ -1607,6 +1612,27 @@ open func enrichmentSettings()async throws  -> EnrichmentSettings {
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeEnrichmentSettings.lift,
             errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Returns cumulative DSP cost since this core instance was opened.
+     */
+open func equalizerMetrics()async  -> EqualizerMetrics {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_equalizer_metrics(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeEqualizerMetrics.lift,
+            errorHandler: nil
+
         )
 }
 
@@ -5186,6 +5212,148 @@ public func FfiConverterTypeEnrichmentSettings_lower(_ value: EnrichmentSettings
 }
 
 
+public struct EqualizerMetrics {
+    public var processedFrames: UInt64
+    public var processingNanoseconds: UInt64
+    public var averageNanosecondsPerFrame: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(processedFrames: UInt64, processingNanoseconds: UInt64, averageNanosecondsPerFrame: Double) {
+        self.processedFrames = processedFrames
+        self.processingNanoseconds = processingNanoseconds
+        self.averageNanosecondsPerFrame = averageNanosecondsPerFrame
+    }
+}
+
+
+
+extension EqualizerMetrics: Equatable, Hashable {
+    public static func ==(lhs: EqualizerMetrics, rhs: EqualizerMetrics) -> Bool {
+        if lhs.processedFrames != rhs.processedFrames {
+            return false
+        }
+        if lhs.processingNanoseconds != rhs.processingNanoseconds {
+            return false
+        }
+        if lhs.averageNanosecondsPerFrame != rhs.averageNanosecondsPerFrame {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(processedFrames)
+        hasher.combine(processingNanoseconds)
+        hasher.combine(averageNanosecondsPerFrame)
+    }
+}
+
+
+public struct FfiConverterTypeEqualizerMetrics: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EqualizerMetrics {
+        return
+            try EqualizerMetrics(
+                processedFrames: FfiConverterUInt64.read(from: &buf),
+                processingNanoseconds: FfiConverterUInt64.read(from: &buf),
+                averageNanosecondsPerFrame: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EqualizerMetrics, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.processedFrames, into: &buf)
+        FfiConverterUInt64.write(value.processingNanoseconds, into: &buf)
+        FfiConverterDouble.write(value.averageNanosecondsPerFrame, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeEqualizerMetrics_lift(_ buf: RustBuffer) throws -> EqualizerMetrics {
+    return try FfiConverterTypeEqualizerMetrics.lift(buf)
+}
+
+public func FfiConverterTypeEqualizerMetrics_lower(_ value: EqualizerMetrics) -> RustBuffer {
+    return FfiConverterTypeEqualizerMetrics.lower(value)
+}
+
+
+/**
+ * Ten-band graphic equalizer configuration. Band gains follow the fixed
+ * frequencies 31, 62, 125, 250, 500, 1k, 2k, 4k, 8k and 16k Hz.
+ */
+public struct EqualizerSettings {
+    public var enabled: Bool
+    public var preampDb: Float
+    public var bandGainsDb: [Float]
+    public var preset: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(enabled: Bool, preampDb: Float, bandGainsDb: [Float], preset: String) {
+        self.enabled = enabled
+        self.preampDb = preampDb
+        self.bandGainsDb = bandGainsDb
+        self.preset = preset
+    }
+}
+
+
+
+extension EqualizerSettings: Equatable, Hashable {
+    public static func ==(lhs: EqualizerSettings, rhs: EqualizerSettings) -> Bool {
+        if lhs.enabled != rhs.enabled {
+            return false
+        }
+        if lhs.preampDb != rhs.preampDb {
+            return false
+        }
+        if lhs.bandGainsDb != rhs.bandGainsDb {
+            return false
+        }
+        if lhs.preset != rhs.preset {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(enabled)
+        hasher.combine(preampDb)
+        hasher.combine(bandGainsDb)
+        hasher.combine(preset)
+    }
+}
+
+
+public struct FfiConverterTypeEqualizerSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EqualizerSettings {
+        return
+            try EqualizerSettings(
+                enabled: FfiConverterBool.read(from: &buf),
+                preampDb: FfiConverterFloat.read(from: &buf),
+                bandGainsDb: FfiConverterSequenceFloat.read(from: &buf),
+                preset: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EqualizerSettings, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.enabled, into: &buf)
+        FfiConverterFloat.write(value.preampDb, into: &buf)
+        FfiConverterSequenceFloat.write(value.bandGainsDb, into: &buf)
+        FfiConverterString.write(value.preset, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeEqualizerSettings_lift(_ buf: RustBuffer) throws -> EqualizerSettings {
+    return try FfiConverterTypeEqualizerSettings.lift(buf)
+}
+
+public func FfiConverterTypeEqualizerSettings_lower(_ value: EqualizerSettings) -> RustBuffer {
+    return FfiConverterTypeEqualizerSettings.lower(value)
+}
+
+
 public struct ExternalReleaseArtwork {
     public var image: ArtistImageReference
     public var scope: ExternalArtworkScope
@@ -7235,10 +7403,11 @@ public struct Settings {
     public var minimizeOnClose: Bool
     public var onboardingComplete: Bool
     public var preferredOutputDeviceId: String?
+    public var equalizer: EqualizerSettings
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(crossFade: Bool, crossFadeDuration: UInt32, normalizeVolume: Bool, explicitContent: Bool, autoplay: Bool, preferredAudioQuality: UInt32, preferredAudioSource: String, downloadPath: String, openOnStartup: Bool, minimizeOnClose: Bool, onboardingComplete: Bool, preferredOutputDeviceId: String?) {
+    public init(crossFade: Bool, crossFadeDuration: UInt32, normalizeVolume: Bool, explicitContent: Bool, autoplay: Bool, preferredAudioQuality: UInt32, preferredAudioSource: String, downloadPath: String, openOnStartup: Bool, minimizeOnClose: Bool, onboardingComplete: Bool, preferredOutputDeviceId: String?, equalizer: EqualizerSettings) {
         self.crossFade = crossFade
         self.crossFadeDuration = crossFadeDuration
         self.normalizeVolume = normalizeVolume
@@ -7251,6 +7420,7 @@ public struct Settings {
         self.minimizeOnClose = minimizeOnClose
         self.onboardingComplete = onboardingComplete
         self.preferredOutputDeviceId = preferredOutputDeviceId
+        self.equalizer = equalizer
     }
 }
 
@@ -7294,6 +7464,9 @@ extension Settings: Equatable, Hashable {
         if lhs.preferredOutputDeviceId != rhs.preferredOutputDeviceId {
             return false
         }
+        if lhs.equalizer != rhs.equalizer {
+            return false
+        }
         return true
     }
 
@@ -7310,6 +7483,7 @@ extension Settings: Equatable, Hashable {
         hasher.combine(minimizeOnClose)
         hasher.combine(onboardingComplete)
         hasher.combine(preferredOutputDeviceId)
+        hasher.combine(equalizer)
     }
 }
 
@@ -7329,7 +7503,8 @@ public struct FfiConverterTypeSettings: FfiConverterRustBuffer {
                 openOnStartup: FfiConverterBool.read(from: &buf),
                 minimizeOnClose: FfiConverterBool.read(from: &buf),
                 onboardingComplete: FfiConverterBool.read(from: &buf),
-                preferredOutputDeviceId: FfiConverterOptionString.read(from: &buf)
+                preferredOutputDeviceId: FfiConverterOptionString.read(from: &buf),
+                equalizer: FfiConverterTypeEqualizerSettings.read(from: &buf)
         )
     }
 
@@ -7346,6 +7521,7 @@ public struct FfiConverterTypeSettings: FfiConverterRustBuffer {
         FfiConverterBool.write(value.minimizeOnClose, into: &buf)
         FfiConverterBool.write(value.onboardingComplete, into: &buf)
         FfiConverterOptionString.write(value.preferredOutputDeviceId, into: &buf)
+        FfiConverterTypeEqualizerSettings.write(value.equalizer, into: &buf)
     }
 }
 
@@ -9537,6 +9713,28 @@ fileprivate struct FfiConverterSequenceInt64: FfiConverterRustBuffer {
     }
 }
 
+fileprivate struct FfiConverterSequenceFloat: FfiConverterRustBuffer {
+    typealias SwiftType = [Float]
+
+    public static func write(_ value: [Float], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterFloat.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Float] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Float]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterFloat.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -10189,6 +10387,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_enrichment_settings() != 18001) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_equalizer_metrics() != 14737) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_external_release_details() != 880) {

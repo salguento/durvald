@@ -64,6 +64,7 @@ fn settings_from_row(row: crate::database::models::Settings) -> ApplicationSetti
         minimize_on_close: row.minimize_on_close,
         onboarding_complete: !row.onboarding,
         preferred_output_device_id: row.preferred_output_device_id,
+        equalizer: serde_json::from_str(&row.equalizer_json).unwrap_or_default(),
     }
 }
 
@@ -82,5 +83,7 @@ fn settings_to_row(settings: ApplicationSettings) -> crate::database::models::Se
         minimize_on_close: settings.minimize_on_close,
         onboarding: !settings.onboarding_complete,
         preferred_output_device_id: settings.preferred_output_device_id,
+        equalizer_json: serde_json::to_string(&settings.equalizer)
+            .unwrap_or_else(|_| "{}".to_string()),
     }
 }

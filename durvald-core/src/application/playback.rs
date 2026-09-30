@@ -438,8 +438,12 @@ impl PlaybackApplication {
     }
 
     async fn prepare_sound(&self, path: String) -> CoreResult<crate::audio::player::PreparedSound> {
-        let normalize_volume = self.audio_player.lock().await.normalize_volume_enabled();
-        AudioPlayer::prepare_sound(path, normalize_volume)
+        let (normalize_volume, equalizer, meter) = {
+            let player = self.audio_player.lock().await;
+            let (equalizer, meter) = player.equalizer_processing();
+            (player.normalize_volume_enabled(), equalizer, meter)
+        };
+        AudioPlayer::prepare_sound(path, normalize_volume, equalizer, meter)
             .await
             .map_err(|error| CoreError::Playback {
                 message: error.to_string(),
