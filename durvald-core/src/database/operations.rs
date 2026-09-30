@@ -3059,14 +3059,9 @@ pub(crate) fn remove_missing_songs_in_folder(
         "DELETE FROM releases WHERE NOT EXISTS (SELECT 1 FROM songs WHERE songs.release_id = releases.release_id)",
         [],
     )?;
-    transaction.execute(
-        "DELETE FROM artists
-         WHERE artists.catalog_origin = 'local_scan'
-           AND NOT EXISTS (SELECT 1 FROM releases WHERE releases.artist_id = artists.artist_id)
-           AND NOT EXISTS (SELECT 1 FROM songs WHERE songs.artist_id = artists.artist_id)
-           AND NOT EXISTS (SELECT 1 FROM song_artists WHERE song_artists.artist_id = artists.artist_id)",
-        [],
-    )?;
+    // Artist rows are durable catalog entities. A library scan only reconciles
+    // local file availability and must never infer that an artist should be
+    // deleted, including legacy remote artists marked as `local_scan`.
     transaction.execute_batch("DROP TABLE scan_discovered_paths")?;
     transaction.commit()?;
     Ok(removed as u64)
@@ -3468,7 +3463,7 @@ mod tests {
     }
 
     #[test]
-    fn reconciliation_preserves_remote_only_artists() {
+    fn reconciliation_never_deletes_artist_records() {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         create_tables(&conn).unwrap();
@@ -3482,7 +3477,7 @@ mod tests {
         conn.execute(
             "INSERT INTO artists
              (artist_id, name, catalog_origin, catalog_created_at, catalog_updated_at)
-             VALUES (999, 'Remote Artist', 'similar_artist', 1, 1)",
+             VALUES (999, 'Legacy Remote Artist', 'local_scan', 1, 1)",
             [],
         )
         .unwrap();
@@ -3510,6 +3505,15 @@ mod tests {
                     scan_id: "partial-scan".into(),
                     root: PathBuf::from("/music"),
                 },
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM artists WHERE name = 'Removed Artist'",
+                [],
+                |row| row.get::<_, u64>(0),
             )
             .unwrap(),
             1

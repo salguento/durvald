@@ -486,13 +486,8 @@ fn update_index(
         [old.release_id],
     )
     .map_err(storage)?;
-    tx.execute(
-        "DELETE FROM artists
-         WHERE NOT EXISTS (SELECT 1 FROM releases WHERE releases.artist_id=artists.artist_id)
-           AND NOT EXISTS (SELECT 1 FROM songs WHERE songs.artist_id=artists.artist_id)
-           AND NOT EXISTS (SELECT 1 FROM song_artists WHERE song_artists.artist_id=artists.artist_id)",
-        [],
-    ).map_err(storage)?;
+    // Artist rows remain searchable catalog entities even after their last
+    // local track is moved to another artist through metadata editing.
     tx.execute(
         "UPDATE track_metadata_changes SET status=?2 WHERE change_id=?1",
         params![change.0, change.1],
