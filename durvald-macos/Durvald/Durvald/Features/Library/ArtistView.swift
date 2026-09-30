@@ -2161,20 +2161,32 @@ private struct PopularTrackListRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 if let externalURL {
-                    Link(title, destination: externalURL)
-                        .foregroundStyle(.primary)
+                    Link(destination: externalURL) {
+                        Text(title)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .buttonStyle(.plain)
                 } else if let trackID {
                     Text(title)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .activeTrackTitle(trackID: trackID)
                 } else {
                     Text(title)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
+
                 Text(subtitle)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             HStack(spacing: 8) {
                 Button {
