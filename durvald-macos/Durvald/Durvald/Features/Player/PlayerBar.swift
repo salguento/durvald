@@ -15,8 +15,6 @@ struct PlayerBar: View {
     @State private var isProgressHovered = false
     @State private var availableWidth: CGFloat = 360
     @State private var lyricsTrack: Track?
-    @AppStorage("player.spectrum.enabled") private var spectrumEnabled = false
-
     private var isNarrow: Bool { availableWidth < 600 }
 
     let onSelectAlbum: (Release) -> Void
@@ -24,35 +22,44 @@ struct PlayerBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if spectrumEnabled {
-                SpectrumAnalyzerView()
-                    .frame(height: 30)
-                    .padding(.bottom, 8)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-            HStack(alignment: .center, spacing: 4) {
-                trackInformation
-                    .frame(
-                        minWidth: 112,
-                        maxWidth: .infinity,
-                        alignment: .leading
-                    )
-                    .frame(height: 44, alignment: .center)
-                    .contentShape(Rectangle())
+            VStack(spacing: 0) {
+                HStack(alignment: .center, spacing: 16) {
+                    trackInformation
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .contentShape(Rectangle())
 
-                playbackControls
-                    .fixedSize(horizontal: true, vertical: false)
-                    .frame(minWidth: isNarrow ? 80 : 184)
-                    .frame(height: 44, alignment: .center)
+                    playbackControls
+                        .frame(maxWidth: .infinity, alignment: .center)
 
-                if !isNarrow {
-                    trailingControls
-                        .frame(minWidth: 120, maxWidth: .infinity)
-                        .frame(height: 44, alignment: .center)
+                    Group {
+                        if !isNarrow {
+                            trailingControls
+                        } else {
+                            Color.clear
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
                 }
+
+                HStack(spacing: 16) {
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .accessibilityHidden(true)
+
+                    playbackProgress
+                        .frame(maxWidth: .infinity)
+
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .accessibilityHidden(true)
+                }
+                .frame(height: 12)
             }
         }
-        .padding(14)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 4)
         .glassEffect(
             .regular.interactive(),
             in: .rect(cornerRadius: 20)
@@ -102,17 +109,10 @@ struct PlayerBar: View {
         let album = store.releases.first { $0.id == track?.releaseId }
         let artist = store.artists.first { $0.id == track?.artistId }
 
-        return HStack(alignment: .top, spacing: 8) {
+        return HStack(alignment: .center, spacing: 8) {
             playerArtwork(track, album: album)
 
-            VStack(alignment: .leading, spacing: 0) {
-                trackMetadata(track, album: album, artist: artist)
-
-                Spacer(minLength: 0)
-
-                playbackProgress
-            }
-            .frame(height: 44, alignment: .top)
+            trackMetadata(track, album: album, artist: artist)
         }
     }
 
@@ -121,7 +121,7 @@ struct PlayerBar: View {
         let artwork = Button {
             if let album { onSelectAlbum(album) }
         } label: {
-            ArtworkView(artworkID: track?.artworkId, size: 44)
+            ArtworkView(artworkID: track?.artworkId, size: 40)
         }
         .buttonStyle(.plain)
         .disabled(album == nil)
@@ -147,7 +147,7 @@ struct PlayerBar: View {
                     isAnimating: store.playback?.isPlaying == true,
                     action: { if let album { onSelectAlbum(album) } }
                 )
-                .font(.caption.weight(.medium))
+                .font(.callout.weight(.medium))
                 .accessibilityIdentifier("player.trackTitle")
                 .trackContextMenu(
                     track: track,
@@ -160,7 +160,7 @@ struct PlayerBar: View {
                     isAnimating: false,
                     action: {}
                 )
-                .font(.caption.weight(.medium))
+                .font(.callout.weight(.medium))
                 .accessibilityIdentifier("player.trackTitle")
             }
 
@@ -170,7 +170,7 @@ struct PlayerBar: View {
                 isAnimating: store.playback?.isPlaying == true,
                 action: { if let artist { onSelectArtist(artist) } }
             )
-            .font(.caption2)
+            .font(.caption)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("player.artist")
             .contextMenu {
@@ -285,13 +285,15 @@ struct PlayerBar: View {
 
         return HStack(spacing: 8) {
             trackActions(track, album: album, artist: artist)
-                .frame(maxWidth: .infinity, alignment: .center)
 
             if !isNarrow {
+                Spacer(minLength: 8)
+
                 volumeControl
                     .frame(minWidth: 64, maxWidth: 120)
             }
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var playbackControls: some View {
@@ -315,7 +317,6 @@ struct PlayerBar: View {
                                     .fill(Color.accentColor.opacity(0.16))
                             }
                         }
-                        .frame(height: 44)
                         .contentShape(Rectangle())
                 }
                 .accessibilityHint("Alterna a reprodução aleatória da fila")
@@ -332,7 +333,6 @@ struct PlayerBar: View {
                     Task { await store.previous() }
                 } label: {
                     Image(systemName: "backward.fill")
-                        .frame(height: 44)
                         .contentShape(Rectangle())
                 }
                 .disabled(store.playback?.currentTrack == nil)
@@ -356,7 +356,6 @@ struct PlayerBar: View {
                         : "pause.fill"
                 )
                 .font(.system(size: 28))
-                .frame(height: 44)
                 .contentShape(Rectangle())
             }
             .disabled(store.playback?.currentTrack == nil || changingPlaybackState)
@@ -371,7 +370,6 @@ struct PlayerBar: View {
                 Task { await store.next() }
             } label: {
                 Image(systemName: "forward.fill")
-                    .frame(height: 44)
                     .contentShape(Rectangle())
             }
             .disabled(store.playback?.currentTrack == nil)
@@ -396,7 +394,6 @@ struct PlayerBar: View {
                                     .fill(Color.accentColor.opacity(0.16))
                             }
                         }
-                        .frame(height: 44)
                         .contentShape(Rectangle())
                 }
                 .accessibilityHint("Alterna entre repetição desativada, da fila e de uma faixa")
@@ -463,6 +460,9 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.progress")
             }
 
+            Text(time(duration))
+                .fixedSize()
+                .accessibilityIdentifier("player.duration")
         }
         .font(.system(size: 9).monospacedDigit())
         .foregroundStyle(.tertiary)

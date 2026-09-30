@@ -48,8 +48,7 @@ struct ContentView: View {
         static let queueMinimumWidth: CGFloat = 260
         static let queueIdealWidth: CGFloat = 300
         static let queueMaximumWidth: CGFloat = 380
-        static let playerMaximumWidth: CGFloat = 760
-        static let playerHorizontalMargin: CGFloat = 16
+        static let playerHorizontalMargin: CGFloat = 32
         static let playerTopMargin: CGFloat = 12
     }
 
@@ -208,10 +207,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
-                    .frame(maxWidth: Layout.playerMaximumWidth)
                     .padding(.horizontal, Layout.playerHorizontalMargin)
                     .padding(.top, Layout.playerTopMargin)
-                    .padding(.bottom, Layout.playerHorizontalMargin)
+                    .padding(.bottom, 20)
                     .frame(maxWidth: .infinity)
             }
             // Keep the toolbar and its scroll views in the same split column.
