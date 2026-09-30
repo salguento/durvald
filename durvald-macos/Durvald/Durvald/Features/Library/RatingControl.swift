@@ -13,7 +13,6 @@ struct RatingControl: View {
     var isEditable = false
     var onChange: (UInt8?) -> Void = { _ in }
     @State private var selectedRating: UInt8?
-    @State private var hoveredRating: UInt8?
 
     init(
         rating: UInt8?,
@@ -27,8 +26,6 @@ struct RatingControl: View {
     }
 
     var body: some View {
-        let displayedRating = hoveredRating ?? selectedRating
-
         HStack(spacing: 2) {
             ForEach(1...5, id: \.self) { value in
                 Button {
@@ -37,16 +34,12 @@ struct RatingControl: View {
                     selectedRating = updatedRating
                     onChange(updatedRating)
                 } label: {
-                    Image(systemName: value <= Int(displayedRating ?? 0) ? "star.fill" : "star")
-                        .foregroundStyle(value <= Int(displayedRating ?? 0) ? Color.yellow : Color.secondary)
+                    Image(systemName: value <= Int(selectedRating ?? 0) ? "star.fill" : "star")
+                        .foregroundStyle(value <= Int(selectedRating ?? 0) ? Color.accentColor : Color.secondary)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!isEditable)
-                .onHover { hovering in
-                    guard isEditable else { return }
-                    hoveredRating = hovering ? UInt8(value) : nil
-                }
                 .accessibilityLabel("\(value) de 5")
             }
         }
