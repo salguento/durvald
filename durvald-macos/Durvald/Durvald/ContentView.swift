@@ -26,7 +26,6 @@ struct ContentView: View {
     @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
     @AppStorage("albums.minimumRating") private var albumMinimumRating = 0
 
-    @State private var queueColumnWidth: CGFloat = 300
     @State private var isTopbarHovered = false
     @State private var isPageScrolled = false
     @State private var shell = ContentShellState()
@@ -90,26 +89,27 @@ struct ContentView: View {
                     maxHeight: .infinity
                 )
         }
-        .background(
-            InspectorSplitLayout(coordinator: windowLayout)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        )
-        .inspector(isPresented: $shell.isQueuePresented) {
-            QueueView()
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { queueColumnWidth = $0 }
-                .inspectorColumnWidth(
-                    min: Layout.queueMinimumWidth,
-                    ideal: Layout.queueIdealWidth,
-                    max: Layout.queueMaximumWidth
-                )
-        }
         .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(isPageScrolled ? .visible : .automatic, for: .windowToolbar)
+        .toolbarBackgroundVisibility(
+            isPageScrolled && isTopbarHovered ? .visible : .hidden,
+            for: .windowToolbar
+        )
         .background {
             TopbarHoverObserver(isHovered: $isTopbarHovered)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
+        }
+        .overlay(alignment: .trailing) {
+            if shell.isQueuePresented {
+                QueueView()
+                    .frame(width: Layout.queueIdealWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(.ultraThinMaterial)
+                    .overlay(alignment: .leading) {
+                        Divider()
+                    }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
         .frame(
             minWidth: Layout.contentViewMinimumWidth,
@@ -205,9 +205,11 @@ struct ContentView: View {
             .environment(\.libraryScrollOffset, currentPageScrollOffset)
             .id(shell.navigationHistory.currentEntryID)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.trailing, shell.isQueuePresented ? Layout.queueIdealWidth : 0)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
                     .padding(.horizontal, Layout.playerHorizontalMargin)
+                    .padding(.trailing, shell.isQueuePresented ? Layout.queueIdealWidth : 0)
                     .padding(.top, Layout.playerTopMargin)
                     .padding(.bottom, 20)
                     .frame(maxWidth: .infinity)
@@ -282,10 +284,10 @@ struct ContentView: View {
         ToolbarSpacer(.flexible)
 
         ToolbarItem(placement: .automatic) {
-            // Both controls share a trailing anchor. Opening the inspector
-            // moves the listing control by its measured width while the queue
-            // toggle stays at the window edge; closing restores the 16 pt gap.
-            HStack(spacing: shell.isQueuePresented ? max(16, queueColumnWidth - 36) : 16) {
+            // Both controls share a trailing anchor. Opening the queue moves
+            // the listing control past the overlaid panel while the queue
+            // toggle stays at the window edge.
+            HStack(spacing: shell.isQueuePresented ? Layout.queueIdealWidth - 36 : 16) {
                 if case .section(let destination) = shell.navigationHistory.currentRoute,
                    destination == .albums || destination == .artists || destination == .playlists {
                     CollectionListingMenu(
@@ -299,6 +301,7 @@ struct ContentView: View {
                 }
                 queueToggleButton
             }
+            .animation(Layout.panelAnimation, value: shell.isQueuePresented)
         }
         .sharedBackgroundVisibility(.hidden)
     }
@@ -467,10 +470,6 @@ struct ContentView: View {
     }
 
     private func toggleQueue() {
-        // Configure the collapsed inspector before its first layout can grow
-        // the window. A helper inside QueueView would only run after opening.
-        windowLayout.prepareInspectorPresentation()
-
         withAnimation(Layout.panelAnimation) {
             shell.toggleQueue()
         }
@@ -508,7 +507,8 @@ struct ContentView: View {
                 onSelectExternalRelease: { release in
                     showExternalAlbum(release, artist: artist)
                 },
-                onSelectArtist: showArtist
+                onSelectArtist: showArtist,
+                trailingScrollableOverflow: shell.isQueuePresented ? Layout.queueIdealWidth : 0
             )
                 .id(artist.id)
         case .playlist(let playlist):

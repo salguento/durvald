@@ -30,6 +30,7 @@ struct ArtistView: View {
     let onSelectAlbum: (Release) -> Void
     let onSelectExternalRelease: (ExternalReleaseGroup) -> Void
     var onSelectArtist: ((Artist) -> Void)? = nil
+    var trailingScrollableOverflow: CGFloat = 0
 
     @State private var tracks: [Track] = []
     @State private var albums: [Release] = []
@@ -948,6 +949,8 @@ struct ArtistView: View {
 
     @ViewBuilder
     private func discographySections(width: CGFloat) -> some View {
+        let scrollableWidth = width + trailingScrollableOverflow
+
         if !albums.isEmpty {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .firstTextBaseline) {
@@ -974,8 +977,9 @@ struct ArtistView: View {
                 }
                 .scrollIndicators(.hidden)
                 .contentMargins(.horizontal, 24, for: .scrollContent)
-                .frame(width: width, alignment: .leading)
+                .frame(width: scrollableWidth, alignment: .leading)
                 .padding(.leading, -24)
+                .scrollClipDisabled()
             }
             .accessibilityIdentifier("artist.discography.local")
         }
@@ -1037,8 +1041,9 @@ struct ArtistView: View {
                                     }
                                     .scrollIndicators(.hidden)
                                     .contentMargins(.horizontal, 24, for: .scrollContent)
-                                    .frame(width: width, alignment: .leading)
+                                    .frame(width: scrollableWidth, alignment: .leading)
                                     .padding(.leading, -24)
+                                    .scrollClipDisabled()
                                 }
                                 .accessibilityIdentifier("artist.discography.online.\(category.rawValue)")
                             }
@@ -1356,7 +1361,7 @@ struct ArtistView: View {
         let latestReleaseMetadataFont = Font.system(
             size: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 2
         )
-        let contentWidth = max(0, width)
+        let contentWidth = max(0, width + trailingScrollableOverflow)
         let initialVisibleWidth = max(0, contentWidth - 48)
         let highlightBlockWidth = max(360, (initialVisibleWidth - 24) / 2)
         let ranking = ArtistPresentationPolicy.popularRanking(
@@ -1514,6 +1519,7 @@ struct ArtistView: View {
         .contentMargins(.horizontal, 24, for: .scrollContent)
         .frame(width: contentWidth, alignment: .leading)
         .padding(.leading, -24)
+        .scrollClipDisabled()
     }
 
     private var collectionControls: some View {
@@ -1879,38 +1885,9 @@ struct ArtistView: View {
     }
 
     private func artistFooter(width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 36) {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Sobre \(artist.name)")
-                    .font(.title2.bold())
-                    .accessibilityAddTraits(.isHeader)
+        let scrollableWidth = width + trailingScrollableOverflow
 
-                VStack(alignment: .leading, spacing: 12) {
-                    if let factsSummary {
-                        Text(factsSummary)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary)
-                    }
-                    if let biography = biographyText {
-                        Text(biography)
-                        if biographyOverride == nil,
-                           let biographySource,
-                           let sourceURL = URL(string: biographySource.profile.attribution.sourceUrl) {
-                            Link("Fonte: \(biographySourceName)", destination: sourceURL)
-                                .font(.caption)
-                        }
-                    } else {
-                        Text("Informações biográficas ainda não disponíveis.")
-                            .italic()
-                    }
-                }
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .lineSpacing(4)
-                .frame(maxWidth: 800, alignment: .leading)
-            }
-            .padding(.horizontal, 24)
-
+        return VStack(alignment: .leading, spacing: 36) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Artistas similares")
                     .font(.title2.bold())
@@ -1952,6 +1929,8 @@ struct ArtistView: View {
                     .padding(.horizontal, 24)
                 }
                 .scrollIndicators(.hidden)
+                .frame(width: scrollableWidth, alignment: .leading)
+                .scrollClipDisabled()
             }
         }
         .padding(.top, 36)
@@ -1995,27 +1974,6 @@ struct ArtistView: View {
             overrides: details?.overrides ?? [],
             sources: details?.sources ?? []
         )
-    }
-
-    private var factsSummary: String? {
-        let profile = details?.sources.first(where: { $0.provider == .wikidata })?.profile
-        let hasManualFacts = details?.overrides.contains { $0.field != .biography } == true
-        guard profile != nil || hasManualFacts else {
-            return nil
-        }
-        var facts: [String] = []
-        if let date = overriddenDate(.birthDate, fallback: profile?.birthDate) {
-            facts.append("Nascimento: \(formatted(date))")
-        } else if let date = overriddenDate(.formationDate, fallback: profile?.formationDate) {
-            facts.append("Formação: \(formatted(date))")
-        }
-        let place = overriddenText(.birthPlace, fallback: profile?.birthPlace)
-            ?? overriddenText(.formationPlace, fallback: profile?.formationPlace)
-            ?? overriddenText(.originPlace, fallback: profile?.originPlace)
-        if let place {
-            facts.append(place)
-        }
-        return facts.isEmpty ? nil : facts.joined(separator: " · ")
     }
 
     private func formatted(_ date: ArtistPartialDate) -> String {
