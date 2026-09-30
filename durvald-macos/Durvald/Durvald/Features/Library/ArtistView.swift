@@ -825,21 +825,23 @@ struct ArtistView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                LazyVGrid(
-                    columns: AlbumGridLayout.columns(for: width),
-                    alignment: .leading,
-                    spacing: AlbumGridLayout.spacing
-                ) {
-                    ForEach(albums, id: \.id) { album in
-                        AlbumCard(
-                            release: album,
-                            onSelectAlbum: selectAlbum,
-                            subtitle: releaseYear(for: album),
-                            fallbackArtworkID: externalFallbackArtworkID(for: album),
-                            artworkSize: AlbumGridLayout.cardSize(for: width)
-                        )
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: AlbumGridLayout.spacing) {
+                        ForEach(localReleasesNewestFirst, id: \.id) { album in
+                            AlbumCard(
+                                release: album,
+                                onSelectAlbum: selectAlbum,
+                                subtitle: releaseYear(for: album),
+                                fallbackArtworkID: externalFallbackArtworkID(for: album),
+                                artworkSize: AlbumGridLayout.cardWidth
+                            )
+                        }
                     }
                 }
+                .scrollIndicators(.hidden)
+                .contentMargins(.horizontal, 24, for: .scrollContent)
+                .frame(width: width, alignment: .leading)
+                .padding(.leading, -24)
             }
             .accessibilityIdentifier("artist.discography.local")
         }
@@ -887,20 +889,22 @@ struct ArtistView: View {
                                         .font(.title3.bold())
                                         .accessibilityAddTraits(.isHeader)
 
-                                    LazyVGrid(
-                                        columns: AlbumGridLayout.columns(for: width),
-                                        alignment: .leading,
-                                        spacing: AlbumGridLayout.spacing
-                                    ) {
-                                        ForEach(releases, id: \.musicbrainzId) { release in
-                                            ExternalReleaseCard(
-                                                release: release,
-                                                subtitle: externalReleaseSubtitle(release),
-                                                onSelectRelease: selectExternalRelease,
-                                                artworkSize: AlbumGridLayout.cardSize(for: width)
-                                            )
+                                    ScrollView(.horizontal) {
+                                        LazyHStack(alignment: .top, spacing: AlbumGridLayout.spacing) {
+                                            ForEach(releases, id: \.musicbrainzId) { release in
+                                                ExternalReleaseCard(
+                                                    release: release,
+                                                    subtitle: externalReleaseSubtitle(release),
+                                                    onSelectRelease: selectExternalRelease,
+                                                    artworkSize: AlbumGridLayout.cardWidth
+                                                )
+                                            }
                                         }
                                     }
+                                    .scrollIndicators(.hidden)
+                                    .contentMargins(.horizontal, 24, for: .scrollContent)
+                                    .frame(width: width, alignment: .leading)
+                                    .padding(.leading, -24)
                                 }
                                 .accessibilityIdentifier("artist.discography.online.\(category.rawValue)")
                             }
@@ -944,11 +948,34 @@ struct ArtistView: View {
         discographyItems
             .filter { $0.localReleaseId == nil }
             .sorted {
-                let left = $0.firstReleaseDate?.year ?? Int32.max
-                let right = $1.firstReleaseDate?.year ?? Int32.max
-                if left != right { return left < right }
+                let left = externalReleaseDateKey($0.firstReleaseDate)
+                let right = externalReleaseDateKey($1.firstReleaseDate)
+                if left != right { return left > right }
                 return $0.title.localizedStandardCompare($1.title) == .orderedAscending
             }
+    }
+
+    private var localReleasesNewestFirst: [Release] {
+        albums.sorted {
+            let left = localReleaseDateKey($0.releaseDate)
+            let right = localReleaseDateKey($1.releaseDate)
+            if left != right { return left > right }
+            return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        }
+    }
+
+    private func externalReleaseDateKey(_ date: ArtistPartialDate?) -> Int {
+        guard let date else { return Int.min }
+        return Int(date.year) * 10_000 + Int(date.month ?? 0) * 100 + Int(date.day ?? 0)
+    }
+
+    private func localReleaseDateKey(_ date: String?) -> Int {
+        guard let date else { return Int.min }
+        let components = date.split { !$0.isNumber }.compactMap { Int($0) }
+        guard let year = components.first else { return Int.min }
+        let month = components.count > 1 ? components[1] : 0
+        let day = components.count > 2 ? components[2] : 0
+        return year * 10_000 + month * 100 + day
     }
 
     private func externalFallbackArtworkID(for album: Release) -> String? {
@@ -1187,154 +1214,161 @@ struct ArtistView: View {
     }
 
     private func artistHighlights(width: CGFloat) -> some View {
-        // Two columns require twice the content column's 360 pt minimum width.
-        let isStacked = width < 720
-        let columnWidth = max(0, isStacked ? width - 48 : (width - 72) / 2)
-        let layout = isStacked
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 28))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 24))
+        let highlightArtworkSize: CGFloat = 160
+        let popularTrackRowHeight = highlightArtworkSize / 3
+        let contentWidth = max(0, width)
+        let initialVisibleWidth = max(0, contentWidth - 48)
+        let highlightBlockWidth = max(360, (initialVisibleWidth - 24) / 2)
         let ranking = ArtistPresentationPolicy.popularRanking(
             lastFm: popularTracks,
             localTracks: mostPlayedLocalTracks
         )
 
-        return layout {
-            VStack(alignment: .leading, spacing: 16) {
-                Text(ranking.title)
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .top, spacing: 24) {
+                VStack(alignment: .leading, spacing: 16) {
+                Text("Último lançamento")
                     .font(.title2.bold())
                     .accessibilityAddTraits(.isHeader)
 
-                if !isLoading, case .empty = ranking {
-                    Text("Nenhuma música disponível")
-                        .foregroundStyle(.secondary)
-                }
-
-                LazyVStack(spacing: 0) {
-                    switch ranking {
-                    case let .lastFm(externalRanking):
-                        ForEach(externalRanking, id: \.rank) { item in
-                            popularTrackRow(item)
-                            if item.rank != externalRanking.last?.rank { Divider() }
+                if let latestRelease {
+                    Button {
+                        if let local = albums.first(where: { $0.id == latestRelease.localReleaseId }) {
+                            selectAlbum(local)
+                        } else {
+                            onSelectExternalRelease(latestRelease)
                         }
-                    case let .library(localRanking):
-                        ForEach(Array(localRanking.enumerated()), id: \.element.id) { index, track in
-                            popularLocalTrackRow(track, rank: index + 1)
-                            if track.id != localRanking.last?.id { Divider() }
-                        }
-                    case .empty:
-                        EmptyView()
-                    }
-                }
-            }
-            .frame(width: columnWidth, alignment: .topLeading)
+                    } label: {
+                        HStack(alignment: .center, spacing: 15) {
+                            ArtworkView(
+                                artworkID: albums.first(where: { $0.id == latestRelease.localReleaseId })?.artworkId
+                                    ?? latestRelease.artwork?.image.managedPath,
+                                size: highlightArtworkSize
+                            )
 
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Último lançamento")
-                        .font(.title2.bold())
-                        .accessibilityAddTraits(.isHeader)
-
-                    if let latestRelease {
-                        Button {
-                            if let local = albums.first(where: { $0.id == latestRelease.localReleaseId }) {
-                                selectAlbum(local)
-                            } else {
-                                onSelectExternalRelease(latestRelease)
-                            }
-                        } label: {
-                            HStack(alignment: .center, spacing: 15) {
-                                ArtworkView(
-                                    artworkID: albums.first(where: { $0.id == latestRelease.localReleaseId })?.artworkId
-                                        ?? latestRelease.artwork?.image.managedPath,
-                                    size: 160
-                                )
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    VStack(alignment: .leading, spacing: 0) {
-                                        AlbumTitleLabel(
-                                            title: latestRelease.title,
-                                            isFavorite: albums.first(where: { $0.id == latestRelease.localReleaseId })?.isFavorite == true,
-                                            font: AlbumListingTypography.title
-                                        )
-                                            .lineLimit(2)
-                                        Text(artist.name)
-                                            .font(AlbumListingTypography.secondary)
-                                            .foregroundStyle(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                    Text(latestRelease.firstReleaseDate.map { String($0.year) } ?? "")
+                            VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    AlbumTitleLabel(
+                                        title: latestRelease.title,
+                                        isFavorite: albums.first(where: { $0.id == latestRelease.localReleaseId })?.isFavorite == true,
+                                        font: AlbumListingTypography.title
+                                    )
+                                        .lineLimit(2)
+                                    Text(artist.name)
                                         .font(AlbumListingTypography.secondary)
                                         .foregroundStyle(.secondary)
-                                    if let count = releaseDetailsByGroupID[latestRelease.musicbrainzId]?.tracks.count {
-                                        Text("\(count) músicas")
-                                            .font(AlbumListingTypography.secondary)
-                                            .foregroundStyle(.secondary)
-                                    } else if let kind = latestRelease.primaryType {
-                                        Text(kind)
-                                            .font(AlbumListingTypography.secondary)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                    Text("MusicBrainz")
+                                        .lineLimit(1)
+                                }
+                                Text(latestRelease.firstReleaseDate.map { String($0.year) } ?? "")
+                                    .font(AlbumListingTypography.secondary)
+                                    .foregroundStyle(.secondary)
+                                if let count = releaseDetailsByGroupID[latestRelease.musicbrainzId]?.tracks.count {
+                                    Text("\(count) músicas")
+                                        .font(AlbumListingTypography.secondary)
+                                        .foregroundStyle(.secondary)
+                                } else if let kind = latestRelease.primaryType {
+                                    Text(kind)
                                         .font(AlbumListingTypography.secondary)
                                         .foregroundStyle(.secondary)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                Text("MusicBrainz")
+                                    .font(AlbumListingTypography.secondary)
+                                    .foregroundStyle(.secondary)
                             }
-                            .contentShape(.rect)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Abrir lançamento \(latestRelease.title)")
-                        .albumContextMenu(album: albums.first { $0.id == latestRelease.localReleaseId })
-                        .accessibilityIdentifier("artist.latestRelease.\(latestRelease.musicbrainzId)")
-                        if discographyPage?.remoteExhausted == false {
-                            Text("Mais recente no catálogo disponível. Continue a atualização da discografia para consultar os demais lançamentos.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else if !isLoading {
-                        Text("Nenhum lançamento disponível")
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Abrir lançamento \(latestRelease.title)")
+                    .albumContextMenu(album: albums.first { $0.id == latestRelease.localReleaseId })
+                    .accessibilityIdentifier("artist.latestRelease.\(latestRelease.musicbrainzId)")
+                    if discographyPage?.remoteExhausted == false {
+                        Text("Mais recente no catálogo disponível. Continue a atualização da discografia para consultar os demais lançamentos.")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                } else if !isLoading {
+                    Text("Nenhum lançamento disponível")
+                        .foregroundStyle(.secondary)
                 }
-                .frame(width: columnWidth, alignment: .leading)
+                }
+                .frame(width: highlightBlockWidth, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Álbuns essenciais")
+                    Text(ranking.title)
                         .font(.title2.bold())
                         .accessibilityAddTraits(.isHeader)
-
-                    LazyVGrid(
-                        columns: AlbumGridLayout.columns(for: columnWidth + 24, minimumCardWidth: 160, padding: 0),
-                        alignment: .leading,
-                        spacing: AlbumGridLayout.spacing
-                    ) {
-                        ForEach(essentialAlbums, id: \.id) { album in
-                            AlbumCard(
-                                release: album,
-                                onSelectAlbum: selectAlbum,
-                                subtitle: releaseYear(for: album),
-                                fallbackArtworkID: externalFallbackArtworkID(for: album),
-                                artworkSize: AlbumGridLayout.cardSize(for: columnWidth + 24, minimumCardWidth: 160, padding: 0),
-                                titleLineLimit: 2
+                        .visualEffect { content, geometry in
+                            content.offset(
+                                x: max(
+                                    0,
+                                    -geometry.frame(
+                                        in: .scrollView(axis: .horizontal)
+                                    ).minX
+                                )
                             )
                         }
-                    }
-                    .accessibilityIdentifier("artist.essentialAlbums")
-                }
-            }
-            .frame(width: columnWidth + 24, alignment: .topLeading)
-        }
-        .padding(.trailing, -24)
-    }
+                        .zIndex(1)
 
-    // Local ratings provide an interim order until editorial recommendations are available.
-    private var essentialAlbums: [Release] {
-        albums.sorted {
-            if ($0.rating ?? 0) != ($1.rating ?? 0) {
-                return ($0.rating ?? 0) > ($1.rating ?? 0)
+                    if !isLoading, case .empty = ranking {
+                        Text("Nenhuma música disponível")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    LazyHStack(alignment: .top, spacing: 24) {
+                        switch ranking {
+                        case let .lastFm(externalRanking):
+                            let visibleRanking = externalRanking.count >= 12
+                                ? Array(externalRanking.prefix(12))
+                                : Array(externalRanking.prefix(9))
+                            ForEach(Array(stride(from: 0, to: visibleRanking.count, by: 3)), id: \.self) { start in
+                                VStack(spacing: 0) {
+                                    let end = min(start + 3, visibleRanking.count)
+                                    ForEach(start..<end, id: \.self) { index in
+                                        popularTrackRow(visibleRanking[index])
+                                            .frame(height: popularTrackRowHeight)
+                                            .overlay(alignment: .bottom) {
+                                                if index < end - 1 { Divider() }
+                                            }
+                                    }
+                                }
+                                .frame(
+                                    width: highlightBlockWidth,
+                                    height: highlightArtworkSize,
+                                    alignment: .topLeading
+                                )
+                            }
+                        case let .library(localRanking):
+                            ForEach(Array(stride(from: 0, to: localRanking.count, by: 3)), id: \.self) { start in
+                                VStack(spacing: 0) {
+                                    let end = min(start + 3, localRanking.count)
+                                    ForEach(start..<end, id: \.self) { index in
+                                        popularLocalTrackRow(localRanking[index], rank: index + 1)
+                                            .frame(height: popularTrackRowHeight)
+                                            .overlay(alignment: .bottom) {
+                                                if index < end - 1 { Divider() }
+                                            }
+                                    }
+                                }
+                                .frame(
+                                    width: highlightBlockWidth,
+                                    height: highlightArtworkSize,
+                                    alignment: .topLeading
+                                )
+                            }
+                        case .empty:
+                            EmptyView()
+                        }
+                    }
+                }
+                .frame(minWidth: highlightBlockWidth, alignment: .leading)
             }
-            return $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
+        .scrollIndicators(.hidden)
+        .contentMargins(.horizontal, 24, for: .scrollContent)
+        .frame(width: contentWidth, alignment: .leading)
+        .padding(.leading, -24)
     }
 
     private var collectionControls: some View {
@@ -2150,13 +2184,13 @@ private struct PopularTrackListRow: View {
 
             if let onSelectArtwork {
                 Button(action: onSelectArtwork) {
-                    ArtworkView(artworkID: artworkID, size: 36)
+                    ArtworkView(artworkID: artworkID, size: 44)
                 }
                 .buttonStyle(.plain)
                 .help("Abrir álbum")
                 .accessibilityLabel("Abrir álbum de \(title)")
             } else {
-                ArtworkView(artworkID: artworkID, size: 36)
+                ArtworkView(artworkID: artworkID, size: 44)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -2244,7 +2278,7 @@ private struct PopularTrackListRow: View {
             }
             .frame(width: 116, alignment: .trailing)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 4)
         .contentShape(.rect)
         .onHover { isHovered = $0 }
     }
