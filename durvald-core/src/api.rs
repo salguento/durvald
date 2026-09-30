@@ -360,6 +360,24 @@ pub struct Settings {
     pub open_on_startup: bool,
     pub minimize_on_close: bool,
     pub onboarding_complete: bool,
+    pub preferred_output_device_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AudioOutputDevice {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AudioOutputState {
+    pub devices: Vec<AudioOutputDevice>,
+    pub preferred_device_id: Option<String>,
+    pub active_device_id: Option<String>,
+    pub using_fallback: bool,
 }
 
 /// Key-value pair for metadata fields (UniFFI-friendly alternative to HashMap).

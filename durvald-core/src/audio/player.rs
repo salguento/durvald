@@ -1,4 +1,5 @@
 use crate::api::RepeatMode;
+use cpal::traits::{DeviceTrait, HostTrait};
 use kira::Tween;
 use kira::sound::FromFileError;
 use kira::sound::streaming::StreamingSoundData;
@@ -85,6 +86,8 @@ pub enum AudioError {
     #[cfg(any(test, feature = "test-support"))]
     #[error("Failed to initialize mock audio backend")]
     MockBackend,
+    #[error("No audio output device is available")]
+    NoOutputDevice,
 }
 
 enum PlayerBackend {
@@ -116,12 +119,64 @@ pub struct AudioPlayer {
     completed_transitions: VecDeque<(Option<i64>, i64)>,
     current_tail: Vec<kira::Frame>,
     current_sample_rate: u32,
+    preferred_output_device_id: Option<String>,
+    active_output_device_id: Option<String>,
+    using_output_fallback: bool,
+    #[cfg(any(test, feature = "test-support"))]
+    mock_output_devices: Option<Vec<crate::api::AudioOutputDevice>>,
 }
 
 impl AudioPlayer {
     pub fn volume(&self) -> f32 {
         self.current_volume
     }
+}
+
+fn output_devices() -> Vec<crate::api::AudioOutputDevice> {
+    let host = cpal::default_host();
+    let default_name = host
+        .default_output_device()
+        .and_then(|device| device.name().ok());
+    let mut devices = host
+        .output_devices()
+        .ok()
+        .into_iter()
+        .flatten()
+        .filter_map(|device| device.name().ok())
+        .map(|name| crate::api::AudioOutputDevice {
+            id: name.clone(),
+            is_default: default_name.as_deref() == Some(name.as_str()),
+            name,
+        })
+        .collect::<Vec<_>>();
+    devices.sort_by(|left, right| {
+        right
+            .is_default
+            .cmp(&left.is_default)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    devices.dedup_by(|left, right| left.id == right.id);
+    devices
+}
+
+fn resolve_output_device(
+    preferred: Option<&str>,
+) -> Result<(cpal::Device, Option<String>, bool), AudioError> {
+    let host = cpal::default_host();
+    if let Some(preferred) = preferred {
+        if let Ok(devices) = host.output_devices() {
+            for device in devices {
+                if device.name().ok().as_deref() == Some(preferred) {
+                    return Ok((device, Some(preferred.to_string()), false));
+                }
+            }
+        }
+    }
+    let device = host
+        .default_output_device()
+        .ok_or(AudioError::NoOutputDevice)?;
+    let name = device.name().ok();
+    Ok((device, name, preferred.is_some()))
 }
 
 impl AudioPlayer {
@@ -168,9 +223,19 @@ impl AudioPlayer {
 impl AudioPlayer {
     fn ensure_backend(&mut self) -> Result<(), AudioError> {
         if matches!(self.manager, PlayerBackend::Uninitialized) {
-            let manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())
-                .map_err(|error| AudioError::Kira(Box::new(error)))?;
+            let (device, active, fallback) =
+                resolve_output_device(self.preferred_output_device_id.as_deref())?;
+            let manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings {
+                backend_settings: kira::backend::cpal::CpalBackendSettings {
+                    device: Some(device),
+                    config: None,
+                },
+                ..Default::default()
+            })
+            .map_err(|error| AudioError::Kira(Box::new(error)))?;
             self.manager = PlayerBackend::Default(Box::new(manager));
+            self.active_output_device_id = active;
+            self.using_output_fallback = fallback;
         }
         Ok(())
     }
@@ -198,7 +263,118 @@ impl AudioPlayer {
             completed_transitions: VecDeque::new(),
             current_tail: Vec::new(),
             current_sample_rate: 0,
+            preferred_output_device_id: None,
+            active_output_device_id: None,
+            using_output_fallback: false,
+            #[cfg(any(test, feature = "test-support"))]
+            mock_output_devices: None,
         }
+    }
+
+    pub(crate) fn set_preferred_output_device(&mut self, device_id: Option<String>) {
+        self.preferred_output_device_id = device_id.filter(|value| !value.is_empty());
+    }
+
+    pub(crate) fn output_state(&self) -> crate::api::AudioOutputState {
+        let devices = self.known_output_devices();
+        crate::api::AudioOutputState {
+            devices,
+            preferred_device_id: self.preferred_output_device_id.clone(),
+            active_device_id: self.active_output_device_id.clone(),
+            using_fallback: self.using_output_fallback,
+        }
+    }
+
+    pub(crate) async fn reconcile_output_device(
+        &mut self,
+        preferred: Option<String>,
+    ) -> Result<crate::api::AudioOutputState, AudioError> {
+        self.preferred_output_device_id = preferred.filter(|value| !value.is_empty());
+        let devices = self.known_output_devices();
+        let preferred_available = self
+            .preferred_output_device_id
+            .as_ref()
+            .is_some_and(|id| devices.iter().any(|device| &device.id == id));
+        let expected = if preferred_available {
+            self.preferred_output_device_id.clone()
+        } else {
+            devices
+                .iter()
+                .find(|device| device.is_default)
+                .map(|device| device.id.clone())
+        };
+        let fallback = self.preferred_output_device_id.is_some() && !preferred_available;
+        if matches!(self.manager, PlayerBackend::Uninitialized) {
+            self.active_output_device_id = expected;
+            self.using_output_fallback = fallback;
+            return Ok(self.output_state());
+        }
+        #[cfg(any(test, feature = "test-support"))]
+        if matches!(self.manager, PlayerBackend::Mock(_)) {
+            self.active_output_device_id =
+                expected.or_else(|| self.preferred_output_device_id.clone());
+            self.using_output_fallback = fallback;
+            return Ok(self.output_state());
+        }
+        if self.active_output_device_id == expected && self.using_output_fallback == fallback {
+            return Ok(self.output_state());
+        }
+        self.switch_real_output_device().await?;
+        Ok(self.output_state())
+    }
+
+    fn known_output_devices(&self) -> Vec<crate::api::AudioOutputDevice> {
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(devices) = &self.mock_output_devices {
+            return devices.clone();
+        }
+        output_devices()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_mock_output_devices(&mut self, devices: Vec<crate::api::AudioOutputDevice>) {
+        self.mock_output_devices = Some(devices);
+    }
+
+    async fn switch_real_output_device(&mut self) -> Result<(), AudioError> {
+        self.synchronize_gapless();
+        let was_paused = self.is_paused();
+        let position = self.get_position().as_secs_f64();
+        let current = self.current_song_id.zip(self.current_path.clone());
+        let should_restore = self.current_sound.is_some();
+        let prepared = if should_restore {
+            if let Some((_, path)) = &current {
+                Some(Self::prepare_sound(path.clone(), self.normalize_volume).await?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let (device, active, fallback) =
+            resolve_output_device(self.preferred_output_device_id.as_deref())?;
+        let manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings {
+            backend_settings: kira::backend::cpal::CpalBackendSettings {
+                device: Some(device),
+                config: None,
+            },
+            ..Default::default()
+        })
+        .map_err(|error| AudioError::Kira(Box::new(error)))?;
+
+        self.current_sound = None;
+        self.gapless = None;
+        self.scheduled_next = None;
+        self.manager = PlayerBackend::Default(Box::new(manager));
+        self.active_output_device_id = active;
+        self.using_output_fallback = fallback;
+        if let (Some((song_id, _)), Some(prepared)) = (current, prepared) {
+            self.play_song_prepared_from(song_id, prepared, position)?;
+            if was_paused {
+                self.pause();
+            }
+        }
+        Ok(())
     }
 
     pub(crate) async fn prepare_sound(
@@ -982,7 +1158,7 @@ impl AudioPlayer {
 #[cfg(test)]
 mod tests {
     use super::{AudioPlayer, MAX_PLAYBACK_HISTORY_ITEMS, PlayerBackend, QueueItem};
-    use crate::api::RepeatMode;
+    use crate::api::{AudioOutputDevice, RepeatMode};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     fn wav_fixture() -> Vec<u8> {
@@ -1022,6 +1198,117 @@ mod tests {
             })
             .collect();
         (directory, paths)
+    }
+
+    fn mock_output_devices(include_preferred: bool) -> Vec<AudioOutputDevice> {
+        let mut devices = vec![AudioOutputDevice {
+            id: "Built-in Output".to_string(),
+            name: "Built-in Output".to_string(),
+            is_default: true,
+        }];
+        if include_preferred {
+            devices.push(AudioOutputDevice {
+                id: "USB DAC".to_string(),
+                name: "USB DAC".to_string(),
+                is_default: false,
+            });
+        }
+        devices
+    }
+
+    #[tokio::test]
+    async fn output_device_reconnects_to_preference_after_safe_default_fallback() {
+        let mut player = AudioPlayer::new_mock().expect("create mock player");
+        player.set_mock_output_devices(mock_output_devices(true));
+
+        let selected = player
+            .reconcile_output_device(Some("USB DAC".to_string()))
+            .await
+            .expect("select preferred output");
+        assert_eq!(selected.preferred_device_id.as_deref(), Some("USB DAC"));
+        assert_eq!(selected.active_device_id.as_deref(), Some("USB DAC"));
+        assert!(!selected.using_fallback);
+
+        player.set_mock_output_devices(mock_output_devices(false));
+        let disconnected = player
+            .reconcile_output_device(Some("USB DAC".to_string()))
+            .await
+            .expect("fall back after disconnection");
+        assert_eq!(disconnected.preferred_device_id.as_deref(), Some("USB DAC"));
+        assert_eq!(
+            disconnected.active_device_id.as_deref(),
+            Some("Built-in Output")
+        );
+        assert!(disconnected.using_fallback);
+
+        player.set_mock_output_devices(mock_output_devices(true));
+        let reconnected = player
+            .reconcile_output_device(Some("USB DAC".to_string()))
+            .await
+            .expect("restore preferred output after reconnection");
+        assert_eq!(reconnected.active_device_id.as_deref(), Some("USB DAC"));
+        assert!(!reconnected.using_fallback);
+    }
+
+    #[tokio::test]
+    async fn output_switch_preserves_pause_playback_crossfade_and_gapless_state() {
+        let (directory, paths) = temporary_tracks("output-switch", 3);
+        let mut player = AudioPlayer::new_mock().expect("create mock player");
+        player.set_mock_output_devices(mock_output_devices(true));
+        player.set_crossfade(true, 4);
+        player
+            .play_song(1, paths[0].clone())
+            .await
+            .expect("start playback");
+
+        player
+            .reconcile_output_device(Some("USB DAC".to_string()))
+            .await
+            .expect("switch during playback");
+        assert_eq!(player.get_current_song_id(), Some(1));
+        assert!(!player.is_paused());
+        assert_eq!(player.crossfade_duration, Some(Duration::from_secs(4)));
+
+        player.pause();
+        player.process_mock_audio(1);
+        player
+            .reconcile_output_device(None)
+            .await
+            .expect("switch while paused");
+        assert_eq!(player.get_current_song_id(), Some(1));
+        assert!(player.is_paused());
+
+        player.resume();
+        player
+            .play_song(2, paths[1].clone())
+            .await
+            .expect("start crossfade replacement");
+        player
+            .reconcile_output_device(Some("USB DAC".to_string()))
+            .await
+            .expect("switch during crossfade-enabled playback");
+        assert_eq!(player.get_current_song_id(), Some(2));
+        assert_eq!(player.crossfade_duration, Some(Duration::from_secs(4)));
+
+        player
+            .add_to_queue(3, paths[2].clone())
+            .await
+            .expect("queue gapless successor");
+        player
+            .prepare_gapless_next()
+            .await
+            .expect("prepare gapless");
+        assert!(player.scheduled_next.is_some());
+        player
+            .reconcile_output_device(None)
+            .await
+            .expect("switch with gapless successor scheduled");
+        assert_eq!(player.get_current_song_id(), Some(2));
+        assert_eq!(player.get_queue(), vec![(3, paths[2].clone())]);
+        assert!(player.scheduled_next.is_some());
+
+        player.stop();
+        std::fs::remove_dir_all(directory).expect("remove temporary test directory");
     }
 
     #[test]

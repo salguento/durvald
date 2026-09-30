@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::api::{CoreError, CoreResult, Settings};
+use crate::api::{AudioOutputState, CoreError, CoreResult, Settings};
 use crate::audio::AudioPlayer;
 use crate::domain::settings::ApplicationSettings;
 use crate::infrastructure::sqlite::settings::SqliteSettingsRepository;
@@ -38,6 +38,7 @@ impl SettingsApplication {
             open_on_startup: settings.open_on_startup,
             minimize_on_close: settings.minimize_on_close,
             onboarding_complete: settings.onboarding_complete,
+            preferred_output_device_id: settings.preferred_output_device_id,
         })
     }
 
@@ -55,17 +56,67 @@ impl SettingsApplication {
             open_on_startup: settings.open_on_startup,
             minimize_on_close: settings.minimize_on_close,
             onboarding_complete: settings.onboarding_complete,
+            preferred_output_device_id: settings.preferred_output_device_id.clone(),
         };
 
         let mut player = self.audio_player.lock().await;
         player.set_crossfade(settings.cross_fade, settings.cross_fade_duration);
         player.set_volume_normalization(settings.normalize_volume);
+        player
+            .reconcile_output_device(settings.preferred_output_device_id.clone())
+            .await
+            .map_err(|error| CoreError::Playback {
+                message: error.to_string(),
+            })?;
         drop(player);
 
         self.repository
             .save(persisted_settings)
             .await
             .map_err(storage_error)
+    }
+
+    pub(crate) async fn audio_output_state(&self) -> CoreResult<AudioOutputState> {
+        let settings = self.repository.get().await.map_err(storage_error)?;
+        self.audio_player
+            .lock()
+            .await
+            .reconcile_output_device(settings.preferred_output_device_id)
+            .await
+            .map_err(|error| CoreError::Playback {
+                message: error.to_string(),
+            })
+    }
+
+    pub(crate) async fn select_audio_output_device(
+        &self,
+        device_id: Option<String>,
+    ) -> CoreResult<AudioOutputState> {
+        if device_id
+            .as_ref()
+            .is_some_and(|id| id.len() > 512 || id.chars().any(char::is_control))
+        {
+            return Err(CoreError::InvalidInput {
+                message: "Invalid audio output device identifier".into(),
+            });
+        }
+        let normalized = device_id.filter(|id| !id.is_empty());
+        let state = self
+            .audio_player
+            .lock()
+            .await
+            .reconcile_output_device(normalized.clone())
+            .await
+            .map_err(|error| CoreError::Playback {
+                message: error.to_string(),
+            })?;
+        let mut settings = self.repository.get().await.map_err(storage_error)?;
+        settings.preferred_output_device_id = normalized;
+        self.repository
+            .save(settings)
+            .await
+            .map_err(storage_error)?;
+        Ok(state)
     }
 }
 
@@ -93,6 +144,15 @@ pub(crate) fn validate_settings(settings: &Settings) -> CoreResult<()> {
                 message: format!("{name} contains invalid text"),
             });
         }
+    }
+    if settings
+        .preferred_output_device_id
+        .as_ref()
+        .is_some_and(|value| value.len() > 512 || value.chars().any(char::is_control))
+    {
+        return Err(CoreError::InvalidInput {
+            message: "Audio output device contains invalid text".into(),
+        });
     }
     Ok(())
 }

@@ -20,6 +20,7 @@ pub struct Settings {
     pub open_on_startup: bool,
     pub minimize_on_close: bool,
     pub onboarding: bool,
+    pub preferred_output_device_id: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]

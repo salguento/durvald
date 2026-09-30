@@ -32,7 +32,7 @@ Legenda: **✅ implementado**, **🟡 parcial**, **❌ não implementado**.
 | ReplayGain / normalização | ✅ | Lê `REPLAYGAIN_TRACK_GAIN` e oferece a opção “Normalizar volume”. |
 | Equalizador | ❌ | Não há EQ gráfico ou paramétrico. |
 | DSP / efeitos | ❌ | Não há cadeia de efeitos, compressor ou limiter. |
-| Seleção de dispositivo de saída | ❌ | O backend de áudio usa o dispositivo padrão, sem seletor no domínio ou na UI. |
+| Seleção de dispositivo de saída | ✅ | Dispositivos são acompanhados nos ajustes; a preferência persiste e usa fallback automático ao padrão durante desconexões. |
 | Arquitetura de plugins de áudio | ❌ | Não há ABI/extensões para input, output, DSP ou visualizações. |
 | Visualizações de áudio | ❌ | Não há spectrum analyzer ou oscilloscope. |
 
@@ -198,6 +198,7 @@ Objetivo: aumentar controle e diferenciação sem comprometer a estabilidade do 
    - listar dispositivos e acompanhar conexão/desconexão;
    - persistir preferência com fallback seguro ao dispositivo padrão;
    - testar troca durante pause, playback, crossfade e gapless.
+   - **Concluído:** seleção e reconciliação dinâmica integradas ao backend, com restauração da preferência após reconexão e cobertura dos estados de reprodução.
 
 2. **Equalizador**
    - começar com EQ de 10 bandas, preamp, bypass e presets;

@@ -619,6 +619,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func artworkBytes(artworkId: String) async throws  -> Data?
 
     /**
+     * Lists current audio outputs and reconciles a disconnected preference.
+     */
+    func audioOutputState() async throws  -> AudioOutputState
+
+    /**
      * Requests cancellation of the active library scan.
      */
     func cancelLibraryScan() throws
@@ -880,6 +885,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Seeks to a position in seconds.
      */
     func seek(seconds: UInt64) async throws
+
+    /**
+     * Selects an output device, or the system default when `None`.
+     */
+    func selectAudioOutputDevice(deviceId: String?) async throws  -> AudioOutputState
 
     func setArtistOverride(artistId: Int64, value: ArtistFieldOverride) async throws
 
@@ -1297,6 +1307,26 @@ open func artworkBytes(artworkId: String)async throws  -> Data? {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterOptionData.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Lists current audio outputs and reconciles a disconnected preference.
+     */
+open func audioOutputState()async throws  -> AudioOutputState {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_audio_output_state(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeAudioOutputState.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -2380,6 +2410,26 @@ open func seek(seconds: UInt64)async throws  {
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Selects an output device, or the system default when `None`.
+     */
+open func selectAudioOutputDevice(deviceId: String?)async throws  -> AudioOutputState {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_select_audio_output_device(
+                    self.uniffiClonePointer(),
+                    FfiConverterOptionString.lower(deviceId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeAudioOutputState.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -4553,6 +4603,144 @@ public func FfiConverterTypeAudioMetadata_lift(_ buf: RustBuffer) throws -> Audi
 
 public func FfiConverterTypeAudioMetadata_lower(_ value: AudioMetadata) -> RustBuffer {
     return FfiConverterTypeAudioMetadata.lower(value)
+}
+
+
+public struct AudioOutputDevice {
+    public var id: String
+    public var name: String
+    public var isDefault: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, name: String, isDefault: Bool) {
+        self.id = id
+        self.name = name
+        self.isDefault = isDefault
+    }
+}
+
+
+
+extension AudioOutputDevice: Equatable, Hashable {
+    public static func ==(lhs: AudioOutputDevice, rhs: AudioOutputDevice) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.isDefault != rhs.isDefault {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+        hasher.combine(isDefault)
+    }
+}
+
+
+public struct FfiConverterTypeAudioOutputDevice: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AudioOutputDevice {
+        return
+            try AudioOutputDevice(
+                id: FfiConverterString.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                isDefault: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AudioOutputDevice, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterBool.write(value.isDefault, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeAudioOutputDevice_lift(_ buf: RustBuffer) throws -> AudioOutputDevice {
+    return try FfiConverterTypeAudioOutputDevice.lift(buf)
+}
+
+public func FfiConverterTypeAudioOutputDevice_lower(_ value: AudioOutputDevice) -> RustBuffer {
+    return FfiConverterTypeAudioOutputDevice.lower(value)
+}
+
+
+public struct AudioOutputState {
+    public var devices: [AudioOutputDevice]
+    public var preferredDeviceId: String?
+    public var activeDeviceId: String?
+    public var usingFallback: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(devices: [AudioOutputDevice], preferredDeviceId: String?, activeDeviceId: String?, usingFallback: Bool) {
+        self.devices = devices
+        self.preferredDeviceId = preferredDeviceId
+        self.activeDeviceId = activeDeviceId
+        self.usingFallback = usingFallback
+    }
+}
+
+
+
+extension AudioOutputState: Equatable, Hashable {
+    public static func ==(lhs: AudioOutputState, rhs: AudioOutputState) -> Bool {
+        if lhs.devices != rhs.devices {
+            return false
+        }
+        if lhs.preferredDeviceId != rhs.preferredDeviceId {
+            return false
+        }
+        if lhs.activeDeviceId != rhs.activeDeviceId {
+            return false
+        }
+        if lhs.usingFallback != rhs.usingFallback {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(devices)
+        hasher.combine(preferredDeviceId)
+        hasher.combine(activeDeviceId)
+        hasher.combine(usingFallback)
+    }
+}
+
+
+public struct FfiConverterTypeAudioOutputState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AudioOutputState {
+        return
+            try AudioOutputState(
+                devices: FfiConverterSequenceTypeAudioOutputDevice.read(from: &buf),
+                preferredDeviceId: FfiConverterOptionString.read(from: &buf),
+                activeDeviceId: FfiConverterOptionString.read(from: &buf),
+                usingFallback: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AudioOutputState, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeAudioOutputDevice.write(value.devices, into: &buf)
+        FfiConverterOptionString.write(value.preferredDeviceId, into: &buf)
+        FfiConverterOptionString.write(value.activeDeviceId, into: &buf)
+        FfiConverterBool.write(value.usingFallback, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeAudioOutputState_lift(_ buf: RustBuffer) throws -> AudioOutputState {
+    return try FfiConverterTypeAudioOutputState.lift(buf)
+}
+
+public func FfiConverterTypeAudioOutputState_lower(_ value: AudioOutputState) -> RustBuffer {
+    return FfiConverterTypeAudioOutputState.lower(value)
 }
 
 
@@ -7046,10 +7234,11 @@ public struct Settings {
     public var openOnStartup: Bool
     public var minimizeOnClose: Bool
     public var onboardingComplete: Bool
+    public var preferredOutputDeviceId: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(crossFade: Bool, crossFadeDuration: UInt32, normalizeVolume: Bool, explicitContent: Bool, autoplay: Bool, preferredAudioQuality: UInt32, preferredAudioSource: String, downloadPath: String, openOnStartup: Bool, minimizeOnClose: Bool, onboardingComplete: Bool) {
+    public init(crossFade: Bool, crossFadeDuration: UInt32, normalizeVolume: Bool, explicitContent: Bool, autoplay: Bool, preferredAudioQuality: UInt32, preferredAudioSource: String, downloadPath: String, openOnStartup: Bool, minimizeOnClose: Bool, onboardingComplete: Bool, preferredOutputDeviceId: String?) {
         self.crossFade = crossFade
         self.crossFadeDuration = crossFadeDuration
         self.normalizeVolume = normalizeVolume
@@ -7061,6 +7250,7 @@ public struct Settings {
         self.openOnStartup = openOnStartup
         self.minimizeOnClose = minimizeOnClose
         self.onboardingComplete = onboardingComplete
+        self.preferredOutputDeviceId = preferredOutputDeviceId
     }
 }
 
@@ -7101,6 +7291,9 @@ extension Settings: Equatable, Hashable {
         if lhs.onboardingComplete != rhs.onboardingComplete {
             return false
         }
+        if lhs.preferredOutputDeviceId != rhs.preferredOutputDeviceId {
+            return false
+        }
         return true
     }
 
@@ -7116,6 +7309,7 @@ extension Settings: Equatable, Hashable {
         hasher.combine(openOnStartup)
         hasher.combine(minimizeOnClose)
         hasher.combine(onboardingComplete)
+        hasher.combine(preferredOutputDeviceId)
     }
 }
 
@@ -7134,7 +7328,8 @@ public struct FfiConverterTypeSettings: FfiConverterRustBuffer {
                 downloadPath: FfiConverterString.read(from: &buf),
                 openOnStartup: FfiConverterBool.read(from: &buf),
                 minimizeOnClose: FfiConverterBool.read(from: &buf),
-                onboardingComplete: FfiConverterBool.read(from: &buf)
+                onboardingComplete: FfiConverterBool.read(from: &buf),
+                preferredOutputDeviceId: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -7150,6 +7345,7 @@ public struct FfiConverterTypeSettings: FfiConverterRustBuffer {
         FfiConverterBool.write(value.openOnStartup, into: &buf)
         FfiConverterBool.write(value.minimizeOnClose, into: &buf)
         FfiConverterBool.write(value.onboardingComplete, into: &buf)
+        FfiConverterOptionString.write(value.preferredOutputDeviceId, into: &buf)
     }
 }
 
@@ -9495,6 +9691,28 @@ fileprivate struct FfiConverterSequenceTypeArtistRefreshSectionResult: FfiConver
     }
 }
 
+fileprivate struct FfiConverterSequenceTypeAudioOutputDevice: FfiConverterRustBuffer {
+    typealias SwiftType = [AudioOutputDevice]
+
+    public static func write(_ value: [AudioOutputDevice], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAudioOutputDevice.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AudioOutputDevice] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AudioOutputDevice]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAudioOutputDevice.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 fileprivate struct FfiConverterSequenceTypeDuplicateTrackGroup: FfiConverterRustBuffer {
     typealias SwiftType = [DuplicateTrackGroup]
 
@@ -9925,6 +10143,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_artwork_bytes() != 1558) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_audio_output_state() != 6925) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_library_scan() != 54997) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -10091,6 +10312,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_seek() != 47295) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_select_audio_output_device() != 57614) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_artist_override() != 53712) {

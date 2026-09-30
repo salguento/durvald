@@ -37,6 +37,7 @@ final class DurvaldCoreStore {
     private(set) var metadataRevision = 0
     var errorMessage: String?
     private(set) var appSettings: Settings?
+    private(set) var audioOutputState: AudioOutputState?
     private(set) var libraryPaths: [String] = []
     /// Configurações de enriquecimento de metadados. Nil até o core ser inicializado.
     private(set) var enrichmentSettings: EnrichmentSettings?
@@ -58,6 +59,7 @@ final class DurvaldCoreStore {
     @ObservationIgnored private var monitoredLibraryRoots = Set<String>()
     @ObservationIgnored private var hasInitializedLibraryMonitoring = false
     @ObservationIgnored private var deferredInitializationTask: Task<Void, Never>?
+    @ObservationIgnored private var audioOutputPollingTask: Task<Void, Never>?
     private static let libraryBookmarksKey = "durvald.library-security-bookmarks"
     @ObservationIgnored private var activeLibraryScopes: [URL] = []
     @ObservationIgnored private var volumeTask: Task<Void, Never>?
@@ -220,6 +222,8 @@ final class DurvaldCoreStore {
                 self.libraryPaths = try await core.libraryPaths()
                 self.restartLibraryMonitoring()
                 self.appSettings = try await core.settings()
+                self.audioOutputState = try? await core.audioOutputState()
+                self.startAudioOutputPolling(using: core)
                 self.enrichmentSettings = try? await core.enrichmentSettings()
             } catch {
                 guard !Task.isCancelled else { return }
@@ -1897,6 +1901,39 @@ final class DurvaldCoreStore {
         }
     }
 
+    func refreshAudioOutputs() async {
+        guard let core else { return }
+        do {
+            audioOutputState = try await core.audioOutputState()
+            appSettings = try? await core.settings()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
+    private func startAudioOutputPolling(using core: DurvaldCore) {
+        audioOutputPollingTask?.cancel()
+        audioOutputPollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, self.core === core, !Task.isCancelled else { return }
+                if let state = try? await core.audioOutputState() {
+                    self.audioOutputState = state
+                }
+            }
+        }
+    }
+
+    func selectAudioOutputDevice(_ deviceID: String?) async {
+        guard let core else { return }
+        do {
+            audioOutputState = try await core.selectAudioOutputDevice(deviceId: deviceID)
+            appSettings = try? await core.settings()
+        } catch {
+            errorMessage = String(describing: error)
+        }
+    }
+
     // MARK: - Enriquecimento de metadados
 
     /// Lê a identidade persistida do artista sem iniciar uma consulta remota.
@@ -2208,6 +2245,7 @@ final class DurvaldCoreStore {
         libraryWatcherReconnectTask?.cancel()
         periodicLibraryRescanTask?.cancel()
         deferredInitializationTask?.cancel()
+        audioOutputPollingTask?.cancel()
         seekTask?.cancel()
         activeLibraryScopes.forEach { $0.stopAccessingSecurityScopedResource() }
     }

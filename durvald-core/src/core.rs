@@ -755,6 +755,21 @@ impl DurvaldCore {
         self.settings_application.update_settings(settings).await
     }
 
+    /// Lists current audio outputs and reconciles a disconnected preference.
+    pub async fn audio_output_state(&self) -> CoreResult<AudioOutputState> {
+        self.settings_application.audio_output_state().await
+    }
+
+    /// Selects an output device, or the system default when `None`.
+    pub async fn select_audio_output_device(
+        &self,
+        device_id: Option<String>,
+    ) -> CoreResult<AudioOutputState> {
+        self.settings_application
+            .select_audio_output_device(device_id)
+            .await
+    }
+
     /// Adds a track to the playback queue.
     pub async fn add_to_queue(&self, track_id: i64) -> CoreResult<()> {
         self.playback_application
@@ -923,6 +938,7 @@ mod tests {
             open_on_startup: false,
             minimize_on_close: false,
             onboarding_complete: false,
+            preferred_output_device_id: None,
         }
     }
 

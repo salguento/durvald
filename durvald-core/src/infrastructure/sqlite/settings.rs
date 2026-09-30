@@ -63,6 +63,7 @@ fn settings_from_row(row: crate::database::models::Settings) -> ApplicationSetti
         open_on_startup: row.open_on_startup,
         minimize_on_close: row.minimize_on_close,
         onboarding_complete: !row.onboarding,
+        preferred_output_device_id: row.preferred_output_device_id,
     }
 }
 
@@ -80,5 +81,6 @@ fn settings_to_row(settings: ApplicationSettings) -> crate::database::models::Se
         open_on_startup: settings.open_on_startup,
         minimize_on_close: settings.minimize_on_close,
         onboarding: !settings.onboarding_complete,
+        preferred_output_device_id: settings.preferred_output_device_id,
     }
 }

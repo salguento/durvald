@@ -12,6 +12,7 @@ pub(crate) struct ApplicationSettings {
     pub(crate) open_on_startup: bool,
     pub(crate) minimize_on_close: bool,
     pub(crate) onboarding_complete: bool,
+    pub(crate) preferred_output_device_id: Option<String>,
 }
 
 pub(crate) fn normalized_cross_fade_duration(value: i32) -> u32 {

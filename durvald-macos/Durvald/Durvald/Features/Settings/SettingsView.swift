@@ -37,6 +37,9 @@ struct SettingsView: View {
             }
             .padding()
             .tabItem { Label("Geral", systemImage: "gearshape") }
+            AudioOutputSettingsView()
+                .padding()
+                .tabItem { Label("Áudio", systemImage: "hifispeaker") }
             LibrarySettingsView()
                 .padding()
                 .tabItem {

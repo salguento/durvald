@@ -260,10 +260,23 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             download_path TEXT DEFAULT '',
             open_on_startup BOOL DEFAULT FALSE,
             minimize_on_close BOOL DEFAULT FALSE,
-            onboarding BOOL DEFAULT TRUE
+            onboarding BOOL DEFAULT TRUE,
+            preferred_output_device_id TEXT DEFAULT NULL
         )",
         (),
     )?;
+    let has_output_device = conn
+        .prepare("PRAGMA table_info(settings)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?
+        .iter()
+        .any(|column| column == "preferred_output_device_id");
+    if !has_output_device {
+        conn.execute(
+            "ALTER TABLE settings ADD COLUMN preferred_output_device_id TEXT",
+            [],
+        )?;
+    }
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS queue (
@@ -707,7 +720,7 @@ pub fn get_settings(conn: &Connection) -> DatabaseResult<Settings> {
         "SELECT settings_id, cross_fade, cross_fade_duration, normalize_volume,
                 explicit_content, autoplay, preferred_audio_quality,
                 preferred_audio_source, download_path, open_on_startup,
-                minimize_on_close, onboarding
+                minimize_on_close, onboarding, preferred_output_device_id
          FROM settings",
     )?;
     let mut rows = stmt.query_map([], |row| {
@@ -724,6 +737,7 @@ pub fn get_settings(conn: &Connection) -> DatabaseResult<Settings> {
             open_on_startup: row.get(9)?,
             minimize_on_close: row.get(10)?,
             onboarding: row.get(11)?,
+            preferred_output_device_id: row.get(12)?,
         })
     })?;
 
@@ -755,7 +769,8 @@ pub fn save_settings(conn: &Connection, settings: &Settings) -> DatabaseResult<(
             download_path = ?8,
             open_on_startup = ?9,
             minimize_on_close = ?10,
-            onboarding = ?11
+            onboarding = ?11,
+            preferred_output_device_id = ?12
          WHERE settings_id = 1",
         params![
             settings.cross_fade,
@@ -769,6 +784,7 @@ pub fn save_settings(conn: &Connection, settings: &Settings) -> DatabaseResult<(
             settings.open_on_startup,
             settings.minimize_on_close,
             settings.onboarding,
+            settings.preferred_output_device_id,
         ],
     )?;
     if changed == 0 {
@@ -3141,6 +3157,7 @@ mod tests {
             open_on_startup: true,
             minimize_on_close: true,
             onboarding: false,
+            preferred_output_device_id: Some("Studio Output".into()),
         };
         save_settings(&conn, &updated_settings).unwrap();
         let persisted_settings = get_settings(&conn).unwrap();
@@ -3148,6 +3165,10 @@ mod tests {
         assert_eq!(persisted_settings.cross_fade_duration, 8);
         assert_eq!(persisted_settings.preferred_audio_source, "local");
         assert_eq!(persisted_settings.download_path, "/music/downloads");
+        assert_eq!(
+            persisted_settings.preferred_output_device_id.as_deref(),
+            Some("Studio Output")
+        );
         assert!(
             conn.execute("UPDATE settings SET cross_fade_duration = 61", [])
                 .is_err()

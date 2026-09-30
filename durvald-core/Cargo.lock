@@ -870,6 +870,7 @@ dependencies = [
  "base64",
  "chrono",
  "core-foundation 0.9.4",
+ "cpal",
  "image",
  "keyring",
  "kira",
