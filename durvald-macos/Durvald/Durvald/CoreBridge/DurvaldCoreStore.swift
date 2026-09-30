@@ -775,7 +775,7 @@ final class DurvaldCoreStore {
 
                 if !result.errors.isEmpty {
                     errorMessage = result.errors.joined(separator: "\n")
-                } else if result.totalFilesFound == 0 {
+                } else if result.totalFilesFound == 0, !isAutomatic {
                     errorMessage = "Nenhum arquivo suportado foi encontrado. O MVP aceita MP3, WAV, FLAC, Ogg Vorbis e OGA."
                 }
             } catch {
