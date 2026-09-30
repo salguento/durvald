@@ -27,6 +27,25 @@ impl SqliteTrackMetadataRepository {
         .await
     }
 
+    pub(crate) async fn lyrics(&self, track_id: TrackId) -> CoreResult<Option<String>> {
+        self.run(move |conn| {
+            conn.query_row(
+                "SELECT lyrics FROM songs WHERE song_id = ?1",
+                [track_id.get() as i64],
+                |row| row.get(0),
+            )
+            .map_err(|error| match error {
+                rusqlite::Error::QueryReturnedNoRows => CoreError::NotFound {
+                    message: "Track not found".into(),
+                },
+                other => CoreError::Storage {
+                    message: other.to_string(),
+                },
+            })
+        })
+        .await
+    }
+
     pub(crate) async fn save(
         &self,
         track_id: TrackId,

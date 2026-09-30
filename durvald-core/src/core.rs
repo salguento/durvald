@@ -835,6 +835,13 @@ impl DurvaldCore {
             .await
     }
 
+    /// Returns plain local lyrics indexed for a track, when available.
+    pub async fn track_lyrics(&self, track_id: i64) -> CoreResult<Option<String>> {
+        self.metadata_application
+            .track_lyrics(track_id_from_api(track_id)?)
+            .await
+    }
+
     pub async fn save_track_metadata(
         &self,
         track_id: i64,

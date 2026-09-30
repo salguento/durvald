@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
-const CURRENT_METADATA_VERSION: i64 = 7;
+const CURRENT_METADATA_VERSION: i64 = 8;
 static SCAN_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 const SCAN_DISCOVERY_BATCH_SIZE: usize = 512;
 
@@ -967,7 +967,7 @@ pub(crate) fn add_song(
         let artist_id = lookup_artist_id(conn, &song)?;
         let release_id = lookup_release_id(conn, &song)?;
         conn.execute(
-            "UPDATE songs SET title=?1, artwork=?2, artist_id=?3, artist_name=?4, release_id=?5, release_title=?6, track_number=?7, disc_number=?8, duration=?9, bitrate=?10, sample_rate=?11, bit_depth=?12, file_mtime=?13, metadata_version=?14, updated_at=CURRENT_TIMESTAMP WHERE song_id=?15",
+            "UPDATE songs SET title=?1, artwork=?2, artist_id=?3, artist_name=?4, release_id=?5, release_title=?6, track_number=?7, disc_number=?8, duration=?9, bitrate=?10, sample_rate=?11, bit_depth=?12, lyrics=?13, file_mtime=?14, metadata_version=?15, updated_at=CURRENT_TIMESTAMP WHERE song_id=?16",
             params![
                 &song.title,
                 artwork,
@@ -981,6 +981,7 @@ pub(crate) fn add_song(
                 &song.bitrate,
                 &song.sample_rate,
                 &song.bit_depth,
+                &song.lyrics,
                 mtime,
                 CURRENT_METADATA_VERSION,
                 song_id,
@@ -1002,7 +1003,7 @@ pub(crate) fn add_song(
 
     if !exists {
         conn.execute(
-            "INSERT INTO songs (title, artwork, artist_id, artist_name, release_id, release_title, duration, bitrate, sample_rate, bit_depth, track_number, disc_number, file_path, file_mtime, metadata_version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            "INSERT INTO songs (title, artwork, artist_id, artist_name, release_id, release_title, duration, bitrate, sample_rate, bit_depth, track_number, disc_number, file_path, lyrics, file_mtime, metadata_version) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 &song.title,
                 artwork,
@@ -1017,6 +1018,7 @@ pub(crate) fn add_song(
                 &song.track.unwrap_or(1),
                 &song.disc.unwrap_or(1),
                 &song.file_path,
+                &song.lyrics,
                 mtime,
                 CURRENT_METADATA_VERSION,
             ],
@@ -2360,9 +2362,19 @@ fn is_audio_file(extension: &str) -> bool {
 }
 
 fn file_mtime(path: &str) -> DatabaseResult<i64> {
-    let meta = fs::metadata(path)?;
-    let sys = meta.modified()?;
-    Ok(sys.duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64)
+    let modified_millis = |candidate: &Path| -> DatabaseResult<i64> {
+        let sys = fs::metadata(candidate)?.modified()?;
+        Ok(sys.duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64)
+    };
+    let audio_path = Path::new(path);
+    let mut latest = modified_millis(audio_path)?;
+    for extension in ["lrc", "txt"] {
+        let sidecar = audio_path.with_extension(extension);
+        if sidecar.is_file() {
+            latest = latest.max(modified_millis(&sidecar)?);
+        }
+    }
+    Ok(latest)
 }
 
 #[cfg(test)]
@@ -3092,6 +3104,7 @@ mod tests {
             sample_rate: Some(44_100),
             bit_depth: Some(16),
             channels: Some(2),
+            lyrics: None,
             cover_path: Some("/covers/cover.jpg".to_string()),
             all_fields: HashMap::new(),
             file_path: "/music/track.mp3".to_string(),
@@ -3276,7 +3289,8 @@ mod tests {
         let mut conn = Connection::open_in_memory().unwrap();
         create_tables(&conn).unwrap();
         crate::database::migrations::migrate_enrichment(&mut conn).unwrap();
-        let track = metadata("Artist", "Album", 2024);
+        let mut track = metadata("Artist", "Album", 2024);
+        track.lyrics = Some("First lyrics".to_string());
 
         assert!(persist_metadata(&conn, vec![track.clone()], vec![]).is_err());
         assert!(get_tracks_page(&conn, 1_000, 0).unwrap().is_empty());
@@ -3287,7 +3301,14 @@ mod tests {
         // `duration` is persisted with INTEGER affinity; listing tracks must
         // read that representation without requiring SQLite to coerce it to REAL.
         assert_eq!(get_tracks_page(&conn, 1_000, 0).unwrap()[0].duration, 180);
+        assert_eq!(
+            get_tracks_page(&conn, 1_000, 0).unwrap()[0]
+                .lyrics
+                .as_deref(),
+            Some("First lyrics")
+        );
 
+        track.lyrics = Some("Updated lyrics".to_string());
         let second = persist_metadata(&conn, vec![track], vec![2]).unwrap();
         assert_eq!(second.added_tracks, 0);
         assert_eq!(second.updated_tracks, 1);
@@ -3299,6 +3320,12 @@ mod tests {
             )
             .unwrap();
         assert_eq!((track_number, disc_number, duration), (1, 1, 180));
+        assert_eq!(
+            get_tracks_page(&conn, 1_000, 0).unwrap()[0]
+                .lyrics
+                .as_deref(),
+            Some("Updated lyrics")
+        );
 
         let mut second_track = metadata("Artist", "Album", 2024);
         second_track.title = Some("Second Track".to_string());
@@ -3941,6 +3968,12 @@ mod tests {
             prepare_database_update(&conn, directory.to_string_lossy().to_string()).unwrap();
         assert_eq!(second.total_files, 1);
         assert!(second.files.is_empty());
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        std::fs::write(audio_file.with_extension("lrc"), "[00:01]Lyrics").unwrap();
+        let third =
+            prepare_database_update(&conn, directory.to_string_lossy().to_string()).unwrap();
+        assert_eq!(third.files.len(), 1, "a new sidecar must reindex its track");
 
         std::fs::remove_dir_all(directory).unwrap();
     }

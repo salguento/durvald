@@ -120,6 +120,11 @@ final class DurvaldCoreStore {
         nowPlaying?.activate(for: self)
     }
 
+    func lyrics(for trackID: Int64) async throws -> String? {
+        guard let core else { return nil }
+        return try await core.trackLyrics(trackId: trackID)
+    }
+
 
     func openCoreIfNeeded() async {
         guard core == nil else { return }

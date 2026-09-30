@@ -210,6 +210,7 @@ Objetivo: aumentar controle e diferenciação sem comprometer a estabilidade do 
    - ler tags embutidas e arquivos `.lrc`/texto ao lado da faixa;
    - começar com letras não sincronizadas;
    - adicionar sincronização temporal apenas depois de estabilizar leitura e UI.
+   - **Leitura e UI não sincronizada concluídas:** tags e sidecars `.lrc`/`.txt` são indexados, timestamps LRC são removidos e a letra fica disponível no player. Sincronização temporal permanece como evolução posterior.
 
 4. **Mini player**
    - janela compacta independente com faixa, artwork e controles essenciais;

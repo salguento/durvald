@@ -990,6 +990,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func trackInfo(trackId: Int64) async throws  -> TrackInfo
 
     /**
+     * Returns plain local lyrics indexed for a track, when available.
+     */
+    func trackLyrics(trackId: Int64) async throws  -> String?
+
+    /**
      * Returns a bounded page of tracks ordered by their stable database ID.
      */
     func tracksPage(pageSize: UInt64, offset: UInt64) async throws  -> TrackPage
@@ -2834,6 +2839,26 @@ open func trackInfo(trackId: Int64)async throws  -> TrackInfo {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeTrackInfo.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Returns plain local lyrics indexed for a track, when available.
+     */
+open func trackLyrics(trackId: Int64)async throws  -> String? {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_track_lyrics(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(trackId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionString.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -10573,6 +10598,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_track_info() != 63609) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_track_lyrics() != 7452) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_tracks_page() != 23995) {

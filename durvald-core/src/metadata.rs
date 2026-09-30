@@ -135,6 +135,9 @@ pub struct AudioMetadata {
     pub sample_rate: Option<u32>,
     pub bit_depth: Option<u8>,
     pub channels: Option<u8>,
+    /// Plain, display-ready lyrics. Timed LRC input is intentionally reduced
+    /// to text until synchronized presentation is implemented.
+    pub lyrics: Option<String>,
     /// Absolute path of the cover file. Empty only when the track has no
     /// embedded artwork.
     pub cover_path: Option<String>,
@@ -280,6 +283,7 @@ pub fn extract_metadata_blocking_with_cancel(
         sample_rate: properties.sample_rate(),
         bit_depth: properties.bit_depth(),
         channels: properties.channels(),
+        lyrics: None,
         cover_path: None,
         all_fields: HashMap::new(),
         file_path: path.to_string(),
@@ -309,6 +313,7 @@ pub fn extract_metadata_blocking_with_cancel(
         metadata.year = tag.year();
         metadata.track = tag.track();
         metadata.disc = tag.disk();
+        metadata.lyrics = tag.get_string(&ItemKey::Lyrics).and_then(normalize_lyrics);
 
         // Extract cover directly to the managed covers directory.
         if let Some((mime, bytes)) = extract_cover_bytes(tag) {
@@ -333,7 +338,90 @@ pub fn extract_metadata_blocking_with_cancel(
         }
     }
 
+    // A sidecar is the user's most explicit local choice, so it takes
+    // precedence over an embedded tag. LRC timestamps are discarded for the
+    // first, deliberately unsynchronized version of the feature.
+    if let Some(sidecar) = read_lyrics_sidecar(Path::new(path))? {
+        metadata.lyrics = Some(sidecar);
+    }
+
     Ok(metadata)
+}
+
+const MAX_LYRICS_BYTES: u64 = 1024 * 1024;
+
+fn read_lyrics_sidecar(audio_path: &Path) -> MetadataResult<Option<String>> {
+    for extension in ["lrc", "txt"] {
+        let path = audio_path.with_extension(extension);
+        let Ok(file) = fs::File::open(&path) else {
+            continue;
+        };
+        if file.metadata()?.len() > MAX_LYRICS_BYTES {
+            continue;
+        }
+        let bytes = fs::read(path)?;
+        let text = decode_lyrics_text(&bytes);
+        if let Some(lyrics) = normalize_lyrics(&text) {
+            return Ok(Some(lyrics));
+        }
+    }
+    Ok(None)
+}
+
+fn decode_lyrics_text(bytes: &[u8]) -> String {
+    if let Some(content) = bytes.strip_prefix(&[0xFF, 0xFE]) {
+        let units = content
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+        return String::from_utf16_lossy(&units.collect::<Vec<_>>());
+    }
+    if let Some(content) = bytes.strip_prefix(&[0xFE, 0xFF]) {
+        let units = content
+            .chunks_exact(2)
+            .map(|pair| u16::from_be_bytes([pair[0], pair[1]]));
+        return String::from_utf16_lossy(&units.collect::<Vec<_>>());
+    }
+    String::from_utf8_lossy(bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes)).into_owned()
+}
+
+fn normalize_lyrics(value: &str) -> Option<String> {
+    let lines = value.replace("\r\n", "\n").replace('\r', "\n");
+    let mut normalized = Vec::new();
+    for source in lines.lines() {
+        let mut line = source.trim_end();
+        while let Some(rest) = line.strip_prefix('[') {
+            let Some(end) = rest.find(']') else { break };
+            let marker = &rest[..end];
+            let is_timestamp = marker.split(':').next().is_some_and(|minutes| {
+                !minutes.is_empty() && minutes.chars().all(|character| character.is_ascii_digit())
+            });
+            let key = marker
+                .split(':')
+                .next()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            let is_metadata = matches!(
+                key.as_str(),
+                "ar" | "al" | "ti" | "au" | "by" | "offset" | "re" | "ve" | "length"
+            );
+            if !is_timestamp && !is_metadata {
+                break;
+            }
+            line = &rest[end + 1..];
+        }
+        if !line.is_empty()
+            || normalized
+                .last()
+                .is_some_and(|last: &String| !last.is_empty())
+        {
+            normalized.push(line.trim().to_string());
+        }
+    }
+    while normalized.last().is_some_and(String::is_empty) {
+        normalized.pop();
+    }
+    let lyrics = normalized.join("\n");
+    (!lyrics.is_empty()).then_some(lyrics)
 }
 
 pub(crate) fn split_artist_credit(credit: &str) -> Vec<String> {
@@ -433,6 +521,30 @@ mod tests {
         assert_eq!(parse_replay_gain_db("+3.0"), Some(3.0));
         assert_eq!(parse_replay_gain_db("not a number"), None);
         assert_eq!(parse_replay_gain_db("25 dB"), None);
+    }
+
+    #[test]
+    fn lrc_is_normalized_to_unsynchronized_text() {
+        let source = "[ar:Artist]\r\n[00:01.20]First line\r\n[00:04.00][00:08.00]Repeated line\r\n";
+        assert_eq!(
+            normalize_lyrics(source).as_deref(),
+            Some("First line\nRepeated line")
+        );
+    }
+
+    #[test]
+    fn sidecar_supports_utf16() {
+        let directory = tempfile::tempdir().unwrap();
+        let audio = directory.path().join("song.mp3");
+        let text: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain("Local lyrics".encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        fs::write(audio.with_extension("txt"), text).unwrap();
+        assert_eq!(
+            read_lyrics_sidecar(&audio).unwrap().as_deref(),
+            Some("Local lyrics")
+        );
     }
 }
 

@@ -32,6 +32,10 @@ impl MetadataApplication {
         self.repository.info(track_id).await
     }
 
+    pub(crate) async fn track_lyrics(&self, track_id: TrackId) -> CoreResult<Option<String>> {
+        self.repository.lyrics(track_id).await
+    }
+
     pub(crate) async fn extract_metadata(&self, file_path: String) -> CoreResult<AudioMetadata> {
         let covers_dir = std::path::PathBuf::from(&self.covers_dir);
         let metadata = tokio::task::spawn_blocking(move || {

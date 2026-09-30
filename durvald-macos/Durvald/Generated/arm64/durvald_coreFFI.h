@@ -716,6 +716,11 @@ uint64_t uniffi_durvald_core_fn_method_durvaldcore_track(void*_Nonnull ptr, int6
 uint64_t uniffi_durvald_core_fn_method_durvaldcore_track_info(void*_Nonnull ptr, int64_t track_id
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_TRACK_LYRICS
+#define UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_TRACK_LYRICS
+uint64_t uniffi_durvald_core_fn_method_durvaldcore_track_lyrics(void*_Nonnull ptr, int64_t track_id
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_TRACKS_PAGE
 #define UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_FN_METHOD_DURVALDCORE_TRACKS_PAGE
 uint64_t uniffi_durvald_core_fn_method_durvaldcore_tracks_page(void*_Nonnull ptr, uint64_t page_size, uint64_t offset
@@ -1575,6 +1580,12 @@ uint16_t uniffi_durvald_core_checksum_method_durvaldcore_track(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_CHECKSUM_METHOD_DURVALDCORE_TRACK_INFO
 #define UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_CHECKSUM_METHOD_DURVALDCORE_TRACK_INFO
 uint16_t uniffi_durvald_core_checksum_method_durvaldcore_track_info(void
+
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_CHECKSUM_METHOD_DURVALDCORE_TRACK_LYRICS
+#define UNIFFI_FFIDEF_UNIFFI_DURVALD_CORE_CHECKSUM_METHOD_DURVALDCORE_TRACK_LYRICS
+uint16_t uniffi_durvald_core_checksum_method_durvaldcore_track_lyrics(void
 
 );
 #endif

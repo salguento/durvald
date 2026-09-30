@@ -14,6 +14,7 @@ struct PlayerBar: View {
     @State private var changingPlaybackState = false
     @State private var isProgressHovered = false
     @State private var availableWidth: CGFloat = 360
+    @State private var lyricsTrack: Track?
 
     private var isNarrow: Bool { availableWidth < 600 }
 
@@ -74,6 +75,17 @@ struct PlayerBar: View {
                     volumeBeforeMute = volume
                     isVolumeMuted = false
                 }
+            }
+        }
+        .popover(
+            isPresented: Binding(
+                get: { lyricsTrack != nil },
+                set: { if !$0 { lyricsTrack = nil } }
+            ),
+            arrowEdge: .top
+        ) {
+            if let lyricsTrack {
+                LyricsView(track: lyricsTrack)
             }
         }
     }
@@ -175,6 +187,19 @@ struct PlayerBar: View {
         let favoriteLabel = isFavorite ? "Desfavoritar faixa" : "Favoritar faixa"
 
         return HStack(spacing: 8) {
+            Button {
+                lyricsTrack = track
+            } label: {
+                Image(systemName: "quote.bubble")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Mostrar letra")
+            .accessibilityLabel("Mostrar letra")
+            .accessibilityIdentifier("player.lyrics")
+
             Button {
                 if let track {
                     Task {
