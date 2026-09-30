@@ -4,6 +4,27 @@ import Observation
 import SwiftUI
 @testable import Durvald
 
+final class NowPlayingCoordinatorTests: XCTestCase {
+    func testQueueContextPublishesCurrentIndexAndTotalCount() {
+        var snapshot = Fixtures.playingSnapshot
+        snapshot.queue = [
+            QueueItem(trackId: 10, position: 0),
+            QueueItem(trackId: snapshot.currentTrack!.id, position: 1),
+            QueueItem(trackId: 12, position: 2)
+        ]
+
+        let context = NowPlayingCoordinator.queueContext(for: snapshot)
+        XCTAssertEqual(context.index, 1)
+        XCTAssertEqual(context.count, 3)
+    }
+
+    func testQueueContextIncludesCurrentTrackWhenQueueSnapshotIsEmpty() {
+        let context = NowPlayingCoordinator.queueContext(for: Fixtures.playingSnapshot)
+        XCTAssertEqual(context.index, 0)
+        XCTAssertEqual(context.count, 1)
+    }
+}
+
 final class WindowSplitLayoutPolicyTests: XCTestCase {
     func testSidebarLeavesMinimumWidthForContentAndDivider() {
         XCTAssertEqual(WindowSplitLayoutPolicy.sidebarMaximumWidth(screenMaximum: 600, navigationWidth: 900, dividerWidth: 1), 539)

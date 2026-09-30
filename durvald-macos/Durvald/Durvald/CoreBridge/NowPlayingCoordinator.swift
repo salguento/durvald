@@ -48,6 +48,7 @@ final class NowPlayingCoordinator {
             loadArtwork(for: track, using: core)
         }
 
+        let queue = Self.queueContext(for: playback)
         var information: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist,
@@ -56,7 +57,9 @@ final class NowPlayingCoordinator {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: validPosition(playback),
             MPNowPlayingInfoPropertyPlaybackRate: playback.isPlaying && !playback.isPaused ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0,
-            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+            MPNowPlayingInfoPropertyPlaybackQueueIndex: queue.index,
+            MPNowPlayingInfoPropertyPlaybackQueueCount: queue.count
         ]
         if let publishedArtwork {
             information[MPMediaItemPropertyArtwork] = publishedArtwork
@@ -169,6 +172,15 @@ final class NowPlayingCoordinator {
 
     private func validPosition(_ playback: PlaybackSnapshot) -> Double {
         playback.positionSeconds.isFinite ? max(0, playback.positionSeconds) : 0
+    }
+
+    nonisolated static func queueContext(for playback: PlaybackSnapshot) -> (index: Int, count: Int) {
+        guard let currentTrack = playback.currentTrack else { return (0, 0) }
+        let count = max(playback.queue.count, 1)
+        if let index = playback.queue.firstIndex(where: { $0.trackId == currentTrack.id }) {
+            return (index, count)
+        }
+        return (min(Int(playback.queuePosition), count - 1), count)
     }
 
     private func clear() {

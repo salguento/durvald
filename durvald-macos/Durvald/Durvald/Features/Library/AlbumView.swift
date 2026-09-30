@@ -590,6 +590,9 @@ struct AlbumView: View {
                     rating: track.rating,
                     isEditable: true,
                     onChange: { rating in
+                        if let index = tracks.firstIndex(where: { $0.id == track.id }) {
+                            tracks[index].rating = rating
+                        }
                         Task { await store.setTrackRating(trackID: track.id, rating: rating) }
                     }
                 )

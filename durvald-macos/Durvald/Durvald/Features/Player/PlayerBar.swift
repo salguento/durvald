@@ -217,6 +217,12 @@ struct PlayerBar: View {
                 Image(systemName: isFavorite ? "star.fill" : "star")
                     .foregroundStyle(isFavorite ? Color.accentColor : .secondary)
                     .frame(width: 28, height: 28)
+                    .background {
+                        if isFavorite {
+                            Circle()
+                                .fill(Color.accentColor.opacity(0.16))
+                        }
+                    }
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -302,6 +308,13 @@ struct PlayerBar: View {
                         .symbolVariant(
                             store.playback?.shuffleEnabled == true ? .fill : .none
                         )
+                        .frame(width: 28, height: 28)
+                        .background {
+                            if store.playback?.shuffleEnabled == true {
+                                Circle()
+                                    .fill(Color.accentColor.opacity(0.16))
+                            }
+                        }
                         .frame(height: 44)
                         .contentShape(Rectangle())
                 }
@@ -376,6 +389,13 @@ struct PlayerBar: View {
                             (store.playback?.repeatMode ?? RepeatMode.none) == RepeatMode.none
                                 ? Color.secondary : Color.accentColor
                         )
+                        .frame(width: 28, height: 28)
+                        .background {
+                            if (store.playback?.repeatMode ?? RepeatMode.none) != RepeatMode.none {
+                                Circle()
+                                    .fill(Color.accentColor.opacity(0.16))
+                            }
+                        }
                         .frame(height: 44)
                         .contentShape(Rectangle())
                 }
