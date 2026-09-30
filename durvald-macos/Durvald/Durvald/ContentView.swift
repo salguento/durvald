@@ -90,11 +90,11 @@ struct ContentView: View {
                     maxHeight: .infinity
                 )
         }
-        .background {
+        .background(
             InspectorSplitLayout(coordinator: windowLayout)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
-        }
+        )
         .inspector(isPresented: $shell.isQueuePresented) {
             QueueView()
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { queueColumnWidth = $0 }

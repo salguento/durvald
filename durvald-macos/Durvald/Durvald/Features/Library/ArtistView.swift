@@ -49,6 +49,7 @@ struct ArtistView: View {
     @State private var isRefreshingCatalog = false
     @State private var isLoadingMoreDiscography = false
     @State private var isIdentityPopoverPresented = false
+    @State private var identitySheetHeight: CGFloat = 500
     @State private var isIdentityPickerPresented = false
     @State private var isLoadingIdentityCandidates = false
     @State private var isSavingIdentity = false
@@ -223,6 +224,12 @@ struct ArtistView: View {
         .sheet(isPresented: $isIdentityPickerPresented) {
             identityPicker
         }
+        .sheet(isPresented: $isIdentityPopoverPresented) {
+            if let identity {
+                identityInformationPopover(identity)
+                    .frame(width: 500, height: identitySheetHeight)
+            }
+        }
         .onChange(of: store.releases) { _, refreshedReleases in
             let refreshedByID = Dictionary(
                 uniqueKeysWithValues: refreshedReleases.map { ($0.id, $0) }
@@ -309,7 +316,76 @@ struct ArtistView: View {
 
     private func identityInformationPopover(_ identity: ArtistIdentity) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 24) {
+                ZStack(alignment: .bottomLeading) {
+                    ArtworkView(
+                        artworkID: artistArtworkID,
+                        size: 500,
+                        aspectRatio: 1,
+                        alignment: .top,
+                        showsBorder: false
+                    )
+
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.72)],
+                        startPoint: .center,
+                        endPoint: .bottom
+                    )
+                    .allowsHitTesting(false)
+
+                    Text(artist.name)
+                        .font(.largeTitle.bold())
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.leading)
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(width: 500, height: 500)
+                .clipped()
+                .padding(.horizontal, -20)
+                .padding(.top, -20)
+
+                HStack(alignment: .top, spacing: 24) {
+                    artistInformationColumn(
+                        title: "Origem",
+                        value: artistOriginInformation
+                    )
+                    artistInformationColumn(
+                        title: "Nascimento",
+                        value: artistBirthInformation
+                    )
+                    artistInformationColumn(
+                        title: "Gêneros",
+                        value: artistGenresInformation
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Sobre")
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                        .accessibilityAddTraits(.isHeader)
+
+                    if let biography = biographyText {
+                        Text(biography)
+                            .foregroundStyle(.white)
+
+                        if biographyOverride == nil,
+                           let biographySource,
+                           let sourceURL = URL(string: biographySource.profile.attribution.sourceUrl) {
+                            Link("Fonte: \(biographySourceName)", destination: sourceURL)
+                                .font(.caption)
+                        }
+                    } else {
+                        Text("Informações biográficas ainda não disponíveis.")
+                            .foregroundStyle(.white.opacity(0.8))
+                            .italic()
+                    }
+                }
+
+                Divider()
+
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: identity.status == .resolved
                           ? "checkmark.seal.fill"
@@ -329,7 +405,6 @@ struct ArtistView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 10) {
-                    identityInformationRow("Artista", value: artist.name)
                     identityInformationRow(
                         "MusicBrainz ID",
                         value: identity.musicbrainzId ?? identity.confirmedMusicbrainzId ?? "Não vinculado",
@@ -390,7 +465,21 @@ struct ArtistView: View {
             }
             .padding(20)
         }
-        .frame(width: 500, height: 500)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .preferredColorScheme(.dark)
+        .overlay(alignment: .topTrailing) {
+            Button {
+                isIdentityPopoverPresented = false
+            } label: {
+                Image(systemName: "xmark")
+                    .frame(width: 28, height: 28)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .background(.regularMaterial, in: .circle)
+            .padding(12)
+            .accessibilityLabel("Fechar informações")
+        }
         .confirmationDialog(
             "Remover a identidade de \(artist.name)?",
             isPresented: $isClearIdentityConfirmationPresented
@@ -403,6 +492,51 @@ struct ArtistView: View {
             Text("Os dados enriquecidos associados serão ocultados até que outra identidade seja confirmada.")
         }
         .accessibilityIdentifier("artist.identity.information")
+    }
+
+    private var artistFactsProfile: ArtistProfile? {
+        details?.sources.first(where: { $0.provider == .wikidata })?.profile
+    }
+
+    private var artistOriginInformation: String {
+        overriddenText(.birthPlace, fallback: artistFactsProfile?.birthPlace)
+            ?? overriddenText(.formationPlace, fallback: artistFactsProfile?.formationPlace)
+            ?? overriddenText(.originPlace, fallback: artistFactsProfile?.originPlace)
+            ?? "Não disponível"
+    }
+
+    private var artistBirthInformation: String {
+        guard let date = overriddenDate(.birthDate, fallback: artistFactsProfile?.birthDate) else {
+            return "Não disponível"
+        }
+        return formatted(date)
+    }
+
+    private var artistGenresInformation: String {
+        var knownGenres = Set<String>()
+        let genres = albums.flatMap(\.genres).compactMap { genre -> String? in
+            let normalized = genre.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !normalized.isEmpty,
+                  knownGenres.insert(normalized.lowercased()).inserted else {
+                return nil
+            }
+            return normalized
+        }
+        .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+
+        return genres.isEmpty ? "Não disponível" : genres.joined(separator: ", ")
+    }
+
+    private func artistInformationColumn(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(Color.secondary.opacity(0.7))
+            Text(value)
+                .font(.body)
+                .foregroundStyle(.white)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func identityInformationRow(
@@ -1216,6 +1350,12 @@ struct ArtistView: View {
     private func artistHighlights(width: CGFloat) -> some View {
         let highlightArtworkSize: CGFloat = 160
         let popularTrackRowHeight = highlightArtworkSize / 3
+        let latestReleaseTitleFont = Font.system(
+            size: (NSFont.preferredFont(forTextStyle: .subheadline).pointSize + 1) * 1.25
+        )
+        let latestReleaseMetadataFont = Font.system(
+            size: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 2
+        )
         let contentWidth = max(0, width)
         let initialVisibleWidth = max(0, contentWidth - 48)
         let highlightBlockWidth = max(360, (initialVisibleWidth - 24) / 2)
@@ -1247,33 +1387,28 @@ struct ArtistView: View {
                             )
 
                             VStack(alignment: .leading, spacing: 2) {
-                                VStack(alignment: .leading, spacing: 0) {
-                                    AlbumTitleLabel(
-                                        title: latestRelease.title,
-                                        isFavorite: albums.first(where: { $0.id == latestRelease.localReleaseId })?.isFavorite == true,
-                                        font: AlbumListingTypography.title
-                                    )
-                                        .lineLimit(2)
-                                    Text(artist.name)
-                                        .font(AlbumListingTypography.secondary)
+                                if let releaseDate = latestRelease.firstReleaseDate {
+                                    Text(formattedReleaseDate(releaseDate))
+                                        .font(latestReleaseMetadataFont.weight(.semibold))
                                         .foregroundStyle(.secondary)
-                                        .lineLimit(1)
+                                        .textCase(.uppercase)
                                 }
-                                Text(latestRelease.firstReleaseDate.map { String($0.year) } ?? "")
-                                    .font(AlbumListingTypography.secondary)
-                                    .foregroundStyle(.secondary)
+
+                                AlbumTitleLabel(
+                                    title: latestRelease.title,
+                                    isFavorite: albums.first(where: { $0.id == latestRelease.localReleaseId })?.isFavorite == true,
+                                    font: latestReleaseTitleFont
+                                )
+                                    .lineLimit(2)
                                 if let count = releaseDetailsByGroupID[latestRelease.musicbrainzId]?.tracks.count {
                                     Text("\(count) músicas")
-                                        .font(AlbumListingTypography.secondary)
+                                        .font(latestReleaseMetadataFont)
                                         .foregroundStyle(.secondary)
                                 } else if let kind = latestRelease.primaryType {
                                     Text(kind)
-                                        .font(AlbumListingTypography.secondary)
+                                        .font(latestReleaseMetadataFont)
                                         .foregroundStyle(.secondary)
                                 }
-                                Text("MusicBrainz")
-                                    .font(AlbumListingTypography.secondary)
-                                    .foregroundStyle(.secondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -1327,7 +1462,12 @@ struct ArtistView: View {
                                     let end = min(start + 3, visibleRanking.count)
                                     ForEach(start..<end, id: \.self) { index in
                                         popularTrackRow(visibleRanking[index])
-                                            .frame(height: popularTrackRowHeight)
+                                            .frame(
+                                                maxWidth: .infinity,
+                                                minHeight: popularTrackRowHeight,
+                                                maxHeight: popularTrackRowHeight,
+                                                alignment: .leading
+                                            )
                                             .overlay(alignment: .bottom) {
                                                 if index < end - 1 { Divider() }
                                             }
@@ -1345,7 +1485,12 @@ struct ArtistView: View {
                                     let end = min(start + 3, localRanking.count)
                                     ForEach(start..<end, id: \.self) { index in
                                         popularLocalTrackRow(localRanking[index], rank: index + 1)
-                                            .frame(height: popularTrackRowHeight)
+                                            .frame(
+                                                maxWidth: .infinity,
+                                                minHeight: popularTrackRowHeight,
+                                                maxHeight: popularTrackRowHeight,
+                                                alignment: .leading
+                                            )
                                             .overlay(alignment: .bottom) {
                                                 if index < end - 1 { Divider() }
                                             }
@@ -1548,9 +1693,13 @@ struct ArtistView: View {
             .accessibilityValue(isFavorite ? "Favorito" : "Não favorito")
             .accessibilityIdentifier("artist.favorite")
 
-            if let identity {
+            if identity != nil {
                 Button {
-                    isIdentityPopoverPresented.toggle()
+                    let windowHeight = NSApp.mainWindow?.contentLayoutRect.height
+                        ?? NSApp.keyWindow?.contentLayoutRect.height
+                        ?? 628
+                    identitySheetHeight = max(320, windowHeight - 128)
+                    isIdentityPopoverPresented = true
                 } label: {
                     Image(systemName: "info.circle")
                         .frame(width: headerIconControlWidth, height: headerControlHeight)
@@ -1561,9 +1710,6 @@ struct ArtistView: View {
                 .help("Ver informações e conexões de metadados")
                 .accessibilityLabel("Ver informações de \(artist.name)")
                 .accessibilityIdentifier("artist.identity.badge")
-                .popover(isPresented: $isIdentityPopoverPresented, arrowEdge: .bottom) {
-                    identityInformationPopover(identity)
-                }
             }
         }
         .font(.body.weight(.medium))
@@ -1880,6 +2026,25 @@ struct ArtistView: View {
             return String(format: "%02d/%04d", month, date.year)
         }
         return String(date.year)
+    }
+
+    private func formattedReleaseDate(_ date: ArtistPartialDate) -> String {
+        guard let month = date.month, let day = date.day else {
+            return formatted(date)
+        }
+
+        var components = DateComponents()
+        components.calendar = Calendar(identifier: .gregorian)
+        components.year = Int(date.year)
+        components.month = Int(month)
+        components.day = Int(day)
+
+        guard let value = components.date else { return formatted(date) }
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.dateFormat = "dd MMM yyyy"
+        return formatter.string(from: value).replacingOccurrences(of: ".", with: "")
     }
 
     private func override(for field: ArtistProfileField) -> ArtistFieldOverride? {
