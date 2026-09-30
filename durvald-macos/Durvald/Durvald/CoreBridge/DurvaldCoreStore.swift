@@ -125,6 +125,14 @@ final class DurvaldCoreStore {
         return try await core.trackLyrics(trackId: trackID)
     }
 
+    func setSpectrumEnabled(_ enabled: Bool) async {
+        await core?.setSpectrumEnabled(enabled: enabled)
+    }
+
+    func spectrumSnapshot() async -> [Float] {
+        await core?.spectrumSnapshot().bands ?? Array(repeating: 0, count: 16)
+    }
+
 
     func openCoreIfNeeded() async {
         guard core == nil else { return }

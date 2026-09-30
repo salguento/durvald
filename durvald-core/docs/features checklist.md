@@ -221,6 +221,7 @@ Objetivo: aumentar controle e diferenciação sem comprometer a estabilidade do 
    - expor dados de análise do engine de forma limitada e segura;
    - começar com spectrum analyzer eficiente e desativável;
    - evitar que a renderização afete gapless ou o thread de áudio.
+   - **Concluído:** tap lock-free e descartável no renderer gapless, cálculo espectral limitado fora do callback de áudio e visualização desativável no player.
 
 ### P3 — Expansão e itens condicionais
 

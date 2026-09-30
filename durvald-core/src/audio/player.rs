@@ -9,7 +9,10 @@ use std::time::Duration;
 use thiserror::Error;
 
 use super::gapless::{GaplessData, StreamHandle, Transport, Voice};
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 type SoundHandle = StreamHandle;
 
 #[derive(Debug, Clone)]
@@ -124,6 +127,7 @@ pub struct AudioPlayer {
     using_output_fallback: bool,
     equalizer_settings: EqualizerSettings,
     equalizer_meter: Arc<super::equalizer::EqualizerMeter>,
+    analyzer_enabled: Arc<AtomicBool>,
     #[cfg(any(test, feature = "test-support"))]
     mock_output_devices: Option<Vec<crate::api::AudioOutputDevice>>,
 }
@@ -270,6 +274,7 @@ impl AudioPlayer {
             using_output_fallback: false,
             equalizer_settings: EqualizerSettings::default(),
             equalizer_meter: Arc::new(super::equalizer::EqualizerMeter::default()),
+            analyzer_enabled: Arc::new(AtomicBool::new(false)),
             #[cfg(any(test, feature = "test-support"))]
             mock_output_devices: None,
         }
@@ -483,6 +488,20 @@ impl AudioPlayer {
         self.equalizer_meter.snapshot()
     }
 
+    pub(crate) fn set_spectrum_enabled(&mut self, enabled: bool) {
+        self.analyzer_enabled.store(enabled, Ordering::Release);
+        if let Some(gapless) = &mut self.gapless {
+            gapless.set_analyzer_enabled(enabled);
+        }
+    }
+
+    pub(crate) fn spectrum_bands(&mut self) -> Vec<f32> {
+        self.gapless.as_mut().map_or_else(
+            || vec![0.0; super::analyzer::SPECTRUM_BANDS],
+            Transport::spectrum,
+        )
+    }
+
     #[cfg(feature = "test-support")]
     pub(crate) fn crossfade_duration_seconds(&self) -> Option<u64> {
         self.crossfade_duration.map(|duration| duration.as_secs())
@@ -542,7 +561,7 @@ impl AudioPlayer {
         )
         .map_err(|e| AudioError::Kira(Box::new(e)))?;
         self.next_token += 1;
-        let data = GaplessData::new(voice);
+        let data = GaplessData::with_analyzer(voice, self.analyzer_enabled.clone());
         let transport = match &mut self.manager {
             PlayerBackend::Uninitialized => {
                 unreachable!("audio backend is initialized before playback")

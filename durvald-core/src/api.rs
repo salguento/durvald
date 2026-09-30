@@ -394,6 +394,13 @@ pub struct EqualizerMetrics {
     pub average_nanoseconds_per_frame: f64,
 }
 
+/// Bounded, normalized spectrum suitable for visualization.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SpectrumSnapshot {
+    pub bands: Vec<f32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AudioOutputDevice {

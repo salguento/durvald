@@ -779,6 +779,27 @@ impl DurvaldCore {
             .equalizer_metrics()
     }
 
+    /// Enables or disables the lock-free audio analysis tap.
+    pub async fn set_spectrum_enabled(&self, enabled: bool) {
+        self.playback_application
+            .audio_player()
+            .lock()
+            .await
+            .set_spectrum_enabled(enabled);
+    }
+
+    /// Returns a bounded spectrum snapshot without touching the audio callback.
+    pub async fn spectrum_snapshot(&self) -> SpectrumSnapshot {
+        SpectrumSnapshot {
+            bands: self
+                .playback_application
+                .audio_player()
+                .lock()
+                .await
+                .spectrum_bands(),
+        }
+    }
+
     /// Adds a track to the playback queue.
     pub async fn add_to_queue(&self, track_id: i64) -> CoreResult<()> {
         self.playback_application

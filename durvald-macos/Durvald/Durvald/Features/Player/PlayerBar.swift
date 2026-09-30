@@ -15,6 +15,7 @@ struct PlayerBar: View {
     @State private var isProgressHovered = false
     @State private var availableWidth: CGFloat = 360
     @State private var lyricsTrack: Track?
+    @AppStorage("player.spectrum.enabled") private var spectrumEnabled = false
 
     private var isNarrow: Bool { availableWidth < 600 }
 
@@ -23,6 +24,12 @@ struct PlayerBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if spectrumEnabled {
+                SpectrumAnalyzerView()
+                    .frame(height: 30)
+                    .padding(.bottom, 8)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
             HStack(alignment: .center, spacing: 4) {
                 trackInformation
                     .frame(

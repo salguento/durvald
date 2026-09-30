@@ -1,5 +1,6 @@
 //! Audio playback module using kira
 
+mod analyzer;
 mod decoder;
 mod equalizer;
 mod gapless;

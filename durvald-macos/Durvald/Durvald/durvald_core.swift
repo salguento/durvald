@@ -939,6 +939,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func setShuffleEnabled(enabled: Bool) async throws  -> PlaybackSnapshot
 
     /**
+     * Enables or disables the lock-free audio analysis tap.
+     */
+    func setSpectrumEnabled(enabled: Bool) async
+
+    /**
      * Sets whether a track is favorited.
      */
     func setTrackFavorite(trackId: Int64, favorite: Bool) async throws
@@ -967,6 +972,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Returns application settings.
      */
     func settings() async throws  -> Settings
+
+    /**
+     * Returns a bounded spectrum snapshot without touching the audio callback.
+     */
+    func spectrumSnapshot() async  -> SpectrumSnapshot
 
     /**
      * Stops playback.
@@ -2643,6 +2653,27 @@ open func setShuffleEnabled(enabled: Bool)async throws  -> PlaybackSnapshot {
 }
 
     /**
+     * Enables or disables the lock-free audio analysis tap.
+     */
+open func setSpectrumEnabled(enabled: Bool)async  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_set_spectrum_enabled(
+                    self.uniffiClonePointer(),
+                    FfiConverterBool.lower(enabled)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: nil
+
+        )
+}
+
+    /**
      * Sets whether a track is favorited.
      */
 open func setTrackFavorite(trackId: Int64, favorite: Bool)async throws  {
@@ -2759,6 +2790,27 @@ open func settings()async throws  -> Settings {
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeSettings.lift,
             errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Returns a bounded spectrum snapshot without touching the audio callback.
+     */
+open func spectrumSnapshot()async  -> SpectrumSnapshot {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_spectrum_snapshot(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeSpectrumSnapshot.lift,
+            errorHandler: nil
+
         )
 }
 
@@ -7828,6 +7880,58 @@ public func FfiConverterTypeSmartPlaylistRule_lower(_ value: SmartPlaylistRule) 
 
 
 /**
+ * Bounded, normalized spectrum suitable for visualization.
+ */
+public struct SpectrumSnapshot {
+    public var bands: [Float]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(bands: [Float]) {
+        self.bands = bands
+    }
+}
+
+
+
+extension SpectrumSnapshot: Equatable, Hashable {
+    public static func ==(lhs: SpectrumSnapshot, rhs: SpectrumSnapshot) -> Bool {
+        if lhs.bands != rhs.bands {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(bands)
+    }
+}
+
+
+public struct FfiConverterTypeSpectrumSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SpectrumSnapshot {
+        return
+            try SpectrumSnapshot(
+                bands: FfiConverterSequenceFloat.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SpectrumSnapshot, into buf: inout [UInt8]) {
+        FfiConverterSequenceFloat.write(value.bands, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeSpectrumSnapshot_lift(_ buf: RustBuffer) throws -> SpectrumSnapshot {
+    return try FfiConverterTypeSpectrumSnapshot.lift(buf)
+}
+
+public func FfiConverterTypeSpectrumSnapshot_lower(_ value: SpectrumSnapshot) -> RustBuffer {
+    return FfiConverterTypeSpectrumSnapshot.lower(value)
+}
+
+
+/**
  * Audio track DTO
  */
 public struct Track {
@@ -10570,6 +10674,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_shuffle_enabled() != 63667) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_spectrum_enabled() != 41184) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_favorite() != 16132) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -10586,6 +10693,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_settings() != 922) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_spectrum_snapshot() != 57143) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_stop() != 19367) {

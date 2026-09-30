@@ -204,6 +204,8 @@ pub(super) struct Transport {
     pub shared: Arc<Shared>,
     pub incoming: Producer<Voice>,
     retired: Consumer<Voice>,
+    analyzer: Consumer<f32>,
+    analyzer_enabled: Arc<AtomicBool>,
 }
 
 impl Transport {
@@ -211,6 +213,28 @@ impl Transport {
         while let Ok(voice) = self.retired.pop() {
             drop(voice);
         }
+    }
+
+    pub fn set_analyzer_enabled(&mut self, enabled: bool) {
+        self.analyzer_enabled.store(enabled, Ordering::Release);
+        if !enabled {
+            while self.analyzer.pop().is_ok() {}
+        }
+    }
+
+    pub fn spectrum(&mut self) -> Vec<f32> {
+        if !self.analyzer_enabled.load(Ordering::Acquire) {
+            return vec![0.0; super::analyzer::SPECTRUM_BANDS];
+        }
+        let mut samples =
+            std::collections::VecDeque::with_capacity(super::analyzer::SPECTRUM_SAMPLES);
+        while let Ok(sample) = self.analyzer.pop() {
+            if samples.len() == super::analyzer::SPECTRUM_SAMPLES {
+                samples.pop_front();
+            }
+            samples.push_back(sample);
+        }
+        super::analyzer::spectrum(samples.make_contiguous())
     }
 }
 
@@ -220,9 +244,15 @@ pub(super) struct GaplessData {
 }
 
 impl GaplessData {
+    #[cfg(test)]
     pub fn new(first: Voice) -> Self {
+        Self::with_analyzer(first, Arc::new(AtomicBool::new(false)))
+    }
+
+    pub fn with_analyzer(first: Voice, analyzer_enabled: Arc<AtomicBool>) -> Self {
         let (incoming, receiver) = RingBuffer::new(4);
         let (retired, collector) = RingBuffer::new(8);
+        let (analyzer, samples) = RingBuffer::new(2048);
         let shared = Arc::new(Shared {
             active: AtomicU64::new(first.token),
             pending: AtomicU64::new(0),
@@ -235,11 +265,15 @@ impl GaplessData {
                 shared: shared.clone(),
                 incoming: receiver,
                 retired,
+                analyzer,
+                analyzer_enabled: analyzer_enabled.clone(),
             },
             transport: Transport {
                 shared,
                 incoming,
                 retired: collector,
+                analyzer: samples,
+                analyzer_enabled,
             },
         }
     }
@@ -260,6 +294,8 @@ struct GaplessSound {
     shared: Arc<Shared>,
     incoming: Consumer<Voice>,
     retired: Producer<Voice>,
+    analyzer: Producer<f32>,
+    analyzer_enabled: Arc<AtomicBool>,
 }
 
 impl Sound for GaplessSound {
@@ -425,6 +461,12 @@ impl GaplessSound {
         } else {
             chunk.fill(Frame::ZERO);
         }
+        if self.analyzer_enabled.load(Ordering::Relaxed) {
+            for frame in chunk.iter().step_by(4) {
+                let mono = (frame.left + frame.right) * 0.5;
+                let _ = self.analyzer.push(mono);
+            }
+        }
     }
 }
 
@@ -496,6 +538,40 @@ mod tests {
             position: 0,
             sample_rate,
         })
+    }
+
+    #[test]
+    fn analyzer_tap_is_bounded_non_blocking_and_discardable() {
+        let frames = (0..4096)
+            .map(|index| {
+                Frame::from_mono((std::f32::consts::TAU * 24.0 * index as f32 / 4096.0).sin() * 0.7)
+            })
+            .collect();
+        let (voice, _) = Voice::prepare(
+            frames_data(frames, 8_000),
+            1,
+            4096.0 / 8_000.0,
+            0,
+            8_000,
+            0.0,
+        )
+        .unwrap();
+        let enabled = Arc::new(AtomicBool::new(true));
+        let (mut sound, mut transport) = GaplessData::with_analyzer(voice, enabled)
+            .into_sound()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(10));
+        let info = MockInfoBuilder::new().build();
+        sound.on_start_processing();
+        let mut output = vec![Frame::ZERO; 2048];
+        sound.process(&mut output, 1.0 / 8_000.0, &info);
+
+        let spectrum = transport.spectrum();
+        assert_eq!(spectrum.len(), super::super::analyzer::SPECTRUM_BANDS);
+        assert!(spectrum.iter().any(|value| *value > 0.1));
+
+        transport.set_analyzer_enabled(false);
+        assert!(transport.spectrum().iter().all(|value| *value == 0.0));
     }
 
     #[test]

@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var normalizeVolume = false
     @State private var explicitContent = true
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
+    @AppStorage("player.spectrum.enabled") private var spectrumEnabled = false
 
     var body: some View {
         TabView {
@@ -22,6 +23,8 @@ struct SettingsView: View {
                 Toggle("Permitir conteúdo explícito", isOn: $explicitContent)
                 Toggle("Exibir avaliações", isOn: $ratingsEnabled)
                     .accessibilityIdentifier("settings.ratings.enabled")
+                Toggle("Exibir analisador de espectro", isOn: $spectrumEnabled)
+                    .accessibilityIdentifier("settings.spectrum.enabled")
 
                 HStack {
                     Spacer()
