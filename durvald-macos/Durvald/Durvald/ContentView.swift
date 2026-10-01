@@ -26,6 +26,8 @@ struct ContentView: View {
     @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
     @AppStorage("albums.minimumRating") private var albumMinimumRating = 0
 
+    @State private var musicSearchText = ""
+    @State private var musicLibrarySummary = MusicLibrarySummary(tracks: [], kind: .all)
     @State private var isTopbarHovered = false
     @State private var isPageScrolled = false
     @State private var shell = ContentShellState()
@@ -182,6 +184,9 @@ struct ContentView: View {
                     description: description,
                     artworkBase64: artworkBase64
                 ) else { return false }
+                if !playlistCreation.pendingTrackIDs.isEmpty {
+                    await store.addSelectionToPlaylist(playlistCreation.pendingTrackIDs, playlist: playlist)
+                }
                 if let trackID = playlistCreation.pendingTrackID {
                     store.addTrack(trackID, to: playlist)
                 }
@@ -274,6 +279,10 @@ struct ContentView: View {
                         .animation(.easeOut(duration: 0.15), value: appearsActive)
                 }
                 .animation(.easeOut(duration: 0.15), value: appearsActive)
+                // The right panel overlays 300 pt of the content column, so
+                // its remaining center moves left by half the panel width.
+                .offset(x: shell.isQueuePresented ? -Layout.queueIdealWidth / 2 : 0)
+                .animation(Layout.panelAnimation, value: shell.isQueuePresented)
             } else {
                 Color.clear
                     .frame(width: 1, height: 36)
@@ -290,7 +299,10 @@ struct ContentView: View {
             // toggle stays at the window edge.
             HStack(spacing: shell.isQueuePresented ? Layout.queueIdealWidth - 36 : 16) {
                 if case .section(let destination) = shell.navigationHistory.currentRoute,
-                   destination == .albums || destination == .artists || destination == .playlists {
+                   destination == .songs {
+                    MusicLibraryToolbarControls(searchText: $musicSearchText)
+                } else if case .section(let destination) = shell.navigationHistory.currentRoute,
+                          destination == .albums || destination == .artists || destination == .playlists {
                     CollectionListingMenu(
                         mode: listingModeBinding(for: destination),
                         order: listingOrderBinding(for: destination),
@@ -335,6 +347,12 @@ struct ContentView: View {
         ToolbarItem(placement: .navigation) {
             backForwardButtons
         }
+        if shell.navigationHistory.current == .songs {
+            ToolbarItem(placement: .navigation) {
+                MusicLibrarySummaryView(summary: musicLibrarySummary)
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
     }
 
     private var queueToggleButton: some View {
@@ -345,7 +363,7 @@ struct ContentView: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: Layout.panelToggleIconWidth, height: Layout.panelToggleIconHeight)
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(appearsActive ? Color.primary : Color.secondary)
                 .frame(width: 38, height: 36)
                 .contentShape(Capsule())
         }
@@ -530,7 +548,9 @@ struct ContentView: View {
                 shell.navigationHistory.navigate(to: destination)
             }
         case .songs:
-            MusicLibraryView()
+            MusicLibraryView(searchText: $musicSearchText) { summary in
+                musicLibrarySummary = summary
+            }
         case .albums:
             AlbumsView(onSelectAlbum: showAlbum)
         case .artists:

@@ -169,6 +169,9 @@ struct QueueView: View {
                     core: store.core,
                     isWindowActive: appearsActive,
                     topContentInset: topInset + Self.listTopInset,
+                    onDropTracks: { ids, position in
+                        Task { await store.insertTracksIntoQueue(ids, at: position) }
+                    },
                     onMove: { from, to in
                         store.moveQueueItem(from: from, to: to)
                     },

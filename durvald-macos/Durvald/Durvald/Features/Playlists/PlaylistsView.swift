@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct PlaylistsView: View {
+    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(DurvaldCoreStore.self) private var store
     @AppStorage("playlists.listingMode") private var listingMode: CollectionListingMode = .standard
     @AppStorage("playlists.listingOrder") private var listingOrder: CollectionListingOrder = .recent
@@ -21,8 +22,13 @@ struct PlaylistsView: View {
                     PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: size)
                 }
                 .playlistContextMenu(playlist: playlist)
+                .playlistTrackDropTarget(playlist)
                 .accessibilityIdentifier("playlist.\(playlist.id)")
             }
+        }
+        .contentShape(Rectangle())
+        .onDrop(of: [LibraryTrackDrag.type], isTargeted: nil) { providers in
+            LibraryTrackDrag.accept(providers) { playlistCreation.requestTracks($0) }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             HStack {

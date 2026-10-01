@@ -11,16 +11,19 @@ enum RatingPreferences {
 struct RatingControl: View {
     let rating: UInt8?
     var isEditable = false
+    var accentForeground: Color = .accentColor
     var onChange: (UInt8?) -> Void = { _ in }
     @State private var selectedRating: UInt8?
 
     init(
         rating: UInt8?,
         isEditable: Bool = false,
+        accentForeground: Color = .accentColor,
         onChange: @escaping (UInt8?) -> Void = { _ in }
     ) {
         self.rating = rating
         self.isEditable = isEditable
+        self.accentForeground = accentForeground
         self.onChange = onChange
         _selectedRating = State(initialValue: rating)
     }
@@ -35,7 +38,7 @@ struct RatingControl: View {
                     onChange(updatedRating)
                 } label: {
                     Image(systemName: value <= Int(selectedRating ?? 0) ? "star.fill" : "star")
-                        .foregroundStyle(value <= Int(selectedRating ?? 0) ? Color.accentColor : Color.secondary)
+                        .foregroundStyle(value <= Int(selectedRating ?? 0) ? accentForeground : Color.secondary)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct LibrarySidebarView: View {
+    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.appearsActive) private var appearsActive
 
@@ -25,17 +26,29 @@ struct LibrarySidebarView: View {
     @State private var localSearchText = ""
     @State private var committedLocalQuery = ""
     @State private var albumLastPlayedByRelease: [Int64: String] = [:]
+    @State private var isDropAreaTargeted = false
+    @State private var isPlaylistDropTargeted = false
     @State private var tracksByPlaylist: [Int64: [Track]] = [:]
 
     var body: some View {
         selectedSectionContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .foregroundStyle(appearsActive ? Color.primary : Color.secondary)
+            .overlay {
+                if isDropAreaTargeted || isPlaylistDropTargeted {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 2)
+                        .padding(1)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
             // Keep controls fixed while the scroll view extends behind them.
             .safeAreaBar(edge: .top, spacing: 0) {
                 fixedControls
             }
             .scrollEdgeEffectHidden(true, for: .top)
+            .onPreferenceChange(PlaylistDropTargetPreference.self) { isPlaylistDropTargeted = $0 }
         .task(id: localSearchText) {
             let normalized = localSearchText.trimmingCharacters(
                 in: .whitespacesAndNewlines
@@ -150,6 +163,9 @@ struct LibrarySidebarView: View {
                         accessibilityIdentifier: "sidebar.playlists",
                         allowsSelectionHighlight: selectedPlaylistID == nil
                     )
+                    .onDrop(of: [LibraryTrackDrag.type], isTargeted: $isDropAreaTargeted) { providers in
+                        LibraryTrackDrag.accept(providers) { playlistCreation.requestTracks($0) }
+                    }
 
                     if arePlaylistsExpanded {
                         ForEach(store.playlists, id: \.id) { playlist in
@@ -159,11 +175,17 @@ struct LibrarySidebarView: View {
                                 action: { onSelectPlaylist(playlist) }
                             )
                             .playlistContextMenu(playlist: playlist)
+                    .playlistTrackDropTarget(playlist)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 10)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onDrop(of: [LibraryTrackDrag.type], isTargeted: $isDropAreaTargeted) { providers in
+                LibraryTrackDrag.accept(providers) { playlistCreation.requestTracks($0) }
             }
 
         case .playlists:
@@ -173,8 +195,13 @@ struct LibrarySidebarView: View {
                         PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: size)
                     }
                     .playlistContextMenu(playlist: playlist)
+                    .playlistTrackDropTarget(playlist)
                     .accessibilityIdentifier("sidebar.playlist.\(playlist.id)")
                 }
+            }
+            .contentShape(Rectangle())
+            .onDrop(of: [LibraryTrackDrag.type], isTargeted: $isDropAreaTargeted) { providers in
+                LibraryTrackDrag.accept(providers) { playlistCreation.requestTracks($0) }
             }
 
         case .albums:

@@ -6,6 +6,7 @@ import SwiftUI
 @Observable
 final class PlaylistCreationCoordinator {
     var isPresented = false
+    var pendingTrackIDs: [Int64] = []
     var pendingTrackID: Int64?
     var pendingReleaseID: Int64?
     var pendingPlaylistID: Int64?
@@ -14,9 +15,15 @@ final class PlaylistCreationCoordinator {
     func request(for trackID: Int64?) {
         pendingPlaylistID = nil
         pendingReleaseID = nil
+        pendingTrackIDs = []
         pendingTrackID = trackID
         editingPlaylist = nil
         isPresented = true
+    }
+
+    func requestTracks(_ ids: [Int64]) {
+        request(for: nil)
+        pendingTrackIDs = ids
     }
 
     func requestAlbum(_ releaseID: Int64) {
@@ -32,6 +39,7 @@ final class PlaylistCreationCoordinator {
     func requestEdit(_ playlist: Playlist) {
         pendingPlaylistID = nil
         pendingReleaseID = nil
+        pendingTrackIDs = []
         pendingTrackID = nil
         editingPlaylist = playlist
         isPresented = true
@@ -40,6 +48,7 @@ final class PlaylistCreationCoordinator {
     func reset() {
         pendingPlaylistID = nil
         pendingReleaseID = nil
+        pendingTrackIDs = []
         pendingTrackID = nil
         editingPlaylist = nil
     }
@@ -476,6 +485,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
     private let playlistMenu = NSMenu(title: "Adicionar à playlist")
     private let searchField = NSSearchField(frame: NSRect(x: 8, y: 3, width: 224, height: 26))
     private var playlists: [Playlist] = []
+    private var selectedTracks: [Track] = []
     private var track: Track?
     private var album: Release?
     private var sourcePlaylist: Playlist?
@@ -519,19 +529,25 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
                    playlistCreation: PlaylistCreationCoordinator,
                    trackInfo: TrackInfoCoordinator,
                    navigation: TrackMenuNavigation,
-                   additionalActions: [TrackMenuAction] = []) {
+                   additionalActions: [TrackMenuAction] = [],
+                   infoAction: (() -> Void)? = nil,
+                   selectedTracks: [Track] = []) {
         rootMenu.autoenablesItems = false
         loadingTask?.cancel()
         self.sourcePlaylist = nil
         self.album = nil
+        self.selectedTracks = selectedTracks.isEmpty ? [track] : selectedTracks
         self.track = store.tracks.first { $0.id == track.id } ?? track
         self.store = store
         self.navigation = navigation
         playlists = store.playlists
-        onAddToQueue = { Task { await store.addToQueue(trackID: track.id) } }
-        onCreatePlaylist = { playlistCreation.request(for: track.id) }
-        onAddToPlaylist = { store.addTrack(track.id, to: $0) }
-        onInfo = { trackInfo.open(trackID: track.id) }
+        let tracks = self.selectedTracks
+        onAddToQueue = { Task { await store.enqueueSelection(tracks) } }
+        onCreatePlaylist = { playlistCreation.requestTracks(tracks.map(\.id)) }
+        onAddToPlaylist = { playlist in
+            for track in tracks { store.addTrack(track.id, to: playlist) }
+        }
+        onInfo = infoAction ?? { trackInfo.open(trackID: track.id) }
         self.additionalActions = additionalActions
         rebuildRootMenu()
         rebuildPlaylistItems()
@@ -542,6 +558,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         loadingTask?.cancel()
         rootMenu.autoenablesItems = false
         self.sourcePlaylist = nil
+        self.selectedTracks = []
         self.track = nil
         self.album = store.releases.first { $0.id == album.id } ?? album
         self.store = store
@@ -560,6 +577,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
                    creation: PlaylistCreationCoordinator, navigation: TrackMenuNavigation) {
         loadingTask?.cancel()
         rootMenu.autoenablesItems = false
+        selectedTracks = []
         track = nil
         album = nil
         sourcePlaylist = store.playlists.first { $0.id == playlist.id } ?? playlist
@@ -600,14 +618,14 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
                 if let current = try? await store.core?.track(trackId: track.id), !Task.isCancelled {
                     self.track = current
                     self.rootMenu.items.first { $0.action == #selector(self.toggleFavorite) }?.title =
-                        current.isFavorite ? "Desfavoritar" : "Favoritar"
+                        self.selectedTracks.allSatisfy(\.isFavorite) ? "Desfavoritar" : "Favoritar"
                 }
                 var containing: [Playlist] = []
                 do {
                     for playlist in store.playlists {
                         guard !Task.isCancelled else { return }
                         if let tracks = try await store.core?.playlistTracks(playlistId: playlist.id),
-                           tracks.contains(where: { $0.id == track.id }) {
+                           tracks.contains(where: { entry in self.selectedTracks.contains(where: { $0.id == entry.id }) }) {
                             containing.append(playlist)
                         }
                     }
@@ -695,14 +713,14 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         rootMenu.addItem(actionItem("Tocar de próxima", selector: #selector(playNext)))
         rootMenu.addItem(actionItem("Adicionar à fila", selector: #selector(addToQueue)))
         rootMenu.addItem(.separator())
-        rootMenu.addItem(actionItem(track?.isFavorite == true ? "Desfavoritar" : "Favoritar",
+        rootMenu.addItem(actionItem(!selectedTracks.isEmpty && selectedTracks.allSatisfy(\.isFavorite) ? "Desfavoritar" : "Favoritar",
                                     selector: #selector(toggleFavorite)))
         if RatingPreferences.isEnabled {
             rootMenu.addItem(ratingMenu(current: track?.rating))
         }
         rootMenu.addItem(.separator())
-        rootMenu.addItem(actionItem("Ir ao artista", selector: #selector(goToArtist)))
-        rootMenu.addItem(actionItem("Ir ao álbum", selector: #selector(goToAlbum)))
+        rootMenu.addItem(navigationItem(artist: true))
+        rootMenu.addItem(navigationItem(artist: false))
         let containing = NSMenuItem(title: "Ir à playlist", action: nil, keyEquivalent: "")
         containing.submenu = containingPlaylistsMenu
         rootMenu.addItem(containing)
@@ -811,21 +829,23 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
             Task { await store.enqueueRelease(releaseID: album.id, playNext: true) }
             return
         }
-        guard let track, let store else { return }
-        Task { await store.playNext(trackID: track.id) }
+        guard let store else { return }
+        let tracks = selectedTracks
+        Task { await store.enqueueSelection(tracks, playNext: true) }
     }
     @objc private func toggleFavorite() {
         if let album, let store {
             store.setReleaseFavorite(releaseID: album.id, favorite: !album.isFavorite)
             return
         }
-        guard let track, let store else { return }
+        guard let store else { return }
+        let tracks = selectedTracks
+        let favorite = !tracks.allSatisfy(\.isFavorite)
         Task {
-            await store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
-            self.track = try? await store.core?.track(trackId: track.id)
-            rebuildRootMenu()
+            for track in tracks { await store.setTrackFavorite(trackID: track.id, favorite: favorite) }
         }
     }
+
     @objc private func setRating(_ sender: NSMenuItem) {
         let rating = sender.tag == 0 ? nil : UInt8(sender.tag)
         if let album, let store {
@@ -834,13 +854,43 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
             rebuildRootMenu()
             return
         }
-        guard let track, let store else { return }
+        guard let store else { return }
+        let tracks = selectedTracks
         Task {
-            await store.setTrackRating(trackID: track.id, rating: rating)
-            self.track?.rating = rating
-            rebuildRootMenu()
+            for track in tracks { await store.setTrackRating(trackID: track.id, rating: rating) }
         }
     }
+
+    private func navigationItem(artist: Bool) -> NSMenuItem {
+        let title = artist ? "Ir ao artista" : "Ir ao álbum"
+        var seen = Set<Int64>()
+        let choices = selectedTracks.filter { seen.insert(artist ? $0.artistId : $0.releaseId).inserted }
+        guard choices.count > 1 else {
+            return actionItem(title, selector: artist ? #selector(goToArtist) : #selector(goToAlbum))
+        }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let submenu = NSMenu(title: title)
+        for track in choices {
+            let choice = actionItem(artist ? track.artist : track.release, selector: #selector(navigateSelection(_:)))
+            choice.representedObject = track
+            choice.tag = artist ? 1 : 0
+            submenu.addItem(choice)
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func navigateSelection(_ sender: NSMenuItem) {
+        guard let track = sender.representedObject as? Track, let store else { return }
+        Task {
+            do {
+                if sender.tag == 1 {
+                    if let artist = try await store.core?.artist(artistId: track.artistId) { navigation.artist(artist) }
+                } else if let album = try await store.core?.release(releaseId: track.releaseId) { navigation.album(album) }
+            } catch { store.errorMessage = String(describing: error) }
+        }
+    }
+
     @objc private func goToArtist() {
         guard let track, let store else { return }
         Task {
@@ -861,7 +911,8 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
     }
     @objc private func showInfo() { onInfo() }
     @objc private func copyName() {
-        guard let title = album?.title ?? track?.title else { return }
+        let title = album?.title ?? selectedTracks.map(\.title).joined(separator: " ")
+        guard !title.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(title, forType: .string)
     }
@@ -877,5 +928,78 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
     @objc private func performAdditionalAction(_ sender: NSMenuItem) {
         guard additionalActions.indices.contains(sender.tag) else { return }
         additionalActions[sender.tag].action()
+    }
+}
+
+@MainActor
+enum LibraryTrackDrag {
+    static let type = "public.utf8-plain-text"
+    static let pasteboardType = NSPasteboard.PasteboardType.string
+
+    private static func decode(_ value: String) -> Int64? {
+        guard value.hasPrefix("durvald-track:") else { return nil }
+        return Int64(value.dropFirst("durvald-track:".count))
+    }
+
+    static func ids(from pasteboard: NSPasteboard) -> [Int64] {
+        (pasteboard.pasteboardItems ?? []).compactMap { item in
+            item.string(forType: pasteboardType).flatMap(decode)
+        }
+    }
+
+    static func accept(_ providers: [NSItemProvider], perform: @escaping ([Int64]) -> Void) -> Bool {
+        let providers = providers.filter { $0.hasItemConformingToTypeIdentifier(type) }
+        guard !providers.isEmpty else { return false }
+        Task {
+            var ids: [Int64] = []
+            for provider in providers {
+                let data: Data? = await withCheckedContinuation { continuation in
+                    provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
+                        continuation.resume(returning: data)
+                    }
+                }
+                if let data, let value = String(data: data, encoding: .utf8), let id = decode(value) {
+                    ids.append(id)
+                }
+            }
+            if !ids.isEmpty { perform(ids) }
+        }
+        return true
+    }
+}
+
+struct PlaylistDropTargetPreference: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+private struct PlaylistTrackDropModifier: ViewModifier {
+    @Environment(DurvaldCoreStore.self) private var store
+    @State private var isTargeted = false
+    let playlist: Playlist
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .background {
+                if isTargeted && !playlist.isSmart {
+                    RoundedRectangle(cornerRadius: 8).fill(Color.accentColor)
+                }
+            }
+            .preference(key: PlaylistDropTargetPreference.self, value: isTargeted)
+            .onDrop(of: [LibraryTrackDrag.type], isTargeted: $isTargeted) { providers in
+                guard !playlist.isSmart else { return false }
+                return LibraryTrackDrag.accept(providers) { ids in
+                    Task { await store.addSelectionToPlaylist(ids, playlist: playlist) }
+                }
+            }
+    }
+}
+
+extension View {
+    func playlistTrackDropTarget(_ playlist: Playlist) -> some View {
+        modifier(PlaylistTrackDropModifier(playlist: playlist))
     }
 }

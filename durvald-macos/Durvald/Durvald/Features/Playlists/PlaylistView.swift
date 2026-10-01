@@ -128,6 +128,15 @@ struct PlaylistView: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .onDrop(of: [LibraryTrackDrag.type], isTargeted: nil) { providers in
+            guard !currentPlaylist.isSmart else { return false }
+            return LibraryTrackDrag.accept(providers) { ids in
+                Task {
+                    await store.addSelectionToPlaylist(ids, playlist: currentPlaylist)
+                    tracks = await store.tracks(forPlaylistID: playlist.id)
+                }
+            }
+        }
         .preservesLibraryScrollPosition(isContentReady: !isLoading)
         .task(id: playlist.id) {
             isLoading = true

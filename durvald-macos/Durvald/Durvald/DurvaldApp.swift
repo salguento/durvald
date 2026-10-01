@@ -68,6 +68,13 @@ struct DurvaldApp: App {
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
         .windowBackgroundDragBehavior(.enabled)
+        Window("Opções de visualização", id: "music-view-options") {
+            MusicLibraryViewOptions()
+        }
+        .defaultSize(width: 420, height: 620)
+        .windowResizability(.contentSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
         SwiftUI.Settings {
             SettingsView()
                 .environment(coreStore)

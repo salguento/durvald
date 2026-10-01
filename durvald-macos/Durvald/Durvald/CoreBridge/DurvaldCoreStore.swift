@@ -30,6 +30,7 @@ final class DurvaldCoreStore {
     private(set) var isScanningLibrary = false
     private(set) var lastScanResult: ScanResult?
     private(set) var tracks: [Track] = []
+    private(set) var hasLoadedAllTracks = false
     private(set) var releases: [Release] = []
     private(set) var artists: [Artist] = []
     private(set) var playlists: [Playlist] = []
@@ -186,6 +187,7 @@ final class DurvaldCoreStore {
     }
 
     private func reloadPrimaryLibrary(using core: DurvaldCore) async throws {
+        hasLoadedAllTracks = false
         async let loadedTracks = core.tracksPage(
             pageSize: Self.libraryPageSize,
             offset: 0
@@ -202,6 +204,7 @@ final class DurvaldCoreStore {
         )
         tracks = result.0.items
         nextTracksOffset = result.0.nextOffset
+        hasLoadedAllTracks = nextTracksOffset == nil
         releases = result.1.items
         nextReleasesOffset = result.1.nextOffset
         artists = result.2
@@ -262,6 +265,7 @@ final class DurvaldCoreStore {
             let loadedIDs = Set(tracks.map(\.id))
             tracks.append(contentsOf: page.items.filter { !loadedIDs.contains($0.id) })
             nextTracksOffset = page.nextOffset
+            hasLoadedAllTracks = nextTracksOffset == nil
         } catch {
             errorMessage = String(describing: error)
         }
@@ -1498,6 +1502,7 @@ final class DurvaldCoreStore {
             if playback?.currentTrack?.id == trackID {
                 playback?.currentTrack?.isFavorite = favorite
             }
+            metadataRevision &+= 1
         } catch {
             errorMessage = String(describing: error)
         }
@@ -1520,6 +1525,7 @@ final class DurvaldCoreStore {
         }
         do {
             try await core.setTrackRating(trackId: trackID, rating: rating)
+            metadataRevision &+= 1
         } catch {
             if let index = tracks.firstIndex(where: { $0.id == trackID }) {
                 tracks[index].rating = previous
@@ -1543,6 +1549,7 @@ final class DurvaldCoreStore {
             let result = try await (refreshedTracks, refreshedReleases, refreshedArtists)
             tracks = result.0.items
             nextTracksOffset = result.0.nextOffset
+            hasLoadedAllTracks = nextTracksOffset == nil
             releases = result.1.items
             nextReleasesOffset = result.1.nextOffset
             artists = result.2
@@ -1655,6 +1662,27 @@ final class DurvaldCoreStore {
         }
     }
 
+    func insertTracksIntoQueue(_ ids: [Int64], at position: UInt64) async {
+        guard let core else { return }
+        do {
+            var destination = position
+            for id in ids {
+                try await core.addToQueue(trackId: id)
+                let snapshot = await core.playback()
+                if let appended = snapshot.queue.last, appended.position > destination {
+                    try await core.moveQueueItem(from: appended.position, to: destination)
+                }
+                destination += 1
+            }
+            await refreshPlayback()
+        } catch { errorMessage = String(describing: error) }
+    }
+
+    func enqueueSelection(_ tracks: [Track], playNext: Bool = false) async {
+        do { try await enqueueTracks(tracks, playNext: playNext) }
+        catch { errorMessage = String(describing: error) }
+    }
+
     private func enqueueTracks(_ tracks: [Track], playNext: Bool) async throws {
         guard let core else { return }
         let initial = await core.playback()
@@ -1670,6 +1698,15 @@ final class DurvaldCoreStore {
             }
         }
         await refreshPlayback()
+    }
+
+    func addSelectionToPlaylist(_ ids: [Int64], playlist: Playlist) async {
+        guard let core, !playlist.isSmart else { return }
+        do {
+            var tracks: [Track] = []
+            for id in ids { tracks.append(try await core.track(trackId: id)) }
+            try await appendTracks(tracks, to: playlist)
+        } catch { errorMessage = String(describing: error) }
     }
 
     private func appendTracks(_ tracks: [Track], to playlist: Playlist) async throws {

@@ -17,6 +17,7 @@ struct QueueTableView: NSViewRepresentable {
     let core: DurvaldCore?
     let isWindowActive: Bool
     let topContentInset: CGFloat
+    let onDropTracks: ([Int64], UInt64) -> Void
     let onMove: (UInt64, UInt64) -> Void
     let onPlay: (UInt64) -> Void
     let onTogglePlayback: () -> Void
@@ -30,7 +31,7 @@ struct QueueTableView: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSScrollView {
-        let tableView = NSTableView()
+        let tableView = QueueDropTableView()
         let column = NSTableColumn(identifier: Coordinator.columnIdentifier)
         column.minWidth = 0
         column.resizingMask = .autoresizingMask
@@ -49,7 +50,7 @@ struct QueueTableView: NSViewRepresentable {
         tableView.dataSource = context.coordinator
         tableView.target = context.coordinator
         tableView.doubleAction = #selector(Coordinator.playDoubleClickedRow(_:))
-        tableView.registerForDraggedTypes([Coordinator.queuePasteboardType])
+        tableView.registerForDraggedTypes([Coordinator.queuePasteboardType, LibraryTrackDrag.pasteboardType])
         tableView.setDraggingSourceOperationMask(.move, forLocal: true)
 
         let menu = NSMenu()
@@ -246,6 +247,11 @@ struct QueueTableView: NSViewRepresentable {
             proposedRow row: Int,
             proposedDropOperation dropOperation: NSTableView.DropOperation
         ) -> NSDragOperation {
+            (tableView as? QueueDropTableView)?.firstUpcomingRow = rows.firstIndex(where: { !$0.isCurrent })
+            if !LibraryTrackDrag.ids(from: info.draggingPasteboard).isEmpty {
+                tableView.setDropRow(max(row, rows.isEmpty ? 0 : 1), dropOperation: .above)
+                return .copy
+            }
             guard sourceRow(from: info) != nil else { return [] }
             tableView.setDropRow(max(row, 1), dropOperation: .above)
             return .move
@@ -257,6 +263,12 @@ struct QueueTableView: NSViewRepresentable {
             row proposedRow: Int,
             dropOperation: NSTableView.DropOperation
         ) -> Bool {
+            let ids = LibraryTrackDrag.ids(from: info.draggingPasteboard)
+            if !ids.isEmpty {
+                let insertion = min(max(proposedRow, rows.isEmpty ? 0 : 1), rows.count)
+                parent.onDropTracks(ids, UInt64(insertion))
+                return true
+            }
             guard let sourceRow = sourceRow(from: info),
                   rows.indices.contains(sourceRow),
                   !rows.isEmpty
@@ -640,5 +652,41 @@ private final class QueueTableCellView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+}
+
+private final class QueueDropTableView: NSTableView {
+    var firstUpcomingRow: Int?
+    private let insertionLine = NSView()
+
+    override func setDropRow(_ row: Int, dropOperation: NSTableView.DropOperation) {
+        insertionLine.removeFromSuperview()
+        guard row == firstUpcomingRow, row > 0, dropOperation == .above else {
+            draggingDestinationFeedbackStyle = .regular
+            super.setDropRow(row, dropOperation: dropOperation)
+            return
+        }
+        draggingDestinationFeedbackStyle = .none
+        super.setDropRow(row, dropOperation: dropOperation)
+        insertionLine.wantsLayer = true
+        insertionLine.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        let rowRect = rect(ofRow: row)
+        insertionLine.frame = NSRect(x: bounds.minX, y: rowRect.minY + 34,
+                                     width: bounds.width, height: 2)
+        addSubview(insertionLine)
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        insertionLine.removeFromSuperview()
+        super.draggingExited(sender)
+        draggingDestinationFeedbackStyle = .regular
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        defer {
+            insertionLine.removeFromSuperview()
+            draggingDestinationFeedbackStyle = .regular
+        }
+        return super.performDragOperation(sender)
     }
 }

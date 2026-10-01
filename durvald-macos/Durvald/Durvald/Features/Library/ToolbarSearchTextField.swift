@@ -16,7 +16,10 @@ struct ToolbarSearchTextField: NSViewRepresentable {
     }
 
     func makeNSView(context: Context) -> NSTextField {
-        let textField = NSTextField()
+        let textField = ToolbarFocusTextField()
+        textField.onFocus = { [weak coordinator = context.coordinator] in
+            coordinator?.parent.isFocused = true
+        }
         textField.delegate = context.coordinator
         textField.isBezeled = false
         textField.isBordered = false
@@ -76,7 +79,6 @@ struct ToolbarSearchTextField: NSViewRepresentable {
         let coordinator = context.coordinator
         Task { @MainActor [weak textField, weak coordinator] in
             await Task.yield()
-            try? await Task.sleep(for: .milliseconds(50))
             guard let textField, let coordinator,
                   let window = textField.window else { return }
 
@@ -199,6 +201,8 @@ struct ToolbarSearchTextField: NSViewRepresentable {
         private func isInsideSearchContainer(_ hitView: NSView?) -> Bool {
             let identifiers: Set<String> = [
                 "search.container",
+                "library.search.container",
+                "library.search.clear",
                 "search.clear",
                 "sidebar.sectionSearch.container",
                 "sidebar.sectionSearch.clear",
@@ -243,5 +247,22 @@ struct ToolbarSearchTextField: NSViewRepresentable {
             parent.isFocused = true
             return true
         }
+    }
+}
+
+private final class ToolbarFocusTextField: NSTextField {
+    var onFocus: (() -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted {
+            DispatchQueue.main.async { [weak self] in self?.onFocus?() }
+        }
+        return accepted
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+        if currentEditor() != nil { onFocus?() }
     }
 }
