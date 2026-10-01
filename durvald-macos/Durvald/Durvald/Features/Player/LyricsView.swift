@@ -5,6 +5,7 @@ struct LyricsView: View {
 
     let track: Track
     var usesFixedPopoverSize = true
+    var horizontalPadding: CGFloat = 18
 
     @State private var lyrics: String?
     @State private var isLoading = true
@@ -12,17 +13,19 @@ struct LyricsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(track.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(track.artist)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            if isLoading || lyrics != nil {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(track.artist)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
 
-            Divider()
+                Divider()
+            }
 
             Group {
                 if isLoading {
@@ -38,16 +41,22 @@ struct LyricsView: View {
                             .padding(.vertical, 4)
                     }
                 } else {
-                    ContentUnavailableView(
-                        "Letra não encontrada",
-                        systemImage: "quote.bubble",
-                        description: Text(errorMessage ?? "Adicione uma tag de letra ou um arquivo .lrc/.txt ao lado da faixa.")
-                    )
+                    VStack(spacing: 12) {
+                        Text("Letra indisponível")
+                            .font(.headline)
+                        Text(errorMessage ?? "Não há letra disponível para esta faixa.")
+                            .font(.body)
+                    }
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .accessibilityIdentifier("lyrics.unavailable")
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(18)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, 18)
         .frame(
             width: usesFixedPopoverSize ? 420 : nil,
             height: usesFixedPopoverSize ? 480 : nil
@@ -63,7 +72,10 @@ struct LyricsView: View {
         isLoading = true
         errorMessage = nil
         do {
-            lyrics = try await store.lyrics(for: track.id)
+            let loadedLyrics = try await store.lyrics(for: track.id)
+            lyrics = loadedLyrics.flatMap {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
+            }
         } catch {
             lyrics = nil
             errorMessage = "Não foi possível carregar a letra."

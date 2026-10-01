@@ -201,7 +201,8 @@ struct QueueView: View {
                         return true
                     }
             )
-            .frame(width: geometry.size.width, height: geometry.size.height)
+            .frame(width: max(0, geometry.size.width - 12), height: geometry.size.height)
+            .padding(.horizontal, 6)
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
     }
@@ -241,11 +242,11 @@ struct QueueView: View {
         if let track = store.playback?.currentTrack {
             GeometryReader { geometry in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 24) {
                         VStack(alignment: .leading, spacing: 8) {
                             ArtworkView(
                                 artworkID: track.artworkId,
-                                size: max(0, geometry.size.width - 20)
+                                size: max(0, geometry.size.width - 28)
                             )
                             .trackContextMenu(track: track, onPlay: {
                                 Task { await store.play(trackID: track.id) }
@@ -323,10 +324,11 @@ struct QueueView: View {
                         QueueArtistCard(
                             artistID: track.artistId,
                             artistName: track.artist,
-                            width: max(0, geometry.size.width - 20)
+                            width: max(0, geometry.size.width - 28)
                         )
                     }
-                    .padding(10)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
                     .padding(.top, topInset + Self.pickerHeight + Self.contentTopSpacing - 10)
                 }
             }
@@ -342,7 +344,7 @@ struct QueueView: View {
     @ViewBuilder
     private var lyricsPanel: some View {
         if let track = store.playback?.currentTrack {
-            LyricsView(track: track, usesFixedPopoverSize: false)
+            LyricsView(track: track, usesFixedPopoverSize: false, horizontalPadding: 14)
                 // LyricsView already includes 18 pt of internal padding.
                 .padding(.top, topInset + Self.pickerHeight + Self.contentTopSpacing - 18)
         } else {
