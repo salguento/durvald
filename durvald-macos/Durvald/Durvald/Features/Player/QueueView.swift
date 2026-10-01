@@ -1,6 +1,83 @@
+import AppKit
 import SwiftUI
 
+private struct QueueArtistCard: View {
+    @Environment(DurvaldCoreStore.self) private var store
+    @Environment(\.trackMenuNavigation) private var navigation
+    let artistID: Int64
+    let artistName: String
+    let width: CGFloat
+    @State private var artist: Artist?
+    @State private var portraitArtworkID: String?
+    @State private var isInformationPresented = false
+    @State private var isHovered = false
+    @State private var informationSheetHeight: CGFloat = 500
+
+    var body: some View {
+        Button {
+            let window = NSApp.keyWindow ?? NSApp.mainWindow
+            let windowHeight = window?.contentView?.bounds.height ?? 628
+            informationSheetHeight = max(1, windowHeight - 64 - 64)
+            isInformationPresented = true
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                ArtworkView(
+                    artworkID: portraitArtworkID,
+                    size: width,
+                    aspectRatio: 1.4,
+                    alignment: .top,
+                    showsBorder: false
+                )
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.65)],
+                    startPoint: .center,
+                    endPoint: .bottom
+                )
+                Text(artistName)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .underline(isHovered)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(width: width, height: width / 1.4)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .disabled(artist == nil)
+        .accessibilityLabel("Ver informações de \(artistName)")
+        .task(id: artistID) {
+            artist = nil
+            portraitArtworkID = nil
+            let loadedArtist = try? await store.core?.artist(artistId: artistID)
+            let details = await store.artistDetails(
+                artistId: artistID,
+                language: Locale.current.language.languageCode?.identifier ?? "en"
+            )
+            guard !Task.isCancelled else { return }
+            artist = loadedArtist
+            portraitArtworkID = details?.portrait?.managedPath
+        }
+        .sheet(isPresented: $isInformationPresented) {
+            if let artist {
+                ArtistView(
+                    artist: artist,
+                    onSelectAlbum: navigation.album,
+                    onSelectExternalRelease: { _ in },
+                    onSelectArtist: navigation.artist,
+                    informationOnly: true
+                )
+                .frame(width: 500, height: informationSheetHeight)
+            }
+        }
+    }
+}
+
 struct QueueView: View {
+    let topInset: CGFloat
+
     private enum Panel: String, CaseIterable, Identifiable {
         case details = "Detalhes"
         case queue = "Fila"
@@ -9,16 +86,21 @@ struct QueueView: View {
         var id: Self { self }
     }
 
-    private static let pickerHeight: CGFloat = 52
-    private static let headerHeight: CGFloat = 50
-    private static let listTopInset: CGFloat = pickerHeight + headerHeight + 8
+    private static let pickerHeight: CGFloat = 34
+    private static let pickerFadeHeight: CGFloat = 24
+    private static let contentTopSpacing: CGFloat = 18
+    // Account for the first section label's 4 pt inset inside its row.
+    private static let listTopInset: CGFloat = pickerHeight + contentTopSpacing - 4
 
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(TrackInfoCoordinator.self) private var trackInfo
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(\.trackMenuNavigation) private var navigation
     @State private var menuTracks: [Int64: Track] = [:]
-    @State private var selectedPanel: Panel = .queue
+    @State private var selectedPanel: Panel = .details
+    @State private var isClearQueueConfirmationPresented = false
+    @State private var isTrackLinkHovered = false
+    @State private var isArtistLinkHovered = false
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
@@ -35,18 +117,40 @@ struct QueueView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            VStack(spacing: 0) {
-                panelPicker
-
-                if selectedPanel == .queue {
-                    queueHeader
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .frame(height: topInset + Self.pickerHeight + Self.pickerFadeHeight)
+                .mask {
+                    VStack(spacing: 0) {
+                        Rectangle()
+                            .frame(height: topInset + Self.pickerHeight)
+                        LinearGradient(
+                            colors: [.black, .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: Self.pickerFadeHeight)
+                    }
                 }
-            }
-            .background(.ultraThinMaterial)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+
+            panelPicker
+                .padding(.top, topInset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("queue.sidebar")
+        .alert("Limpar a fila?", isPresented: $isClearQueueConfirmationPresented) {
+            Button("Cancelar", role: .cancel) {}
+            Button("Limpar fila", role: .destructive) {
+                Task {
+                    await store.clearQueue()
+                }
+            }
+        } message: {
+            Text("Tem certeza de que deseja limpar a fila? Essa ação não pode ser desfeita.")
+        }
         .task(id: store.queue.map(\.trackId)) {
             for item in store.queue where menuTracks[item.trackId] == nil {
                 guard !Task.isCancelled else { return }
@@ -64,7 +168,7 @@ struct QueueView: View {
                     rows: tableRows,
                     core: store.core,
                     isWindowActive: appearsActive,
-                    topContentInset: Self.listTopInset,
+                    topContentInset: topInset + Self.listTopInset,
                     onMove: { from, to in
                         store.moveQueueItem(from: from, to: to)
                     },
@@ -84,6 +188,9 @@ struct QueueView: View {
                         }
                     },
                     onInfo: { trackInfo.open(trackID: $0) },
+                    onClear: {
+                        isClearQueueConfirmationPresented = true
+                    },
                     configureMenu: { controller, trackID in
                         guard let track = store.tracks.first(where: { $0.id == trackID })
                             ?? store.playback?.currentTrack.flatMap({ $0.id == trackID ? $0 : nil })
@@ -110,6 +217,7 @@ struct QueueView: View {
                     Text(panel.rawValue)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 6)
+                        .contentShape(Rectangle())
                         .background {
                             if selectedPanel == panel {
                                 Capsule()
@@ -125,63 +233,109 @@ struct QueueView: View {
         .frame(maxWidth: .infinity)
         .glassEffect(.clear.interactive(), in: .capsule)
         .padding(.horizontal, 8)
-        .frame(height: Self.pickerHeight)
-    }
-
-    private var queueHeader: some View {
-        HStack {
-            Text("Fila")
-                .font(.headline)
-
-            Spacer()
-
-            Button("Limpar") {
-                Task {
-                    await store.clearQueue()
-                }
-            }
-            .disabled(store.queue.count <= 1)
-            .accessibilityIdentifier("queue.clear")
-        }
-        .padding(.horizontal, 8)
-        .frame(height: Self.headerHeight)
-        .overlay(alignment: .bottom) {
-            Divider()
-        }
+        .frame(height: Self.pickerHeight, alignment: .bottom)
     }
 
     @ViewBuilder
     private var detailsPanel: some View {
         if let track = store.playback?.currentTrack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    ArtworkView(artworkID: track.artworkId, size: 220)
-                        .frame(maxWidth: .infinity)
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ArtworkView(
+                                artworkID: track.artworkId,
+                                size: max(0, geometry.size.width - 20)
+                            )
+                            .trackContextMenu(track: track, onPlay: {
+                                Task { await store.play(trackID: track.id) }
+                            })
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(track.title)
-                            .font(.title2.weight(.semibold))
-                        Text(track.artist)
-                            .font(.headline)
-                            .foregroundStyle(.secondary)
-                        Text(track.release)
-                            .foregroundStyle(.secondary)
+                            HStack(alignment: .center, spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Button {
+                                        Task {
+                                            if let album = try? await store.core?.release(releaseId: track.releaseId) {
+                                                navigation.album(album)
+                                            }
+                                        }
+                                    } label: {
+                                        Text(track.title)
+                                            .font(.title2.weight(.semibold))
+                                            .underline(isTrackLinkHovered)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .onHover { isTrackLinkHovered = $0 }
+                                    .trackContextMenu(track: track, onPlay: {
+                                        Task { await store.play(trackID: track.id) }
+                                    })
+                                    .accessibilityHint("Abrir página do álbum")
+
+                                    Button {
+                                        Task {
+                                            if let artist = try? await store.core?.artist(artistId: track.artistId) {
+                                                navigation.artist(artist)
+                                            }
+                                        }
+                                    } label: {
+                                        Text(track.artist)
+                                            .font(.headline)
+                                            .underline(isArtistLinkHovered)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .onHover { isArtistLinkHovered = $0 }
+                                    .accessibilityHint("Abrir página do artista")
+                                    .contextMenu {
+                                        Button("Abrir artista", systemImage: "music.mic") {
+                                            Task {
+                                                if let artist = try? await store.core?.artist(artistId: track.artistId) {
+                                                    navigation.artist(artist)
+                                                }
+                                            }
+                                        }
+                                        Button("Copiar nome do artista", systemImage: "doc.on.doc") {
+                                            NSPasteboard.general.clearContents()
+                                            NSPasteboard.general.setString(track.artist, forType: .string)
+                                        }
+                                    }
+                                }
+                                .padding(.leading, 2)
+                                Spacer(minLength: 8)
+
+                                Button {
+                                    Task {
+                                        await store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+                                    }
+                                } label: {
+                                    Image(systemName: track.isFavorite ? "star.fill" : "star")
+                                        .foregroundStyle(track.isFavorite ? Color.accentColor : .secondary)
+                                        .frame(width: 28, height: 28)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .help(track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa")
+                                .accessibilityLabel(track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa")
+                                .accessibilityIdentifier("queue.details.favorite")
+                            }
+                        }
+
+                        QueueArtistCard(
+                            artistID: track.artistId,
+                            artistName: track.artist,
+                            width: max(0, geometry.size.width - 20)
+                        )
                     }
-
-                    Divider()
-
-                    LabeledContent("Duração", value: durationText(track.durationSeconds))
-                    LabeledContent("Faixa", value: String(track.trackNumber))
-                    LabeledContent("Reproduções", value: String(track.playCount))
+                    .padding(10)
+                    .padding(.top, topInset + Self.pickerHeight + Self.contentTopSpacing - 10)
                 }
-                .padding(16)
-                .padding(.top, Self.pickerHeight)
             }
         } else {
             ContentUnavailableView(
                 "Nenhuma faixa em reprodução",
                 systemImage: "music.note"
             )
+            .padding(.top, topInset + Self.pickerHeight + Self.contentTopSpacing)
         }
     }
 
@@ -189,18 +343,15 @@ struct QueueView: View {
     private var lyricsPanel: some View {
         if let track = store.playback?.currentTrack {
             LyricsView(track: track, usesFixedPopoverSize: false)
-                .padding(.top, Self.pickerHeight)
+                // LyricsView already includes 18 pt of internal padding.
+                .padding(.top, topInset + Self.pickerHeight + Self.contentTopSpacing - 18)
         } else {
             ContentUnavailableView(
                 "Nenhuma faixa em reprodução",
                 systemImage: "quote.bubble"
             )
+            .padding(.top, topInset + Self.pickerHeight + Self.contentTopSpacing)
         }
-    }
-
-    private func durationText(_ duration: Double) -> String {
-        let seconds = max(0, Int(duration.rounded()))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     private var tableRows: [QueueTableRow] {

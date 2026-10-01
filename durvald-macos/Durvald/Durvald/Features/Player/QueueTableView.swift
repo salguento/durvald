@@ -22,6 +22,7 @@ struct QueueTableView: NSViewRepresentable {
     let onTogglePlayback: () -> Void
     let onRemove: (UInt64) -> Void
     let onInfo: (Int64) -> Void
+    let onClear: () -> Void
     let configureMenu: (TrackMenuController, Int64) -> Bool
 
     func makeCoordinator() -> Coordinator {
@@ -122,6 +123,18 @@ struct QueueTableView: NSViewRepresentable {
             rows.count
         }
 
+        @objc private func clearQueue(_ sender: NSButton) {
+            parent.onClear()
+        }
+
+        func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+            if rows[row].isCurrent { return 70 }
+            if row == rows.firstIndex(where: { !$0.isCurrent }) {
+                return row > 0 ? 80 : 70
+            }
+            return 46
+        }
+
         func tableView(
             _ tableView: NSTableView,
             viewFor tableColumn: NSTableColumn?,
@@ -140,9 +153,18 @@ struct QueueTableView: NSViewRepresentable {
                 cell = QueueTableCellView(identifier: Self.cellIdentifier)
                 cell.playButton.target = self
                 cell.playButton.action = #selector(playQueueItem(_:))
+                cell.clearButton.target = self
+                cell.clearButton.action = #selector(clearQueue(_:))
             }
 
             cell.titleLabel.stringValue = value.title
+            let isFirstUpcoming = row == rows.firstIndex(where: { !$0.isCurrent })
+            cell.clearButton.isHidden = !isFirstUpcoming
+            cell.configureSectionHeader(
+                value.isCurrent ? "Tocando agora" : (isFirstUpcoming ? "Próximo na fila" : nil),
+                topSpacing: isFirstUpcoming && row > 0 ? 14 : 4,
+                accessibilityIdentifier: value.isCurrent ? "queue.nowPlaying" : "queue.upNext"
+            )
             cell.artistLabel.stringValue = value.artist
             cell.artistLabel.isHidden = value.artist.isEmpty
             cell.loadArtwork(value.artworkID, using: parent.core)
@@ -411,6 +433,10 @@ private final class QueueTableCellView: NSTableCellView {
     )
 
     let artworkImageView = NSImageView()
+    let clearButton = NSButton(title: "Limpar", target: nil, action: nil)
+    private let nowPlayingLabel = NSTextField(labelWithString: "Tocando agora")
+    private var artworkTopConstraint: NSLayoutConstraint!
+    private var sectionHeaderTopConstraint: NSLayoutConstraint!
     let titleLabel = NSTextField(labelWithString: "")
     let artistLabel = NSTextField(labelWithString: "")
     let playButton = NSButton(
@@ -422,6 +448,19 @@ private final class QueueTableCellView: NSTableCellView {
     init(identifier: NSUserInterfaceItemIdentifier) {
         super.init(frame: .zero)
         self.identifier = identifier
+
+        clearButton.translatesAutoresizingMaskIntoConstraints = false
+        clearButton.isBordered = false
+        clearButton.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        clearButton.contentTintColor = .secondaryLabelColor
+        clearButton.isHidden = true
+        clearButton.setAccessibilityIdentifier("queue.clear")
+
+        nowPlayingLabel.translatesAutoresizingMaskIntoConstraints = false
+        nowPlayingLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)
+        nowPlayingLabel.textColor = .secondaryLabelColor
+        nowPlayingLabel.isHidden = true
+        nowPlayingLabel.setAccessibilityIdentifier("queue.nowPlaying")
 
         artworkImageView.translatesAutoresizingMaskIntoConstraints = false
         artworkImageView.imageScaling = .scaleProportionallyUpOrDown
@@ -462,22 +501,41 @@ private final class QueueTableCellView: NSTableCellView {
         playButton.setAccessibilityLabel("Reproduzir item da fila")
 
         addSubview(artworkImageView)
+        addSubview(nowPlayingLabel)
+        addSubview(clearButton)
         addSubview(textStack)
         addSubview(playButton)
 
+        artworkTopConstraint = artworkImageView.topAnchor.constraint(equalTo: topAnchor, constant: 5)
+        sectionHeaderTopConstraint = nowPlayingLabel.topAnchor.constraint(equalTo: topAnchor, constant: 4)
         NSLayoutConstraint.activate([
+            nowPlayingLabel.leadingAnchor.constraint(equalTo: artworkImageView.leadingAnchor),
+            sectionHeaderTopConstraint,
+            nowPlayingLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
+            nowPlayingLabel.heightAnchor.constraint(equalToConstant: 16),
+            clearButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            clearButton.centerYAnchor.constraint(equalTo: nowPlayingLabel.centerYAnchor),
+            nowPlayingLabel.trailingAnchor.constraint(lessThanOrEqualTo: clearButton.leadingAnchor, constant: -8),
             artworkImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            artworkImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            artworkTopConstraint,
             artworkImageView.widthAnchor.constraint(equalToConstant: 36),
             artworkImageView.heightAnchor.constraint(equalToConstant: 36),
             textStack.leadingAnchor.constraint(equalTo: artworkImageView.trailingAnchor, constant: 8),
             textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
-            textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            textStack.centerYAnchor.constraint(equalTo: artworkImageView.centerYAnchor),
             playButton.centerXAnchor.constraint(equalTo: artworkImageView.centerXAnchor),
             playButton.centerYAnchor.constraint(equalTo: artworkImageView.centerYAnchor),
             playButton.widthAnchor.constraint(equalTo: artworkImageView.widthAnchor),
             playButton.heightAnchor.constraint(equalTo: artworkImageView.heightAnchor),
         ])
+    }
+
+    func configureSectionHeader(_ title: String?, topSpacing: CGFloat, accessibilityIdentifier: String) {
+        nowPlayingLabel.isHidden = title == nil
+        nowPlayingLabel.stringValue = title ?? ""
+        nowPlayingLabel.setAccessibilityIdentifier(accessibilityIdentifier)
+        sectionHeaderTopConstraint.constant = topSpacing
+        artworkTopConstraint.constant = title == nil ? 5 : topSpacing + 24
     }
 
     private var isPointerInside = false

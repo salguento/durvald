@@ -101,7 +101,11 @@ struct ContentView: View {
         }
         .overlay(alignment: .trailing) {
             if shell.isQueuePresented {
-                QueueView()
+                GeometryReader { geometry in
+                    QueueView(topInset: geometry.safeAreaInsets.top)
+                        .background(.ultraThinMaterial)
+                        .ignoresSafeArea(edges: .top)
+                }
                     .frame(width: Layout.queueIdealWidth)
                     .frame(maxHeight: .infinity)
                     .background(.ultraThinMaterial)

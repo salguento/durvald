@@ -21,6 +21,7 @@ struct ArtistView: View {
     }
 
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("followedArtistIDs") private var followedArtistIDs = ""
@@ -31,6 +32,7 @@ struct ArtistView: View {
     let onSelectExternalRelease: (ExternalReleaseGroup) -> Void
     var onSelectArtist: ((Artist) -> Void)? = nil
     var trailingScrollableOverflow: CGFloat = 0
+    var informationOnly = false
 
     @State private var tracks: [Track] = []
     @State private var albums: [Release] = []
@@ -91,6 +93,26 @@ struct ArtistView: View {
     }
 
     var body: some View {
+        if informationOnly {
+            Group {
+                if let identity {
+                    identityInformationPopover(identity)
+                } else {
+                    ContentUnavailableView("Informações do artista indisponíveis", systemImage: "person.crop.rectangle")
+                }
+            }
+            .task(id: artist.id) {
+                albums = await store.releases(forArtistID: artist.id)
+                details = await store.artistDetails(artistId: artist.id, language: Locale.current.language.languageCode?.identifier ?? "en")
+                identity = await store.artistIdentity(artistId: artist.id)
+            }
+            .sheet(isPresented: $isIdentityPickerPresented) { identityPicker }
+        } else {
+            artistPage
+        }
+    }
+
+    private var artistPage: some View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -355,11 +377,13 @@ struct ArtistView: View {
                         title: "Nascimento",
                         value: artistBirthInformation
                     )
-                    artistInformationColumn(
-                        title: "Gêneros",
-                        value: artistGenresInformation
-                    )
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                artistInformationColumn(
+                    title: "Gêneros",
+                    value: artistGenresInformation
+                )
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -470,7 +494,8 @@ struct ArtistView: View {
         .preferredColorScheme(.dark)
         .overlay(alignment: .topTrailing) {
             Button {
-                isIdentityPopoverPresented = false
+                if informationOnly { dismiss() }
+                else { isIdentityPopoverPresented = false }
             } label: {
                 Image(systemName: "xmark")
                     .frame(width: 28, height: 28)
@@ -1701,10 +1726,9 @@ struct ArtistView: View {
 
             if identity != nil {
                 Button {
-                    let windowHeight = NSApp.mainWindow?.contentLayoutRect.height
-                        ?? NSApp.keyWindow?.contentLayoutRect.height
-                        ?? 628
-                    identitySheetHeight = max(320, windowHeight - 128)
+                    let window = NSApp.keyWindow ?? NSApp.mainWindow
+                    let windowHeight = window?.contentView?.bounds.height ?? 628
+                    identitySheetHeight = max(1, windowHeight - 64 - 64)
                     isIdentityPopoverPresented = true
                 } label: {
                     Image(systemName: "info.circle")
