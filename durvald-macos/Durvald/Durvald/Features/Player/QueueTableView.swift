@@ -16,6 +16,7 @@ struct QueueTableView: NSViewRepresentable {
     let rows: [QueueTableRow]
     let core: DurvaldCore?
     let isWindowActive: Bool
+    let topContentInset: CGFloat
     let onMove: (UInt64, UInt64) -> Void
     let onPlay: (UInt64) -> Void
     let onTogglePlayback: () -> Void
@@ -36,7 +37,10 @@ struct QueueTableView: NSViewRepresentable {
         tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         tableView.autoresizingMask = [.width]
         tableView.headerView = nil
+        tableView.style = .fullWidth
         tableView.rowHeight = 46
+        tableView.intercellSpacing = .zero
+        tableView.gridStyleMask = []
         tableView.backgroundColor = .clear
         tableView.usesAlternatingRowBackgroundColors = false
         tableView.selectionHighlightStyle = .regular
@@ -67,13 +71,25 @@ struct QueueTableView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
         scrollView.verticalScroller?.knobStyle = .default
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(
+            top: topContentInset,
+            left: 0,
+            bottom: 0,
+            right: 0
+        )
         scrollView.documentView = tableView
         scrollView.borderType = .noBorder
+        scrollView.contentView.scroll(
+            to: NSPoint(x: 0, y: -topContentInset)
+        )
+        scrollView.reflectScrolledClipView(scrollView.contentView)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
+        scrollView.contentInsets.top = topContentInset
 
         let requiresReload = context.coordinator.rows != rows
             || context.coordinator.isWindowActive != isWindowActive
@@ -450,12 +466,12 @@ private final class QueueTableCellView: NSTableCellView {
         addSubview(playButton)
 
         NSLayoutConstraint.activate([
-            artworkImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 5),
+            artworkImageView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             artworkImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
             artworkImageView.widthAnchor.constraint(equalToConstant: 36),
             artworkImageView.heightAnchor.constraint(equalToConstant: 36),
             textStack.leadingAnchor.constraint(equalTo: artworkImageView.trailingAnchor, constant: 8),
-            textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            textStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
             textStack.centerYAnchor.constraint(equalTo: centerYAnchor),
             playButton.centerXAnchor.constraint(equalTo: artworkImageView.centerXAnchor),
             playButton.centerYAnchor.constraint(equalTo: artworkImageView.centerYAnchor),

@@ -105,9 +105,6 @@ struct ContentView: View {
                     .frame(width: Layout.queueIdealWidth)
                     .frame(maxHeight: .infinity)
                     .background(.ultraThinMaterial)
-                    .overlay(alignment: .leading) {
-                        Divider()
-                    }
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }

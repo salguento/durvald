@@ -4,6 +4,7 @@ struct LyricsView: View {
     @Environment(DurvaldCoreStore.self) private var store
 
     let track: Track
+    var usesFixedPopoverSize = true
 
     @State private var lyrics: String?
     @State private var isLoading = true
@@ -47,7 +48,11 @@ struct LyricsView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(18)
-        .frame(width: 420, height: 480)
+        .frame(
+            width: usesFixedPopoverSize ? 420 : nil,
+            height: usesFixedPopoverSize ? 480 : nil
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: track.id) {
             await loadLyrics()
         }

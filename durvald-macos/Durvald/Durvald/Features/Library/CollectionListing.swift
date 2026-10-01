@@ -178,12 +178,36 @@ struct CollectionListingMenu: View {
     var controlSize: CGFloat = 32
     var controlWidth: CGFloat? = nil
     var usesGlassEffect = true
-    @State private var isPresented = false
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
 
     var body: some View {
-        Button {
-            isPresented.toggle()
+        Menu {
+            Picker("Ordenar", selection: $order) {
+                ForEach(CollectionListingOrder.allCases.filter { ratingsEnabled || $0 != .rating }) { option in
+                    Text(option.title)
+                        .tag(option)
+                }
+            }
+
+            if ratingsEnabled, let minimumRating {
+                Divider()
+
+                Picker("Nota mínima", selection: minimumRating) {
+                    Text("Todas").tag(0)
+                    ForEach(1...5, id: \.self) { value in
+                        Text("\(value)+ estrelas").tag(value)
+                    }
+                }
+            }
+
+            Divider()
+
+            Picker("Visualização", selection: $mode) {
+                ForEach(CollectionListingMode.allCases) { option in
+                    Label(option.title, systemImage: option.icon)
+                        .tag(option)
+                }
+            }
         } label: {
             ZStack {
                 Color.clear
@@ -192,85 +216,12 @@ struct CollectionListingMenu: View {
             .frame(width: controlWidth ?? controlSize, height: controlSize)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .frame(width: controlWidth ?? controlSize, height: controlSize)
         .contentShape(Capsule())
         .modifier(CollectionListingGlassEffect(enabled: usesGlassEffect))
-        .popover(isPresented: $isPresented, arrowEdge: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Ordenar")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                ForEach(CollectionListingOrder.allCases.filter { ratingsEnabled || $0 != .rating }) { option in
-                    Button {
-                        order = option
-                        isPresented = false
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(option.title)
-                            Spacer(minLength: 16)
-                            Image(systemName: "checkmark")
-                                .opacity(order == option ? 1 : 0)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                if ratingsEnabled, let minimumRating {
-                    Divider()
-                    Text("Nota mínima")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Picker("Nota mínima", selection: minimumRating) {
-                        Text("Todas").tag(0)
-                        ForEach(1...5, id: \.self) { value in
-                            Text("\(value)+ estrelas").tag(value)
-                        }
-                    }
-                    .labelsHidden()
-                }
-
-                Divider()
-
-                Text("Visualização")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 0) {
-                    ForEach(CollectionListingMode.allCases) { option in
-                        Button {
-                            mode = option
-                            isPresented = false
-                        } label: {
-                            Image(systemName: option.icon)
-                                .frame(maxWidth: .infinity, minHeight: 26)
-                                .foregroundStyle(
-                                    mode == option
-                                        ? Color(nsColor: .selectedMenuItemTextColor)
-                                        : Color.primary
-                                )
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity)
-                        .background {
-                            if mode == option {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.accentColor)
-                            }
-                        }
-                        .help(option.title)
-                        .accessibilityLabel(option.title)
-                        .accessibilityAddTraits(mode == option ? .isSelected : [])
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .padding(12)
-            .frame(width: 238)
-        }
         .help("Organizar listagem")
         .accessibilityLabel("Organizar listagem")
         .accessibilityValue("\(order.title), \(mode.title)")

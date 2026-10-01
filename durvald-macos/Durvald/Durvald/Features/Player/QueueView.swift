@@ -1,43 +1,70 @@
 import SwiftUI
 
 struct QueueView: View {
+    private enum Panel: String, CaseIterable, Identifiable {
+        case details = "Detalhes"
+        case queue = "Fila"
+        case lyrics = "Letra"
+
+        var id: Self { self }
+    }
+
+    private static let pickerHeight: CGFloat = 52
+    private static let headerHeight: CGFloat = 50
+    private static let listTopInset: CGFloat = pickerHeight + headerHeight + 8
+
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(TrackInfoCoordinator.self) private var trackInfo
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(\.trackMenuNavigation) private var navigation
     @State private var menuTracks: [Int64: Track] = [:]
+    @State private var selectedPanel: Panel = .queue
     @Environment(\.appearsActive) private var appearsActive
 
     var body: some View {
-        // The native inspector owns the glass surface. A legacy sidebar material
-        // or another glass layer here would obscure or double that surface.
-        VStack(spacing: 0) {
-            HStack {
-                Text("Fila")
-                    .font(.headline)
-
-                Spacer()
-
-                Button("Limpar") {
-                    Task {
-                        await store.clearQueue()
-                    }
+        ZStack(alignment: .top) {
+            Group {
+                switch selectedPanel {
+                case .details:
+                    detailsPanel
+                case .queue:
+                    queuePanel
+                case .lyrics:
+                    lyricsPanel
                 }
-                .disabled(store.queue.count <= 1)
-                .accessibilityIdentifier("queue.clear")
             }
-            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Divider()
+            VStack(spacing: 0) {
+                panelPicker
 
-            // Size the AppKit viewport from the available space, not its document's
-            // fitting size. The queue scrolls instead of raising the window minimum
-            // during SwiftUI's size negotiation or a live resize.
-            GeometryReader { geometry in
-                QueueTableView(
+                if selectedPanel == .queue {
+                    queueHeader
+                }
+            }
+            .background(.ultraThinMaterial)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("queue.sidebar")
+        .task(id: store.queue.map(\.trackId)) {
+            for item in store.queue where menuTracks[item.trackId] == nil {
+                guard !Task.isCancelled else { return }
+                menuTracks[item.trackId] = try? await store.core?.track(trackId: item.trackId)
+            }
+        }
+    }
+
+    private var queuePanel: some View {
+        // Size the AppKit viewport from the available space, not its document's
+        // fitting size. The queue scrolls instead of raising the window minimum
+        // during SwiftUI's size negotiation or a live resize.
+        GeometryReader { geometry in
+            QueueTableView(
                     rows: tableRows,
                     core: store.core,
                     isWindowActive: appearsActive,
+                    topContentInset: Self.listTopInset,
                     onMove: { from, to in
                         store.moveQueueItem(from: from, to: to)
                     },
@@ -66,20 +93,114 @@ struct QueueView: View {
                             navigation: navigation)
                         return true
                     }
-                )
-                .frame(width: geometry.size.width, height: geometry.size.height)
-            }
-            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+            )
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("queue.sidebar")
-        .task(id: store.queue.map(\.trackId)) {
-            for item in store.queue where menuTracks[item.trackId] == nil {
-                guard !Task.isCancelled else { return }
-                menuTracks[item.trackId] = try? await store.core?.track(trackId: item.trackId)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+    }
+
+    private var panelPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(Panel.allCases) { panel in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selectedPanel = panel
+                    }
+                } label: {
+                    Text(panel.rawValue)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background {
+                            if selectedPanel == panel {
+                                Capsule()
+                                    .fill(.white.opacity(0.08))
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selectedPanel == panel ? .isSelected : [])
             }
         }
+        .padding(3)
+        .frame(maxWidth: .infinity)
+        .glassEffect(.clear.interactive(), in: .capsule)
+        .padding(.horizontal, 8)
+        .frame(height: Self.pickerHeight)
+    }
+
+    private var queueHeader: some View {
+        HStack {
+            Text("Fila")
+                .font(.headline)
+
+            Spacer()
+
+            Button("Limpar") {
+                Task {
+                    await store.clearQueue()
+                }
+            }
+            .disabled(store.queue.count <= 1)
+            .accessibilityIdentifier("queue.clear")
+        }
+        .padding(.horizontal, 8)
+        .frame(height: Self.headerHeight)
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+    }
+
+    @ViewBuilder
+    private var detailsPanel: some View {
+        if let track = store.playback?.currentTrack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    ArtworkView(artworkID: track.artworkId, size: 220)
+                        .frame(maxWidth: .infinity)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(track.title)
+                            .font(.title2.weight(.semibold))
+                        Text(track.artist)
+                            .font(.headline)
+                            .foregroundStyle(.secondary)
+                        Text(track.release)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
+                    LabeledContent("Duração", value: durationText(track.durationSeconds))
+                    LabeledContent("Faixa", value: String(track.trackNumber))
+                    LabeledContent("Reproduções", value: String(track.playCount))
+                }
+                .padding(16)
+                .padding(.top, Self.pickerHeight)
+            }
+        } else {
+            ContentUnavailableView(
+                "Nenhuma faixa em reprodução",
+                systemImage: "music.note"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var lyricsPanel: some View {
+        if let track = store.playback?.currentTrack {
+            LyricsView(track: track, usesFixedPopoverSize: false)
+                .padding(.top, Self.pickerHeight)
+        } else {
+            ContentUnavailableView(
+                "Nenhuma faixa em reprodução",
+                systemImage: "quote.bubble"
+            )
+        }
+    }
+
+    private func durationText(_ duration: Double) -> String {
+        let seconds = max(0, Int(duration.rounded()))
+        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     private var tableRows: [QueueTableRow] {
