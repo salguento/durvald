@@ -191,6 +191,12 @@ struct TrackInfoSheet: View {
                 .clipShape(RoundedRectangle(cornerRadius: 4))
                 .padding(4)
                 .background(accent, in: RoundedRectangle(cornerRadius: 5))
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    guard !isSaving else { return }
+                    isChoosingArtwork = true
+                }
+                .help("Clique duas vezes para alterar a imagem.")
             VStack(alignment: .leading, spacing: 3) {
                 Text(draft?.title ?? info?.track.title ?? "Info da faixa")
                     .font(.title3).lineLimit(2)
