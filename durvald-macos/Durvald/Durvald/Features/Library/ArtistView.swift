@@ -1387,8 +1387,11 @@ struct ArtistView: View {
             size: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 2
         )
         let contentWidth = max(0, width + trailingScrollableOverflow)
-        let initialVisibleWidth = max(0, contentWidth - 48)
-        let highlightBlockWidth = max(360, (initialVisibleWidth - 24) / 2)
+        // Size from the visible content column; overflow beneath the side panel
+        // only extends the scrollable area and must not enlarge these blocks.
+        let initialVisibleWidth = max(0, width - 48)
+        let latestReleaseBlockWidth = min(420, max(360, initialVisibleWidth * 0.40))
+        let popularColumnWidth = min(440, max(360, initialVisibleWidth * 0.45))
         let ranking = ArtistPresentationPolicy.popularRanking(
             lastFm: popularTracks,
             localTracks: mostPlayedLocalTracks
@@ -1458,7 +1461,7 @@ struct ArtistView: View {
                         .foregroundStyle(.secondary)
                 }
                 }
-                .frame(width: highlightBlockWidth, alignment: .leading)
+                .frame(width: latestReleaseBlockWidth, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 16) {
                     Text(ranking.title)
@@ -1504,7 +1507,7 @@ struct ArtistView: View {
                                     }
                                 }
                                 .frame(
-                                    width: highlightBlockWidth,
+                                    width: popularColumnWidth,
                                     height: highlightArtworkSize,
                                     alignment: .topLeading
                                 )
@@ -1527,7 +1530,7 @@ struct ArtistView: View {
                                     }
                                 }
                                 .frame(
-                                    width: highlightBlockWidth,
+                                    width: popularColumnWidth,
                                     height: highlightArtworkSize,
                                     alignment: .topLeading
                                 )
@@ -1537,7 +1540,7 @@ struct ArtistView: View {
                         }
                     }
                 }
-                .frame(minWidth: highlightBlockWidth, alignment: .leading)
+                .frame(minWidth: popularColumnWidth, alignment: .leading)
             }
         }
         .scrollIndicators(.hidden)
