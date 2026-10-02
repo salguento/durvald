@@ -269,7 +269,7 @@ struct MusicLibraryView: View {
     private func showInfo(for track: Track) {
         let ids = selectedTrackIDs.contains(track.id) ? selectedTrackIDs : [track.id]
         guard ids.count > 1 else {
-            trackInfo.open(trackID: track.id)
+            trackInfo.open(trackID: track.id, navigationTrackIDs: presentation.displayedTracks.map(\.id))
             return
         }
         guard !skipBatchInfoConfirmation else {

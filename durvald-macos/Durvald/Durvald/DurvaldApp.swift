@@ -54,18 +54,26 @@ struct DurvaldApp: App {
             AppCommands(store: coreStore)
         }
         Window("Info da faixa", id: "track-info") {
-            if trackInfo.trackIDs.count > 1 {
-                BatchMetadataSheet(trackIDs: trackInfo.trackIDs)
-                    .id(trackInfo.trackIDs)
-                    .environment(coreStore)
-            } else if let trackID = trackInfo.trackID {
-                TrackInfoSheet(trackID: trackID)
-                    .id(trackID)
-                    .environment(coreStore)
+            Group {
+                if trackInfo.trackIDs.count > 1 {
+                    BatchMetadataSheet(trackIDs: trackInfo.trackIDs)
+                        .id(trackInfo.trackIDs)
+                        .environment(coreStore)
+                } else if let trackID = trackInfo.trackID {
+                    TrackInfoSheet(
+                        trackID: trackID,
+                        navigationTrackIDs: trackInfo.navigationTrackIDs.isEmpty
+                            ? coreStore.tracks.map(\.id) : trackInfo.navigationTrackIDs,
+                        onSelectTrack: { trackInfo.trackIDs = [$0] }
+                    )
+                        .id(trackID)
+                        .environment(coreStore)
+                }
             }
+            .background(MetadataWindowBounds(referenceWindow: trackInfo.referenceWindow))
         }
-        .defaultSize(width: 560, height: 690)
-        .windowResizability(.contentSize)
+        .defaultSize(width: 680, height: 780)
+        .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
         .windowBackgroundDragBehavior(.enabled)
         Window("Opções de visualização", id: "music-view-options") {

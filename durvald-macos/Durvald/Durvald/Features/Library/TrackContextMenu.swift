@@ -547,7 +547,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         onAddToPlaylist = { playlist in
             for track in tracks { store.addTrack(track.id, to: playlist) }
         }
-        onInfo = infoAction ?? { trackInfo.open(trackID: track.id) }
+        onInfo = infoAction ?? { trackInfo.open(trackID: track.id, navigationTrackIDs: store.tracks.map(\.id)) }
         self.additionalActions = additionalActions
         rebuildRootMenu()
         rebuildPlaylistItems()

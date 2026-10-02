@@ -193,7 +193,8 @@ struct BatchMetadataSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 620, height: 760)
+        .frame(minWidth: 620, idealWidth: 680, maxWidth: .infinity,
+               minHeight: 520, idealHeight: 760, maxHeight: .infinity)
         .background(WindowTrafficLightsHider())
         .interactiveDismissDisabled(isWorking)
         .task { await load() }

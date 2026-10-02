@@ -1,7 +1,9 @@
+import Foundation
 @testable import Durvald
 
 final class FakeDurvaldCore: DurvaldCore {
     var snapshot: PlaybackSnapshot
+    var trackInfoResult: TrackInfo?
     var releaseTrackResults: [Track] = []
     var discographyPages: [UInt64: ArtistDiscographyPage] = [:]
     private(set) var discographyOffsets: [UInt64] = []
@@ -35,6 +37,11 @@ final class FakeDurvaldCore: DurvaldCore {
 
     required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
         fatalError("FakeDurvaldCore não aceita ponteiros do backend Rust")
+    }
+
+    override func trackInfo(trackId: Int64) async throws -> TrackInfo {
+        guard let trackInfoResult else { throw NSError(domain: "FakeDurvaldCore.trackInfo", code: 1) }
+        return trackInfoResult
     }
 
     override func refreshArtist(artistId: Int64, request: ArtistRefreshRequest) async throws -> ArtistRefreshResult {
