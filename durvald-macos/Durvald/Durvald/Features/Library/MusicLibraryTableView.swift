@@ -167,8 +167,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
         scrollView.contentView.drawsBackground = false
         scrollView.contentView.wantsLayer = true
         scrollView.contentView.layer?.masksToBounds = true
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        scrollView.automaticallyAdjustsContentInsets = true
         coordinator.scrollView = scrollView
         background.onGeometryReady = { [weak coordinator] in
             coordinator?.restoreScrollPositionIfNeeded()
@@ -720,6 +719,15 @@ struct MusicLibraryTableView: NSViewRepresentable {
             parent.onLayoutChange(MusicLibraryColumnLayout())
         }
 
+        private func topScrollOrigin(in scrollView: NSScrollView) -> CGFloat {
+            var bounds = scrollView.contentView.bounds
+            // Insets can place the toolbar and table header over the clip view.
+            // Ask AppKit for the actual top instead of assuming it is zero.
+            bounds.origin.y = -max(0, scrollView.contentInsets.top)
+                - (tableView?.headerView?.frame.height ?? 0)
+            return scrollView.contentView.constrainBoundsRect(bounds).minY
+        }
+
         func restoreScrollPositionIfNeeded() {
             guard parent.isPresented, !didRestoreScroll, !isRestoringScroll, !rows.isEmpty,
                   let scrollView, scrollView.window != nil,
@@ -727,7 +735,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
             let offset = parent.savedScrollOffset.wrappedValue
             let clipView = scrollView.contentView
             var desiredBounds = clipView.bounds
-            desiredBounds.origin.y = offset.isFinite ? max(0, offset) : 0
+            desiredBounds.origin.y = topScrollOrigin(in: scrollView) + (offset.isFinite ? max(0, offset) : 0)
             let target = clipView.constrainBoundsRect(desiredBounds).origin
             // The common first visit is already at the top. No queued work or
             // scrolling is needed, and AppKit owns the normal layout pass.
@@ -751,7 +759,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
                 // AppKit's layout; never force an extra subtree layout or tile.
                 let clipView = scrollView.contentView
                 var bounds = clipView.bounds
-                bounds.origin.y = offset.isFinite ? max(0, offset) : 0
+                bounds.origin.y = self.topScrollOrigin(in: scrollView) + (offset.isFinite ? max(0, offset) : 0)
                 let point = clipView.constrainBoundsRect(bounds).origin
                 if abs(clipView.bounds.origin.y - point.y) > 0.5 {
                     clipView.scroll(to: point)
@@ -776,7 +784,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
                     return
                 }
                 guard self.didRestoreScroll, let scrollView = self.scrollView else { return }
-                let offset = max(0, scrollView.contentView.bounds.minY)
+                let offset = max(0, scrollView.contentView.bounds.minY - self.topScrollOrigin(in: scrollView))
                 if abs(self.parent.savedScrollOffset.wrappedValue - offset) > 0.5 {
                     self.parent.savedScrollOffset.wrappedValue = offset
                 }
