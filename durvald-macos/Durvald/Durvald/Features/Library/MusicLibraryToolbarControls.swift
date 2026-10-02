@@ -3,8 +3,6 @@ import SwiftUI
 
 struct MusicLibraryToolbarControls: View {
     @Binding var searchText: String
-    @State private var isSearchFocused = false
-    @State private var searchFocusRequest = -1
     @Environment(\.openWindow) private var openWindow
     @AppStorage("library.music.onlyFavorites") private var onlyFavorites = false
     @AppStorage("library.music.sort") private var sort: MusicLibrarySort = .title
@@ -13,7 +11,7 @@ struct MusicLibraryToolbarControls: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            musicSearchField
+            LibraryToolbarSearchField(searchText: $searchText, placeholder: "Pesquisar músicas", identifier: "library.search")
             viewOptionsMenu
         }
     }
@@ -62,7 +60,16 @@ struct MusicLibraryToolbarControls: View {
         .accessibilityIdentifier("library.viewOptions")
     }
 
-    private var musicSearchField: some View {
+}
+
+struct LibraryToolbarSearchField: View {
+    @Binding var searchText: String
+    let placeholder: String
+    let identifier: String
+    @State private var isSearchFocused = false
+    @State private var searchFocusRequest = -1
+
+    var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
@@ -71,9 +78,9 @@ struct MusicLibraryToolbarControls: View {
                 isFocused: $isSearchFocused,
                 isPresented: true,
                 focusRequest: searchFocusRequest,
-                placeholder: "Pesquisar músicas",
-                accessibilityLabel: "Pesquisar músicas",
-                accessibilityIdentifier: "library.search.field"
+                placeholder: placeholder,
+                accessibilityLabel: placeholder,
+                accessibilityIdentifier: "\(identifier).field"
             )
             if !searchText.isEmpty {
                 Button {
@@ -84,7 +91,7 @@ struct MusicLibraryToolbarControls: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Limpar pesquisa")
-                .accessibilityIdentifier("library.search.clear")
+                .accessibilityIdentifier("\(identifier).clear")
             }
         }
         .padding(.horizontal, 12)
@@ -101,7 +108,7 @@ struct MusicLibraryToolbarControls: View {
         .simultaneousGesture(TapGesture().onEnded {
             if !isSearchFocused { searchFocusRequest += 1 }
         })
-        .accessibilityIdentifier("library.search.container")
+        .accessibilityIdentifier("\(identifier).container")
     }
 
 }

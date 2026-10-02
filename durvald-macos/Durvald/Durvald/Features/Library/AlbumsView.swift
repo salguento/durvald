@@ -61,6 +61,7 @@ enum AlbumsViewLayout {
 }
 
 struct AlbumsView: View {
+    @Binding var searchText: String
     @AppStorage("albums.listingMode") private var listingMode: CollectionListingMode = .standardGrid
     @AppStorage("albums.listingOrder") private var listingOrder: CollectionListingOrder = .recent
     @AppStorage("albums.minimumRating") private var minimumRating = 0
@@ -68,7 +69,13 @@ struct AlbumsView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @State private var lastPlayedByRelease: [Int64: String] = [:]
 
+    @State private var completeReleases: [Release]?
+    @State private var completeTracks: [Track] = []
+    @State private var fileSizes: [String: Int64] = [:]
+    @State private var isLoadingCatalog = true
+
     let onSelectAlbum: (Release) -> Void
+    var onSummaryChange: (String) -> Void = { _ in }
 
     var body: some View {
         CollectionListingLayout(
@@ -85,6 +92,17 @@ struct AlbumsView: View {
                 .task { await store.loadMoreReleases(ifNeededAfter: release.id) }
             }
         }
+        .overlay {
+            if !normalizedSearchText.isEmpty && isLoadingCatalog {
+                ProgressView("Pesquisando…")
+            } else if !normalizedSearchText.isEmpty && orderedReleases.isEmpty {
+                ContentUnavailableView("Nenhum álbum encontrado", systemImage: "magnifyingglass")
+            }
+        }
+        .onChange(of: searchText) { _, _ in publishSummary() }
+        .task(id: "\(store.metadataRevision):\(store.core != nil):\(minimumRating):\(ratingsEnabled)") {
+            await refreshSummary()
+        }
         .task(id: orderingTaskID) {
             guard listingOrder == .recent, let core = store.core else { return }
             lastPlayedByRelease = (try? await core.releasePlaybackRecency())?.reduce(into: [:]) {
@@ -93,11 +111,78 @@ struct AlbumsView: View {
         }
     }
 
+    private func refreshSummary() async {
+        isLoadingCatalog = true
+        defer { if !Task.isCancelled { isLoadingCatalog = false } }
+        var releases = store.releases
+        var tracks = store.tracks
+        if let core = store.core {
+            do {
+                releases = []
+                var offset: UInt64 = 0
+                while !Task.isCancelled {
+                    let page = try await core.releasesPage(pageSize: 1_000, offset: offset)
+                    releases.append(contentsOf: page.items)
+                    guard let nextOffset = page.nextOffset, nextOffset > offset else { break }
+                    offset = nextOffset
+                }
+                if !store.hasLoadedAllTracks {
+                    tracks = []
+                    offset = 0
+                    while !Task.isCancelled {
+                        let page = try await core.tracksPage(pageSize: 1_000, offset: offset)
+                        tracks.append(contentsOf: page.items)
+                        guard let nextOffset = page.nextOffset, nextOffset > offset else { break }
+                        offset = nextOffset
+                    }
+                }
+            } catch {
+                return
+            }
+        }
+        guard !Task.isCancelled else { return }
+        let sizes = await MusicLibraryFileSizes.read(Array(Set(tracks.map(\.filePath))))
+        guard !Task.isCancelled else { return }
+        completeReleases = releases
+        completeTracks = tracks
+        fileSizes = sizes
+        publishSummary()
+    }
+
+    private func publishSummary() {
+        let releaseIDs = Set(filteredReleases.map(\.id))
+        let tracks = completeTracks.filter { releaseIDs.contains($0.releaseId) }
+        let summary = MusicLibrarySummary(tracks: tracks, kind: .all, fileSizes: fileSizes)
+        let hours = summary.durationSeconds / 3600
+        let minutes = (summary.durationSeconds / 60) % 60
+        let duration = hours > 0
+            ? "\(hours) \(hours == 1 ? "hora" : "horas"), \(minutes) \(minutes == 1 ? "minuto" : "minutos")"
+            : "\(minutes) \(minutes == 1 ? "minuto" : "minutos")"
+        let size = summary.totalBytes.map {
+            ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
+        } ?? "—"
+        let count = releaseIDs.count
+        let prefix = normalizedSearchText.isEmpty ? "" : "Resultados para “\(normalizedSearchText)” • "
+        onSummaryChange("\(prefix)\(count.formatted()) \(count == 1 ? "item" : "itens"), \(duration), \(size)")
+    }
+
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var filteredReleases: [Release] {
+        let updated = Dictionary(store.releases.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+        let query = normalizedSearchText
+        return (completeReleases ?? store.releases).map { updated[$0.id] ?? $0 }.filter {
+            (!ratingsEnabled || minimumRating == 0 || Int($0.rating ?? 0) >= minimumRating)
+                && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query)
+                    || $0.artist.localizedCaseInsensitiveContains(query))
+        }
+    }
+
     private var orderedReleases: [Release] {
         CollectionListingSorter.albums(
-            store.releases.filter {
-                !ratingsEnabled || minimumRating == 0 || Int($0.rating ?? 0) >= minimumRating
-            },
+            filteredReleases,
             order: ratingsEnabled || listingOrder != .rating ? listingOrder : .recent,
             lastPlayedByRelease: lastPlayedByRelease
         )

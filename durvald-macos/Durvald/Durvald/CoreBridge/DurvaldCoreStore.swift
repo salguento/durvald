@@ -29,7 +29,10 @@ final class DurvaldCoreStore {
     private(set) var scanProgress: ScanProgress?
     private(set) var isScanningLibrary = false
     private(set) var lastScanResult: ScanResult?
-    private(set) var tracks: [Track] = []
+    private(set) var tracksRevision: UInt64 = 0
+    private(set) var tracks: [Track] = [] {
+        didSet { tracksRevision &+= 1 }
+    }
     private(set) var hasLoadedAllTracks = false
     private(set) var releases: [Release] = []
     private(set) var artists: [Artist] = []

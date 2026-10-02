@@ -26,6 +26,10 @@ struct ContentView: View {
     @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
     @AppStorage("albums.minimumRating") private var albumMinimumRating = 0
 
+    @State private var albumSearchText = ""
+    @State private var albumsSummary = "Carregando…"
+    @State private var musicEntryID: Int?
+    @State private var musicPresentation = MusicLibraryPresentation()
     @State private var musicSearchText = ""
     @State private var musicLibrarySummary = MusicLibrarySummary(tracks: [], kind: .all)
     @State private var isTopbarHovered = false
@@ -207,9 +211,29 @@ struct ContentView: View {
     }
 
     private var contentColumn: some View {
-        detail
-            .environment(\.libraryScrollOffset, currentPageScrollOffset)
-            .id(shell.navigationHistory.currentEntryID)
+        ZStack {
+            if let entryID = musicEntryID {
+                MusicLibraryView(
+                    searchText: $musicSearchText, presentation: musicPresentation,
+                    isPresented: shell.navigationHistory.current == .songs,
+                    navigationEntryID: entryID
+                ) { summary in
+                    musicLibrarySummary = summary
+                }
+                .environment(\.libraryScrollOffset, pageScrollOffset(for: entryID))
+                .opacity(shell.navigationHistory.current == .songs ? 1 : 0)
+                .allowsHitTesting(shell.navigationHistory.current == .songs)
+                .accessibilityHidden(shell.navigationHistory.current != .songs)
+            }
+            if shell.navigationHistory.current != .songs {
+                detail
+                    .environment(\.libraryScrollOffset, currentPageScrollOffset)
+                    .id(shell.navigationHistory.currentEntryID)
+            }
+        }
+            .onChange(of: shell.navigationHistory.currentEntryID, initial: true) { _, entryID in
+                if shell.navigationHistory.current == .songs { musicEntryID = entryID }
+            }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.trailing, shell.isQueuePresented ? Layout.queueIdealWidth : 0)
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -303,14 +327,23 @@ struct ContentView: View {
                     MusicLibraryToolbarControls(searchText: $musicSearchText)
                 } else if case .section(let destination) = shell.navigationHistory.currentRoute,
                           destination == .albums || destination == .artists || destination == .playlists {
-                    CollectionListingMenu(
-                        mode: listingModeBinding(for: destination),
-                        order: listingOrderBinding(for: destination),
-                        minimumRating: destination == .albums ? $albumMinimumRating : nil,
-                        controlSize: 36,
-                        controlWidth: 38
-                    )
-                        .accessibilityIdentifier("\(destination.rawValue).listingMode")
+                    HStack(spacing: 12) {
+                        if destination == .albums {
+                            LibraryToolbarSearchField(
+                                searchText: $albumSearchText,
+                                placeholder: "Pesquisar álbuns",
+                                identifier: "albums.search"
+                            )
+                        }
+                        CollectionListingMenu(
+                            mode: listingModeBinding(for: destination),
+                            order: listingOrderBinding(for: destination),
+                            minimumRating: destination == .albums ? $albumMinimumRating : nil,
+                            controlSize: 36,
+                            controlWidth: 38
+                        )
+                            .accessibilityIdentifier("\(destination.rawValue).listingMode")
+                    }
                 }
                 queueToggleButton
             }
@@ -346,6 +379,23 @@ struct ContentView: View {
 
         ToolbarItem(placement: .navigation) {
             backForwardButtons
+        }
+        if shell.navigationHistory.current == .albums {
+            ToolbarItem(placement: .navigation) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Álbuns")
+                        .font(.headline)
+                    Text(albumsSummary)
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: 480, alignment: .leading)
+                .help(albumsSummary)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("albums.summary")
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
         if shell.navigationHistory.current == .songs {
             ToolbarItem(placement: .navigation) {
@@ -461,8 +511,11 @@ struct ContentView: View {
     }
 
     private var currentPageScrollOffset: Binding<CGFloat> {
-        let entryID = shell.navigationHistory.currentEntryID
-        return Binding(
+        pageScrollOffset(for: shell.navigationHistory.currentEntryID)
+    }
+
+    private func pageScrollOffset(for entryID: Int) -> Binding<CGFloat> {
+        Binding(
             get: { pageScrollOffsets.offset(for: entryID) },
             set: {
                 pageScrollOffsets.setOffset($0, for: entryID)
@@ -548,11 +601,12 @@ struct ContentView: View {
                 shell.navigationHistory.navigate(to: destination)
             }
         case .songs:
-            MusicLibraryView(searchText: $musicSearchText) { summary in
-                musicLibrarySummary = summary
-            }
+            // The music page lives in contentColumn with a stable identity.
+            Color.clear
         case .albums:
-            AlbumsView(onSelectAlbum: showAlbum)
+            AlbumsView(searchText: $albumSearchText, onSelectAlbum: showAlbum) { summary in
+                albumsSummary = summary
+            }
         case .artists:
             ArtistsView(onSelectArtist: showArtist)
         case .playlists:

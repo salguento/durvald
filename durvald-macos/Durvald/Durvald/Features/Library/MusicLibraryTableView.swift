@@ -86,16 +86,21 @@ struct MusicLibraryTableView: NSViewRepresentable {
     let artworkSize: Double
     let groupArtwork: Bool
     let activeTrackID: Int64?
+    var isPresented = true
+    var scrollRestorationID = 0
+    var tracksRevision: UInt64? = nil
     let onLayoutChange: (MusicLibraryColumnLayout) -> Void
     let onPlay: (Track) -> Void
     let onLoadMore: (Int64) -> Void
+    var onFavoriteChange: (Track, Bool) -> Void = { _, _ in }
+    var onRatingChange: (Track, UInt8?) -> Void = { _, _ in }
     let configureMenu: (TrackMenuController, Track) -> Void
     let cellContent: (Track, MusicLibraryColumn) -> AnyView
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     func makeNSView(context: Context) -> NSVisualEffectView {
-        let background = NSVisualEffectView()
+        let background = MusicLibraryBackgroundView()
         background.wantsLayer = true
         background.layer?.masksToBounds = true
         background.material = .contentBackground
@@ -165,6 +170,9 @@ struct MusicLibraryTableView: NSViewRepresentable {
         scrollView.automaticallyAdjustsContentInsets = false
         scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         coordinator.scrollView = scrollView
+        background.onGeometryReady = { [weak coordinator] in
+            coordinator?.restoreScrollPositionIfNeeded()
+        }
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         background.addSubview(scrollView)
         NSLayoutConstraint.activate([
@@ -178,13 +186,16 @@ struct MusicLibraryTableView: NSViewRepresentable {
             coordinator, selector: #selector(Coordinator.clipBoundsChanged(_:)),
             name: NSView.boundsDidChangeNotification, object: scrollView.contentView
         )
-        coordinator.updateRows()
-        coordinator.restoreScrollPositionIfNeeded()
+        if coordinator.updatePresentation(background) {
+            coordinator.updateRows()
+            coordinator.restoreScrollPositionIfNeeded()
+        }
         return background
     }
 
     func updateNSView(_ background: NSVisualEffectView, context: Context) {
         context.coordinator.parent = self
+        guard context.coordinator.updatePresentation(background) else { return }
         context.coordinator.applyLayout()
         context.coordinator.updateRows()
         context.coordinator.restoreScrollPositionIfNeeded()
@@ -197,6 +208,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
 
     static func dismantleNSView(_ background: NSVisualEffectView, coordinator: Coordinator) {
         NotificationCenter.default.removeObserver(coordinator)
+        (background as? MusicLibraryBackgroundView)?.onGeometryReady = nil
         coordinator.scrollView?.documentView = nil
     }
 
@@ -205,7 +217,9 @@ struct MusicLibraryTableView: NSViewRepresentable {
         var parent: MusicLibraryTableView
         weak var tableView: NSTableView?
         weak var scrollView: NSScrollView?
+        private var appliedTracksRevision: UInt64?
         private var rows: [Track] = []
+        private var rowIndexByID: [Int64: Int] = [:]
         private var activeTrackID: Int64?
         private var appliedSelection = Set<Int64>()
         private var appliedLayout: MusicLibraryColumnLayout?
@@ -221,6 +235,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
         private var groupedHeightActive = false
         private var appliedRowHeight: CGFloat?
         private var isUpdating = false
+        private var appliedScrollRestorationID: Int?
         private var didRestoreScroll = false
         private var isRestoringScroll = false
         private var pendingScrollUpdate = false
@@ -236,6 +251,24 @@ struct MusicLibraryTableView: NSViewRepresentable {
             trackMenu.autoenablesItems = false
             headerMenu.delegate = self
             headerMenu.autoenablesItems = false
+        }
+
+        /// Hiding preserves the native hierarchy without updating offscreen rows.
+        func updatePresentation(_ background: NSVisualEffectView) -> Bool {
+            background.isHidden = !parent.isPresented
+            guard parent.isPresented else {
+                if let responder = background.window?.firstResponder as? NSView,
+                   responder === background || responder.isDescendant(of: background) {
+                    background.window?.makeFirstResponder(nil)
+                }
+                return false
+            }
+            if appliedScrollRestorationID != parent.scrollRestorationID {
+                appliedScrollRestorationID = parent.scrollRestorationID
+                didRestoreScroll = false
+                isRestoringScroll = false
+            }
+            return true
         }
 
         func applyLayout() {
@@ -290,42 +323,59 @@ struct MusicLibraryTableView: NSViewRepresentable {
             guard let tableView else { return }
             isUpdating = true
             defer { isUpdating = false }
-            if rows != parent.tracks || activeTrackID != parent.activeTrackID
-                || groupHeightSize != parent.artworkSize
-                || groupedHeightActive != (parent.groupArtwork && !parent.layout.hidden.contains(.artwork))
-                || (groupViews.isEmpty && parent.groupArtwork && !parent.layout.hidden.contains(.artwork))
-                || (!groupViews.isEmpty && (!parent.groupArtwork || parent.layout.hidden.contains(.artwork))) {
+            let grouped = parent.groupArtwork && !parent.layout.hidden.contains(.artwork)
+            let dataChanged = parent.tracksRevision.map { $0 != appliedTracksRevision } ?? (rows != parent.tracks)
+            let structureChanged = (dataChanged && (rows.count != parent.tracks.count
+                || zip(rows, parent.tracks).contains { $0.id != $1.id }))
+                || groupedHeightActive != grouped
+                || (grouped && groupHeightSize != parent.artworkSize)
+                || (dataChanged && grouped && zip(rows, parent.tracks).contains { $0.releaseId != $1.releaseId })
+            var changedRows = IndexSet()
+            if structureChanged {
                 rows = parent.tracks
-                activeTrackID = parent.activeTrackID
                 prefetchedVisibleTrackIDs.removeAll()
-                groupViews.forEach { $0.removeFromSuperview() }
-                groupViews.removeAll()
                 rebuildAlbumGroups()
                 albumGroupsNeedLayout = true
-                groupHeightSize = nil
                 tableView.reloadData()
+            } else if dataChanged {
+                for (old, new) in zip(rows, parent.tracks) where old != new {
+                    if let index = rowIndexByID[new.id] {
+                        changedRows.insert(index)
+                        displayRows[index] = new
+                    }
+                    if grouped { albumGroupsNeedLayout = true }
+                }
+                rows = parent.tracks
+            }
+            appliedTracksRevision = parent.tracksRevision
+            if activeTrackID != parent.activeTrackID {
+                for id in [activeTrackID, parent.activeTrackID].compactMap({ $0 }) {
+                    if let index = rowIndexByID[id] { changedRows.insert(index) }
+                }
+                activeTrackID = parent.activeTrackID
             }
             let changedSelection = appliedSelection.symmetricDifference(parent.selection)
-            if !changedSelection.isEmpty {
-                let changedRows = IndexSet(displayRows.indices.filter { displayRows[$0].map { changedSelection.contains($0.id) } ?? false })
-                tableView.reloadData(forRowIndexes: changedRows, columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns))
+            for id in changedSelection {
+                if let index = rowIndexByID[id] { changedRows.insert(index) }
+            }
+            if !structureChanged, !changedRows.isEmpty {
+                tableView.reloadData(forRowIndexes: changedRows,
+                                     columnIndexes: IndexSet(integersIn: 0..<tableView.numberOfColumns))
+            }
+            if structureChanged || appliedSelection != parent.selection {
+                let indices = IndexSet(parent.selection.compactMap { rowIndexByID[$0] })
+                if indices != tableView.selectedRowIndexes {
+                    tableView.selectRowIndexes(indices, byExtendingSelection: false)
+                }
             }
             appliedSelection = parent.selection
-            let indices = IndexSet(displayRows.indices.filter { displayRows[$0].map { parent.selection.contains($0.id) } ?? false })
-            if indices != tableView.selectedRowIndexes {
-                tableView.selectRowIndexes(indices, byExtendingSelection: false)
-            }
-            let grouped = parent.groupArtwork && !parent.layout.hidden.contains(.artwork)
-            if groupHeightSize != parent.artworkSize || groupedHeightActive != grouped
-                || appliedRowHeight != tableView.rowHeight || albumGroupsNeedLayout {
-                groupHeightSize = parent.artworkSize
-                groupedHeightActive = grouped
+            if structureChanged || appliedRowHeight != tableView.rowHeight {
                 appliedRowHeight = tableView.rowHeight
-                tableView.noteHeightOfRows(withIndexesChanged: IndexSet(integersIn: displayRows.indices))
                 tableView.sizeToFit()
                 scrollView?.tile()
-                tableView.layoutSubtreeIfNeeded()
             }
+            groupHeightSize = parent.artworkSize
+            groupedHeightActive = grouped
             updateAlbumGroupViews()
             prefetchVisibleTracks()
         }
@@ -333,14 +383,24 @@ struct MusicLibraryTableView: NSViewRepresentable {
         private func rebuildAlbumGroups() {
             albumGroups = []
             displayRows = []
+            rowIndexByID = [:]
             let grouped = parent.groupArtwork && !parent.layout.hidden.contains(.artwork)
+            if !grouped {
+                displayRows = rows.map { Optional($0) }
+                rowIndexByID = Dictionary(rows.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+                (tableView as? MusicLibraryNativeTableView)?.nonselectableRows = []
+                return
+            }
             let minimumRows = Int(ceil(max(parent.artworkSize + 16, 72) / 32))
             var start = 0
             while start < rows.count {
                 var end = start + 1
                 while end < rows.count && rows[end].releaseId == rows[start].releaseId { end += 1 }
                 let displayStart = displayRows.count
-                displayRows.append(contentsOf: rows[start..<end].map { Optional($0) })
+                for index in start..<end {
+                    rowIndexByID[rows[index].id] = displayRows.count
+                    displayRows.append(rows[index])
+                }
                 if grouped {
                     displayRows.append(contentsOf: Array(repeating: nil, count: max(0, minimumRows - (end - start))))
                 }
@@ -448,6 +508,14 @@ struct MusicLibraryTableView: NSViewRepresentable {
                   let value = MusicLibraryColumn(rawValue: tableColumn.identifier.rawValue) else { return nil }
             if value == .artwork && parent.groupArtwork { return NSView() }
             let identifier = NSUserInterfaceItemIdentifier("music.cell.\(value.rawValue)")
+            if value == .favorite || value == .rating {
+                let cell = (tableView.makeView(withIdentifier: identifier, owner: nil) as? MusicLibraryNativeControlCell)
+                    ?? MusicLibraryNativeControlCell(identifier: identifier, kind: value == .favorite ? .favorite : .rating)
+                cell.configure(track: track, selected: parent.selection.contains(track.id),
+                               onFavoriteChange: { [weak self] favorite in self?.parent.onFavoriteChange(track, favorite) },
+                               onRatingChange: { [weak self] rating in self?.parent.onRatingChange(track, rating) })
+                return cell
+            }
             if value == .title {
                 let cell = (tableView.makeView(withIdentifier: identifier, owner: nil) as? MusicLibraryTitleCell)
                     ?? MusicLibraryTitleCell(identifier: identifier)
@@ -653,34 +721,56 @@ struct MusicLibraryTableView: NSViewRepresentable {
         }
 
         func restoreScrollPositionIfNeeded() {
-            guard !didRestoreScroll, !isRestoringScroll, !rows.isEmpty else { return }
-            isRestoringScroll = true
+            guard parent.isPresented, !didRestoreScroll, !isRestoringScroll, !rows.isEmpty,
+                  let scrollView, scrollView.window != nil,
+                  scrollView.contentView.bounds.height > 0 else { return }
             let offset = parent.savedScrollOffset.wrappedValue
+            let clipView = scrollView.contentView
+            var desiredBounds = clipView.bounds
+            desiredBounds.origin.y = offset.isFinite ? max(0, offset) : 0
+            let target = clipView.constrainBoundsRect(desiredBounds).origin
+            // The common first visit is already at the top. No queued work or
+            // scrolling is needed, and AppKit owns the normal layout pass.
+            if abs(clipView.bounds.origin.y - target.y) <= 0.5 {
+                didRestoreScroll = true
+                updateAlbumGroupViews()
+                prefetchVisibleTracks()
+                return
+            }
+            isRestoringScroll = true
+            let entryID = parent.scrollRestorationID
             DispatchQueue.main.async { [weak self] in
-                guard let self, let scrollView = self.scrollView else { return }
-                scrollView.superview?.layoutSubtreeIfNeeded()
-                scrollView.tile()
-                guard scrollView.window != nil, scrollView.contentView.bounds.height > 0 else {
-                    self.isRestoringScroll = false
+                guard let self else { return }
+                guard self.parent.isPresented, self.parent.scrollRestorationID == entryID,
+                      let scrollView = self.scrollView, scrollView.window != nil,
+                      scrollView.contentView.bounds.height > 0 else {
+                    if self.parent.scrollRestorationID == entryID { self.isRestoringScroll = false }
                     return
                 }
-                var point = scrollView.contentView.bounds.origin
-                point.y = offset
-                scrollView.contentView.scroll(to: point)
-                if offset == 0 { self.tableView?.scrollRowToVisible(0) }
-                scrollView.reflectScrolledClipView(scrollView.contentView)
+                // Recompute the constraint with the current geometry after
+                // AppKit's layout; never force an extra subtree layout or tile.
+                let clipView = scrollView.contentView
+                var bounds = clipView.bounds
+                bounds.origin.y = offset.isFinite ? max(0, offset) : 0
+                let point = clipView.constrainBoundsRect(bounds).origin
+                if abs(clipView.bounds.origin.y - point.y) > 0.5 {
+                    clipView.scroll(to: point)
+                    scrollView.reflectScrolledClipView(clipView)
+                }
                 self.didRestoreScroll = true
                 self.isRestoringScroll = false
+                self.updateAlbumGroupViews()
                 self.prefetchVisibleTracks()
             }
         }
 
         @objc func clipBoundsChanged(_ notification: Notification) {
-            guard !pendingScrollUpdate else { return }
+            guard parent.isPresented, !pendingScrollUpdate else { return }
             pendingScrollUpdate = true
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.pendingScrollUpdate = false
+                guard self.parent.isPresented else { return }
                 if !self.didRestoreScroll {
                     self.restoreScrollPositionIfNeeded()
                     return
@@ -696,7 +786,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
         }
 
         private func prefetchVisibleTracks() {
-            guard let tableView else { return }
+            guard parent.isPresented, let tableView else { return }
             let range = tableView.rows(in: tableView.visibleRect)
             guard range.location != NSNotFound, range.length > 0 else { return }
             let lastRow = min(range.location + range.length - 1, displayRows.count - 1)
@@ -783,7 +873,7 @@ private final class MusicLibraryHeaderCell: NSTableHeaderCell {
     }
 }
 
-private final class MusicLibraryRowView: NSTableRowView {
+private final class MusicLibraryRowView: NSTableRowView, MusicLibraryRowHoverProviding {
     private var hoverTrackingArea: NSTrackingArea?
     private(set) var isHovered = false
 
@@ -811,9 +901,13 @@ private final class MusicLibraryRowView: NSTableRowView {
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
         (subview as? MusicLibraryHostedCell)?.updateHoverVisibility()
+        (subview as? MusicLibraryNativeControlCell)?.updateHoverVisibility()
     }
 
     private func updateHoverControls() {
+        for cell in subviews.compactMap({ $0 as? MusicLibraryNativeControlCell }) {
+            cell.updateHoverVisibility()
+        }
         for cell in subviews.compactMap({ $0 as? MusicLibraryHostedCell }) {
             cell.updateHoverVisibility()
         }
@@ -931,4 +1025,20 @@ private final class MusicLibraryTitleCell: NSTableCellView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+/// Wait for AppKit's normal layout/window attachment rather than forcing a
+/// second layout pass just to restore a scroll position.
+private final class MusicLibraryBackgroundView: NSVisualEffectView {
+    var onGeometryReady: (() -> Void)?
+
+    override func layout() {
+        super.layout()
+        onGeometryReady?()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onGeometryReady?()
+    }
 }

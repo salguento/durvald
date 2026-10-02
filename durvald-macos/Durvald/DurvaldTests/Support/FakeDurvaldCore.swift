@@ -10,6 +10,7 @@ final class FakeDurvaldCore: DurvaldCore {
     var playlistResultsByID: [Int64: [Track]] = [:]
     var playlistTrackResults: [Track] = []
     private(set) var playlistAdditions: [(trackID: Int64, position: UInt64)] = []
+    var trackRatingError: Error?
     var favoriteError: Error?
     private(set) var favoriteChanges: [Bool] = []
     private(set) var trackRatingChanges: [UInt8?] = []
@@ -64,6 +65,7 @@ final class FakeDurvaldCore: DurvaldCore {
     }
 
     override func setTrackRating(trackId: Int64, rating: UInt8?) async throws {
+        if let trackRatingError { throw trackRatingError }
         trackRatingChanges.append(rating)
         if snapshot.currentTrack?.id == trackId {
             snapshot.currentTrack?.rating = rating
