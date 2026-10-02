@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private final class LibraryScrollOffsetStore {
@@ -31,6 +32,10 @@ struct ContentView: View {
     @State private var musicEntryID: Int?
     @State private var musicPresentation = MusicLibraryPresentation()
     @State private var musicSearchText = ""
+    @State private var contentColumnWidth: CGFloat = 0
+    @State private var libraryToolbarAvailableWidth: CGFloat?
+    @State private var librarySummaryLeadingInset: CGFloat = 8
+    @State private var isLibrarySearchExpanded = false
     @State private var musicLibrarySummary = MusicLibrarySummary(tracks: [], kind: .all)
     @State private var isTopbarHovered = false
     @State private var isPageScrolled = false
@@ -53,6 +58,7 @@ struct ContentView: View {
         static let queueMinimumWidth: CGFloat = 260
         static let queueIdealWidth: CGFloat = 300
         static let queueMaximumWidth: CGFloat = 380
+        static let queueToggleWidth: CGFloat = 38
         static let playerHorizontalMargin: CGFloat = 32
         static let playerTopMargin: CGFloat = 12
     }
@@ -112,10 +118,10 @@ struct ContentView: View {
                         .background(.ultraThinMaterial)
                         .ignoresSafeArea(edges: .top)
                 }
-                    .frame(width: Layout.queueIdealWidth)
-                    .frame(maxHeight: .infinity)
-                    .background(.ultraThinMaterial)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                .frame(width: Layout.queueIdealWidth)
+                .frame(maxHeight: .infinity)
+                .background(.ultraThinMaterial)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .frame(
@@ -235,6 +241,7 @@ struct ContentView: View {
                 if shell.navigationHistory.current == .songs { musicEntryID = entryID }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentColumnWidth = $0 }
             .padding(.trailing, shell.isQueuePresented ? Layout.queueIdealWidth : 0)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
@@ -248,6 +255,9 @@ struct ContentView: View {
             // macOS owns the backdrop and its transition as content scrolls
             // behind the controls, including when the side panels resize.
             .toolbar { contentToolbar }
+            .onChange(of: shell.navigationHistory.currentRoute) { _, _ in
+                isLibrarySearchExpanded = false
+            }
             .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
     }
 
@@ -255,8 +265,8 @@ struct ContentView: View {
     private var contentToolbar: some ToolbarContent {
         navigationToolbar
 
-        ToolbarItem(placement: .principal) {
-            if shell.navigationHistory.current == .search {
+        if shell.navigationHistory.current == .search {
+            ToolbarItem(id: "global-search", placement: .principal) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(.secondary)
@@ -303,53 +313,131 @@ struct ContentView: View {
                         .animation(.easeOut(duration: 0.15), value: appearsActive)
                 }
                 .animation(.easeOut(duration: 0.15), value: appearsActive)
-                // The right panel overlays 300 pt of the content column, so
-                // its remaining center moves left by half the panel width.
                 .offset(x: shell.isQueuePresented ? -Layout.queueIdealWidth / 2 : 0)
-                .animation(Layout.panelAnimation, value: shell.isQueuePresented)
-            } else {
-                Color.clear
-                    .frame(width: 1, height: 36)
-                    .accessibilityHidden(true)
             }
+            .sharedBackgroundVisibility(.hidden)
         }
-        .sharedBackgroundVisibility(.hidden)
 
         ToolbarSpacer(.flexible)
 
-        ToolbarItem(placement: .automatic) {
-            // Both controls share a trailing anchor. Opening the queue moves
-            // the listing control past the overlaid panel while the queue
-            // toggle stays at the window edge.
-            HStack(spacing: shell.isQueuePresented ? Layout.queueIdealWidth - 36 : 16) {
-                if case .section(let destination) = shell.navigationHistory.currentRoute,
-                   destination == .songs {
-                    MusicLibraryToolbarControls(searchText: $musicSearchText)
-                } else if case .section(let destination) = shell.navigationHistory.currentRoute,
-                          destination == .albums || destination == .artists || destination == .playlists {
-                    HStack(spacing: 12) {
-                        if destination == .albums {
-                            LibraryToolbarSearchField(
-                                searchText: $albumSearchText,
-                                placeholder: "Pesquisar álbuns",
-                                identifier: "albums.search"
-                            )
-                        }
-                        CollectionListingMenu(
-                            mode: listingModeBinding(for: destination),
-                            order: listingOrderBinding(for: destination),
-                            minimumRating: destination == .albums ? $albumMinimumRating : nil,
-                            controlSize: 36,
-                            controlWidth: 38
-                        )
-                            .accessibilityIdentifier("\(destination.rawValue).listingMode")
-                    }
-                }
-                queueToggleButton
+        if !hasLibrarySearch,
+           case .section(let destination) = shell.navigationHistory.currentRoute,
+                  destination == .artists || destination == .playlists {
+            ToolbarItem(id: "\(destination.rawValue)-view-options", placement: .automatic) {
+                collectionOptions(for: destination)
             }
-            .animation(Layout.panelAnimation, value: shell.isQueuePresented)
+            .sharedBackgroundVisibility(.hidden)
+            if shell.isQueuePresented {
+                ToolbarItem(id: "queue-toolbar-space", placement: .automatic) {
+                    Color.clear
+                        .frame(width: Layout.queueIdealWidth - Layout.queueToggleWidth - 32, height: 1)
+                        .accessibilityHidden(true)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+        }
+        ToolbarSpacer(.fixed)
+        ToolbarItem(id: "queue-toggle", placement: .automatic) {
+            queueToggleButton
         }
         .sharedBackgroundVisibility(.hidden)
+        .visibilityPriority(.high)
+    }
+
+    private var hasLibrarySearch: Bool {
+        guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
+        return destination == .albums || destination == .songs
+    }
+
+    private var shouldCollapseLibrarySearch: Bool {
+        let summary = shell.navigationHistory.current == .songs ? musicLibrarySummary.text : albumsSummary
+        let textWidth = min(480, (summary as NSString).size(withAttributes: [
+            .font: NSFont.preferredFont(forTextStyle: .caption1)
+        ]).width)
+        let navigationWidth: CGFloat = shell.columnVisibility == .detailOnly ? 280 : 76
+        let panelReservation = shell.isQueuePresented ? Layout.queueIdealWidth - Layout.queueToggleWidth - 16 : 0
+        let availableWidth = libraryToolbarAvailableWidth.map { $0 - panelReservation }
+            ?? (contentColumnWidth - navigationWidth - 48
+                - (shell.isQueuePresented ? 0 : Layout.queueToggleWidth + 16))
+        return availableWidth < textWidth + 220 + 44
+    }
+
+    private var libraryContentToolbar: some View {
+        let navigationWidth: CGFloat = shell.columnVisibility == .detailOnly ? 280 : 76
+        let detailWidth = contentColumnWidth + (shell.isQueuePresented ? Layout.queueIdealWidth : 0)
+        let hostWidth = max(80, libraryToolbarAvailableWidth
+                            ?? (detailWidth - navigationWidth - Layout.queueToggleWidth - 48))
+        let panelReservation = shell.isQueuePresented ? Layout.queueIdealWidth - Layout.queueToggleWidth - 16 : 0
+        let controlsReservation: CGFloat = (shouldCollapseLibrarySearch ? 36 : 220) + 44
+
+        return ZStack(alignment: .trailing) {
+            libraryToolbarSummary
+                .padding(.leading, librarySummaryLeadingInset)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, controlsReservation + panelReservation)
+                .opacity(shouldCollapseLibrarySearch && isLibrarySearchExpanded ? 0 : 1)
+                .accessibilityHidden(shouldCollapseLibrarySearch && isLibrarySearchExpanded)
+            libraryTopbarControls
+                .padding(.trailing, panelReservation)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .frame(width: hostWidth, height: 36)
+        .background {
+            LibraryToolbarWidthObserver(
+                trailingReservation: Layout.queueToggleWidth + 24,
+                availableWidth: $libraryToolbarAvailableWidth,
+                summaryLeadingInset: $librarySummaryLeadingInset
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private var libraryToolbarSummary: some View {
+        if shell.navigationHistory.current == .songs {
+            MusicLibrarySummaryView(summary: musicLibrarySummary)
+        } else {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Álbuns").font(.headline)
+                Text(albumsSummary).font(.caption)
+            }
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .frame(maxWidth: 480, alignment: .leading)
+            .help(albumsSummary)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("albums.summary")
+        }
+    }
+
+    private var libraryTopbarControls: some View {
+        HStack(spacing: 8) {
+            LibraryToolbarSearchField(
+                searchText: shell.navigationHistory.current == .songs ? $musicSearchText : $albumSearchText,
+                placeholder: shell.navigationHistory.current == .songs ? "Pesquisar músicas" : "Pesquisar álbuns",
+                identifier: shell.navigationHistory.current == .songs ? "library.search" : "albums.search",
+                prefersCompact: shouldCollapseLibrarySearch,
+                isExpanded: $isLibrarySearchExpanded
+            )
+            if shell.navigationHistory.current == .songs {
+                MusicLibraryViewOptionsMenu().glassEffect(.regular, in: .circle)
+            } else {
+                collectionOptions(for: .albums)
+            }
+        }
+        .fixedSize()
+        .id(shell.navigationHistory.current)
+    }
+
+    private func collectionOptions(for destination: LibraryDestination) -> some View {
+        CollectionListingMenu(
+            mode: listingModeBinding(for: destination),
+            order: listingOrderBinding(for: destination),
+            minimumRating: destination == .albums ? $albumMinimumRating : nil,
+            controlSize: 36, controlWidth: 36, usesGlassEffect: true
+        )
+        .accessibilityIdentifier("\(destination.rawValue).listingMode")
     }
 
     private func listingModeBinding(for destination: LibraryDestination) -> Binding<CollectionListingMode> {
@@ -374,13 +462,23 @@ struct ContentView: View {
             ToolbarItem(placement: .navigation) {
                 sidebarToolbarButtons
             }
-            ToolbarSpacer(.fixed, placement: .navigation)
         }
+
+        ToolbarSpacer(.fixed, placement: .navigation)
 
         ToolbarItem(placement: .navigation) {
             backForwardButtons
         }
-        if shell.navigationHistory.current == .albums {
+        if hasLibrarySearch {
+            ToolbarSpacer(.fixed, placement: .navigation)
+            // Keep the summary's leading edge adjacent to the navigation
+            // buttons. The flexible trailing spacer must come after this item.
+            ToolbarItem(id: "library-content-controls", placement: .navigation) {
+                libraryContentToolbar
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        if shell.navigationHistory.current == .albums && !hasLibrarySearch {
             ToolbarItem(placement: .navigation) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Álbuns")
@@ -394,15 +492,11 @@ struct ContentView: View {
                 .help(albumsSummary)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("albums.summary")
+                .opacity(shouldCollapseLibrarySearch && isLibrarySearchExpanded ? 0 : 1)
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        if shell.navigationHistory.current == .songs {
-            ToolbarItem(placement: .navigation) {
-                MusicLibrarySummaryView(summary: musicLibrarySummary)
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
+
     }
 
     private var queueToggleButton: some View {
@@ -414,11 +508,11 @@ struct ContentView: View {
                 .scaledToFit()
                 .frame(width: Layout.panelToggleIconWidth, height: Layout.panelToggleIconHeight)
                 .foregroundStyle(appearsActive ? Color.primary : Color.secondary)
-                .frame(width: 38, height: 36)
+                .frame(width: Layout.queueToggleWidth, height: 36)
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .frame(width: 38, height: 36)
+        .frame(width: Layout.queueToggleWidth, height: 36)
         .glassEffect(.regular.interactive(), in: .capsule)
         .help(shell.isQueuePresented ? "Ocultar fila" : "Mostrar fila")
         .accessibilityHint("Mostra ou oculta a fila lateral de reprodução")
@@ -614,6 +708,98 @@ struct ContentView: View {
         case .history:
             HistoryView()
         }
+    }
+}
+
+private struct LibraryToolbarWidthObserver: NSViewRepresentable {
+    let trailingReservation: CGFloat
+    @Binding var availableWidth: CGFloat?
+    @Binding var summaryLeadingInset: CGFloat
+
+    func makeNSView(context: Context) -> WidthObserverView { WidthObserverView() }
+
+    func updateNSView(_ view: WidthObserverView, context: Context) {
+        view.trailingReservation = trailingReservation
+        view.publish = { width, leadingInset in
+            if abs((availableWidth ?? -1) - width) > 0.5 { availableWidth = width }
+            if abs(summaryLeadingInset - leadingInset) > 0.5 { summaryLeadingInset = leadingInset }
+        }
+        view.scheduleMeasurement()
+    }
+
+    final class WidthObserverView: NSView {
+        var trailingReservation: CGFloat = 0
+        var publish: ((CGFloat, CGFloat) -> Void)?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            NotificationCenter.default.removeObserver(self)
+            if let window {
+                NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
+                    name: NSWindow.didResizeNotification, object: window)
+            }
+            scheduleMeasurement()
+        }
+
+        override func layout() {
+            super.layout()
+            scheduleMeasurement()
+        }
+
+        @objc private func windowResized() { scheduleMeasurement() }
+
+        func scheduleMeasurement() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window, bounds.width > 0 else { return }
+                // Measure the actual leading edge of the content toolbar host,
+                // including native inter-item spacing. Its trailing edge ends
+                // before the fixed queue toggle and the window's native margin.
+                let contentStart = convert(bounds, to: nil).minX
+                // The overlay's divider is positioned from the window frame,
+                // so use that same coordinate reference rather than contentView.
+                let windowWidth = window.frame.width
+                let availableWidth = max(80, windowWidth - contentStart - trailingReservation)
+                var leadingInset: CGFloat = 8
+                if let items = window.toolbar?.items,
+                   let index = items.firstIndex(where: { item in
+                       guard let view = item.view else { return false }
+                       return self.isDescendant(of: view)
+                   }) {
+                    if let host = items[index].view {
+                        // Keep AppKit's custom-item size in sync with SwiftUI's
+                        // preferred width after resize and sidebar transitions.
+                        let constraintID = "Durvald.libraryToolbar.preferredWidth"
+                        if let constraint = host.constraints.first(where: { $0.identifier == constraintID }) {
+                            if abs(constraint.constant - availableWidth) > 0.5 {
+                                constraint.constant = availableWidth
+                                host.invalidateIntrinsicContentSize()
+                            }
+                        } else {
+                            let constraint = host.widthAnchor.constraint(equalToConstant: availableWidth)
+                            constraint.identifier = constraintID
+                            constraint.priority = .defaultHigh
+                            constraint.isActive = true
+                            host.setContentCompressionResistancePriority(.required, for: .horizontal)
+                            host.invalidateIntrinsicContentSize()
+                        }
+                    }
+                    let precedingViews = items[..<index].reversed().compactMap { $0.view }
+                    if let navigationView = precedingViews.first {
+                        let navigationFrame = navigationView.convert(navigationView.bounds, to: nil)
+                        var desiredGap: CGFloat = 8
+                        if precedingViews.count > 1 {
+                            let groupView = precedingViews[1]
+                            let groupEnd = groupView.convert(groupView.bounds, to: nil).maxX
+                            desiredGap = min(16, max(8, navigationFrame.minX - groupEnd))
+                        }
+                        leadingInset = max(0, desiredGap - (contentStart - navigationFrame.maxX))
+                    }
+                }
+                publish?(availableWidth, leadingInset)
+            }
+        }
+
+        deinit { NotificationCenter.default.removeObserver(self) }
     }
 }
 

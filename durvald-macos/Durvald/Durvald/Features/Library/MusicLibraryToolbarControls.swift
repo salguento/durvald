@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
 
-struct MusicLibraryToolbarControls: View {
-    @Binding var searchText: String
+struct MusicLibraryViewOptionsMenu: View {
     @Environment(\.openWindow) private var openWindow
     @AppStorage("library.music.onlyFavorites") private var onlyFavorites = false
     @AppStorage("library.music.sort") private var sort: MusicLibrarySort = .title
@@ -10,13 +9,6 @@ struct MusicLibraryToolbarControls: View {
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
 
     var body: some View {
-        HStack(spacing: 12) {
-            LibraryToolbarSearchField(searchText: $searchText, placeholder: "Pesquisar músicas", identifier: "library.search")
-            viewOptionsMenu
-        }
-    }
-
-    private var viewOptionsMenu: some View {
         Menu {
             Picker("Mostrar", selection: $onlyFavorites) {
                 Text("Todas as músicas").tag(false)
@@ -54,7 +46,6 @@ struct MusicLibraryToolbarControls: View {
         .frame(width: 36, height: 36)
         .contentShape(Circle())
         .clipShape(Circle())
-        .glassEffect(.regular, in: .circle)
         .help("Opções de visualização")
         .accessibilityLabel("Opções de visualização")
         .accessibilityIdentifier("library.viewOptions")
@@ -63,54 +54,79 @@ struct MusicLibraryToolbarControls: View {
 }
 
 struct LibraryToolbarSearchField: View {
+    @Environment(\.appearsActive) private var appearsActive
     @Binding var searchText: String
     let placeholder: String
     let identifier: String
-    @State private var isSearchFocused = false
-    @State private var searchFocusRequest = -1
+    var prefersCompact: Bool
+    @Binding var isExpanded: Bool
+    @State private var isFocused = false
+    @State private var focusRequest = -1
+
+    private var isCollapsed: Bool { prefersCompact && !isExpanded && !isFocused }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-            ToolbarSearchTextField(
-                text: $searchText,
-                isFocused: $isSearchFocused,
-                isPresented: true,
-                focusRequest: searchFocusRequest,
-                placeholder: placeholder,
-                accessibilityLabel: placeholder,
-                accessibilityIdentifier: "\(identifier).field"
-            )
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
+        // Remove the native text field while collapsed. Opacity does not
+        // remove its AppKit field editor or its interactive area.
+        Color.clear
+            .frame(width: isCollapsed ? 36 : 220, height: 36)
+            .overlay(alignment: .trailing) {
+                if !isCollapsed {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        ToolbarSearchTextField(
+                            text: $searchText, isFocused: $isFocused,
+                            isPresented: !isCollapsed, focusRequest: focusRequest,
+                            placeholder: placeholder, accessibilityLabel: placeholder,
+                            accessibilityIdentifier: "\(identifier).field"
+                        )
+                        if !searchText.isEmpty {
+                            Button { searchText = "" } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Limpar pesquisa")
+                            .accessibilityIdentifier("\(identifier).clear")
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(width: 220, height: 36)
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                    .overlay {
+                        if isFocused && appearsActive {
+                            Capsule()
+                                .strokeBorder(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 2)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .contentShape(Capsule())
+                    .simultaneousGesture(TapGesture().onEnded {
+                        if !isFocused { focusRequest += 1 }
+                    })
+                    .accessibilityIdentifier("\(identifier).container")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Limpar pesquisa")
-                .accessibilityIdentifier("\(identifier).clear")
             }
-        }
-        .padding(.horizontal, 12)
-        .frame(minWidth: 120, idealWidth: 220, maxWidth: 220, minHeight: 36, maxHeight: 36)
-        .glassEffect(.regular.interactive(), in: .capsule)
-        .overlay {
-            if isSearchFocused {
-                Capsule()
-                    .strokeBorder(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 2)
-                    .allowsHitTesting(false)
+            .overlay {
+                if isCollapsed {
+                    Button {
+                        isExpanded = true
+                        focusRequest += 1
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(appearsActive ? Color.primary : Color.secondary)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
+                    .accessibilityLabel(placeholder)
+                    .accessibilityIdentifier("\(identifier).expand")
+                }
             }
-        }
-        .contentShape(Capsule())
-        .simultaneousGesture(TapGesture().onEnded {
-            if !isSearchFocused { searchFocusRequest += 1 }
-        })
-        .accessibilityIdentifier("\(identifier).container")
+            .onChange(of: isFocused) { _, focused in
+                if !focused { isExpanded = false }
+            }
     }
-
 }
 
 struct MusicLibraryViewOptions: View {

@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct ToolbarSearchTextField: NSViewRepresentable {
+    @Environment(\.appearsActive) private var appearsActive
     @Binding var text: String
     @Binding var isFocused: Bool
 
@@ -15,10 +16,18 @@ struct ToolbarSearchTextField: NSViewRepresentable {
         Coordinator(parent: self)
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextField, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 180, height: max(1, nsView.intrinsicContentSize.height))
+    }
+
     func makeNSView(context: Context) -> NSTextField {
         let textField = ToolbarFocusTextField()
         textField.onFocus = { [weak coordinator = context.coordinator] in
             coordinator?.parent.isFocused = true
+        }
+        textField.onWindowAttached = { [weak textField, weak coordinator = context.coordinator] in
+            guard let textField else { return }
+            coordinator?.focusPendingSearch(in: textField)
         }
         textField.delegate = context.coordinator
         textField.isBezeled = false
@@ -49,6 +58,7 @@ struct ToolbarSearchTextField: NSViewRepresentable {
 
     func updateNSView(_ textField: NSTextField, context: Context) {
         context.coordinator.parent = self
+        textField.textColor = appearsActive ? .labelColor : .secondaryLabelColor
         if textField.placeholderString != placeholder {
             textField.placeholderString = placeholder
         }
@@ -75,27 +85,11 @@ struct ToolbarSearchTextField: NSViewRepresentable {
             return
         }
 
-        context.coordinator.lastFocusRequest = focusRequest
         let coordinator = context.coordinator
         Task { @MainActor [weak textField, weak coordinator] in
             await Task.yield()
-            guard let textField, let coordinator,
-                  let window = textField.window else { return }
-
-            if textField.currentEditor() === window.firstResponder {
-                coordinator.parent.isFocused = true
-                return
-            }
-
-            if window.makeFirstResponder(textField) {
-                coordinator.parent.isFocused = true
-                let insertionPoint = (textField.stringValue as NSString).length
-                if let editor = textField.currentEditor() as? NSTextView {
-                    editor.setSelectedRange(
-                        NSRange(location: insertionPoint, length: 0)
-                    )
-                }
-            }
+            guard let textField else { return }
+            coordinator?.focusPendingSearch(in: textField)
         }
     }
 
@@ -114,6 +108,24 @@ struct ToolbarSearchTextField: NSViewRepresentable {
         deinit {
             if let focusDismissalMonitor {
                 NSEvent.removeMonitor(focusDismissalMonitor)
+            }
+        }
+
+        func focusPendingSearch(in textField: NSTextField) {
+            guard parent.isPresented,
+                  lastFocusRequest != parent.focusRequest,
+                  let window = textField.window else { return }
+
+            if textField.currentEditor() === window.firstResponder {
+                lastFocusRequest = parent.focusRequest
+                parent.isFocused = true
+            } else if window.makeFirstResponder(textField) {
+                // Consume only after the native field is attached and focused.
+                lastFocusRequest = parent.focusRequest
+                parent.isFocused = true
+                if let editor = textField.currentEditor() as? NSTextView {
+                    editor.setSelectedRange(NSRange(location: (textField.stringValue as NSString).length, length: 0))
+                }
             }
         }
 
@@ -202,6 +214,8 @@ struct ToolbarSearchTextField: NSViewRepresentable {
             let identifiers: Set<String> = [
                 "search.container",
                 "library.search.container",
+                "albums.search.container",
+                "albums.search.clear",
                 "library.search.clear",
                 "search.clear",
                 "sidebar.sectionSearch.container",
@@ -242,9 +256,8 @@ struct ToolbarSearchTextField: NSViewRepresentable {
                 return false
             }
 
-            parent.text = ""
-            control.stringValue = ""
-            parent.isFocused = true
+            control.window?.makeFirstResponder(nil)
+            parent.isFocused = false
             return true
         }
     }
@@ -252,6 +265,13 @@ struct ToolbarSearchTextField: NSViewRepresentable {
 
 private final class ToolbarFocusTextField: NSTextField {
     var onFocus: (() -> Void)?
+    var onWindowAttached: (() -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        DispatchQueue.main.async { [weak self] in self?.onWindowAttached?() }
+    }
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()

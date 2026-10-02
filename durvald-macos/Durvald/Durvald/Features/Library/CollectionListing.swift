@@ -214,13 +214,13 @@ struct CollectionListingMenu: View {
                 Image(systemName: "line.3.horizontal.decrease")
             }
             .frame(width: controlWidth ?? controlSize, height: controlSize)
-            .contentShape(Rectangle())
+            .contentShape(Capsule())
         }
-        .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
         .frame(width: controlWidth ?? controlSize, height: controlSize)
         .contentShape(Capsule())
+        .clipShape(Capsule())
         .modifier(CollectionListingGlassEffect(enabled: usesGlassEffect))
         .help("Organizar listagem")
         .accessibilityLabel("Organizar listagem")
@@ -234,9 +234,9 @@ private struct CollectionListingGlassEffect: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         if enabled {
-            content.glassEffect(.regular.interactive(), in: .capsule)
+            content.buttonStyle(.plain).glassEffect(.regular, in: .capsule)
         } else {
-            content
+            content.buttonStyle(.automatic)
         }
     }
 }
