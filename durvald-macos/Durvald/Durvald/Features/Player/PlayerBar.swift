@@ -62,7 +62,7 @@ struct PlayerBar: View {
         .padding(.top, 16)
         .padding(.bottom, 4)
         .glassEffect(
-            .regular.interactive(),
+            .regular,
             in: .rect(cornerRadius: 20)
         )
         .onGeometryChange(for: CGFloat.self) { geometry in
@@ -148,7 +148,7 @@ struct PlayerBar: View {
                     isAnimating: store.playback?.isPlaying == true,
                     action: { if let album { onSelectAlbum(album) } }
                 )
-                .font(.callout.weight(.medium))
+                .font(.headline)
                 .accessibilityIdentifier("player.trackTitle")
                 .trackContextMenu(
                     track: track,
@@ -161,7 +161,7 @@ struct PlayerBar: View {
                     isAnimating: false,
                     action: {}
                 )
-                .font(.callout.weight(.medium))
+                .font(.headline)
                 .accessibilityIdentifier("player.trackTitle")
             }
 
@@ -171,8 +171,8 @@ struct PlayerBar: View {
                 isAnimating: store.playback?.isPlaying == true,
                 action: { if let artist { onSelectArtist(artist) } }
             )
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .font(.body)
+            .foregroundStyle(.primary)
             .accessibilityIdentifier("player.artist")
             .contextMenu {
                 if let artist {
@@ -264,7 +264,7 @@ struct PlayerBar: View {
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
-                .fixedSize()
+                .frame(width: 28, height: 28)
                 .help("Opções da faixa")
                 .accessibilityLabel("Opções da faixa")
                 .accessibilityIdentifier("player.options")
@@ -466,7 +466,7 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.duration")
         }
         .font(.system(size: 9).monospacedDigit())
-        .foregroundStyle(.tertiary)
+        .foregroundStyle(.primary)
         .frame(height: 12)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: expanded)
     }
@@ -560,7 +560,7 @@ struct PlayerBar: View {
         Button(action: toggleMute) {
             Image(systemName: volumeIcon)
                 .font(.system(size: 14))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .frame(width: 24, height: 24)
                 .contentShape(Rectangle())
         }
