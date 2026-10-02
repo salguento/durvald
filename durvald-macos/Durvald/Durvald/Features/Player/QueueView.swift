@@ -86,7 +86,7 @@ struct QueueView: View {
         var id: Self { self }
     }
 
-    private static let pickerHeight: CGFloat = 34
+    private static let pickerHeight: CGFloat = 30
     private static let pickerFadeHeight: CGFloat = 24
     private static let contentTopSpacing: CGFloat = 18
     // Account for the first section label's 4 pt inset inside its row.
@@ -220,7 +220,7 @@ struct QueueView: View {
                 } label: {
                     Text(panel.rawValue)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .frame(height: Self.pickerHeight - 6)
                         .contentShape(Rectangle())
                         .background {
                             if selectedPanel == panel {
