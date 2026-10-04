@@ -15,6 +15,7 @@ enum ArtistsViewLayout {
 struct ArtistsView: View {
     @Binding var searchText: String
     @AppStorage("artists.listingMode") private var listingMode: CollectionListingMode = .standardGrid
+    @AppStorage("artists.onlyLocal") private var onlyLocal = true
     @AppStorage("artists.listingOrder") private var listingOrder: CollectionListingOrder = .alphabetical
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     @Environment(DurvaldCoreStore.self) private var store
@@ -53,6 +54,7 @@ struct ArtistsView: View {
                 ContentUnavailableView("Nenhum artista encontrado", systemImage: "magnifyingglass")
             }
         }
+        .onChange(of: onlyLocal) { _, _ in publishSummary() }
         .onChange(of: searchText) { _, _ in publishSummary() }
         .onChange(of: store.artists) { _, _ in publishSummary() }
         .task(id: "\(store.metadataRevision):\(store.core != nil)") {
@@ -81,7 +83,11 @@ struct ArtistsView: View {
 
     private var filteredArtists: [Artist] {
         let query = normalizedSearchText
-        return store.artists.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+        let localIDs = localArtistIDs ?? Set(store.tracks.map(\.artistId) + store.releases.map(\.artistId))
+        return store.artists.filter {
+            (!onlyLocal || localIDs.contains($0.id))
+                && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query))
+        }
     }
 
     private func refreshSummary() async {

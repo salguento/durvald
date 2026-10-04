@@ -175,6 +175,7 @@ struct CollectionListingMenu: View {
     @Binding var mode: CollectionListingMode
     @Binding var order: CollectionListingOrder
     var minimumRating: Binding<Int>? = nil
+    var onlyLocal: Binding<Bool>? = nil
     var controlSize: CGFloat = 32
     var controlWidth: CGFloat? = nil
     var usesGlassEffect = true
@@ -182,6 +183,12 @@ struct CollectionListingMenu: View {
 
     var body: some View {
         Menu {
+            if let onlyLocal {
+                Toggle("Somente locais", isOn: onlyLocal)
+                    .accessibilityIdentifier("artists.onlyLocal")
+                Divider()
+            }
+
             Picker("Ordenar", selection: $order) {
                 ForEach(CollectionListingOrder.allCases.filter { ratingsEnabled || $0 != .rating }) { option in
                     Text(option.title)

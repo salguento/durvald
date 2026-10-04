@@ -23,6 +23,7 @@ struct ContentView: View {
     @AppStorage("artists.listingMode") private var artistListingMode: CollectionListingMode = .standardGrid
     @AppStorage("playlists.listingMode") private var playlistListingMode: CollectionListingMode = .standard
     @AppStorage("albums.listingOrder") private var albumListingOrder: CollectionListingOrder = .recent
+    @AppStorage("artists.onlyLocal") private var artistOnlyLocal = true
     @AppStorage("artists.listingOrder") private var artistListingOrder: CollectionListingOrder = .alphabetical
     @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
     @AppStorage("albums.minimumRating") private var albumMinimumRating = 0
@@ -509,6 +510,7 @@ struct ContentView: View {
             mode: listingModeBinding(for: destination),
             order: listingOrderBinding(for: destination),
             minimumRating: destination == .albums ? $albumMinimumRating : nil,
+            onlyLocal: destination == .artists ? $artistOnlyLocal : nil,
             controlSize: 36, controlWidth: 36, usesGlassEffect: true
         )
         .accessibilityIdentifier("\(destination.rawValue).listingMode")
