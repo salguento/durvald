@@ -1,6 +1,19 @@
 import AppKit
 import SwiftUI
 
+/// Use the semantic sidebar material, sampling the page inside this window.
+struct QueueSidebarBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .withinWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
 private struct QueueArtistCard: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.trackMenuNavigation) private var navigation

@@ -120,12 +120,16 @@ struct ContentView: View {
             if shell.isQueuePresented {
                 GeometryReader { geometry in
                     QueueView(topInset: geometry.safeAreaInsets.top)
-                        .background(.ultraThinMaterial)
                         .ignoresSafeArea(edges: .top)
                 }
                 .frame(width: Layout.queueIdealWidth)
                 .frame(maxHeight: .infinity)
-                .background(.ultraThinMaterial)
+                .background {
+                    QueueSidebarBackground()
+                        .ignoresSafeArea(edges: .top)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
@@ -244,7 +248,14 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentColumnWidth = $0 }
-            .padding(.trailing, shell.isQueuePresented ? Layout.queueIdealWidth : 0)
+            .safeAreaInset(edge: .trailing, spacing: 0) {
+                if shell.isQueuePresented {
+                    Color.clear
+                        .frame(width: Layout.queueIdealWidth)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { fullDetailColumnWidth = $0 }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)

@@ -128,70 +128,86 @@ struct ArtistView: View {
     }
 
     private var artistPage: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    artistHeaderArtwork(width: geometry.size.width)
-                    .backgroundExtensionEffect()
-                    .overlay {
-                        GeometryReader { header in
-                            let titleY = header.size.height * 2 / 3 + 32
-                            let controlsY = (titleY + header.size.height) / 2
-                            ZStack(alignment: .topLeading) {
-                                Text(artist.name)
-                                    .font(.system(size: artistNameFontSize, weight: .bold))
-                                    .multilineTextAlignment(.center)
-                                    .foregroundStyle(.white)
-                                    .accessibilityAddTraits(.isHeader)
-                                    .frame(maxWidth: max(1, header.size.width - 48))
-                                    .position(
-                                        x: header.size.width / 2,
-                                        y: titleY
-                                    )
+        GeometryReader { visible in
+            GeometryReader { geometry in
+                let visibleFrame = visible.frame(in: .global)
+                let fullFrame = geometry.frame(in: .global)
+                let sideInsets = EdgeInsets(
+                    top: 0,
+                    leading: max(0, visibleFrame.minX - fullFrame.minX),
+                    bottom: 0,
+                    trailing: max(0, fullFrame.maxX - visibleFrame.maxX)
+                )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        artistHeaderArtwork(width: geometry.size.width)
+                        .overlay {
+                            GeometryReader { header in
+                                let titleY = header.size.height * 2 / 3 + 32
+                                let controlsY = (titleY + header.size.height) / 2
+                                ZStack(alignment: .topLeading) {
+                                    Text(artist.name)
+                                        .font(.system(size: artistNameFontSize, weight: .bold))
+                                        .multilineTextAlignment(.center)
+                                        .foregroundStyle(.white)
+                                        .accessibilityAddTraits(.isHeader)
+                                        .frame(maxWidth: max(1, visible.size.width - 48))
+                                        .position(
+                                            x: sideInsets.leading + visible.size.width / 2,
+                                            y: titleY
+                                        )
 
-                                collectionControls
-                                    .frame(width: max(1, header.size.width - 48))
-                                    .position(
-                                        x: header.size.width / 2,
-                                        y: controlsY
-                                    )
+                                    collectionControls
+                                        .frame(width: max(1, visible.size.width - 48))
+                                        .position(
+                                            x: sideInsets.leading + visible.size.width / 2,
+                                            y: controlsY
+                                        )
+                                }
                             }
                         }
-                    }
-                    .accessibilityIdentifier("artist.header.\(artist.id)")
+                        .accessibilityIdentifier("artist.header.\(artist.id)")
 
-                    VStack(alignment: .leading, spacing: 24) {
-                        artistHighlights(width: geometry.size.width)
+                        VStack(alignment: .leading, spacing: 24) {
+                            artistHighlights(width: visible.size.width, sideInsets: sideInsets)
 
-                        discographySections(width: geometry.size.width)
+                            discographySections(width: visible.size.width, sideInsets: sideInsets)
 
-                        if isLoading {
-                            ProgressView("Carregando artista…")
-                                .frame(maxWidth: .infinity, alignment: .center)
-                        } else if albums.isEmpty && tracks.isEmpty && onlineOnlyReleases.isEmpty {
-                            ContentUnavailableView(
-                                "Nenhuma música disponível",
-                                systemImage: "music.mic",
-                                description: Text("Este artista ainda não possui músicas na biblioteca.")
-                            )
+                            if isLoading {
+                                ProgressView("Carregando artista…")
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                            } else if albums.isEmpty && tracks.isEmpty && onlineOnlyReleases.isEmpty {
+                                ContentUnavailableView(
+                                    "Nenhuma música disponível",
+                                    systemImage: "music.mic",
+                                    description: Text("Este artista ainda não possui músicas na biblioteca.")
+                                )
+                            }
                         }
-                    }
-                    .padding(24)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(24)
+                        .padding(.leading, sideInsets.leading)
+                        .padding(.trailing, sideInsets.trailing)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                    artistFooter(width: geometry.size.width)
+                        artistFooter(width: visible.size.width, sideInsets: sideInsets)
+                            .padding(.leading, sideInsets.leading)
+                            .padding(.trailing, sideInsets.trailing)
+                    }
+                    .frame(minHeight: geometry.size.height, alignment: .top)
+                    .background(pageBackgroundColor)
                 }
-                .frame(minHeight: geometry.size.height, alignment: .top)
-                .background(pageBackgroundColor)
+                .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+                .scrollEdgeEffectHidden(!isArtistScrolled && !isTopbarHovered, for: .top)
+                .onScrollGeometryChange(for: Bool.self) {
+                    $0.contentOffset.y + $0.contentInsets.top > 1
+                } action: { _, scrolled in
+                    isArtistScrolled = scrolled
+                }
+                .preservesLibraryScrollPosition(isContentReady: !isLoading)
             }
-            .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-            .scrollEdgeEffectHidden(!isArtistScrolled && !isTopbarHovered, for: .top)
-            .onScrollGeometryChange(for: Bool.self) {
-                $0.contentOffset.y + $0.contentInsets.top > 1
-            } action: { _, scrolled in
-                isArtistScrolled = scrolled
-            }
-            .preservesLibraryScrollPosition(isContentReady: !isLoading)
+            // Draw the actual scrolling page under both panels. Only interactive
+            // content receives side margins; no reflected background is generated.
+            .ignoresSafeArea(.container, edges: .horizontal)
         }
         .ignoresSafeArea(.container, edges: [.top, .bottom])
         .background {
@@ -1011,8 +1027,8 @@ struct ArtistView: View {
     }
 
     @ViewBuilder
-    private func discographySections(width: CGFloat) -> some View {
-        let scrollableWidth = width
+    private func discographySections(width: CGFloat, sideInsets: EdgeInsets) -> some View {
+        let scrollableWidth = width + sideInsets.leading + sideInsets.trailing
 
         if !albums.isEmpty {
             VStack(alignment: .leading, spacing: 16) {
@@ -1039,9 +1055,11 @@ struct ArtistView: View {
                     }
                 }
                 .scrollIndicators(.hidden)
-                .contentMargins(.horizontal, 24, for: .scrollContent)
+                .contentMargins(.leading, 24 + sideInsets.leading, for: .scrollContent)
+                .contentMargins(.trailing, 24 + sideInsets.trailing, for: .scrollContent)
                 .frame(width: scrollableWidth, alignment: .leading)
-                .padding(.leading, -24)
+                .padding(.leading, -24 - sideInsets.leading)
+                .padding(.trailing, -24 - sideInsets.trailing)
                 .scrollClipDisabled()
             }
             .accessibilityIdentifier("artist.discography.local")
@@ -1103,9 +1121,11 @@ struct ArtistView: View {
                                         }
                                     }
                                     .scrollIndicators(.hidden)
-                                    .contentMargins(.horizontal, 24, for: .scrollContent)
+                                    .contentMargins(.leading, 24 + sideInsets.leading, for: .scrollContent)
+                                    .contentMargins(.trailing, 24 + sideInsets.trailing, for: .scrollContent)
                                     .frame(width: scrollableWidth, alignment: .leading)
-                                    .padding(.leading, -24)
+                                    .padding(.leading, -24 - sideInsets.leading)
+                                    .padding(.trailing, -24 - sideInsets.trailing)
                                     .scrollClipDisabled()
                                 }
                                 .accessibilityIdentifier("artist.discography.online.\(category.rawValue)")
@@ -1415,7 +1435,7 @@ struct ArtistView: View {
         }
     }
 
-    private func artistHighlights(width: CGFloat) -> some View {
+    private func artistHighlights(width: CGFloat, sideInsets: EdgeInsets) -> some View {
         let highlightArtworkSize: CGFloat = 160
         let popularTrackRowHeight = highlightArtworkSize / 3
         let latestReleaseTitleFont = Font.system(
@@ -1424,7 +1444,7 @@ struct ArtistView: View {
         let latestReleaseMetadataFont = Font.system(
             size: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 2
         )
-        let contentWidth = max(0, width)
+        let contentWidth = max(0, width + sideInsets.leading + sideInsets.trailing)
         // Size the blocks and scroll viewport from the visible content column.
         let initialVisibleWidth = max(0, width - 48)
         let latestReleaseBlockWidth = min(420, max(360, initialVisibleWidth * 0.40))
@@ -1581,9 +1601,11 @@ struct ArtistView: View {
             }
         }
         .scrollIndicators(.hidden)
-        .contentMargins(.horizontal, 24, for: .scrollContent)
+        .contentMargins(.leading, 24 + sideInsets.leading, for: .scrollContent)
+        .contentMargins(.trailing, 24 + sideInsets.trailing, for: .scrollContent)
         .frame(width: contentWidth, alignment: .leading)
-        .padding(.leading, -24)
+        .padding(.leading, -24 - sideInsets.leading)
+        .padding(.trailing, -24 - sideInsets.trailing)
         .scrollClipDisabled()
     }
 
@@ -1874,8 +1896,8 @@ struct ArtistView: View {
         return mostPlayedLocalTracks
     }
 
-    private func artistFooter(width: CGFloat) -> some View {
-        let scrollableWidth = width
+    private func artistFooter(width: CGFloat, sideInsets: EdgeInsets) -> some View {
+        let scrollableWidth = width + sideInsets.leading + sideInsets.trailing
 
         return VStack(alignment: .leading, spacing: 36) {
             VStack(alignment: .leading, spacing: 16) {
@@ -1916,10 +1938,13 @@ struct ArtistView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 24)
                 }
                 .scrollIndicators(.hidden)
+                .contentMargins(.leading, 24 + sideInsets.leading, for: .scrollContent)
+                .contentMargins(.trailing, 24 + sideInsets.trailing, for: .scrollContent)
                 .frame(width: scrollableWidth, alignment: .leading)
+                .padding(.leading, -sideInsets.leading)
+                .padding(.trailing, -sideInsets.trailing)
                 .scrollClipDisabled()
             }
         }
@@ -1930,7 +1955,6 @@ struct ArtistView: View {
         .background {
             Rectangle()
                 .fill(pageBackgroundColor)
-                .backgroundExtensionEffect()
                 .ignoresSafeArea(.container, edges: .bottom)
                 .padding(.bottom, -1000)
         }
