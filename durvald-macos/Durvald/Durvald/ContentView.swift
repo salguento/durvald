@@ -695,8 +695,7 @@ struct ContentView: View {
                 onSelectExternalRelease: { release in
                     showExternalAlbum(release, artist: artist)
                 },
-                onSelectArtist: showArtist,
-                trailingScrollableOverflow: shell.isQueuePresented ? Layout.queueIdealWidth : 0
+                onSelectArtist: showArtist
             )
                 .id(artist.id)
         case .playlist(let playlist):

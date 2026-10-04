@@ -31,7 +31,6 @@ struct ArtistView: View {
     let onSelectAlbum: (Release) -> Void
     let onSelectExternalRelease: (ExternalReleaseGroup) -> Void
     var onSelectArtist: ((Artist) -> Void)? = nil
-    var trailingScrollableOverflow: CGFloat = 0
     var informationOnly = false
 
     @State private var tracks: [Track] = []
@@ -974,7 +973,7 @@ struct ArtistView: View {
 
     @ViewBuilder
     private func discographySections(width: CGFloat) -> some View {
-        let scrollableWidth = width + trailingScrollableOverflow
+        let scrollableWidth = width
 
         if !albums.isEmpty {
             VStack(alignment: .leading, spacing: 16) {
@@ -1386,9 +1385,8 @@ struct ArtistView: View {
         let latestReleaseMetadataFont = Font.system(
             size: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 2
         )
-        let contentWidth = max(0, width + trailingScrollableOverflow)
-        // Size from the visible content column; overflow beneath the side panel
-        // only extends the scrollable area and must not enlarge these blocks.
+        let contentWidth = max(0, width)
+        // Size the blocks and scroll viewport from the visible content column.
         let initialVisibleWidth = max(0, width - 48)
         let latestReleaseBlockWidth = min(420, max(360, initialVisibleWidth * 0.40))
         let popularColumnWidth = min(440, max(360, initialVisibleWidth * 0.45))
@@ -1912,7 +1910,7 @@ struct ArtistView: View {
     }
 
     private func artistFooter(width: CGFloat) -> some View {
-        let scrollableWidth = width + trailingScrollableOverflow
+        let scrollableWidth = width
 
         return VStack(alignment: .leading, spacing: 36) {
             VStack(alignment: .leading, spacing: 16) {
