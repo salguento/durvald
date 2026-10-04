@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct MusicLibraryViewOptionsMenu: View {
-    @Environment(\.openWindow) private var openWindow
+    let onShowViewOptions: () -> Void
     @AppStorage("library.music.onlyFavorites") private var onlyFavorites = false
     @AppStorage("library.music.sort") private var sort: MusicLibrarySort = .title
     @AppStorage("library.music.sortAscending") private var sortAscending = true
@@ -31,7 +31,7 @@ struct MusicLibraryViewOptionsMenu: View {
                 .pickerStyle(.inline)
             }
             Divider()
-            Button("Mostrar opções de visualização") { openWindow(id: "music-view-options") }
+            Button("Mostrar opções de visualização", action: onShowViewOptions)
         } label: {
             ZStack {
                 Color.clear
@@ -59,6 +59,7 @@ struct LibraryToolbarSearchField: View {
     let placeholder: String
     let identifier: String
     var prefersCompact: Bool
+    var expandedWidth: CGFloat = 220
     @Binding var isExpanded: Bool
     @State private var isFocused = false
     @State private var focusRequest = -1
@@ -69,7 +70,7 @@ struct LibraryToolbarSearchField: View {
         // Remove the native text field while collapsed. Opacity does not
         // remove its AppKit field editor or its interactive area.
         Color.clear
-            .frame(width: isCollapsed ? 36 : 220, height: 36)
+            .frame(width: isCollapsed ? 36 : expandedWidth, height: 36)
             .overlay(alignment: .trailing) {
                 if !isCollapsed {
                     HStack(spacing: 8) {
@@ -90,7 +91,7 @@ struct LibraryToolbarSearchField: View {
                         }
                     }
                     .padding(.horizontal, 12)
-                    .frame(width: 220, height: 36)
+                    .frame(width: expandedWidth, height: 36)
                     .glassEffect(.regular.interactive(), in: .capsule)
                     .overlay {
                         if isFocused && appearsActive {

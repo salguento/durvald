@@ -33,8 +33,8 @@ struct ContentView: View {
     @State private var musicPresentation = MusicLibraryPresentation()
     @State private var musicSearchText = ""
     @State private var contentColumnWidth: CGFloat = 0
-    @State private var libraryToolbarAvailableWidth: CGFloat?
-    @State private var librarySummaryLeadingInset: CGFloat = 8
+    @State private var fullDetailColumnWidth: CGFloat = 0
+    @State private var libraryToolbarMeasurements: [String: LibraryToolbarMeasurement] = [:]
     @State private var isLibrarySearchExpanded = false
     @State private var musicLibrarySummary = MusicLibrarySummary(tracks: [], kind: .all)
     @State private var isTopbarHovered = false
@@ -242,6 +242,7 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentColumnWidth = $0 }
             .padding(.trailing, shell.isQueuePresented ? Layout.queueIdealWidth : 0)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { fullDetailColumnWidth = $0 }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
                     .padding(.horizontal, Layout.playerHorizontalMargin)
@@ -348,6 +349,15 @@ struct ContentView: View {
         return destination == .albums || destination == .songs
     }
 
+    private var libraryToolbarLayoutKey: String {
+        "\(shell.columnVisibility == .detailOnly)"
+    }
+
+    private var libraryToolbarDetailWidth: CGFloat {
+        fullDetailColumnWidth > 0 ? fullDetailColumnWidth
+            : contentColumnWidth + (shell.isQueuePresented ? Layout.queueIdealWidth : 0)
+    }
+
     private var shouldCollapseLibrarySearch: Bool {
         let summary = shell.navigationHistory.current == .songs ? musicLibrarySummary.text : albumsSummary
         let textWidth = min(480, (summary as NSString).size(withAttributes: [
@@ -355,7 +365,10 @@ struct ContentView: View {
         ]).width)
         let navigationWidth: CGFloat = shell.columnVisibility == .detailOnly ? 280 : 76
         let panelReservation = shell.isQueuePresented ? Layout.queueIdealWidth - Layout.queueToggleWidth - 16 : 0
-        let availableWidth = libraryToolbarAvailableWidth.map { $0 - panelReservation }
+        let detailWidth = libraryToolbarDetailWidth
+        let availableWidth = libraryToolbarMeasurements[libraryToolbarLayoutKey].map {
+            $0.availableWidth + detailWidth - $0.detailWidth - panelReservation
+        }
             ?? (contentColumnWidth - navigationWidth - 48
                 - (shell.isQueuePresented ? 0 : Layout.queueToggleWidth + 16))
         return availableWidth < textWidth + 220 + 44
@@ -363,32 +376,56 @@ struct ContentView: View {
 
     private var libraryContentToolbar: some View {
         let navigationWidth: CGFloat = shell.columnVisibility == .detailOnly ? 280 : 76
-        let detailWidth = contentColumnWidth + (shell.isQueuePresented ? Layout.queueIdealWidth : 0)
-        let hostWidth = max(80, libraryToolbarAvailableWidth
+        let detailWidth = libraryToolbarDetailWidth
+        let measuredWidth = libraryToolbarMeasurements[libraryToolbarLayoutKey].map {
+            $0.availableWidth + detailWidth - $0.detailWidth
+        }
+        let hostWidth = max(80, measuredWidth
                             ?? (detailWidth - navigationWidth - Layout.queueToggleWidth - 48))
         let panelReservation = shell.isQueuePresented ? Layout.queueIdealWidth - Layout.queueToggleWidth - 16 : 0
-        let controlsReservation: CGFloat = (shouldCollapseLibrarySearch ? 36 : 220) + 44
+        let minimumWidth = 80 + panelReservation
+        // Keep the last native measurement for each sidebar configuration.
+        // The right overlay only reserves space inside this same toolbar item.
+        let preferredWidth = max(minimumWidth, hostWidth)
 
-        return ZStack(alignment: .trailing) {
-            libraryToolbarSummary
-                .padding(.leading, librarySummaryLeadingInset)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, controlsReservation + panelReservation)
-                .opacity(shouldCollapseLibrarySearch && isLibrarySearchExpanded ? 0 : 1)
-                .accessibilityHidden(shouldCollapseLibrarySearch && isLibrarySearchExpanded)
-            libraryTopbarControls
-                .padding(.trailing, panelReservation)
+        let content = GeometryReader { geometry in
+            let compact = shouldCollapseLibrarySearch || geometry.size.width < preferredWidth - 0.5
+            let searchWidth = min(220, max(36, geometry.size.width - panelReservation - 44))
+            let controlsReservation: CGFloat = (compact ? 36 : searchWidth) + 44
+            let summaryWidth = max(0, geometry.size.width - panelReservation - controlsReservation - 8)
+
+            ZStack(alignment: .trailing) {
+                libraryToolbarSummary
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: summaryWidth, alignment: .leading)
+                    .clipped()
+                    .frame(width: geometry.size.width, alignment: .leading)
+                    .opacity(compact && isLibrarySearchExpanded ? 0 : 1)
+                    .accessibilityHidden(compact && isLibrarySearchExpanded)
+                libraryTopbarControls(searchWidth: searchWidth, prefersCompact: compact)
+                    .padding(.trailing, panelReservation)
+            }
+            .frame(width: geometry.size.width, height: 36)
         }
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .frame(width: hostWidth, height: 36)
+        .environment(\.appearsActive, appearsActive)
+
+        return LibraryToolbarHost(content: content, minimumWidth: minimumWidth, preferredWidth: preferredWidth)
+        .frame(minWidth: minimumWidth, idealWidth: preferredWidth, maxWidth: preferredWidth,
+               minHeight: 36, maxHeight: 36)
         .background {
             LibraryToolbarWidthObserver(
                 trailingReservation: Layout.queueToggleWidth + 24,
-                availableWidth: $libraryToolbarAvailableWidth,
-                summaryLeadingInset: $librarySummaryLeadingInset
+                detailWidth: detailWidth,
+                layoutKey: libraryToolbarLayoutKey,
+                measurements: $libraryToolbarMeasurements
             )
             .allowsHitTesting(false)
             .accessibilityHidden(true)
+        }
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
         }
     }
 
@@ -410,17 +447,21 @@ struct ContentView: View {
         }
     }
 
-    private var libraryTopbarControls: some View {
+    private func libraryTopbarControls(searchWidth: CGFloat, prefersCompact: Bool) -> some View {
         HStack(spacing: 8) {
             LibraryToolbarSearchField(
                 searchText: shell.navigationHistory.current == .songs ? $musicSearchText : $albumSearchText,
                 placeholder: shell.navigationHistory.current == .songs ? "Pesquisar músicas" : "Pesquisar álbuns",
                 identifier: shell.navigationHistory.current == .songs ? "library.search" : "albums.search",
-                prefersCompact: shouldCollapseLibrarySearch,
+                prefersCompact: prefersCompact,
+                expandedWidth: searchWidth,
                 isExpanded: $isLibrarySearchExpanded
             )
             if shell.navigationHistory.current == .songs {
-                MusicLibraryViewOptionsMenu().glassEffect(.regular, in: .circle)
+                MusicLibraryViewOptionsMenu(onShowViewOptions: {
+                    openWindow(id: "music-view-options")
+                })
+                .glassEffect(.regular, in: .circle)
             } else {
                 collectionOptions(for: .albums)
             }
@@ -469,9 +510,7 @@ struct ContentView: View {
             backForwardButtons
         }
         if hasLibrarySearch {
-            ToolbarSpacer(.fixed, placement: .navigation)
-            // Keep the summary's leading edge adjacent to the navigation
-            // buttons. The flexible trailing spacer must come after this item.
+            // Use the native inter-item gap without an extra spacer.
             ToolbarItem(id: "library-content-controls", placement: .navigation) {
                 libraryContentToolbar
             }
@@ -710,25 +749,92 @@ struct ContentView: View {
     }
 }
 
+// Report a real, constraint-based size range to the native toolbar. Geometry
+// inside this host only lays out content; it does not supply intrinsic width.
+private struct LibraryToolbarHost<Content: View>: NSViewRepresentable {
+    let content: Content
+    let minimumWidth: CGFloat
+    let preferredWidth: CGFloat
+
+    func makeNSView(context: Context) -> LibraryToolbarHostingView<Content> {
+        let view = LibraryToolbarHostingView(rootView: content)
+        view.sizingOptions = []
+        view.translatesAutoresizingMaskIntoConstraints = false
+        let minimum = view.widthAnchor.constraint(greaterThanOrEqualToConstant: minimumWidth)
+        let maximum = view.widthAnchor.constraint(lessThanOrEqualToConstant: preferredWidth)
+        let preferred = view.widthAnchor.constraint(equalToConstant: preferredWidth)
+        preferred.priority = .defaultLow
+        view.minimumWidthConstraint = minimum
+        view.maximumWidthConstraint = maximum
+        view.preferredWidthConstraint = preferred
+        NSLayoutConstraint.activate([minimum, maximum, preferred,
+                                     view.heightAnchor.constraint(equalToConstant: 36)])
+        return view
+    }
+
+    func updateNSView(_ view: LibraryToolbarHostingView<Content>, context: Context) {
+        view.rootView = content
+        guard view.minimumWidthConstraint?.constant != minimumWidth
+                || view.maximumWidthConstraint?.constant != preferredWidth else { return }
+        // Keep constraints installed. Widen the upper bound before raising
+        // the lower bound; lower the lower bound before narrowing the range.
+        if preferredWidth > (view.maximumWidthConstraint?.constant ?? 0) {
+            view.maximumWidthConstraint?.constant = preferredWidth
+        }
+        view.minimumWidthConstraint?.constant = minimumWidth
+        view.maximumWidthConstraint?.constant = preferredWidth
+        view.preferredWidthConstraint?.constant = preferredWidth
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: LibraryToolbarHostingView<Content>, context: Context) -> CGSize? {
+        let proposedWidth = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? preferredWidth
+        return CGSize(width: min(preferredWidth, max(minimumWidth, proposedWidth)), height: 36)
+    }
+}
+
+private final class LibraryToolbarHostingView<Content: View>: NSHostingView<Content> {
+    var minimumWidthConstraint: NSLayoutConstraint?
+    var maximumWidthConstraint: NSLayoutConstraint?
+    var preferredWidthConstraint: NSLayoutConstraint?
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: 36)
+    }
+}
+
+private struct LibraryToolbarMeasurement {
+    let availableWidth: CGFloat
+    let detailWidth: CGFloat
+}
+
 private struct LibraryToolbarWidthObserver: NSViewRepresentable {
     let trailingReservation: CGFloat
-    @Binding var availableWidth: CGFloat?
-    @Binding var summaryLeadingInset: CGFloat
+    let detailWidth: CGFloat
+    let layoutKey: String
+    @Binding var measurements: [String: LibraryToolbarMeasurement]
 
     func makeNSView(context: Context) -> WidthObserverView { WidthObserverView() }
 
     func updateNSView(_ view: WidthObserverView, context: Context) {
         view.trailingReservation = trailingReservation
-        view.publish = { width, leadingInset in
-            if abs((availableWidth ?? -1) - width) > 0.5 { availableWidth = width }
-            if abs(summaryLeadingInset - leadingInset) > 0.5 { summaryLeadingInset = leadingInset }
+        view.publish = { width in
+            if let previous = measurements[layoutKey],
+               abs(previous.availableWidth - width) <= 0.5,
+               abs(previous.detailWidth - detailWidth) <= 0.5 { return }
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                measurements[layoutKey] = LibraryToolbarMeasurement(
+                    availableWidth: width, detailWidth: detailWidth)
+            }
         }
         view.scheduleMeasurement()
     }
 
     final class WidthObserverView: NSView {
         var trailingReservation: CGFloat = 0
-        var publish: ((CGFloat, CGFloat) -> Void)?
+        var publish: ((CGFloat) -> Void)?
+        private var isMeasurementScheduled = false
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -748,53 +854,24 @@ private struct LibraryToolbarWidthObserver: NSViewRepresentable {
         @objc private func windowResized() { scheduleMeasurement() }
 
         func scheduleMeasurement() {
+            // Coalesce updates and read geometry after AppKit's layout pass.
+            // This observer never changes constraints or native item priorities.
+            guard !isMeasurementScheduled else { return }
+            isMeasurementScheduled = true
             DispatchQueue.main.async { [weak self] in
-                guard let self, let window, bounds.width > 0 else { return }
-                // Measure the actual leading edge of the content toolbar host,
-                // including native inter-item spacing. Its trailing edge ends
-                // before the fixed queue toggle and the window's native margin.
-                let contentStart = convert(bounds, to: nil).minX
-                // The overlay's divider is positioned from the window frame,
-                // so use that same coordinate reference rather than contentView.
-                let windowWidth = window.frame.width
-                let availableWidth = max(80, windowWidth - contentStart - trailingReservation)
-                var leadingInset: CGFloat = 8
-                if let items = window.toolbar?.items,
-                   let index = items.firstIndex(where: { item in
-                       guard let view = item.view else { return false }
-                       return self.isDescendant(of: view)
-                   }) {
-                    if let host = items[index].view {
-                        // Keep AppKit's custom-item size in sync with SwiftUI's
-                        // preferred width after resize and sidebar transitions.
-                        let constraintID = "Durvald.libraryToolbar.preferredWidth"
-                        if let constraint = host.constraints.first(where: { $0.identifier == constraintID }) {
-                            if abs(constraint.constant - availableWidth) > 0.5 {
-                                constraint.constant = availableWidth
-                                host.invalidateIntrinsicContentSize()
-                            }
-                        } else {
-                            let constraint = host.widthAnchor.constraint(equalToConstant: availableWidth)
-                            constraint.identifier = constraintID
-                            constraint.priority = .defaultHigh
-                            constraint.isActive = true
-                            host.setContentCompressionResistancePriority(.required, for: .horizontal)
-                            host.invalidateIntrinsicContentSize()
-                        }
-                    }
-                    let precedingViews = items[..<index].reversed().compactMap { $0.view }
-                    if let navigationView = precedingViews.first {
-                        let navigationFrame = navigationView.convert(navigationView.bounds, to: nil)
-                        var desiredGap: CGFloat = 8
-                        if precedingViews.count > 1 {
-                            let groupView = precedingViews[1]
-                            let groupEnd = groupView.convert(groupView.bounds, to: nil).maxX
-                            desiredGap = min(16, max(8, navigationFrame.minX - groupEnd))
-                        }
-                        leadingInset = max(0, desiredGap - (contentStart - navigationFrame.maxX))
-                    }
-                }
-                publish?(availableWidth, leadingInset)
+                guard let self else { return }
+                self.isMeasurementScheduled = false
+                guard let window = self.window, self.bounds.width > 0,
+                      let toolbar = window.toolbar,
+                      let item = toolbar.items.first(where: { item in
+                          guard let view = item.view else { return false }
+                          return self.isDescendant(of: view)
+                      }),
+                      toolbar.visibleItems?.contains(where: { $0 === item }) == true
+                else { return }
+                let contentStart = self.convert(self.bounds, to: nil).minX
+                let availableWidth = max(80, window.frame.width - contentStart - self.trailingReservation)
+                self.publish?(availableWidth)
             }
         }
 
