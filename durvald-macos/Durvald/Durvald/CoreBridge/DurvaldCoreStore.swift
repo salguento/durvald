@@ -105,7 +105,8 @@ final class DurvaldCoreStore {
         playback: PlaybackSnapshot? = nil,
         tracks: [Track] = [],
         releases: [Release] = [],
-        artists: [Artist] = []
+        artists: [Artist] = [],
+        history: [PlaybackHistoryItem] = []
     ) {
         self.core = core
         self.playback = playback
@@ -115,6 +116,7 @@ final class DurvaldCoreStore {
         self.tracks = tracks
         self.releases = releases
         self.artists = artists
+        self.history = history
     }
 
     func activateSystemMediaControls() {

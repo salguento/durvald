@@ -485,7 +485,8 @@ final class DurvaldUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += [
             "--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture",
-            "-AppleInterfaceStyle", "Dark"
+            "-AppleInterfaceStyle", "Dark", "-library.music.sort", "title",
+            "-library.music.sortAscending", "YES", "-library.music.onlyFavorites", "NO"
         ]
         app.launch()
         let window = app.windows.firstMatch
@@ -522,37 +523,47 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertTrue(app.buttons["sidebar.songs"].waitForExistence(timeout: 3))
 
         app.buttons["sidebar.songs"].click()
-        // SwiftUI exposes the title twice in this List's accessibility tree.
-        // Select one match explicitly so frame reads do not require uniqueness.
-        let firstTrack = app.descendants(matching: .any)
-            .matching(identifier: "track.100").firstMatch
-        let secondTrack = app.descendants(matching: .any)
-            .matching(identifier: "track.101").firstMatch
+        // Songs uses a native NSTableView; inspect its actual rows rather
+        // than identifiers from the former SwiftUI List implementation.
+        let songsTable = app.tables.firstMatch
+        let firstTrack = songsTable.tableRows.element(boundBy: 0)
+        let secondTrack = songsTable.tableRows.element(boundBy: 1)
         XCTAssertTrue(firstTrack.waitForExistence(timeout: 3))
         XCTAssertTrue(secondTrack.waitForExistence(timeout: 3))
         let initialTrackFrame = firstTrack.frame
         let rowHeight = secondTrack.frame.minY - initialTrackFrame.minY
         XCTAssertGreaterThan(rowHeight, 0)
         capture("Songs at top")
-        app.outlines.firstMatch.scroll(byDeltaX: 0, deltaY: -350)
+        songsTable.scroll(byDeltaX: 0, deltaY: -350)
         capture("Songs scrolled")
 
-        // Verify that scrolling places content behind the toolbar while the next
-        // row remains below it. Pixel luminance is deliberately not compared:
-        // macOS may render the native edge effect as blur/material without
-        // darkening the brightest text pixels captured by XCTest.
-        let clearTitle = CGRect(x: initialTrackFrame.midX, y: initialTrackFrame.minY,
-                                width: initialTrackFrame.width / 2, height: 14)
-        let coveredTitle = clearTitle.offsetBy(dx: 0, dy: -rowHeight)
-        XCTAssertLessThan(coveredTitle.maxY, app.toolbars.firstMatch.frame.maxY)
-        XCTAssertGreaterThan(clearTitle.maxY, app.toolbars.firstMatch.frame.maxY)
+        // Read the actual row after scrolling. Native table headers have a
+        // different inset from the former SwiftUI List, so inferred title
+        // rectangles do not reliably describe the covered content.
+        XCTAssertLessThan(firstTrack.frame.minY, initialTrackFrame.minY)
+        XCTAssertEqual(app.toolbars.firstMatch.frame.minY, toolbarFrame.minY, accuracy: 1)
 
-        app.outlines.firstMatch.scroll(byDeltaX: 0, deltaY: 3000)
-        let restoredFirstTrack = app.descendants(matching: .any)
-            .matching(identifier: "track.100").firstMatch
+        songsTable.scroll(byDeltaX: 0, deltaY: 3000)
+        let restoredFirstTrack = songsTable.tableRows.element(boundBy: 0)
         XCTAssertTrue(restoredFirstTrack.waitForExistence(timeout: 3))
         XCTAssertEqual(restoredFirstTrack.frame.minY, initialTrackFrame.minY, accuracy: 2)
         capture("Songs returned to top")
+
+        let sidebarFrame = app.buttons["sidebar.history"].frame
+        app.links["player.artist"].click()
+        let artistPage = app.descendants(matching: .any)["artist.detail.7"]
+        XCTAssertTrue(artistPage.waitForExistence(timeout: 3))
+        capture("Artist detail at top")
+        artistPage.scroll(byDeltaX: 0, deltaY: -420)
+        capture("Artist detail scrolled")
+        XCTAssertEqual(app.buttons["sidebar.history"].frame.minY, sidebarFrame.minY, accuracy: 1)
+
+        app.buttons["sidebar.history"].click()
+        XCTAssertTrue(app.staticTexts["Faixa de teste 1 — Biblioteca para rolagem"].waitForExistence(timeout: 3))
+        capture("History at top")
+        app.outlines.firstMatch.scroll(byDeltaX: 0, deltaY: -420)
+        capture("History scrolled")
+        XCTAssertEqual(app.buttons["sidebar.history"].frame.minY, sidebarFrame.minY, accuracy: 1)
     }
 
     private func textHighlight(in rect: CGRect, window: CGRect, bitmap: NSBitmapImageRep) throws -> Double {

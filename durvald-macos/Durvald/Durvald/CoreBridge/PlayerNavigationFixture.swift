@@ -68,7 +68,11 @@ enum PlayerNavigationFixture {
             tracks: tracks,
             // Same-name records come first to catch accidental matching by text.
             releases: releases,
-            artists: [sameNameArtist, artist, albumArtist]
+            artists: [sameNameArtist, artist, albumArtist],
+            history: scrollable ? tracks.enumerated().map { index, track in
+                PlaybackHistoryItem(id: Int64(index + 1), trackId: track.id,
+                                    playedAt: "2026-10-04T03:00:00.000Z", durationSeconds: 180)
+            } : []
         )
     }
 }
