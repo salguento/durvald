@@ -48,6 +48,7 @@ struct ContentView: View {
     @State private var pageScrollOffsets = LibraryScrollOffsetStore()
 
     private enum Layout {
+        static let librarySummaryLeadingPadding: CGFloat = 8
         static let panelToggleIconWidth: CGFloat = 20
         static let panelToggleIconHeight: CGFloat = 16
         static let contentViewMinimumWidth: CGFloat = 360
@@ -371,7 +372,7 @@ struct ContentView: View {
         }
             ?? (contentColumnWidth - navigationWidth - 48
                 - (shell.isQueuePresented ? 0 : Layout.queueToggleWidth + 16))
-        return availableWidth < textWidth + 220 + 44
+        return availableWidth < textWidth + 220 + 44 + Layout.librarySummaryLeadingPadding
     }
 
     private var libraryContentToolbar: some View {
@@ -392,7 +393,8 @@ struct ContentView: View {
             let compact = shouldCollapseLibrarySearch || geometry.size.width < preferredWidth - 0.5
             let searchWidth = min(220, max(36, geometry.size.width - panelReservation - 44))
             let controlsReservation: CGFloat = (compact ? 36 : searchWidth) + 44
-            let summaryWidth = max(0, geometry.size.width - panelReservation - controlsReservation - 8)
+            let summaryWidth = max(0, geometry.size.width - panelReservation - controlsReservation - 8
+                                   - Layout.librarySummaryLeadingPadding)
 
             ZStack(alignment: .trailing) {
                 libraryToolbarSummary
@@ -400,6 +402,7 @@ struct ContentView: View {
                     .truncationMode(.tail)
                     .frame(width: summaryWidth, alignment: .leading)
                     .clipped()
+                    .padding(.leading, Layout.librarySummaryLeadingPadding)
                     .frame(width: geometry.size.width, alignment: .leading)
                     .opacity(compact && isLibrarySearchExpanded ? 0 : 1)
                     .accessibilityHidden(compact && isLibrarySearchExpanded)
@@ -510,31 +513,12 @@ struct ContentView: View {
             backForwardButtons
         }
         if hasLibrarySearch {
-            // Use the native inter-item gap without an extra spacer.
+            // The summary adds leading padding to match the navigation-to-title gap.
             ToolbarItem(id: "library-content-controls", placement: .navigation) {
                 libraryContentToolbar
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        if shell.navigationHistory.current == .albums && !hasLibrarySearch {
-            ToolbarItem(placement: .navigation) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Álbuns")
-                        .font(.headline)
-                    Text(albumsSummary)
-                        .font(.caption)
-                }
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: 480, alignment: .leading)
-                .help(albumsSummary)
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("albums.summary")
-                .opacity(shouldCollapseLibrarySearch && isLibrarySearchExpanded ? 0 : 1)
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
-
     }
 
     private var queueToggleButton: some View {
