@@ -224,7 +224,7 @@ struct QueueView: View {
     }
 
     private var panelPicker: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 3) {
             ForEach(Panel.allCases) { panel in
                 Button {
                     withAnimation(.easeInOut(duration: 0.18)) {
@@ -232,13 +232,14 @@ struct QueueView: View {
                     }
                 } label: {
                     Text(panel.rawValue)
+                        .foregroundStyle(Color(nsColor: appearsActive ? .labelColor : .secondaryLabelColor))
                         .frame(maxWidth: .infinity)
                         .frame(height: Self.pickerHeight - 6)
                         .contentShape(Rectangle())
                         .background {
                             if selectedPanel == panel {
                                 Capsule()
-                                    .fill(.white.opacity(0.08))
+                                    .fill(Color(nsColor: .labelColor).opacity(appearsActive ? 0.12 : 0.07))
                             }
                         }
                 }
@@ -248,7 +249,8 @@ struct QueueView: View {
         }
         .padding(3)
         .frame(maxWidth: .infinity)
-        .glassEffect(.clear.interactive(), in: .capsule)
+        .glassEffect(.regular, in: .capsule)
+        .animation(.easeOut(duration: 0.15), value: appearsActive)
         .padding(.horizontal, 8)
         .frame(height: Self.pickerHeight, alignment: .bottom)
     }
