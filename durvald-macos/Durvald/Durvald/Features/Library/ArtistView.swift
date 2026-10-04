@@ -140,7 +140,7 @@ struct ArtistView: View {
                 )
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        artistHeaderArtwork(width: geometry.size.width)
+                        artistHeaderArtwork(width: visible.size.width + sideInsets.leading)
                         .overlay {
                             GeometryReader { header in
                                 let titleY = header.size.height * 2 / 3 + 32
@@ -166,6 +166,7 @@ struct ArtistView: View {
                                 }
                             }
                         }
+                        .padding(.trailing, sideInsets.trailing)
                         .accessibilityIdentifier("artist.header.\(artist.id)")
 
                         VStack(alignment: .leading, spacing: 24) {
