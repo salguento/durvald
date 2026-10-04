@@ -50,7 +50,6 @@ struct ContentView: View {
     private enum Layout {
         static let panelToggleIconWidth: CGFloat = 20
         static let panelToggleIconHeight: CGFloat = 16
-        static let panelAnimation = Animation.smooth(duration: 0.32)
         static let contentViewMinimumWidth: CGFloat = 360
         static let windowMinimumHeight: CGFloat = 360
         static let compactNavigationWidth: CGFloat = 700
@@ -630,15 +629,15 @@ struct ContentView: View {
     }
 
     private func toggleSidebar() {
-        withAnimation(Layout.panelAnimation) {
-            shell.toggleSidebar()
-        }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { shell.toggleSidebar() }
     }
 
     private func toggleQueue() {
-        withAnimation(Layout.panelAnimation) {
-            shell.toggleQueue()
-        }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { shell.toggleQueue() }
     }
 
     private func showAlbum(_ album: Release) {
