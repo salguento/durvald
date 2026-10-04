@@ -35,6 +35,8 @@ struct ContentView: View {
     @State private var historySearchText = ""
     @State private var historySummary = "Carregando…"
     @State private var artistToolbarBackground: Visibility = .hidden
+    @State private var isContentScrolled = false
+    @State private var isContentTopbarHovered = false
     @State private var artistToolbarState = ArtistToolbarState()
     @State private var musicEntryID: Int?
     @State private var musicPresentation = MusicLibraryPresentation()
@@ -108,7 +110,7 @@ struct ContentView: View {
         }
         .toolbar(removing: .title)
         .toolbarBackgroundVisibility(
-            isArtistDetail ? artistToolbarBackground : .automatic,
+            contentToolbarBackgroundVisibility,
             for: .windowToolbar
         )
         .onPreferenceChange(ArtistToolbarBackgroundPreferenceKey.self) { visibility in
@@ -245,8 +247,24 @@ struct ContentView: View {
         }
             .onChange(of: shell.navigationHistory.currentEntryID, initial: true) { _, entryID in
                 if shell.navigationHistory.current == .songs { musicEntryID = entryID }
+                isContentScrolled = pageScrollOffsets.offset(for: entryID) > 1
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background {
+                if shell.isQueuePresented && !isArtistDetail {
+                    TopbarHoverObserver(isHovered: $isContentTopbarHovered)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .overlay {
+                if shell.isQueuePresented && !isArtistDetail {
+                    PageTopbarBackground(isVisible: isContentScrolled || isContentTopbarHovered)
+                        .ignoresSafeArea(.container, edges: .top)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentColumnWidth = $0 }
             .safeAreaInset(edge: .trailing, spacing: 0) {
                 if shell.isQueuePresented {
@@ -717,11 +735,22 @@ struct ContentView: View {
         pageScrollOffset(for: shell.navigationHistory.currentEntryID)
     }
 
+    private var contentToolbarBackgroundVisibility: Visibility {
+        if isArtistDetail { return artistToolbarBackground }
+        guard shell.isQueuePresented else { return .automatic }
+        // The explicit native backdrop supplies the material with the panel
+        // open; suppress the automatic one to avoid stacking two effects.
+        return .hidden
+    }
+
     private func pageScrollOffset(for entryID: Int) -> Binding<CGFloat> {
         Binding(
             get: { pageScrollOffsets.offset(for: entryID) },
             set: {
                 pageScrollOffsets.setOffset($0, for: entryID)
+                guard entryID == shell.navigationHistory.currentEntryID else { return }
+                let scrolled = $0 > 1
+                if isContentScrolled != scrolled { isContentScrolled = scrolled }
             }
         )
     }
