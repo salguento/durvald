@@ -232,7 +232,9 @@ struct ToolbarSearchTextField: NSViewRepresentable {
                 "search.clear",
                 "sidebar.sectionSearch.container",
                 "sidebar.sectionSearch.clear",
-                "artist.tracks.search"
+                "artist.tracks.search",
+                "artist.tracks.search.container",
+                "artist.tracks.search.clear"
             ]
             var currentView = hitView
 

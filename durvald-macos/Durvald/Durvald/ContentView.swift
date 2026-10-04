@@ -34,6 +34,8 @@ struct ContentView: View {
     @State private var artistsSummary = "Carregando…"
     @State private var historySearchText = ""
     @State private var historySummary = "Carregando…"
+    @State private var artistToolbarBackground: Visibility = .hidden
+    @State private var artistToolbarState = ArtistToolbarState()
     @State private var musicEntryID: Int?
     @State private var musicPresentation = MusicLibraryPresentation()
     @State private var musicSearchText = ""
@@ -105,7 +107,15 @@ struct ContentView: View {
                 )
         }
         .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(.automatic, for: .windowToolbar)
+        .toolbarBackgroundVisibility(
+            isArtistDetail ? artistToolbarBackground : .automatic,
+            for: .windowToolbar
+        )
+        .onPreferenceChange(ArtistToolbarBackgroundPreferenceKey.self) { visibility in
+            var transaction = Transaction(animation: nil)
+            transaction.disablesAnimations = true
+            withTransaction(transaction) { artistToolbarBackground = visibility ?? .hidden }
+        }
         .overlay(alignment: .trailing) {
             if shell.isQueuePresented {
                 GeometryReader { geometry in
@@ -250,6 +260,10 @@ struct ContentView: View {
             .toolbar { contentToolbar }
             .onChange(of: shell.navigationHistory.currentRoute) { _, _ in
                 isLibrarySearchExpanded = false
+                if isArtistDetail {
+                    artistToolbarState.searchText = ""
+                    artistToolbarState.order = .album
+                }
             }
             .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
     }
@@ -338,8 +352,14 @@ struct ContentView: View {
     }
 
     private var hasLibrarySearch: Bool {
+        if isArtistDetail { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
         return destination == .albums || destination == .songs || destination == .artists || destination == .history
+    }
+
+    private var isArtistDetail: Bool {
+        if case .artist = shell.navigationHistory.currentRoute { return true }
+        return false
     }
 
     private var librarySummaryText: String {
@@ -388,6 +408,7 @@ struct ContentView: View {
     }
 
     private var libraryExpandedControlsMinimumWidth: CGFloat {
+        if isArtistDetail { return 308 }
         let textWidth = min(480, (librarySummaryText as NSString).size(withAttributes: [
             .font: NSFont.preferredFont(forTextStyle: .caption1)
         ]).width)
@@ -403,7 +424,7 @@ struct ContentView: View {
         let hostWidth = max(80, measuredWidth
                             ?? (detailWidth - navigationWidth - Layout.queueToggleWidth - 48))
         let panelReservation = shell.isQueuePresented ? Layout.queueIdealWidth - Layout.queueToggleWidth - 16 : 0
-        let minimumWidth = 80 + panelReservation
+        let minimumWidth = (isArtistDetail ? 124 : 80) + panelReservation
         // Keep the last native measurement for each sidebar configuration.
         // The right overlay only reserves space inside this same toolbar item.
         let preferredWidth = max(minimumWidth, hostWidth)
@@ -412,13 +433,15 @@ struct ContentView: View {
             // Decide from the space AppKit actually assigned, never from a
             // preferred width that can lag behind the current resize frame.
             let compact = geometry.size.width - panelReservation < libraryExpandedControlsMinimumWidth
-            let searchWidth = min(220, max(36, geometry.size.width - panelReservation - 44))
-            let controlsReservation: CGFloat = (compact ? 36 : searchWidth) + 44
+            let menuReservation: CGFloat = isArtistDetail ? 88 : 44
+            let searchWidth = min(220, max(36, geometry.size.width - panelReservation - menuReservation))
+            let controlsReservation: CGFloat = (compact ? 36 : searchWidth) + menuReservation
             let summaryWidth = max(0, geometry.size.width - panelReservation - controlsReservation - 8
                                    - Layout.librarySummaryLeadingPadding)
 
             ZStack(alignment: .trailing) {
-                libraryToolbarSummary
+                if !isArtistDetail {
+                    libraryToolbarSummary
                     .fixedSize(horizontal: false, vertical: true)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -428,12 +451,14 @@ struct ContentView: View {
                     .frame(width: geometry.size.width, alignment: .leading)
                     .opacity(compact && isLibrarySearchExpanded ? 0 : 1)
                     .accessibilityHidden(compact && isLibrarySearchExpanded)
+                }
                 libraryTopbarControls(searchWidth: searchWidth, prefersCompact: compact)
                     .padding(.trailing, panelReservation)
             }
-            .frame(width: geometry.size.width, height: 36)
+            .frame(width: geometry.size.width, height: 36, alignment: .trailing)
         }
         .environment(\.appearsActive, appearsActive)
+        .environment(store)
         .transaction { transaction in
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -475,29 +500,40 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
     private func libraryTopbarControls(searchWidth: CGFloat, prefersCompact: Bool) -> some View {
-        HStack(spacing: 8) {
-            LibraryToolbarSearchField(
-                searchText: librarySearchText,
-                placeholder: librarySearchPlaceholder,
-                identifier: librarySearchIdentifier,
+        if isArtistDetail {
+            ArtistDetailToolbarControls(
+                state: artistToolbarState,
+                searchWidth: searchWidth,
                 prefersCompact: prefersCompact,
-                expandedWidth: searchWidth,
-                isExpanded: $isLibrarySearchExpanded
+                isSearchExpanded: $isLibrarySearchExpanded
             )
-            if shell.navigationHistory.current == .songs {
-                MusicLibraryViewOptionsMenu(onShowViewOptions: {
-                    openWindow(id: "music-view-options")
-                })
-                .glassEffect(.regular, in: .circle)
-            } else if shell.navigationHistory.current == .history {
-                HistoryToolbarOptionsMenu()
-            } else {
-                collectionOptions(for: shell.navigationHistory.current == .artists ? .artists : .albums)
+            .fixedSize()
+        } else {
+            HStack(spacing: 8) {
+                LibraryToolbarSearchField(
+                    searchText: librarySearchText,
+                    placeholder: librarySearchPlaceholder,
+                    identifier: librarySearchIdentifier,
+                    prefersCompact: prefersCompact,
+                    expandedWidth: searchWidth,
+                    isExpanded: $isLibrarySearchExpanded
+                )
+                if shell.navigationHistory.current == .songs {
+                    MusicLibraryViewOptionsMenu(onShowViewOptions: {
+                        openWindow(id: "music-view-options")
+                    })
+                    .glassEffect(.regular, in: .circle)
+                } else if shell.navigationHistory.current == .history {
+                    HistoryToolbarOptionsMenu()
+                } else {
+                    collectionOptions(for: shell.navigationHistory.current == .artists ? .artists : .albums)
+                }
             }
+            .fixedSize()
+            .id(shell.navigationHistory.current)
         }
-        .fixedSize()
-        .id(shell.navigationHistory.current)
     }
 
     private func collectionOptions(for destination: LibraryDestination) -> some View {
@@ -719,7 +755,8 @@ struct ContentView: View {
                 onSelectExternalRelease: { release in
                     showExternalAlbum(release, artist: artist)
                 },
-                onSelectArtist: showArtist
+                onSelectArtist: showArtist,
+                toolbarState: artistToolbarState
             )
                 .id(artist.id)
         case .playlist(let playlist):

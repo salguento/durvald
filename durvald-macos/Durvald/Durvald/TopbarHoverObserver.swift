@@ -43,9 +43,10 @@ struct TopbarHoverObserver: NSViewRepresentable {
         func updateHover() {
             guard let window else { return }
             let point = window.mouseLocationOutsideOfEventStream
+            let contentRegion = convert(bounds, to: nil)
             let topbar = NSRect(
-                x: 0, y: window.contentLayoutRect.maxY,
-                width: window.frame.width,
+                x: contentRegion.minX, y: window.contentLayoutRect.maxY,
+                width: contentRegion.width,
                 height: max(0, window.frame.height - window.contentLayoutRect.maxY)
             )
             let hovered = NSApp.isActive && window.isVisible && !window.isMiniaturized

@@ -1,25 +1,42 @@
 import SwiftUI
 import CoreImage
 
-struct ArtistView: View {
-    private enum TrackOrder: String, CaseIterable, Identifiable {
-        case album
-        case title
-        case artist
-        case duration
+struct ArtistToolbarBackgroundPreferenceKey: PreferenceKey {
+    static let defaultValue: Visibility? = nil
 
-        var id: Self { self }
+    static func reduce(value: inout Visibility?, nextValue: () -> Visibility?) {
+        if let next = nextValue() { value = next }
+    }
+}
 
-        var title: String {
-            switch self {
-            case .album: "Álbum"
-            case .title: "Título"
-            case .artist: "Artista"
-            case .duration: "Duração"
-            }
+@Observable
+final class ArtistToolbarState {
+    var searchText = ""
+    var order: ArtistTrackOrder = .album
+    var tracks: [Track] = []
+    var isLoading = true
+}
+
+enum ArtistTrackOrder: String, CaseIterable, Identifiable {
+    case album
+    case title
+    case artist
+    case duration
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .album: "Álbum"
+        case .title: "Título"
+        case .artist: "Artista"
+        case .duration: "Duração"
         }
     }
+}
 
+
+struct ArtistView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appearsActive) private var appearsActive
@@ -32,6 +49,7 @@ struct ArtistView: View {
     let onSelectExternalRelease: (ExternalReleaseGroup) -> Void
     var onSelectArtist: ((Artist) -> Void)? = nil
     var informationOnly = false
+    @Bindable var toolbarState = ArtistToolbarState()
 
     @State private var tracks: [Track] = []
     @State private var albums: [Release] = []
@@ -57,10 +75,8 @@ struct ArtistView: View {
     @State private var isSavingIdentity = false
     @State private var isClearIdentityConfirmationPresented = false
     @State private var selectedCandidateID: String?
-    @State private var trackSearchText = ""
-    @State private var trackOrder: TrackOrder = .album
-    @State private var isTrackSearchFocused = false
-    @State private var trackSearchFocusRequest = -1
+    @State private var isTopbarHovered = false
+    @State private var isArtistScrolled = false
     @State private var isLoading = true
     @State private var artworkAverageColor: NSColor?
     @ScaledMetric(relativeTo: .largeTitle) private var artistNameFontSize =
@@ -169,9 +185,30 @@ struct ArtistView: View {
                 .background(pageBackgroundColor)
             }
             .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+            .scrollEdgeEffectHidden(!isArtistScrolled && !isTopbarHovered, for: .top)
+            .onScrollGeometryChange(for: Bool.self) {
+                $0.contentOffset.y + $0.contentInsets.top > 1
+            } action: { _, scrolled in
+                isArtistScrolled = scrolled
+            }
             .preservesLibraryScrollPosition(isContentReady: !isLoading)
         }
         .ignoresSafeArea(.container, edges: [.top, .bottom])
+        .background {
+            TopbarHoverObserver(isHovered: $isTopbarHovered)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .preference(
+            key: ArtistToolbarBackgroundPreferenceKey.self,
+            value: isArtistScrolled ? .automatic : (isTopbarHovered ? .visible : .hidden)
+        )
+        .onChange(of: tracks, initial: true) { _, value in
+            toolbarState.tracks = value
+        }
+        .onChange(of: isLoading, initial: true) { _, value in
+            toolbarState.isLoading = value
+        }
         .task(id: store.metadataRevision) {
             guard store.metadataRevision > 0 else { return }
             async let refreshedTracks = store.tracks(forArtistID: artist.id)
@@ -1553,82 +1590,8 @@ struct ArtistView: View {
     private var collectionControls: some View {
         HStack(spacing: 10) {
             artistPlaybackControls
-
             artistRelationshipControls
-
-            Spacer(minLength: 24)
-
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-
-                ToolbarSearchTextField(
-                    text: $trackSearchText,
-                    isFocused: $isTrackSearchFocused,
-                    isPresented: true,
-                    focusRequest: trackSearchFocusRequest,
-                    placeholder: "Pesquisar faixas",
-                    accessibilityLabel: "Pesquisar faixas do artista",
-                    accessibilityIdentifier: "artist.tracks.search.field"
-                )
-                .frame(maxWidth: .infinity, minHeight: 20, maxHeight: 20)
-            }
-            .padding(.horizontal, 12)
-            .frame(width: 168, height: headerControlHeight)
-            .contentShape(.capsule)
-            .background {
-                Color.clear
-                    .glassEffect(.regular.interactive(), in: .capsule)
-            }
-            .overlay {
-                Capsule()
-                    .strokeBorder(Color.accentColor, lineWidth: 2)
-                    .opacity(isTrackSearchFocused && appearsActive ? 1 : 0)
-            }
-            .onTapGesture {
-                trackSearchFocusRequest += 1
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("artist.tracks.search")
-
-            Menu {
-                Picker("Organizar", selection: $trackOrder) {
-                    ForEach(TrackOrder.allCases) { order in
-                        Text(order.title).tag(order)
-                    }
-                }
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease")
-                    .frame(width: headerIconControlWidth, height: headerControlHeight)
-                    .contentShape(.capsule)
-            }
-            .menuIndicator(.hidden)
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .help("Organizar ou filtrar faixas")
-            .accessibilityLabel("Organizar ou filtrar faixas")
-            .accessibilityIdentifier("artist.tracks.organize")
-
-            Menu {
-                Button("Adicionar músicas à fila", systemImage: "text.line.last.and.arrowtriangle.forward") {
-                    Task {
-                        for track in tracks {
-                            await store.addToQueue(trackID: track.id)
-                        }
-                    }
-                }
-                .disabled(isLoading || tracks.isEmpty)
-            } label: {
-                Image(systemName: "ellipsis")
-                    .frame(width: headerIconControlWidth, height: headerControlHeight)
-                    .contentShape(.capsule)
-            }
-            .menuIndicator(.hidden)
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .help("Opções")
-            .accessibilityLabel("Opções")
-            .accessibilityIdentifier("artist.options")
+            Spacer(minLength: 0)
         }
     }
 
@@ -1750,7 +1713,7 @@ struct ArtistView: View {
     }
 
     private var visibleTracks: [Track] {
-        let query = trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = toolbarState.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         var visibleTracks = tracks
 
         if !query.isEmpty {
@@ -1761,7 +1724,7 @@ struct ArtistView: View {
             }
         }
 
-        switch trackOrder {
+        switch toolbarState.order {
         case .album:
             break
         case .title:
@@ -2489,4 +2452,83 @@ private struct ExternalReleaseCard: View {
         }
         .frame(width: artworkSize, alignment: .leading)
     }
+}
+
+struct ArtistDetailToolbarControls: View {
+    @Environment(DurvaldCoreStore.self) private var store
+    @Bindable var state: ArtistToolbarState
+    let searchWidth: CGFloat
+    let prefersCompact: Bool
+    @Binding var isSearchExpanded: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            LibraryToolbarSearchField(
+                searchText: $state.searchText,
+                placeholder: "Pesquisar faixas",
+                identifier: "artist.tracks.search",
+                prefersCompact: prefersCompact,
+                expandedWidth: searchWidth,
+                isExpanded: $isSearchExpanded
+            )
+
+            Menu {
+                Picker("Organizar", selection: $state.order) {
+                    ForEach(ArtistTrackOrder.allCases) { order in
+                        Text(order.title).tag(order)
+                    }
+                }
+            } label: {
+                ZStack {
+                    Color.clear
+                    Image(systemName: "line.3.horizontal.decrease")
+                }
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .fixedSize()
+            .frame(width: 36, height: 36)
+            .contentShape(Circle())
+            .clipShape(Circle())
+            .glassEffect(.regular, in: .circle)
+            .help("Organizar ou filtrar faixas")
+            .accessibilityLabel("Organizar ou filtrar faixas")
+            .accessibilityIdentifier("artist.tracks.organize")
+
+            Menu {
+                Button("Adicionar músicas à fila", systemImage: "text.line.last.and.arrowtriangle.forward") {
+                    Task {
+                        for track in state.tracks {
+                            await store.addToQueue(trackID: track.id)
+                        }
+                    }
+                }
+                .disabled(state.isLoading || state.tracks.isEmpty)
+            } label: {
+                ZStack {
+                    Color.clear
+                    Image(systemName: "ellipsis")
+                }
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .fixedSize()
+            .frame(width: 36, height: 36)
+            .contentShape(Circle())
+            .clipShape(Circle())
+            .glassEffect(.regular, in: .circle)
+            .help("Opções")
+            .accessibilityLabel("Opções")
+            .accessibilityIdentifier("artist.options")
+        }
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
+    }
+
 }
