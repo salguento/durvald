@@ -293,9 +293,21 @@ struct ContentView: View {
                         text: $shell.searchText,
                         isFocused: $shell.isSearchFocused,
                         isPresented: true,
-                        focusRequest: shell.searchFocusRequest
+                        focusRequest: shell.searchFocusRequest,
+                        placeholder: ""
                     )
                     .frame(maxWidth: .infinity)
+                    .overlay(alignment: .leading) {
+                        if shell.searchText.isEmpty {
+                            Text("Biblioteca")
+                                .font(.system(size: NSFont.systemFontSize))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
                     .accessibilityLabel("Pesquisar na biblioteca")
                     .accessibilityIdentifier("search.field")
 
