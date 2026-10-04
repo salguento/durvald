@@ -29,6 +29,8 @@ struct ContentView: View {
 
     @State private var albumSearchText = ""
     @State private var albumsSummary = "Carregando…"
+    @State private var artistSearchText = ""
+    @State private var artistsSummary = "Carregando…"
     @State private var musicEntryID: Int?
     @State private var musicPresentation = MusicLibraryPresentation()
     @State private var musicSearchText = ""
@@ -347,7 +349,39 @@ struct ContentView: View {
 
     private var hasLibrarySearch: Bool {
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
-        return destination == .albums || destination == .songs
+        return destination == .albums || destination == .songs || destination == .artists
+    }
+
+    private var librarySummaryText: String {
+        switch shell.navigationHistory.current {
+        case .songs: musicLibrarySummary.text
+        case .artists: artistsSummary
+        default: albumsSummary
+        }
+    }
+
+    private var librarySearchText: Binding<String> {
+        switch shell.navigationHistory.current {
+        case .songs: $musicSearchText
+        case .artists: $artistSearchText
+        default: $albumSearchText
+        }
+    }
+
+    private var librarySearchPlaceholder: String {
+        switch shell.navigationHistory.current {
+        case .songs: "Pesquisar músicas"
+        case .artists: "Pesquisar artistas"
+        default: "Pesquisar álbuns"
+        }
+    }
+
+    private var librarySearchIdentifier: String {
+        switch shell.navigationHistory.current {
+        case .songs: "library.search"
+        case .artists: "artists.search"
+        default: "albums.search"
+        }
     }
 
     private var libraryToolbarLayoutKey: String {
@@ -359,20 +393,11 @@ struct ContentView: View {
             : contentColumnWidth + (shell.isQueuePresented ? Layout.queueIdealWidth : 0)
     }
 
-    private var shouldCollapseLibrarySearch: Bool {
-        let summary = shell.navigationHistory.current == .songs ? musicLibrarySummary.text : albumsSummary
-        let textWidth = min(480, (summary as NSString).size(withAttributes: [
+    private var libraryExpandedControlsMinimumWidth: CGFloat {
+        let textWidth = min(480, (librarySummaryText as NSString).size(withAttributes: [
             .font: NSFont.preferredFont(forTextStyle: .caption1)
         ]).width)
-        let navigationWidth: CGFloat = shell.columnVisibility == .detailOnly ? 280 : 76
-        let panelReservation = shell.isQueuePresented ? Layout.queueIdealWidth - Layout.queueToggleWidth - 16 : 0
-        let detailWidth = libraryToolbarDetailWidth
-        let availableWidth = libraryToolbarMeasurements[libraryToolbarLayoutKey].map {
-            $0.availableWidth + detailWidth - $0.detailWidth - panelReservation
-        }
-            ?? (contentColumnWidth - navigationWidth - 48
-                - (shell.isQueuePresented ? 0 : Layout.queueToggleWidth + 16))
-        return availableWidth < textWidth + 220 + 44 + Layout.librarySummaryLeadingPadding
+        return textWidth + 220 + 44 + 8 + Layout.librarySummaryLeadingPadding
     }
 
     private var libraryContentToolbar: some View {
@@ -390,7 +415,9 @@ struct ContentView: View {
         let preferredWidth = max(minimumWidth, hostWidth)
 
         let content = GeometryReader { geometry in
-            let compact = shouldCollapseLibrarySearch || geometry.size.width < preferredWidth - 0.5
+            // Decide from the space AppKit actually assigned, never from a
+            // preferred width that can lag behind the current resize frame.
+            let compact = geometry.size.width - panelReservation < libraryExpandedControlsMinimumWidth
             let searchWidth = min(220, max(36, geometry.size.width - panelReservation - 44))
             let controlsReservation: CGFloat = (compact ? 36 : searchWidth) + 44
             let summaryWidth = max(0, geometry.size.width - panelReservation - controlsReservation - 8
@@ -398,6 +425,7 @@ struct ContentView: View {
 
             ZStack(alignment: .trailing) {
                 libraryToolbarSummary
+                    .fixedSize(horizontal: false, vertical: true)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(width: summaryWidth, alignment: .leading)
@@ -412,10 +440,13 @@ struct ContentView: View {
             .frame(width: geometry.size.width, height: 36)
         }
         .environment(\.appearsActive, appearsActive)
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
 
         return LibraryToolbarHost(content: content, minimumWidth: minimumWidth, preferredWidth: preferredWidth)
-        .frame(minWidth: minimumWidth, idealWidth: preferredWidth, maxWidth: preferredWidth,
-               minHeight: 36, maxHeight: 36)
+        .frame(minWidth: minimumWidth, maxWidth: .infinity, minHeight: 36, maxHeight: 36)
         .background {
             LibraryToolbarWidthObserver(
                 trailingReservation: Layout.queueToggleWidth + 24,
@@ -438,24 +469,24 @@ struct ContentView: View {
             MusicLibrarySummaryView(summary: musicLibrarySummary)
         } else {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Álbuns").font(.headline)
-                Text(albumsSummary).font(.caption)
+                Text(shell.navigationHistory.current == .artists ? "Artistas" : "Álbuns").font(.headline)
+                Text(librarySummaryText).font(.caption)
             }
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .frame(maxWidth: 480, alignment: .leading)
-            .help(albumsSummary)
+            .help(librarySummaryText)
             .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("albums.summary")
+            .accessibilityIdentifier(shell.navigationHistory.current == .artists ? "artists.summary" : "albums.summary")
         }
     }
 
     private func libraryTopbarControls(searchWidth: CGFloat, prefersCompact: Bool) -> some View {
         HStack(spacing: 8) {
             LibraryToolbarSearchField(
-                searchText: shell.navigationHistory.current == .songs ? $musicSearchText : $albumSearchText,
-                placeholder: shell.navigationHistory.current == .songs ? "Pesquisar músicas" : "Pesquisar álbuns",
-                identifier: shell.navigationHistory.current == .songs ? "library.search" : "albums.search",
+                searchText: librarySearchText,
+                placeholder: librarySearchPlaceholder,
+                identifier: librarySearchIdentifier,
                 prefersCompact: prefersCompact,
                 expandedWidth: searchWidth,
                 isExpanded: $isLibrarySearchExpanded
@@ -466,7 +497,7 @@ struct ContentView: View {
                 })
                 .glassEffect(.regular, in: .circle)
             } else {
-                collectionOptions(for: .albums)
+                collectionOptions(for: shell.navigationHistory.current == .artists ? .artists : .albums)
             }
         }
         .fixedSize()
@@ -723,7 +754,9 @@ struct ContentView: View {
                 albumsSummary = summary
             }
         case .artists:
-            ArtistsView(onSelectArtist: showArtist)
+            ArtistsView(searchText: $artistSearchText, onSelectArtist: showArtist) { summary in
+                artistsSummary = summary
+            }
         case .playlists:
             PlaylistsView(onSelectPlaylist: showPlaylist)
         case .history:
@@ -732,56 +765,74 @@ struct ContentView: View {
     }
 }
 
-// Report a real, constraint-based size range to the native toolbar. Geometry
-// inside this host only lays out content; it does not supply intrinsic width.
+// Let SwiftUI negotiate the toolbar width through sizeThatFits alone. Native
+// width constraints on the embedded view would introduce a second sizing
+// authority and can scale the hosting canvas when the toolbar compresses it.
 private struct LibraryToolbarHost<Content: View>: NSViewRepresentable {
     let content: Content
     let minimumWidth: CGFloat
     let preferredWidth: CGFloat
 
     func makeNSView(context: Context) -> LibraryToolbarHostingView<Content> {
-        let view = LibraryToolbarHostingView(rootView: content)
-        view.sizingOptions = []
-        view.translatesAutoresizingMaskIntoConstraints = false
-        let minimum = view.widthAnchor.constraint(greaterThanOrEqualToConstant: minimumWidth)
-        let maximum = view.widthAnchor.constraint(lessThanOrEqualToConstant: preferredWidth)
-        let preferred = view.widthAnchor.constraint(equalToConstant: preferredWidth)
-        preferred.priority = .defaultLow
-        view.minimumWidthConstraint = minimum
-        view.maximumWidthConstraint = maximum
-        view.preferredWidthConstraint = preferred
-        NSLayoutConstraint.activate([minimum, maximum, preferred,
-                                     view.heightAnchor.constraint(equalToConstant: 36)])
-        return view
+        LibraryToolbarHostingView(rootView: content)
     }
 
     func updateNSView(_ view: LibraryToolbarHostingView<Content>, context: Context) {
-        view.rootView = content
-        guard view.minimumWidthConstraint?.constant != minimumWidth
-                || view.maximumWidthConstraint?.constant != preferredWidth else { return }
-        // Keep constraints installed. Widen the upper bound before raising
-        // the lower bound; lower the lower bound before narrowing the range.
-        if preferredWidth > (view.maximumWidthConstraint?.constant ?? 0) {
-            view.maximumWidthConstraint?.constant = preferredWidth
-        }
-        view.minimumWidthConstraint?.constant = minimumWidth
-        view.maximumWidthConstraint?.constant = preferredWidth
-        view.preferredWidthConstraint?.constant = preferredWidth
+        view.hostingView.rootView = content
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: LibraryToolbarHostingView<Content>, context: Context) -> CGSize? {
         let proposedWidth = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? preferredWidth
-        return CGSize(width: min(preferredWidth, max(minimumWidth, proposedWidth)), height: 36)
+        return CGSize(width: max(minimumWidth, proposedWidth), height: 36)
     }
 }
 
-private final class LibraryToolbarHostingView<Content: View>: NSHostingView<Content> {
-    var minimumWidthConstraint: NSLayoutConstraint?
-    var maximumWidthConstraint: NSLayoutConstraint?
-    var preferredWidthConstraint: NSLayoutConstraint?
+// Keep the representable's native sizing separate from SwiftUI's hosting
+// canvas. Resizing the toolbar must relayout the canvas, not scale a cached
+// rendering of its metadata and controls to fit a smaller native item.
+private final class LibraryToolbarHostingView<Content: View>: NSView {
+    let hostingView: NSHostingView<Content>
+
+    init(rootView: Content) {
+        hostingView = NSHostingView(rootView: rootView)
+        super.init(frame: .zero)
+        hostingView.sizingOptions = []
+        hostingView.layerContentsRedrawPolicy = .duringViewResize
+        addSubview(hostingView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is unavailable")
+    }
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: 36)
+    }
+
+    override var preservesContentDuringLiveResize: Bool { false }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutHostedContent()
+    }
+
+    override func setBoundsSize(_ newSize: NSSize) {
+        super.setBoundsSize(newSize)
+        layoutHostedContent()
+    }
+
+    override func layout() {
+        super.layout()
+        layoutHostedContent()
+    }
+
+    private func layoutHostedContent() {
+        // Update the canvas synchronously with the native item. Waiting for
+        // the next layout pass leaves its previous width visible for a frame
+        // precisely when the search changes between expanded and compact.
+        if hostingView.frame != bounds { hostingView.frame = bounds }
+        hostingView.layoutSubtreeIfNeeded()
     }
 }
 
@@ -825,6 +876,8 @@ private struct LibraryToolbarWidthObserver: NSViewRepresentable {
             if let window {
                 NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
                     name: NSWindow.didResizeNotification, object: window)
+                NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
+                    name: NSWindow.didEndLiveResizeNotification, object: window)
             }
             scheduleMeasurement()
         }
@@ -844,7 +897,10 @@ private struct LibraryToolbarWidthObserver: NSViewRepresentable {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.isMeasurementScheduled = false
-                guard let window = self.window, self.bounds.width > 0,
+                // During live resize, extrapolate the last settled measurement
+                // from the content column instead of feeding every toolbar
+                // layout pass back into its own preferred-width constraints.
+                guard let window = self.window, !window.inLiveResize, self.bounds.width > 0,
                       let toolbar = window.toolbar,
                       let item = toolbar.items.first(where: { item in
                           guard let view = item.view else { return false }

@@ -12,6 +12,13 @@ struct ToolbarSearchTextField: NSViewRepresentable {
     var accessibilityLabel = "Pesquisar na biblioteca"
     var accessibilityIdentifier = "search.field"
 
+    private var attributedPlaceholder: NSAttributedString {
+        NSAttributedString(
+            string: placeholder,
+            attributes: [.foregroundColor: NSColor.secondaryLabelColor]
+        )
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
@@ -40,7 +47,7 @@ struct ToolbarSearchTextField: NSViewRepresentable {
         textField.cell?.isScrollable = true
         textField.lineBreakMode = .byClipping
         textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textField.placeholderString = placeholder
+        textField.placeholderAttributedString = attributedPlaceholder
         textField.setAccessibilityElement(true)
         textField.setAccessibilityRole(.textField)
         textField.setAccessibilityLabel(accessibilityLabel)
@@ -59,8 +66,9 @@ struct ToolbarSearchTextField: NSViewRepresentable {
     func updateNSView(_ textField: NSTextField, context: Context) {
         context.coordinator.parent = self
         textField.textColor = appearsActive ? .labelColor : .secondaryLabelColor
-        if textField.placeholderString != placeholder {
-            textField.placeholderString = placeholder
+        let placeholderText = attributedPlaceholder
+        if textField.placeholderAttributedString?.isEqual(to: placeholderText) != true {
+            textField.placeholderAttributedString = placeholderText
         }
         textField.setAccessibilityLabel(accessibilityLabel)
         textField.setAccessibilityIdentifier(accessibilityIdentifier)
@@ -215,7 +223,9 @@ struct ToolbarSearchTextField: NSViewRepresentable {
                 "search.container",
                 "library.search.container",
                 "albums.search.container",
+                "artists.search.container",
                 "albums.search.clear",
+                "artists.search.clear",
                 "library.search.clear",
                 "search.clear",
                 "sidebar.sectionSearch.container",

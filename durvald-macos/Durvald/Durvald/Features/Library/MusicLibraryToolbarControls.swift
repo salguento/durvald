@@ -78,9 +78,20 @@ struct LibraryToolbarSearchField: View {
                         ToolbarSearchTextField(
                             text: $searchText, isFocused: $isFocused,
                             isPresented: !isCollapsed, focusRequest: focusRequest,
-                            placeholder: placeholder, accessibilityLabel: placeholder,
+                            placeholder: "", accessibilityLabel: placeholder,
                             accessibilityIdentifier: "\(identifier).field"
                         )
+                        .overlay(alignment: .leading) {
+                            if searchText.isEmpty {
+                                Text(placeholder)
+                                    .font(.system(size: NSFont.systemFontSize))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                            }
+                        }
                         if !searchText.isEmpty {
                             Button { searchText = "" } label: {
                                 Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
@@ -125,7 +136,9 @@ struct LibraryToolbarSearchField: View {
                 }
             }
             .onChange(of: isFocused) { _, focused in
-                if !focused { isExpanded = false }
+                // Reserve the expanded field while focus survives a resize,
+                // including when it was focused before entering compact mode.
+                isExpanded = focused
             }
     }
 }

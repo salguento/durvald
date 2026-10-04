@@ -816,6 +816,125 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testLibraryToolbarKeepsSizeAndSearchFocusAcrossNativeWindowResizes() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+
+        for (destination, search, optionsID) in [
+            ("songs", "library", "library.viewOptions"),
+            ("albums", "albums", "albums.listingMode"),
+            ("artists", "artists", "artists.listingMode"),
+        ] {
+            let windowMenu = app.menuBars.menuBarItems["Window"]
+            windowMenu.click()
+            app.menuItems["Fill"].click()
+            let tab = app.buttons["sidebar.\(destination)"]
+            if !tab.isHittable { app.buttons["navigation.sidebar"].click() }
+            XCTAssertTrue(tab.waitForExistence(timeout: 3))
+            tab.click()
+
+            // Cover the unfocused transition too: the search collapses next
+            // to the metadata, whose typography must keep its normal height.
+            windowMenu.click()
+            app.menuItems["Move & Resize"].click()
+            app.menuItems["Left"].click()
+            let visibleSummary = app.descendants(matching: .any)["\(search).summary"]
+            XCTAssertTrue(visibleSummary.waitForExistence(timeout: 3))
+            XCTAssertGreaterThanOrEqual(visibleSummary.frame.height, 26)
+            let compactOptions = app.descendants(matching: .any)[optionsID]
+            XCTAssertGreaterThanOrEqual(compactOptions.frame.height, 30)
+            XCTAssertGreaterThanOrEqual(compactOptions.frame.width, 30)
+            let compactSearch = app.buttons["\(search).search.expand"]
+            if compactSearch.exists {
+                XCTAssertGreaterThanOrEqual(compactSearch.frame.height, 30)
+                XCTAssertFalse(visibleSummary.frame.intersects(compactSearch.frame))
+            }
+            windowMenu.click()
+            app.menuItems["Fill"].click()
+
+            let initialWidth = window.frame.width
+            let field = app.textFields["\(search).search.field"]
+            XCTAssertTrue(field.waitForExistence(timeout: 3))
+            field.click()
+            field.typeText("teste")
+
+            // Window-manager actions change the actual window bounds. Synthetic
+            // edge drags can be ignored by the macOS UI-test event dispatcher.
+            windowMenu.click()
+            app.menuItems["Move & Resize"].click()
+            app.menuItems["Left"].click()
+            XCTAssertGreaterThan(abs(window.frame.width - initialWidth), 40)
+            XCTAssertTrue(field.exists)
+            XCTAssertEqual(field.value as? String, "teste")
+            XCTAssertTrue(NSPredicate(format: "hasKeyboardFocus == true").evaluate(with: field))
+            XCTAssertGreaterThanOrEqual(field.frame.height, 14)
+            let options = app.descendants(matching: .any)[optionsID]
+            XCTAssertGreaterThanOrEqual(options.frame.height, 30)
+            XCTAssertGreaterThanOrEqual(options.frame.width, 30)
+            let summary = app.descendants(matching: .any)["\(search).summary"]
+            if summary.exists {
+                XCTAssertFalse(summary.frame.intersects(field.frame),
+                    "Focused search must reserve space instead of overlapping the summary.")
+            }
+
+            let attachment = XCTAttachment(screenshot: window.screenshot())
+            attachment.name = "\(destination) focused search after native resize"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            app.typeKey(.escape, modifierFlags: [])
+        }
+    }
+
+    @MainActor
+    func testLibraryToolbarKeepsControlSizesWhenPanelsToggle() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+
+        let destinations = [
+            ("songs", "library", "library.viewOptions"),
+            ("albums", "albums", "albums.listingMode"),
+            ("artists", "artists", "artists.listingMode"),
+        ]
+        for (destination, search, optionsID) in destinations {
+            app.buttons["sidebar.\(destination)"].click()
+            let options = app.descendants(matching: .any)[optionsID]
+            XCTAssertTrue(options.waitForExistence(timeout: 3))
+            for queueOpen in [false, true] {
+                if queueOpen { app.buttons["player.queue"].click() }
+                var sidebarClosed = false
+                for closeSidebar in [false, true, false] {
+                    if closeSidebar != sidebarClosed {
+                        app.buttons["navigation.sidebar"].click()
+                        sidebarClosed = closeSidebar
+                    }
+                    XCTAssertGreaterThanOrEqual(options.frame.height, 30,
+                        "\(destination): view options shrank at width \(window.frame.width)")
+                    XCTAssertGreaterThanOrEqual(options.frame.width, 30)
+                    let field = app.textFields["\(search).search.field"]
+                    let expand = app.buttons["\(search).search.expand"]
+                    if field.exists {
+                        XCTAssertGreaterThanOrEqual(field.frame.height, 14)
+                    } else {
+                        XCTAssertTrue(expand.exists)
+                        XCTAssertGreaterThanOrEqual(expand.frame.height, 30)
+                    }
+                }
+                let attachment = XCTAttachment(screenshot: window.screenshot())
+                attachment.name = "\(destination) responsive toolbar, queue \(queueOpen)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+                if queueOpen { app.buttons["player.queue"].click() }
+            }
+        }
+    }
+
+    @MainActor
     func testQueueOpensWithoutGrowingWindowAndUsesResizableWidth() {
         let app = XCUIApplication()
         app.launchArguments.append("--ui-testing")
