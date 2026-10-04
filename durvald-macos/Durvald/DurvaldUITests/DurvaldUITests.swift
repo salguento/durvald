@@ -486,7 +486,8 @@ final class DurvaldUITests: XCTestCase {
         app.launchArguments += [
             "--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture",
             "-AppleInterfaceStyle", "Dark", "-library.music.sort", "title",
-            "-library.music.sortAscending", "YES", "-library.music.onlyFavorites", "NO"
+            "-library.music.sortAscending", "YES", "-library.music.onlyFavorites", "NO",
+            "-history.newestFirst", "NO"
         ]
         app.launch()
         let window = app.windows.firstMatch
@@ -827,6 +828,36 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testHistoryToolbarSearchFiltersOlderEntriesAndUpdatesSummary() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture"]
+        app.launch()
+        let historyTab = app.buttons["sidebar.history"]
+        if !historyTab.isHittable { app.buttons["navigation.sidebar"].click() }
+        XCTAssertTrue(historyTab.waitForExistence(timeout: 3))
+        historyTab.click()
+        let search = app.textFields["history.search.field"]
+        if !search.exists { app.buttons["history.search.expand"].click() }
+        XCTAssertTrue(search.waitForExistence(timeout: 3))
+        search.click()
+        search.typeText("Faixa de teste 240")
+        XCTAssertTrue(app.descendants(matching: .any)["history.entry.240"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["history.entry.1"].exists)
+        let summary = app.descendants(matching: .any)["history.summary"]
+        // Compact focused search intentionally hides the metadata. Check it
+        // after leaving the field, following the shared toolbar behavior.
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertTrue(summary.waitForExistence(timeout: 3))
+        XCTAssertTrue((summary.value as? String ?? "").contains("1 reprodução"))
+        let options = app.descendants(matching: .any)["history.viewOptions"]
+        XCTAssertGreaterThanOrEqual(options.frame.width, 30)
+        let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        attachment.name = "History shared toolbar with filtered metadata"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     func testLibraryToolbarKeepsSizeAndSearchFocusAcrossNativeWindowResizes() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
@@ -838,6 +869,7 @@ final class DurvaldUITests: XCTestCase {
             ("songs", "library", "library.viewOptions"),
             ("albums", "albums", "albums.listingMode"),
             ("artists", "artists", "artists.listingMode"),
+            ("history", "history", "history.viewOptions"),
         ] {
             let windowMenu = app.menuBars.menuBarItems["Window"]
             windowMenu.click()
@@ -911,6 +943,7 @@ final class DurvaldUITests: XCTestCase {
             ("songs", "library", "library.viewOptions"),
             ("albums", "albums", "albums.listingMode"),
             ("artists", "artists", "artists.listingMode"),
+            ("history", "history", "history.viewOptions"),
         ]
         for (destination, search, optionsID) in destinations {
             app.buttons["sidebar.\(destination)"].click()

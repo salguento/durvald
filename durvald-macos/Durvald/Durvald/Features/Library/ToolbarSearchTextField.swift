@@ -224,6 +224,8 @@ struct ToolbarSearchTextField: NSViewRepresentable {
                 "library.search.container",
                 "albums.search.container",
                 "artists.search.container",
+                "history.search.container",
+                "history.search.clear",
                 "albums.search.clear",
                 "artists.search.clear",
                 "library.search.clear",

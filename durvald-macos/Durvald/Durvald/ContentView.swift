@@ -32,6 +32,8 @@ struct ContentView: View {
     @State private var albumsSummary = "Carregando…"
     @State private var artistSearchText = ""
     @State private var artistsSummary = "Carregando…"
+    @State private var historySearchText = ""
+    @State private var historySummary = "Carregando…"
     @State private var musicEntryID: Int?
     @State private var musicPresentation = MusicLibraryPresentation()
     @State private var musicSearchText = ""
@@ -337,13 +339,14 @@ struct ContentView: View {
 
     private var hasLibrarySearch: Bool {
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
-        return destination == .albums || destination == .songs || destination == .artists
+        return destination == .albums || destination == .songs || destination == .artists || destination == .history
     }
 
     private var librarySummaryText: String {
         switch shell.navigationHistory.current {
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
+        case .history: historySummary
         default: albumsSummary
         }
     }
@@ -352,6 +355,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: $musicSearchText
         case .artists: $artistSearchText
+        case .history: $historySearchText
         default: $albumSearchText
         }
     }
@@ -360,6 +364,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: "Pesquisar músicas"
         case .artists: "Pesquisar artistas"
+        case .history: "Pesquisar no histórico"
         default: "Pesquisar álbuns"
         }
     }
@@ -368,6 +373,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: "library.search"
         case .artists: "artists.search"
+        case .history: "history.search"
         default: "albums.search"
         }
     }
@@ -457,7 +463,7 @@ struct ContentView: View {
             MusicLibrarySummaryView(summary: musicLibrarySummary)
         } else {
             VStack(alignment: .leading, spacing: 1) {
-                Text(shell.navigationHistory.current == .artists ? "Artistas" : "Álbuns").font(.headline)
+                Text(shell.navigationHistory.current.title).font(.headline)
                 Text(librarySummaryText).font(.caption)
             }
             .foregroundStyle(.secondary)
@@ -465,7 +471,7 @@ struct ContentView: View {
             .frame(maxWidth: 480, alignment: .leading)
             .help(librarySummaryText)
             .accessibilityElement(children: .combine)
-            .accessibilityIdentifier(shell.navigationHistory.current == .artists ? "artists.summary" : "albums.summary")
+            .accessibilityIdentifier("\(shell.navigationHistory.current.rawValue).summary")
         }
     }
 
@@ -484,6 +490,8 @@ struct ContentView: View {
                     openWindow(id: "music-view-options")
                 })
                 .glassEffect(.regular, in: .circle)
+            } else if shell.navigationHistory.current == .history {
+                HistoryToolbarOptionsMenu()
             } else {
                 collectionOptions(for: shell.navigationHistory.current == .artists ? .artists : .albums)
             }
@@ -745,7 +753,9 @@ struct ContentView: View {
         case .playlists:
             PlaylistsView(onSelectPlaylist: showPlaylist)
         case .history:
-            HistoryView()
+            HistoryView(searchText: $historySearchText) { summary in
+                historySummary = summary
+            }
         }
     }
 }
