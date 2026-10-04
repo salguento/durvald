@@ -554,7 +554,44 @@ final class DurvaldUITests: XCTestCase {
         app.links["player.artist"].click()
         let artistPage = app.descendants(matching: .any)["artist.detail.7"]
         XCTAssertTrue(artistPage.waitForExistence(timeout: 3))
+        let artistOptions = app.descendants(matching: .any)["artist.options"]
+        let artistOrganize = app.descendants(matching: .any)["artist.tracks.organize"]
+        XCTAssertTrue(artistOptions.waitForExistence(timeout: 3))
+        for control in [artistOptions, artistOrganize] {
+            XCTAssertEqual(control.frame.width, 36, accuracy: 2)
+            XCTAssertEqual(control.frame.height, 36, accuracy: 2)
+            XCTAssertLessThan(control.frame.maxY, toolbarFrame.maxY + 2)
+        }
+        XCTAssertTrue(app.textFields["artist.tracks.search.field"].exists)
+        XCTAssertLessThan(window.frame.maxX - app.buttons["player.queue"].frame.maxX, 80)
         capture("Artist detail at top")
+        artistOptions.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        capture("Artist topbar hovered at top")
+        contentPoint.hover()
+        capture("Artist topbar after pointer leaves")
+        app.buttons["player.queue"].click()
+        let artistQueue = app.descendants(matching: .any)["queue.sidebar"]
+        XCTAssertTrue(artistQueue.waitForExistence(timeout: 3))
+        XCTAssertLessThanOrEqual(artistOptions.frame.maxX, artistQueue.frame.minX)
+        let queueAligned = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                let gap = artistQueue.frame.minX - artistOptions.frame.maxX
+                return gap >= 0 && gap < 40
+            },
+            object: nil
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [queueAligned], timeout: 3), .completed)
+        XCTAssertLessThan(window.frame.maxX - app.buttons["player.queue"].frame.maxX, 80)
+        capture("Artist toolbar with queue")
+        let artistSearchExpand = app.buttons["artist.tracks.search.expand"]
+        if artistSearchExpand.exists { artistSearchExpand.click() }
+        let artistSearch = app.textFields["artist.tracks.search.field"]
+        XCTAssertTrue(artistSearch.waitForExistence(timeout: 3))
+        XCTAssertLessThanOrEqual(artistOptions.frame.maxX, artistQueue.frame.minX)
+        XCTAssertEqual(artistOptions.frame.width, 36, accuracy: 2)
+        capture("Artist expanded search with queue")
+        app.typeKey(.escape, modifierFlags: [])
+        app.buttons["player.queue"].click()
         artistPage.scroll(byDeltaX: 0, deltaY: -420)
         capture("Artist detail scrolled")
         XCTAssertEqual(app.buttons["sidebar.history"].frame.minY, sidebarFrame.minY, accuracy: 1)
