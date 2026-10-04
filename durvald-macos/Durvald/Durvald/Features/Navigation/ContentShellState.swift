@@ -18,7 +18,6 @@ private struct LibraryScrollPositionModifier: ViewModifier {
 
     @State private var position = ScrollPosition()
     @State private var isRestoring = true
-    @State private var scrollPhase: ScrollPhase = .idle
 
     private struct GeometrySnapshot: Equatable {
         let offset: CGFloat
@@ -27,31 +26,18 @@ private struct LibraryScrollPositionModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scrollPosition($position)
-            .opacity(isRestoring && savedOffset.wrappedValue > 0 ? 0 : 1)
             .onScrollGeometryChange(for: GeometrySnapshot.self) { geometry in
                 GeometrySnapshot(
                     offset: max(0, geometry.visibleRect.minY)
                 )
             } action: { _, geometry in
-                if isRestoring {
-                    guard isContentReady else { return }
-                    guard abs(geometry.offset - savedOffset.wrappedValue) <= 0.5 else {
-                        var transaction = Transaction(animation: nil)
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            position.scrollTo(y: savedOffset.wrappedValue)
-                        }
-                        return
-                    }
-                    withAnimation(.easeOut(duration: 0.12)) {
-                        isRestoring = false
-                    }
-                } else {
-                    savedOffset.wrappedValue = geometry.offset
-                }
+                // ScrollPosition clamps requested offsets to the current
+                // content bounds. Never hide the page or retry until an exact
+                // offset matches, especially with lazily measured collections.
+                guard isContentReady, !isRestoring else { return }
+                savedOffset.wrappedValue = geometry.offset
             }
             .onScrollPhaseChange { oldPhase, newPhase, context in
-                scrollPhase = newPhase
                 guard !isRestoring,
                       newPhase == .idle,
                       isUserDriven(oldPhase) else { return }
@@ -64,11 +50,14 @@ private struct LibraryScrollPositionModifier: ViewModifier {
                 }
 
                 isRestoring = true
+                let offsetToRestore = savedOffset.wrappedValue
                 await Task.yield()
+                guard !Task.isCancelled else { return }
                 var transaction = Transaction(animation: nil)
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
-                    position.scrollTo(y: savedOffset.wrappedValue)
+                    position.scrollTo(y: offsetToRestore)
+                    isRestoring = false
                 }
             }
     }
