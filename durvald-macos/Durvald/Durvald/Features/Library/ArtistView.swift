@@ -168,6 +168,8 @@ struct ArtistView: View {
                 .frame(minHeight: geometry.size.height, alignment: .top)
                 .background(pageBackgroundColor)
             }
+            .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+            .preservesLibraryScrollPosition(isContentReady: !isLoading)
         }
         .ignoresSafeArea(.container, edges: [.top, .bottom])
         .task(id: store.metadataRevision) {

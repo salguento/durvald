@@ -15,6 +15,7 @@ struct HistoryView: View {
             HistoryTrackRow(item: item)
                 .task { await store.loadMoreHistory(ifNeededAfter: item.id) }
         }
+        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
         .preservesLibraryScrollPosition()
         .task {
             while !Task.isCancelled {

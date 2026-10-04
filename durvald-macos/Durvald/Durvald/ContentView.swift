@@ -40,8 +40,6 @@ struct ContentView: View {
     @State private var libraryToolbarMeasurements: [String: LibraryToolbarMeasurement] = [:]
     @State private var isLibrarySearchExpanded = false
     @State private var musicLibrarySummary = MusicLibrarySummary(tracks: [], kind: .all)
-    @State private var isTopbarHovered = false
-    @State private var isPageScrolled = false
     @State private var shell = ContentShellState()
     @State private var windowLayout = WindowSplitLayoutCoordinator()
     @State private var playlistCreation = PlaylistCreationCoordinator()
@@ -105,15 +103,7 @@ struct ContentView: View {
                 )
         }
         .toolbar(removing: .title)
-        .toolbarBackgroundVisibility(
-            isPageScrolled && isTopbarHovered ? .visible : .hidden,
-            for: .windowToolbar
-        )
-        .background {
-            TopbarHoverObserver(isHovered: $isTopbarHovered)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
+        .toolbarBackgroundVisibility(.automatic, for: .windowToolbar)
         .overlay(alignment: .trailing) {
             if shell.isQueuePresented {
                 GeometryReader { geometry in
@@ -153,9 +143,6 @@ struct ContentView: View {
         }
         .onChange(of: shell.navigationHistory.current, initial: true) { _, destination in
             shell.handleDestinationChange(destination)
-        }
-        .onChange(of: shell.navigationHistory.currentEntryID, initial: true) { _, entryID in
-            isPageScrolled = pageScrollOffsets.offset(for: entryID) > 8
         }
         .alert(
             "Erro",
@@ -668,10 +655,6 @@ struct ContentView: View {
             get: { pageScrollOffsets.offset(for: entryID) },
             set: {
                 pageScrollOffsets.setOffset($0, for: entryID)
-                if entryID == shell.navigationHistory.currentEntryID {
-                    let scrolled = $0 > 8
-                    if isPageScrolled != scrolled { isPageScrolled = scrolled }
-                }
             }
         )
     }
