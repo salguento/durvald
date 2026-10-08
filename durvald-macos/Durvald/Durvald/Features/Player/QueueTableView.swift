@@ -60,6 +60,7 @@ struct QueueTableView: NSViewRepresentable {
         context.coordinator.tableView = tableView
         context.coordinator.rows = rows
         context.coordinator.isWindowActive = isWindowActive
+        context.coordinator.appliedCoreID = core.map(ObjectIdentifier.init)
         tableView.reloadData()
 
         let scrollView = NSScrollView()
@@ -93,13 +94,7 @@ struct QueueTableView: NSViewRepresentable {
         context.coordinator.parent = self
         scrollView.contentInsets.top = topContentInset
 
-        let requiresReload = context.coordinator.rows != rows
-            || context.coordinator.isWindowActive != isWindowActive
-
-        guard requiresReload else { return }
-        context.coordinator.rows = rows
-        context.coordinator.isWindowActive = isWindowActive
-        context.coordinator.tableView?.reloadData()
+        context.coordinator.updateRows()
     }
 
     @MainActor
@@ -112,7 +107,16 @@ struct QueueTableView: NSViewRepresentable {
         )
 
         var parent: QueueTableView
-        var rows: [QueueTableRow] = []
+        var rows: [QueueTableRow] = [] {
+            didSet {
+                firstUpcomingRow = rows.firstIndex(where: { !$0.isCurrent })
+                currentRowIndexes = IndexSet(rows.indices.filter { rows[$0].isCurrent })
+                (tableView as? QueueDropTableView)?.firstUpcomingRow = firstUpcomingRow
+            }
+        }
+        private(set) var firstUpcomingRow: Int?
+        private var currentRowIndexes = IndexSet()
+        var appliedCoreID: ObjectIdentifier?
         var isWindowActive = true
         weak var tableView: NSTableView?
 
@@ -129,11 +133,67 @@ struct QueueTableView: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-            if rows[row].isCurrent { return 70 }
-            if row == rows.firstIndex(where: { !$0.isCurrent }) {
-                return row > 0 ? 80 : 70
-            }
+            guard rows.indices.contains(row) else { return 46 }
+            return Self.height(rows[row], at: row, firstUpcoming: firstUpcomingRow)
+        }
+
+        private static func height(_ value: QueueTableRow, at row: Int, firstUpcoming: Int?) -> CGFloat {
+            if value.isCurrent { return 70 }
+            if row == firstUpcoming { return row > 0 ? 80 : 70 }
             return 46
+        }
+
+        func updateRows() {
+            guard let tableView else { return }
+            let newRows = parent.rows
+            let coreID = parent.core.map(ObjectIdentifier.init)
+            let coreChanged = coreID != appliedCoreID
+            let focusChanged = isWindowActive != parent.isWindowActive
+            let dataChanged = rows != newRows
+            guard dataChanged || coreChanged || focusChanged else { return }
+            let structural = dataChanged && (rows.count != newRows.count
+                || zip(rows, newRows).contains { $0.trackID != $1.trackID })
+            let oldRows = rows
+            let oldFirstUpcoming = firstUpcomingRow
+            if dataChanged { rows = newRows }
+            isWindowActive = parent.isWindowActive
+            appliedCoreID = coreID
+            if structural {
+                tableView.reloadData()
+                return
+            }
+            if !dataChanged && !coreChanged {
+                updateCurrentAppearance(in: tableView)
+                return
+            }
+            var changed = IndexSet()
+            var heights = IndexSet()
+            for index in rows.indices {
+                if coreChanged || oldRows[index] != rows[index]
+                    || (index == oldFirstUpcoming) != (index == firstUpcomingRow) {
+                    changed.insert(index)
+                }
+                if Self.height(oldRows[index], at: index, firstUpcoming: oldFirstUpcoming)
+                    != Self.height(rows[index], at: index, firstUpcoming: firstUpcomingRow) {
+                    heights.insert(index)
+                }
+            }
+            if !heights.isEmpty { tableView.noteHeightOfRows(withIndexesChanged: heights) }
+            if !changed.isEmpty {
+                tableView.reloadData(forRowIndexes: changed, columnIndexes: IndexSet(integer: 0))
+            }
+            if focusChanged {
+                updateCurrentAppearance(in: tableView)
+            }
+        }
+
+        private func updateCurrentAppearance(in tableView: NSTableView) {
+            // Update only already materialized current cells. No artwork
+            // requests, selection reset or row recreation on window focus.
+            for index in currentRowIndexes {
+                (tableView.view(atColumn: 0, row: index, makeIfNecessary: false) as? QueueTableCellView)?
+                    .updateTitleColor(isCurrent: true, isWindowActive: isWindowActive)
+            }
         }
 
         func tableView(
@@ -159,7 +219,7 @@ struct QueueTableView: NSViewRepresentable {
             }
 
             cell.titleLabel.stringValue = value.title
-            let isFirstUpcoming = row == rows.firstIndex(where: { !$0.isCurrent })
+            let isFirstUpcoming = row == firstUpcomingRow
             cell.clearButton.isHidden = !isFirstUpcoming
             cell.configureSectionHeader(
                 value.isCurrent ? "Tocando agora" : (isFirstUpcoming ? "Próximo na fila" : nil),
@@ -170,9 +230,7 @@ struct QueueTableView: NSViewRepresentable {
             cell.artistLabel.isHidden = value.artist.isEmpty
             cell.loadArtwork(value.artworkID, using: parent.core)
 
-            cell.titleLabel.textColor = value.isCurrent
-                ? (isWindowActive ? .controlAccentColor : .secondaryLabelColor)
-                : .labelColor
+            cell.updateTitleColor(isCurrent: value.isCurrent, isWindowActive: isWindowActive)
 
             let symbolName: String
             let actionLabel: String
@@ -247,7 +305,7 @@ struct QueueTableView: NSViewRepresentable {
             proposedRow row: Int,
             proposedDropOperation dropOperation: NSTableView.DropOperation
         ) -> NSDragOperation {
-            (tableView as? QueueDropTableView)?.firstUpcomingRow = rows.firstIndex(where: { !$0.isCurrent })
+            (tableView as? QueueDropTableView)?.firstUpcomingRow = firstUpcomingRow
             if !LibraryTrackDrag.ids(from: info.draggingPasteboard).isEmpty {
                 tableView.setDropRow(max(row, rows.isEmpty ? 0 : 1), dropOperation: .above)
                 return .copy
@@ -286,15 +344,27 @@ struct QueueTableView: NSViewRepresentable {
                   rows[destinationRow].position > 0
             else { return false }
 
-            let from = rows[sourceRow].position
-            let to = rows[destinationRow].position
-            let movedRow = rows.remove(at: sourceRow)
-            rows.insert(movedRow, at: destinationRow)
+            return moveRow(from: sourceRow, to: destinationRow)
+        }
 
+        @discardableResult
+        func moveRow(from source: Int, to destination: Int) -> Bool {
+            guard let tableView, rows.indices.contains(source), rows.indices.contains(destination),
+                  source != destination, rows[source].position > 0, rows[destination].position > 0
+            else { return false }
+            let from = rows[source].position
+            let to = rows[destination].position
+            var movedRows = rows
+            movedRows.insert(movedRows.remove(at: source), at: destination)
+            rows = movedRows
             tableView.beginUpdates()
-            tableView.moveRow(at: sourceRow, to: destinationRow)
+            tableView.moveRow(at: source, to: destination)
             tableView.endUpdates()
-
+            // AppKit moves the old cell/height too. Refresh section geometry
+            // and button row tags throughout the affected range.
+            let affected = IndexSet(integersIn: min(source, destination)...max(source, destination))
+            tableView.noteHeightOfRows(withIndexesChanged: affected)
+            tableView.reloadData(forRowIndexes: affected, columnIndexes: IndexSet(integer: 0))
             parent.onMove(from, to)
             return true
         }
@@ -540,6 +610,12 @@ private final class QueueTableCellView: NSTableCellView {
             playButton.widthAnchor.constraint(equalTo: artworkImageView.widthAnchor),
             playButton.heightAnchor.constraint(equalTo: artworkImageView.heightAnchor),
         ])
+    }
+
+    func updateTitleColor(isCurrent: Bool, isWindowActive: Bool) {
+        titleLabel.textColor = isCurrent
+            ? (isWindowActive ? .controlAccentColor : .secondaryLabelColor)
+            : .labelColor
     }
 
     func configureSectionHeader(_ title: String?, topSpacing: CGFloat, accessibilityIdentifier: String) {

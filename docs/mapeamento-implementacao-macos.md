@@ -334,6 +334,12 @@ Mudança de rows ou janela ativa recarrega a tabela inteira. heightOfRow/viewFor
 
 **Direção:** Pré-calcular índice de seção e aplicar diferenças quando justificadas; atualizar somente aparência no foco. Usar a lógica incremental de MusicLibraryTableView como referência, sem copiar seu agrupamento.
 
+**Correção implementada em 08/10/2026:** o coordenador prepara firstUpcomingRow e os índices de linhas atuais quando rows muda. heightOfRow, viewFor e feedback de drop passam a consultar o índice preparado, sem varredura por linha. Pausa, metadata, posições e flags de seção usam reloadData(forRowIndexes:columnIndexes:) apenas nas linhas alteradas. Mudanças efetivas de altura notificam noteHeightOfRows, incluindo o vizinho que ganha/perde o header. Troca de core atualiza as células para invalidar artwork da origem anterior; snapshots equivalentes não alteram a tabela.
+
+Mudança de foco modifica somente a cor do título das células atuais já materializadas, sem recriação, atualização de altura ou nova carga de artwork. Mudanças de quantidade/sequência de trackIDs ainda usam reloadData estrutural: não foi introduzido diff por identificador presumidamente único, pois a fila pode repetir a mesma faixa e posições são renumeradas. O drag existente continua usando moveRow, mas agora atualiza os headers, alturas e tags dos botões no intervalo movido. O eco do core que apenas renumera posições recebe atualização parcial, preservando a tabela.
+
+**Validação em 08/10/2026:** build e 173 testes unitários passaram. Sete testes novos cobrem atualização de pausa/metadata, foco sem reload/recriação, seções/alturas, duplicatas, fallback estrutural, troca de core e movimento com eco renumerado. Uma NSTableView real com 100 linhas também verifica seleção/scroll preservados em metadata/foco e alturas recalculadas após movimento/troca de flags de seção. Não há medição de latência com fila grande ou Instruments nesta alteração.
+
 ### E14 — Ordenação de sugestões repete normalização de strings (P2)
 
 **Evidência:** [Features/Playlists/PlaylistMusicPicker.swift:133](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Playlists/PlaylistMusicPicker.swift:133); [Features/Playlists/PlaylistMusicPicker.swift:141](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Playlists/PlaylistMusicPicker.swift:141).
