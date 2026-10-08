@@ -1,5 +1,4 @@
 import AppKit
-import ImageIO
 import SwiftUI
 
 struct PlaylistArtworkThumbnail: View {
@@ -16,15 +15,11 @@ struct PlaylistArtworkThumbnail: View {
         let pixelSize: Int
     }
 
-    private struct DecodedImage: @unchecked Sendable {
-        let value: CGImage?
-    }
-
     var body: some View {
         let request = Request(
             playlistID: playlistID,
             artworkBase64: artworkBase64,
-            pixelSize: max(1, Int((size * displayScale).rounded(.up)))
+            pixelSize: ArtworkRepository.pixelSize(for: size, scale: displayScale)
         )
 
         Group {
@@ -44,29 +39,20 @@ struct PlaylistArtworkThumbnail: View {
         .frame(width: size, height: size)
         .artworkGlassBorder(size: size)
         .task(id: request) {
+            image = nil
             guard let artworkBase64 else {
                 image = nil
                 return
             }
 
-            let decoded = await Task.detached(priority: .userInitiated) {
-                guard let data = Data(base64Encoded: artworkBase64),
-                      let source = CGImageSourceCreateWithData(data as CFData, nil)
-                else {
-                    return DecodedImage(value: nil)
-                }
-
-                let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: request.pixelSize,
-                    kCGImageSourceShouldCacheImmediately: true
-                ] as CFDictionary)
-                return DecodedImage(value: thumbnail)
-            }.value
-
-            guard !Task.isCancelled else { return }
-            image = decoded.value.map { NSImage(cgImage: $0, size: .zero) }
+            do {
+                let loaded = try await ArtworkRepository.shared.playlistImage(base64: artworkBase64, pixelSize: request.pixelSize)
+                guard !Task.isCancelled else { return }
+                image = loaded
+            } catch {
+                guard !Task.isCancelled else { return }
+                image = nil
+            }
         }
         .accessibilityHidden(true)
     }

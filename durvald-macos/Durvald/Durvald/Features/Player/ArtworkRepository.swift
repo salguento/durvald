@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import CryptoKit
 
 private actor ArtworkLoadGate {
     private var isAvailable = true
@@ -34,13 +35,19 @@ final class ArtworkRepository {
         let cost: Int
     }
 
+    private enum Source: Hashable {
+        case managed(coreID: ObjectIdentifier, artworkID: String)
+        // The digest keeps large base64 payloads out of the completed cache.
+        case playlist(digest: Data)
+    }
+
     private struct Request: Hashable {
-        let coreID: ObjectIdentifier
-        let artworkID: String
+        let source: Source
         let pixelSize: Int
     }
 
     private struct Flight {
+        let id: UUID
         let task: Task<NSImage?, Error>
         var waiters: Set<UUID>
     }
@@ -50,6 +57,7 @@ final class ArtworkRepository {
     private var cacheCost = 0
     private let cacheByteLimit: Int
     private let cacheCountLimit: Int
+    private let playlistDecoder: @Sendable (String, Int) async throws -> ImportedArtwork?
     private var inFlight: [Request: Flight] = [:]
     // Keep the complete source bytes for at most one artwork at a time. Limiting
     // only this serial decoding queue would still allow every visible cell to
@@ -63,10 +71,16 @@ final class ArtworkRepository {
 
     init(
         cacheByteLimit: Int = 64 * 1024 * 1024,
-        cacheCountLimit: Int = 600
+        cacheCountLimit: Int = 600,
+        playlistDecoder: @escaping @Sendable (String, Int) async throws -> ImportedArtwork? = { base64, pixelSize in
+            do { return try await FileImportService.shared.artwork(base64: base64, maximumPixelSize: pixelSize) }
+            catch is CancellationError { throw CancellationError() }
+            catch { return nil }
+        }
     ) {
         self.cacheByteLimit = max(0, cacheByteLimit)
         self.cacheCountLimit = max(0, cacheCountLimit)
+        self.playlistDecoder = playlistDecoder
     }
 
     static func pixelSize(for size: CGFloat, scale: CGFloat) -> Int {
@@ -77,7 +91,7 @@ final class ArtworkRepository {
     }
 
     func cachedImage(for artworkID: String, pixelSize: Int, using core: DurvaldCore) -> NSImage? {
-        let request = Request(coreID: ObjectIdentifier(core), artworkID: artworkID, pixelSize: pixelSize)
+        let request = Request(source: .managed(coreID: ObjectIdentifier(core), artworkID: artworkID), pixelSize: pixelSize)
         return cachedArtwork(for: request)?.image
     }
 
@@ -86,7 +100,8 @@ final class ArtworkRepository {
         pixelSize: Int,
         using core: DurvaldCore
     ) async throws -> NSImage? {
-        let request = Request(coreID: ObjectIdentifier(core), artworkID: artworkID, pixelSize: pixelSize)
+        try Task.checkCancellation()
+        let request = Request(source: .managed(coreID: ObjectIdentifier(core), artworkID: artworkID), pixelSize: pixelSize)
         if let cached = cachedArtwork(for: request) { return cached.image }
         let waiterID = UUID()
         if var existing = inFlight[request] {
@@ -99,6 +114,7 @@ final class ArtworkRepository {
             )
         }
 
+        let flightID = UUID()
         let sendableCore = SendableCore(value: core)
         let task = Task { @MainActor () throws -> NSImage? in
             await loadGate.acquire()
@@ -149,6 +165,8 @@ final class ArtworkRepository {
             }
             await loadGate.release()
 
+            try Task.checkCancellation()
+            guard inFlight[request]?.id == flightID else { throw CancellationError() }
             let image = thumbnail.map { NSImage(cgImage: $0, size: .zero) }
             insertCachedArtwork(
                 image,
@@ -157,9 +175,57 @@ final class ArtworkRepository {
             )
             return image
         }
-        inFlight[request] = Flight(task: task, waiters: [waiterID])
+        inFlight[request] = Flight(id: flightID, task: task, waiters: [waiterID])
         return try await wait(for: task, request: request, waiterID: waiterID)
     }
+
+    /// All playlist surfaces share the managed-artwork cache budgets and gate,
+    /// but their content identity is independent of core-managed artwork IDs.
+    func playlistImage(base64: String, pixelSize: Int) async throws -> NSImage? {
+        let digest = try await FileImportService.perform {
+            // Borrow contiguous UTF-8 while hashing instead of copying the
+            // complete base64 string for every visible thumbnail.
+            if let digest = base64.utf8.withContiguousStorageIfAvailable({ bytes in
+                var hash = SHA256()
+                hash.update(bufferPointer: UnsafeRawBufferPointer(bytes))
+                return Data(hash.finalize())
+            }) { return digest }
+            return Data(SHA256.hash(data: Data(base64.utf8)))
+        }
+        try Task.checkCancellation()
+        let request = Request(source: .playlist(digest: digest), pixelSize: pixelSize)
+        if let cached = cachedArtwork(for: request) { return cached.image }
+        let waiterID = UUID()
+        if var flight = inFlight[request] {
+            flight.waiters.insert(waiterID)
+            inFlight[request] = flight
+            return try await wait(for: flight.task, request: request, waiterID: waiterID)
+        }
+        let flightID = UUID()
+        let task = Task { @MainActor () throws -> NSImage? in
+            await loadGate.acquire()
+            let decoded: ImportedArtwork?
+            do {
+                try Task.checkCancellation()
+                decoded = try await playlistDecoder(base64, pixelSize)
+                try Task.checkCancellation()
+            } catch {
+                await loadGate.release()
+                throw error
+            }
+            await loadGate.release()
+            try Task.checkCancellation()
+            guard inFlight[request]?.id == flightID else { throw CancellationError() }
+            let image = decoded.map { NSImage(cgImage: $0.preview, size: .zero) }
+            insertCachedArtwork(image, cost: decoded.map { $0.preview.bytesPerRow * $0.preview.height } ?? 0, for: request)
+            return image
+        }
+        inFlight[request] = Flight(id: flightID, task: task, waiters: [waiterID])
+        return try await wait(for: task, request: request, waiterID: waiterID)
+    }
+
+    // Useful for inspecting the lifetime of shared requests without their payloads.
+    var activeConsumerCount: Int { inFlight.values.reduce(0) { $0 + $1.waiters.count } }
 
     private func wait(
         for task: Task<NSImage?, Error>,
@@ -168,7 +234,9 @@ final class ArtworkRepository {
     ) async throws -> NSImage? {
         try await withTaskCancellationHandler {
             defer { finishWaiting(for: request, waiterID: waiterID) }
-            return try await task.value
+            let image = try await task.value
+            try Task.checkCancellation()
+            return image
         } onCancel: {
             Task { @MainActor [weak self] in
                 self?.finishWaiting(for: request, waiterID: waiterID)

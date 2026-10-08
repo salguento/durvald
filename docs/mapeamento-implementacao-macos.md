@@ -238,6 +238,10 @@ Cada PlaylistArtworkThumbnail decodifica seu base64 em task própria por request
 
 **Direção:** Repositório de thumbnails com identidade da imagem, buckets de tamanho e compartilhamento de requests. Reutilizar infraestrutura, não fingir que a origem base64 é igual à artwork gerenciada pelo core.
 
+**Correção implementada em 08/10/2026:** `PlaylistArtworkThumbnail` passou a usar `ArtworkRepository.shared` na sidebar, listagem e detalhes. Requests de playlists possuem uma origem própria, identificada por SHA-256 do conteúdo base64 e bucket de tamanho, independente dos IDs de artwork/core. O digest é calculado fora do MainActor, usando os bytes UTF-8 contíguos sem cópia quando disponíveis; o cache concluído guarda somente essa chave compacta e a thumbnail, sem reter o base64 original. Imagens iguais compartilham o resultado mesmo entre playlists diferentes; mudança do conteúdo usa outra chave.
+
+São reutilizados os buckets de 64 a 1024 pixels, cache com limites de bytes/quantidade, gate de carga e controle de consumidores de ArtworkRepository. A decodificação usa ImageIO em worker por meio de FileImportService, incluindo orientação e data URLs; imagens inválidas recebem cache negativo limitado por quantidade. O cancelamento de um consumidor não interrompe os restantes; o último cancela a carga e resultados cancelados ou de cargas antigas não entram no cache. A view limpa a prévia ao mudar o request e só publica resultados do consumidor ativo. Testes cobrem reutilização, concorrência, cancelamento parcial/total, substituição de carga, limites, imagem inválida e separação entre fontes de playlist/core. Não houve medição com Instruments.
+
 ### E08 — Cache de artwork e gate serial com operações lineares (P2)
 
 **Evidência:** [Features/Player/ArtworkRepository.swift:4](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/ArtworkRepository.swift:4); [Features/Player/ArtworkRepository.swift:191](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/ArtworkRepository.swift:191).

@@ -2,6 +2,7 @@ import Foundation
 @testable import Durvald
 
 final class FakeDurvaldCore: DurvaldCore {
+    var artworkBytesHandler: ((String) async throws -> Data?)?
     var tracksPageHandler: ((UInt64, UInt64) async throws -> TrackPage)?
     var releasesPageHandler: ((UInt64, UInt64) async throws -> ReleasePage)?
     var historyRevisionHandler: (() async throws -> UInt64)?
@@ -43,6 +44,10 @@ final class FakeDurvaldCore: DurvaldCore {
 
     required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
         fatalError("FakeDurvaldCore não aceita ponteiros do backend Rust")
+    }
+
+    override func artworkBytes(artworkId: String) async throws -> Data? {
+        try await artworkBytesHandler?(artworkId)
     }
 
     override func playbackHistoryRevision() async throws -> UInt64 {
