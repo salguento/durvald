@@ -252,6 +252,12 @@ LRU usa array removeAll/removeFirst em hits/evicções; gate usa fila de continu
 
 **Direção:** Medir fila/latência antes de mudar; avaliar deque/LRU O(1) ou NSCache com controle adicional. NSCache tem limites de evicção diferentes: não substitui automaticamente o orçamento estrito atual.
 
+**Correção implementada em 08/10/2026:** o LRU de ArtworkRepository usa `CostLimitedLRU` com uma lista encadeada indexada por chave (`OrderedKeyedQueue`), substituindo as varreduras/deslocamentos do array em hits, promoção e remoção. Essas operações têm custo médio O(1); uma inserção ainda pode remover vários registros para respeitar o orçamento. Os limites estritos de bytes/quantidade, cache negativo, substituição de entradas e rejeição de imagens maiores que o orçamento foram preservados. A evicção ocorre antes da soma dos custos, evitando overflow inclusive com orçamento Int.max.
+
+O gate mantém uma carga completa por vez e FIFO. Sua fila usa `CircularFIFO`, com retirada O(1) e inserção O(1) amortizada no crescimento do buffer; slots consumidos são zerados para liberar as capturas das continuations. Os testes cobrem recência/evicção, substituição, orçamento estrito, custo zero, contabilidade no limite inteiro, crescimento/wrap/reuso da fila, liberação de referências e exclusão serial/FIFO. A suíte de compartilhamento/cancelamento das thumbnails também passou.
+
+**Medição sintética em 08/10/2026:** microbenchmark Swift compilado com `-O`, chaves/valores Int, mediana de cinco execuções. Com 600 entradas e 50.000 hits, o LRU anterior levou 15,89 ms e o novo 11,68 ms. Esvaziar FIFO de 6.000 itens levou 1,25 ms com removeFirst e 0,29 ms com o buffer circular; para 600 itens, 0,013 ms e 0,031 ms, respectivamente, mostrando o overhead da estrutura em filas pequenas. Esses números isolam as estruturas, não incluem I/O/decodificação nem demonstram ganho de latência nas telas; isso ainda requer Instruments. A medição descartou o uso da lista indexada no gate em favor do buffer circular.
+
 ### E09 — Polling de hover da topbar (P2)
 
 **Evidência:** [TopbarHoverObserver.swift:90](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/TopbarHoverObserver.swift:90).

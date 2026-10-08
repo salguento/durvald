@@ -2,9 +2,10 @@ import AppKit
 import ImageIO
 import CryptoKit
 
-private actor ArtworkLoadGate {
+actor ArtworkLoadGate {
     private var isAvailable = true
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters = CircularFIFO<CheckedContinuation<Void, Never>>()
+    var waitingCount: Int { waiters.count }
 
     func acquire() async {
         if isAvailable {
@@ -18,11 +19,8 @@ private actor ArtworkLoadGate {
     }
 
     func release() {
-        if waiters.isEmpty {
-            isAvailable = true
-        } else {
-            waiters.removeFirst().resume()
-        }
+        if let waiter = waiters.popFirst() { waiter.resume() }
+        else { isAvailable = true }
     }
 }
 
@@ -32,7 +30,6 @@ final class ArtworkRepository {
 
     private struct CachedArtwork {
         let image: NSImage?
-        let cost: Int
     }
 
     private enum Source: Hashable {
@@ -52,11 +49,7 @@ final class ArtworkRepository {
         var waiters: Set<UUID>
     }
 
-    private var cache: [Request: CachedArtwork] = [:]
-    private var cacheRecency: [Request] = []
-    private var cacheCost = 0
-    private let cacheByteLimit: Int
-    private let cacheCountLimit: Int
+    private let cache: CostLimitedLRU<Request, CachedArtwork>
     private let playlistDecoder: @Sendable (String, Int) async throws -> ImportedArtwork?
     private var inFlight: [Request: Flight] = [:]
     // Keep the complete source bytes for at most one artwork at a time. Limiting
@@ -78,8 +71,7 @@ final class ArtworkRepository {
             catch { return nil }
         }
     ) {
-        self.cacheByteLimit = max(0, cacheByteLimit)
-        self.cacheCountLimit = max(0, cacheCountLimit)
+        self.cache = CostLimitedLRU(byteLimit: cacheByteLimit, countLimit: cacheCountLimit)
         self.playlistDecoder = playlistDecoder
     }
 
@@ -257,31 +249,10 @@ final class ArtworkRepository {
     }
 
     private func cachedArtwork(for request: Request) -> CachedArtwork? {
-        guard let cached = cache[request] else { return nil }
-        cacheRecency.removeAll { $0 == request }
-        cacheRecency.append(request)
-        return cached
+        cache.value(for: request)
     }
 
     private func insertCachedArtwork(_ image: NSImage?, cost: Int, for request: Request) {
-        let boundedCost = max(0, cost)
-        guard cacheCountLimit > 0, boundedCost <= cacheByteLimit else { return }
-
-        if let previous = cache.removeValue(forKey: request) {
-            cacheCost -= previous.cost
-            cacheRecency.removeAll { $0 == request }
-        }
-
-        cache[request] = CachedArtwork(image: image, cost: boundedCost)
-        cacheRecency.append(request)
-        cacheCost += boundedCost
-
-        while cache.count > cacheCountLimit || cacheCost > cacheByteLimit {
-            guard let oldest = cacheRecency.first else { break }
-            cacheRecency.removeFirst()
-            if let removed = cache.removeValue(forKey: oldest) {
-                cacheCost -= removed.cost
-            }
-        }
+        cache.insert(CachedArtwork(image: image), for: request, cost: cost)
     }
 }
