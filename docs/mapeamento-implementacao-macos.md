@@ -316,6 +316,14 @@ Espectro atualiza até cerca de 20 vezes/s enquanto montado, com animação de 8
 
 **Direção:** Pausar aquisição quando cena inativa/sem reprodução e usar um stream ou cadence apropriada se houver suporte no core. Medir impacto antes de redesenhar em Canvas.
 
+**Correção implementada em 08/10/2026:** SpectrumAnalyzerView só registra aquisição com core disponível, cena ativa, view apresentada (onAppear/onDisappear) e reprodução em andamento. A chave da task usa identidade do core e flags escalares; DurvaldCoreStore expõe isPlaybackPlaying, atualizado apenas quando o estado muda, evitando observar o snapshot completo a cada avanço do relógio. Em estado inativo as bandas são zeradas e não há novas consultas de espectro. Resultados idênticos deixam de provocar atualização/animação de estado.
+
+SpectrumPollingCoordinator compartilha um loop por core entre consumidores do store. O mesmo worker serializa ativação, leitura e desativação: sair um consumidor não desliga os demais; o último a sair desativa o analisador após concluir a operação/espera corrente. Uma nova inscrição durante a desativação é reconciliada pelo mesmo worker, evitando que o cleanup antigo desligue a nova sessão. Leituras que terminam sem consumidores não são publicadas nem seguidas por outra leitura. Fora de uma sessão não fica timer/loop ocioso; durante reprodução ativa foi mantida a espera de 50 ms e a animação de 80 ms. Reduce Motion continua eliminando a animação e sua mudança atualiza a task.
+
+Cada task da view identifica sua sessão para recusar callbacks de uma inscrição anterior após reiniciar/desaparecer. O core expõe apenas set_spectrum_enabled e spectrum_snapshot, sem stream de espectro; a desativação interrompe a coleta e limpa a fila do analisador no transport. Não houve alteração de FFI, callback de áudio ou renderização em Canvas.
+
+**Validação em 08/10/2026:** build e 166 testes unitários passaram. Seis testes novos cobrem elegibilidade, estado inicial/pausa/resume, compartilhamento de leituras, cancelamento antes/durante aquisição e substituição durante uma desativação suspensa. O componente não tem callsite de montagem nas telas atuais; os testes exercitam a política/coordenador diretamente, sem demonstrar ganho de energia na aplicação. Perfil com Instruments e validação visual permanecem pendentes.
+
 ### E13 — Fila dá reloadData completo e procura seção por linha (P2)
 
 **Evidência:** [Features/Player/QueueTableView.swift:96](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/QueueTableView.swift:96); [Features/Player/QueueTableView.swift:133](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/QueueTableView.swift:133).

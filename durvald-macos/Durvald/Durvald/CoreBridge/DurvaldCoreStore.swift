@@ -18,6 +18,8 @@ final class DurvaldCoreStore {
             if queue != updatedQueue { queue = updatedQueue }
             let paused = playback?.isPaused ?? true
             if isPlaybackPaused != paused { isPlaybackPaused = paused }
+            let playing = playback?.isPlaying ?? false
+            if isPlaybackPlaying != playing { isPlaybackPlaying = playing }
             if playbackActivityChanged { startPlaybackPolling() }
             nowPlaying?.update(playback, core: core)
         }
@@ -28,6 +30,7 @@ final class DurvaldCoreStore {
         didSet { queueRevision &+= 1 }
     }
     private(set) var isPlaybackPaused = true
+    private(set) var isPlaybackPlaying = false
     private(set) var isSeeking = false
     private(set) var scanProgress: ScanProgress?
     private(set) var isScanningLibrary = false
@@ -88,6 +91,7 @@ final class DurvaldCoreStore {
         }
     }
     @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
+    @ObservationIgnored let spectrumPolling = SpectrumPollingCoordinator()
     @ObservationIgnored private var historyRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var nowPlaying: NowPlayingCoordinator?
     @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
@@ -149,6 +153,7 @@ final class DurvaldCoreStore {
         self.activeTrackID = playback?.currentTrack?.id
         self.queue = playback?.queue ?? []
         self.isPlaybackPaused = playback?.isPaused ?? true
+        self.isPlaybackPlaying = playback?.isPlaying ?? false
         self.tracks = tracks
         self.releases = releases
         self.artists = artists
@@ -217,15 +222,6 @@ final class DurvaldCoreStore {
         guard let core else { return nil }
         return try await core.trackLyrics(trackId: trackID)
     }
-
-    func setSpectrumEnabled(_ enabled: Bool) async {
-        await core?.setSpectrumEnabled(enabled: enabled)
-    }
-
-    func spectrumSnapshot() async -> [Float] {
-        await core?.spectrumSnapshot().bands ?? Array(repeating: 0, count: 16)
-    }
-
 
     func openCoreIfNeeded() async {
         guard core == nil else { return }
