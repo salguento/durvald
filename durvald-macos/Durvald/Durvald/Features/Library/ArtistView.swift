@@ -1,5 +1,4 @@
 import SwiftUI
-import CoreImage
 
 struct ArtistToolbarBackgroundPreferenceKey: PreferenceKey {
     static let defaultValue: Visibility? = nil
@@ -401,14 +400,13 @@ struct ArtistView: View {
             aspectRatio: 1.4,
             alignment: .top,
             showsBorder: false,
-            onImageLoaded: { image in
-                captureBackgroundColor(from: image)
+            onLowerRegionColorLoaded: { color in
+                captureBackgroundColor(color)
             }
         )
     }
 
-    private func captureBackgroundColor(from image: NSImage) {
-        guard let averageColor = image.averageLowerRegionColor else { return }
+    private func captureBackgroundColor(_ averageColor: NSColor?) {
         withAnimation(.easeInOut(duration: 0.45)) {
             artworkAverageColor = averageColor
         }
@@ -2224,49 +2222,6 @@ struct ArtistView: View {
 
     private func selectArtist(_ artist: Artist) {
         onSelectArtist?(artist)
-    }
-}
-
-private extension NSImage {
-    var averageLowerRegionColor: NSColor? {
-        var proposedRect = CGRect(origin: .zero, size: size)
-        guard let cgImage = cgImage(
-            forProposedRect: &proposedRect,
-            context: nil,
-            hints: nil
-        ) else { return nil }
-
-        let inputImage = CIImage(cgImage: cgImage)
-        let sampleExtent = CGRect(
-            x: inputImage.extent.minX,
-            y: inputImage.extent.minY,
-            width: inputImage.extent.width,
-            height: inputImage.extent.height * 0.35
-        )
-        guard let filter = CIFilter(
-            name: "CIAreaAverage",
-            parameters: [
-                kCIInputImageKey: inputImage,
-                kCIInputExtentKey: CIVector(cgRect: sampleExtent)
-            ]
-        ), let outputImage = filter.outputImage else { return nil }
-
-        var pixel = [UInt8](repeating: 0, count: 4)
-        CIContext(options: [.workingColorSpace: NSNull()]).render(
-            outputImage,
-            toBitmap: &pixel,
-            rowBytes: 4,
-            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-            format: .RGBA8,
-            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
-        )
-
-        return NSColor(
-            srgbRed: CGFloat(pixel[0]) / 255,
-            green: CGFloat(pixel[1]) / 255,
-            blue: CGFloat(pixel[2]) / 255,
-            alpha: 1
-        )
     }
 }
 

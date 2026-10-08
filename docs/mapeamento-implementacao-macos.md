@@ -300,6 +300,12 @@ Imagem nítida e imagem desfocada usam ArtworkView; callback calcula cor média 
 
 **Direção:** Cache da cor média por artwork/revisão e contexto reutilizável; considerar worker para cálculo. Preservar enquadramento, transição gradual e altura do header aprovado.
 
+**Correção implementada em 08/10/2026:** ArtworkColorRepository calcula a cor em um actor fora do MainActor, com CIContext criado sob demanda e reutilizado. O LRU guarda até 256 resultados escalares, incluindo resultados ausentes, por core, artworkID e bucket de pixels. Os IDs dos arquivos gerenciados incorporam o hash do conteúdo (artwork.rs); substituir a imagem produz outra identidade. A serialização do cálculo e o cache evitam cálculos concorrentes duplicados para a mesma chave, sem reter as imagens no cache de cores.
+
+ArtworkView só solicita a cor quando há callback interessado; publica a imagem antes de aguardar a amostra e verifica cancelamento antes de publicar a cor, impedindo callbacks antigos em views recicladas. Ausência de imagem/cor limpa a tonalidade anterior. ArtistView recebe a cor pronta e mantém a animação easeInOut de 0,45 s. Foram preservados a amostra dos 35% inferiores, sRGB/alpha opaco, proporção 1,4, alinhamento superior, altura, blur de raio 30 e gradientes da composição. As duas camadas continuam compartilhando thumbnail e cargas por ArtworkRepository; não se acrescentou outra decodificação nem se alterou o efeito visual para presumir ganho de GPU.
+
+**Validação em 08/10/2026:** build e 160 testes unitários passaram. Sete testes novos cobrem a cor real/recorte inferior, cache/evicção, identidade por artwork/core/bucket, resultados ausentes, requisições concorrentes e cancelamento. O teste concorrente verifica uma única execução fora da thread principal para 20 consumidores. Não foi realizado perfil de CPU/GPU com Instruments; a validação visual permanece limitada pela falha de inicialização da janela dos fixtures registrada em E09/E10.
+
 ### E12 — Espectro com polling de 50 ms (P2)
 
 **Evidência:** [Features/Player/SpectrumAnalyzerView.swift:48](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/SpectrumAnalyzerView.swift:48); [Features/Player/PlayerMarqueeText.swift:20](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/PlayerMarqueeText.swift:20).

@@ -7,7 +7,7 @@ struct ArtworkView: View {
     var aspectRatio: CGFloat = 1
     var alignment: Alignment = .center
     var showsBorder = true
-    var onImageLoaded: ((NSImage) -> Void)? = nil
+    var onLowerRegionColorLoaded: ((NSColor?) -> Void)? = nil
 
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.displayScale) private var displayScale
@@ -49,9 +49,11 @@ struct ArtworkView: View {
         .clipped()
         .modifier(ArtworkBorderModifier(size: size, isEnabled: showsBorder))
         .task(id: request) {
+            guard !Task.isCancelled else { return }
             guard let artworkID, let core else {
                 image = nil
                 loadedRequest = request
+                onLowerRegionColorLoaded?(nil)
                 return
             }
 
@@ -64,8 +66,18 @@ struct ArtworkView: View {
             guard !Task.isCancelled else { return }
             image = loaded
             loadedRequest = request
-            if let loaded {
-                onImageLoaded?(loaded)
+            if let onLowerRegionColorLoaded {
+                let cgImage = loaded?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+                let sample: ArtworkColorRepository.Sample?
+                if let cgImage {
+                    sample = try? await ArtworkColorRepository.shared.lowerRegionColor(
+                        for: .init(coreID: ObjectIdentifier(core), artworkID: artworkID, pixelSize: request.pixelSize),
+                        image: cgImage)
+                } else {
+                    sample = nil
+                }
+                guard !Task.isCancelled else { return }
+                onLowerRegionColorLoaded(sample?.color)
             }
         }
         .accessibilityHidden(true)
