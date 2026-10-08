@@ -342,8 +342,8 @@ final class DurvaldCoreStore {
 
                 self.libraryPaths = try await core.libraryPaths()
                 self.restartLibraryMonitoring()
-                self.appSettings = try await core.settings()
-                self.audioOutputState = try? await core.audioOutputState()
+                self.publishSettings(try await core.settings())
+                if let state = try? await core.audioOutputState() { self.publishAudioOutputState(state) }
                 self.startAudioOutputPolling(using: core)
                 self.enrichmentSettings = try? await core.enrichmentSettings()
             } catch {
@@ -2039,7 +2039,8 @@ final class DurvaldCoreStore {
                 // Autoplay, fonte, qualidade e opções ainda não implementadas
                 // no cliente macOS permanecem intocados.
                 try await core.updateSettings(settings: settings)
-                appSettings = settings
+                guard self.core === core, !Task.isCancelled else { return }
+                publishSettings(settings)
             } catch {
                 errorMessage = String(describing: error)
             }
@@ -2049,8 +2050,12 @@ final class DurvaldCoreStore {
     func refreshAudioOutputs() async {
         guard let core else { return }
         do {
-            audioOutputState = try await core.audioOutputState()
-            appSettings = try? await core.settings()
+            let state = try await core.audioOutputState()
+            guard self.core === core, !Task.isCancelled else { return }
+            publishAudioOutputState(state)
+            if let settings = try? await core.settings(), self.core === core, !Task.isCancelled {
+                publishSettings(settings)
+            }
         } catch {
             errorMessage = String(describing: error)
         }
@@ -2063,19 +2068,27 @@ final class DurvaldCoreStore {
                 try? await Task.sleep(for: .seconds(2))
                 guard let self, self.core === core, !Task.isCancelled else { return }
                 if let state = try? await core.audioOutputState() {
-                    self.audioOutputState = state
+                    guard self.core === core, !Task.isCancelled else { return }
+                    self.publishAudioOutputState(state)
                 }
             }
         }
     }
 
-    func selectAudioOutputDevice(_ deviceID: String?) async {
-        guard let core else { return }
+    @discardableResult
+    func selectAudioOutputDevice(_ deviceID: String?) async -> Bool {
+        guard let core else { return false }
         do {
-            audioOutputState = try await core.selectAudioOutputDevice(deviceId: deviceID)
-            appSettings = try? await core.settings()
+            let state = try await core.selectAudioOutputDevice(deviceId: deviceID)
+            guard self.core === core, !Task.isCancelled else { return false }
+            publishAudioOutputState(state)
+            if let settings = try? await core.settings(), self.core === core, !Task.isCancelled {
+                publishSettings(settings)
+            }
+            return true
         } catch {
             errorMessage = String(describing: error)
+            return false
         }
     }
 
@@ -2085,8 +2098,9 @@ final class DurvaldCoreStore {
             var settings = try await core.settings()
             settings.equalizer = equalizer
             try await core.updateSettings(settings: settings)
-            appSettings = settings
-            equalizerMetrics = await core.equalizerMetrics()
+            guard self.core === core, !Task.isCancelled else { return }
+            publishSettings(settings)
+            await refreshEqualizerMetrics()
         } catch {
             errorMessage = String(describing: error)
         }
@@ -2094,7 +2108,30 @@ final class DurvaldCoreStore {
 
     func refreshEqualizerMetrics() async {
         guard let core else { return }
-        equalizerMetrics = await core.equalizerMetrics()
+        let metrics = await core.equalizerMetrics()
+        guard self.core === core, !Task.isCancelled else { return }
+        publishEqualizerMetrics(metrics)
+    }
+
+    @discardableResult
+    func publishSettings(_ settings: Settings) -> Bool {
+        guard appSettings != settings else { return false }
+        appSettings = settings
+        return true
+    }
+
+    @discardableResult
+    func publishAudioOutputState(_ state: AudioOutputState) -> Bool {
+        guard audioOutputState != state else { return false }
+        audioOutputState = state
+        return true
+    }
+
+    @discardableResult
+    func publishEqualizerMetrics(_ metrics: EqualizerMetrics) -> Bool {
+        guard equalizerMetrics != metrics else { return false }
+        equalizerMetrics = metrics
+        return true
     }
 
     // MARK: - Enriquecimento de metadados

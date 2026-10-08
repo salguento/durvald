@@ -3,10 +3,11 @@ import SwiftUI
 
 struct EqualizerSettingsView: View {
     @Environment(DurvaldCoreStore.self) private var store
-    @State private var enabled = false
-    @State private var preamp: Float = 0
-    @State private var gains = Array(repeating: Float.zero, count: 10)
-    @State private var preset = "Flat"
+    @Environment(\.scenePhase) private var scenePhase
+    var isActive = true
+    @State private var draft = SettingsDraft(EqualizerSettings(
+        enabled: false, preampDb: 0, bandGainsDb: Array(repeating: 0, count: 10), preset: "Flat"
+    ))
 
     private let frequencies = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
     private let presets: [(String, [Float])] = [
@@ -38,14 +39,14 @@ struct EqualizerSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Toggle("Equalizador", isOn: $enabled)
+                Toggle("Equalizador", isOn: $draft.value.enabled)
                     .accessibilityIdentifier("settings.equalizer.enabled")
                 Spacer()
-                Picker("Preset", selection: Binding(get: { preset }, set: selectPreset)) {
+                Picker("Preset", selection: Binding(get: { draft.value.preset }, set: selectPreset)) {
                     Text("None").tag("None")
                     Divider()
                     ForEach(Array(presets.dropFirst()), id: \.0) { Text($0.0).tag($0.0) }
-                    if !presets.contains(where: { $0.0 == preset }) {
+                    if !presets.contains(where: { $0.0 == draft.value.preset }) {
                         Text("Personalizado").tag("Personalizado")
                     }
                 }
@@ -53,21 +54,21 @@ struct EqualizerSettingsView: View {
             }
 
             HStack(spacing: 10) {
-                gainSlider(title: "Pre", accessibilityLabel: "Pré-amplificação", value: $preamp)
+                gainSlider(title: "Pre", accessibilityLabel: "Pré-amplificação", value: $draft.value.preampDb)
                 Divider()
-                ForEach(gains.indices, id: \.self) { index in
+                ForEach(draft.value.bandGainsDb.indices, id: \.self) { index in
                     gainSlider(
                         title: frequencies[index],
                         accessibilityLabel: "Ganho em \(frequencies[index]) Hz",
                         value: Binding(
-                            get: { gains[index] },
-                            set: { gains[index] = $0; preset = "Personalizado" }
+                            get: { draft.value.bandGainsDb[index] },
+                            set: { draft.value.bandGainsDb[index] = $0; draft.value.preset = "Personalizado" }
                         )
                     )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .disabled(!enabled)
+            .disabled(!draft.value.enabled)
 
             HStack {
                 if let metrics = store.equalizerMetrics {
@@ -77,13 +78,9 @@ struct EqualizerSettingsView: View {
                 }
                 Spacer()
                 Button("Salvar") {
+                    let submitted = draft.value
                     Task {
-                        await store.updateEqualizer(EqualizerSettings(
-                            enabled: enabled,
-                            preampDb: preamp,
-                            bandGainsDb: gains,
-                            preset: preset
-                        ))
+                        await store.updateEqualizer(submitted)
                     }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -91,24 +88,25 @@ struct EqualizerSettingsView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task {
-            apply(store.appSettings?.equalizer)
+        .task { apply(store.appSettings?.equalizer) }
+        .task(id: isActive && scenePhase == .active) {
+            guard isActive, scenePhase == .active else { return }
             while !Task.isCancelled {
                 await store.refreshEqualizerMetrics()
                 try? await Task.sleep(for: .seconds(1))
             }
         }
-        .onChange(of: store.appSettings) { _, settings in
-            apply(settings?.equalizer)
+        .onChange(of: store.appSettings?.equalizer) { _, settings in
+            apply(settings)
         }
     }
 
     private func selectPreset(_ name: String) {
         guard let values = presets.first(where: { $0.0 == name })?.1 else { return }
-        preset = name
-        gains = values
-        enabled = name != "None"
-        if name == "None" { preamp = 0 }
+        draft.value.preset = name
+        draft.value.bandGainsDb = values
+        draft.value.enabled = name != "None"
+        if name == "None" { draft.value.preampDb = 0 }
     }
 
     private func gainSlider(title: String, accessibilityLabel: String, value: Binding<Float>) -> some View {
@@ -127,16 +125,7 @@ struct EqualizerSettingsView: View {
 
     private func apply(_ settings: EqualizerSettings?) {
         guard let settings, settings.bandGainsDb.count == 10 else { return }
-        enabled = settings.enabled
-        preamp = settings.preampDb
-        gains = settings.bandGainsDb
-        // Keep older saved presets compatible without changing their curves.
-        switch settings.preset {
-        case "Bass Boost": preset = "Increase Bass"
-        case "Treble Boost": preset = "Increase Treble"
-        case "Vocais": preset = "Increase Vocals"
-        default: preset = settings.preset
-        }
+        draft.receive(settings.editingValue)
     }
 
     private func metricsText(_ metrics: EqualizerMetrics) -> String {

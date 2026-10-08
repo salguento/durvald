@@ -2,13 +2,13 @@ import SwiftUI
 
 struct AudioOutputSettingsView: View {
     @Environment(DurvaldCoreStore.self) private var store
-    @State private var selectedDeviceID = ""
+    @State private var draft = SettingsDraft("")
     @State private var isApplyingSelection = false
 
     var body: some View {
         Form {
             Section("Saída de áudio") {
-                Picker("Dispositivo", selection: $selectedDeviceID) {
+                Picker("Dispositivo", selection: Binding(get: { draft.value }, set: selectDevice)) {
                     Text("Padrão do sistema").tag("")
                     ForEach(store.audioOutputState?.devices ?? [], id: \.id) { device in
                         Text(device.isDefault ? "\(device.name) — padrão" : device.name)
@@ -16,6 +16,7 @@ struct AudioOutputSettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("settings.audio.output-device")
+                .disabled(isApplyingSelection)
 
                 if store.audioOutputState?.usingFallback == true {
                     Label(
@@ -39,12 +40,6 @@ struct AudioOutputSettingsView: View {
         .onChange(of: store.audioOutputState) { _, _ in
             syncSelection()
         }
-        .onChange(of: selectedDeviceID) { oldValue, newValue in
-            guard oldValue != newValue, !isApplyingSelection else { return }
-            Task {
-                await store.selectAudioOutputDevice(newValue.isEmpty ? nil : newValue)
-            }
-        }
     }
 
     private var activeDeviceName: String? {
@@ -54,12 +49,21 @@ struct AudioOutputSettingsView: View {
     }
 
     private func syncSelection() {
-        let preferred = store.audioOutputState?.preferredDeviceId ?? ""
-        guard selectedDeviceID != preferred else { return }
+        guard let state = store.audioOutputState else { return }
+        draft.receive(state.preferredDeviceId ?? "")
+    }
+
+    private func selectDevice(_ deviceID: String) {
+        guard deviceID != draft.value, !isApplyingSelection else { return }
+        draft.value = deviceID
         isApplyingSelection = true
-        selectedDeviceID = preferred
         Task { @MainActor in
-            await Task.yield()
+            let succeeded = await store.selectAudioOutputDevice(deviceID.isEmpty ? nil : deviceID)
+            if succeeded {
+                syncSelection()
+            } else {
+                draft.reset(to: store.audioOutputState?.preferredDeviceId ?? "")
+            }
             isApplyingSelection = false
         }
     }

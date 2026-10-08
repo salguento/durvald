@@ -382,6 +382,14 @@ Cancelamento é verificado entre paths e após cada stat; cancelar um consumidor
 
 **Direção:** Auditar mudança efetiva antes de publicar e separar draft de snapshot remoto. Avaliar eventos de dispositivo no core antes de substituir polling; migrar Last.fm só se simplificar ou reduzir updates medidos.
 
+**Correção implementada em 08/10/2026:** O store compara Settings, AudioOutputState e EqualizerMetrics antes de atribuir os snapshots observáveis. Falha ao consultar settings não apaga o último snapshot válido; respostas dos refreshes e do polling de áudio/métricas canceladas ou de um core substituído não são publicadas. Geral e Equalizador usam SettingsDraft com valor editável separado do último snapshot remoto: seções sem edição pendente acompanham o remoto, enquanto uma seção com edição pendente mantém seu rascunho. O reconhecimento do valor salvo limpa o rascunho apenas quando ele coincide com o snapshot, preservando alterações feitas durante o salvamento. Cada seção observa apenas seus próprios valores; aliases antigos de presets são normalizados antes da comparação, sem alterar as curvas.
+
+O seletor de áudio envia comandos exclusivamente pelo setter do Binding, sem disparar ações ao sincronizar o snapshot. Uma escolha pendente sobrevive aos snapshots de polling; o controle fica desabilitado durante a aplicação, e uma falha restaura a preferência confirmada. As métricas mantêm a cadência de 1 s apenas enquanto a aba Equalizador está selecionada e a cena está ativa, com cancelamento da task ao sair dessa condição.
+
+O polling de saída de 2 s permanece: a interface UniFFI atual não expõe eventos de dispositivos, e audio_output_state em application/settings.rs também chama reconcile_output_device para recuperar a saída preferida ou aplicar fallback. Remover essa consulta exigiria mudar o contrato do core. Last.fm permanece com ObservableObject: os campos editáveis já são separados do status, e não houve evidência medida que justificasse a migração. Não foi medido ganho com Instruments nem validada reconexão de hardware físico nesta implementação.
+
+Validação: build e suíte DurvaldTests aprovados, com 195 testes e nenhuma falha (CODE_SIGNING_ALLOWED=NO). Nove testes novos cobrem rascunhos por seção, snapshots externos, edição durante salvamento, aliases de presets, seleção de áudio pendente/rollback, notificações de Observation, falhas de consulta/salvamento e cancelamento de métricas em voo. A condição de ativação da task de métricas foi compilada, sem nova validação visual automatizada da troca de abas.
+
 ## 3. Implementações múltiplas e oportunidades de reutilização
 
 ### R01 — Família de campos de busca (P1)
