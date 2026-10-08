@@ -777,6 +777,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func playbackHistoryPage(pageSize: UInt64, offset: UInt64) async throws  -> PlaybackHistoryPage
 
     /**
+     * A durable revision changed only by committed history mutations.
+     */
+    func playbackHistoryRevision() async throws  -> UInt64
+
+    /**
      * Gets one playlist by ID.
      */
     func playlist(playlistId: Int64) async throws  -> Playlist
@@ -1003,6 +1008,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Returns plain local lyrics indexed for a track, when available.
      */
     func trackLyrics(trackId: Int64) async throws  -> String?
+
+    /**
+     * Resolves a batch of IDs, omitting tracks no longer in the catalog.
+     */
+    func tracksByIds(trackIds: [Int64]) async throws  -> [Track]
 
     /**
      * Returns a bounded page of tracks ordered by their stable database ID.
@@ -1991,6 +2001,26 @@ open func playbackHistoryPage(pageSize: UInt64, offset: UInt64)async throws  -> 
 }
 
     /**
+     * A durable revision changed only by committed history mutations.
+     */
+open func playbackHistoryRevision()async throws  -> UInt64 {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_playback_history_revision(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_u64,
+            completeFunc: ffi_durvald_core_rust_future_complete_u64,
+            freeFunc: ffi_durvald_core_rust_future_free_u64,
+            liftFunc: FfiConverterUInt64.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
      * Gets one playlist by ID.
      */
 open func playlist(playlistId: Int64)async throws  -> Playlist {
@@ -2911,6 +2941,26 @@ open func trackLyrics(trackId: Int64)async throws  -> String? {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterOptionString.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Resolves a batch of IDs, omitting tracks no longer in the catalog.
+     */
+open func tracksByIds(trackIds: [Int64])async throws  -> [Track] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_tracks_by_ids(
+                    self.uniffiClonePointer(),
+                    FfiConverterSequenceInt64.lower(trackIds)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeTrack.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -10372,9 +10422,7 @@ fileprivate func uniffiRustCallAsync<F, T>(
         pollResult = await withUnsafeContinuation {
             pollFunc(
                 rustFuture,
-                { handle, pollResult in
-                    uniffiFutureContinuationCallback(handle: handle, pollResult: pollResult)
-                },
+                uniffiFutureContinuationCallback,
                 uniffiContinuationHandleMap.insert(obj: $0)
             )
         }
@@ -10572,6 +10620,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_playback_history_page() != 62173) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_playback_history_revision() != 49796) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_playlist() != 36705) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -10711,6 +10762,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_track_lyrics() != 7452) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_tracks_by_ids() != 51649) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_tracks_page() != 23995) {

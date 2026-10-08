@@ -18,6 +18,14 @@ impl SqlitePlaybackHistoryRepository {
         Self { db_pool }
     }
 
+    pub(crate) async fn revision(&self) -> Result<u64, String> {
+        self.run(|conn| {
+            crate::database::operations::get_playback_history_revision(conn)
+                .map_err(|error| error.to_string())
+        })
+        .await
+    }
+
     pub(crate) async fn all(&self) -> Result<Vec<PlaybackHistoryEntry>, String> {
         self.run(move |conn| {
             crate::database::operations::get_play_history(conn)

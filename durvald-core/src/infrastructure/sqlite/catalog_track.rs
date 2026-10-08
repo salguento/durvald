@@ -48,6 +48,38 @@ impl SqliteCatalogTrackQuery {
         })?
     }
 
+    pub(crate) async fn find_many(
+        &self,
+        track_ids: Vec<TrackId>,
+    ) -> Result<Vec<CatalogTrack>, CatalogTrackLookupError> {
+        let db_pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = db_pool
+                .get()
+                .map_err(|error| CatalogTrackLookupError::Storage(error.to_string()))?;
+            let ids: Vec<u64> = track_ids
+                .into_iter()
+                .map(|id| id.get())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            let mut tracks = Vec::new();
+            for chunk in ids.chunks(400) {
+                tracks.extend(
+                    crate::database::operations::get_songs_by_ids(&conn, chunk)
+                        .map_err(|error| CatalogTrackLookupError::Storage(error.to_string()))?
+                        .into_iter()
+                        .map(track_from_row),
+                );
+            }
+            Ok(tracks)
+        })
+        .await
+        .map_err(|error| {
+            CatalogTrackLookupError::Storage(format!("Blocking database task failed: {error}"))
+        })?
+    }
+
     pub(crate) async fn page(
         &self,
         fetch_size: u64,

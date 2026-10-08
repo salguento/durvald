@@ -14,6 +14,10 @@ impl HistoryApplication {
         Self { repository }
     }
 
+    pub(crate) async fn playback_history_revision(&self) -> CoreResult<u64> {
+        self.repository.revision().await.map_err(storage_error)
+    }
+
     pub(crate) async fn playback_history(&self) -> CoreResult<Vec<PlaybackHistoryItem>> {
         self.repository
             .all()

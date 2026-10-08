@@ -4,6 +4,9 @@ import Foundation
 final class FakeDurvaldCore: DurvaldCore {
     var tracksPageHandler: ((UInt64, UInt64) async throws -> TrackPage)?
     var releasesPageHandler: ((UInt64, UInt64) async throws -> ReleasePage)?
+    var historyRevisionHandler: (() async throws -> UInt64)?
+    var historyHandler: (() async throws -> [PlaybackHistoryItem])?
+    var tracksByIDsHandler: (([Int64]) async throws -> [Track])?
     var playlistResult: Playlist?
     var snapshot: PlaybackSnapshot
     var trackInfoResult: TrackInfo?
@@ -40,6 +43,18 @@ final class FakeDurvaldCore: DurvaldCore {
 
     required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
         fatalError("FakeDurvaldCore não aceita ponteiros do backend Rust")
+    }
+
+    override func playbackHistoryRevision() async throws -> UInt64 {
+        try await historyRevisionHandler?() ?? 0
+    }
+
+    override func playbackHistory() async throws -> [PlaybackHistoryItem] {
+        try await historyHandler?() ?? []
+    }
+
+    override func tracksByIds(trackIds: [Int64]) async throws -> [Track] {
+        try await tracksByIDsHandler?(trackIds) ?? []
     }
 
     override func tracksPage(pageSize: UInt64, offset: UInt64) async throws -> TrackPage {

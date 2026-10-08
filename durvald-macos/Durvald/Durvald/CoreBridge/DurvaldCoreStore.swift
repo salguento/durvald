@@ -38,6 +38,7 @@ final class DurvaldCoreStore {
     private(set) var artists: [Artist] = []
     private(set) var playlists: [Playlist] = []
     private(set) var history: [PlaybackHistoryItem] = []
+    @ObservationIgnored let historyRepository = PlaybackHistoryRepository()
     private(set) var metadataRevision = 0 {
         didSet { invalidateCatalog() }
     }
@@ -57,9 +58,13 @@ final class DurvaldCoreStore {
 
 
     private(set) var core: DurvaldCore? {
-        didSet { invalidateCatalog() }
+        didSet {
+            invalidateCatalog()
+            historyRepository.reset()
+        }
     }
     @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
+    @ObservationIgnored private var historyRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var nowPlaying: NowPlayingCoordinator?
     @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
     @ObservationIgnored private var libraryFileWatcher: LibraryFileWatcher?
@@ -124,12 +129,14 @@ final class DurvaldCoreStore {
         self.releases = releases
         self.artists = artists
         self.history = history
+        historyRepository.seed(entries: history, tracks: tracks)
     }
 
     private func invalidateCatalog() {
         libraryCatalogRevision &+= 1
         catalogTracks.invalidate()
         catalogReleases.invalidate()
+        historyRepository.invalidateTracks()
     }
 
     /// Complete snapshots shared by library screens and playlist import. These
@@ -218,6 +225,7 @@ final class DurvaldCoreStore {
                     guard !Task.isCancelled else { return }
                     if !self.isChangingTrack, !self.isMovingQueue, !self.isSeeking {
                         self.publishPlayback(snapshot, revision: revision)
+                        if self.historyRepository.hasRequestedHistory { self.scheduleHistoryRefresh() }
                     }
                 }
 
@@ -275,6 +283,7 @@ final class DurvaldCoreStore {
                 )
                 self.history = historyPage.items
                 self.nextHistoryOffset = historyPage.nextOffset
+                self.historyRepository.seed(entries: self.history, tracks: self.tracks)
                 guard !Task.isCancelled else { return }
 
                 self.libraryPaths = try await core.libraryPaths()
@@ -1936,26 +1945,26 @@ final class DurvaldCoreStore {
         }
     }
 
+    private func scheduleHistoryRefresh() {
+        guard historyRefreshTask == nil else { return }
+        // History conversion and batch reads must not delay playback progress.
+        historyRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refreshHistory()
+            self.historyRefreshTask = nil
+        }
+    }
+
     func refreshHistory() async {
-        guard let core, !isLoadingHistoryPage else { return }
-        isLoadingHistoryPage = true
-        defer { isLoadingHistoryPage = false }
-
+        guard let core else {
+            historyRepository.seed(entries: history, tracks: tracks)
+            return
+        }
         do {
-            let page = try await core.playbackHistoryPage(
-                pageSize: Self.libraryPageSize,
-                offset: 0
-            )
-            if page.nextOffset == nil {
-                history = page.items
-                nextHistoryOffset = nil
-                return
-            }
-
-            let refreshedIDs = Set(page.items.map(\.id))
-            let previouslyLoadedTail = history.filter { !refreshedIDs.contains($0.id) }
-            history = page.items + previouslyLoadedTail
-            nextHistoryOffset = UInt64(history.count)
+            try await historyRepository.refresh(core: core, catalogRevision: libraryCatalogRevision,
+                                                tracksRevision: tracksRevision, knownTracks: tracks)
+        } catch is CancellationError {
+            // A newer revision or another consumer will retry; keep the snapshot.
         } catch {
             errorMessage = String(describing: error)
         }
@@ -2346,6 +2355,7 @@ final class DurvaldCoreStore {
     }
 
     deinit {
+        historyRefreshTask?.cancel()
         playbackPollingTask?.cancel()
         scanProgressPollingTask?.cancel()
         libraryFileWatcher?.stop()

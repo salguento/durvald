@@ -712,6 +712,11 @@ impl DurvaldCore {
         self.playback_application.last_session().await
     }
 
+    /// A durable revision changed only by committed history mutations.
+    pub async fn playback_history_revision(&self) -> CoreResult<u64> {
+        self.history_application.playback_history_revision().await
+    }
+
     /// Returns completed playback events, newest-first as stored by the core.
     pub async fn playback_history(&self) -> CoreResult<Vec<PlaybackHistoryItem>> {
         self.history_application.playback_history().await
@@ -840,6 +845,15 @@ impl DurvaldCore {
     /// Returns the current queue.
     pub async fn queue(&self) -> CoreResult<Vec<QueueItem>> {
         self.playback_application.queue().await
+    }
+
+    /// Resolves a batch of IDs, omitting tracks no longer in the catalog.
+    pub async fn tracks_by_ids(&self, track_ids: Vec<i64>) -> CoreResult<Vec<Track>> {
+        let ids = track_ids
+            .into_iter()
+            .map(track_id_from_api)
+            .collect::<CoreResult<Vec<_>>>()?;
+        self.library_application.tracks_by_ids(ids).await
     }
 
     /// Gets a track by ID.
@@ -1200,6 +1214,21 @@ mod tests {
             .unwrap();
         let tracks = all_tracks(&core).await;
         assert_eq!(tracks.len(), 2);
+        let revision = core.playback_history_revision().await.unwrap();
+        let batch = core
+            .tracks_by_ids(vec![tracks[1].id, tracks[0].id, tracks[0].id, i64::MAX])
+            .await
+            .unwrap();
+        assert_eq!(
+            batch.len(),
+            2,
+            "Missing IDs are omitted and duplicates resolved once"
+        );
+        assert!(matches!(
+            core.tracks_by_ids(vec![-1]).await,
+            Err(CoreError::InvalidInput { .. })
+        ));
+        assert_eq!(core.playback_history_revision().await.unwrap(), revision);
         core.add_to_queue(tracks[0].id).await.unwrap();
         core.add_to_queue(tracks[1].id).await.unwrap();
 
@@ -1211,6 +1240,7 @@ mod tests {
 
         let history = core.playback_history().await.unwrap();
         assert_eq!(history.len(), 1);
+        assert!(core.playback_history_revision().await.unwrap() > revision);
         assert_eq!(history[0].track_id, tracks[0].id);
         let player = core.playback_application.audio_player().lock().await;
         assert_eq!(player.get_current_song_id(), Some(tracks[1].id));

@@ -11,35 +11,23 @@ struct HistoryView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Binding var searchText: String
     @AppStorage("history.newestFirst") private var newestFirst = true
-    @State private var entries: [PlaybackHistoryItem] = []
-    @State private var resolvedTracks: [Int64: Track] = [:]
-    @State private var resolvedMetadataRevision = -1
-    @State private var isSearching = false
     var onSummaryChange: (String) -> Void = { _ in }
 
-    private struct SearchRequest: Equatable {
+    private struct RefreshRequest: Equatable {
+        let coreID: ObjectIdentifier?
+        let catalogRevision: UInt64
+        let tracksRevision: UInt64
+    }
+    private struct SummaryRequest: Equatable {
         let query: String
-        let entries: [PlaybackHistoryItem]
-        let metadataRevision: Int
+        let revision: UInt64
+        let isLoading: Bool
     }
-
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    private var tracksByID: [Int64: Track] {
-        store.tracks.reduce(into: resolvedTracks) { $0[$1.id] = $1 }
-    }
+    private var tracksByID: [Int64: Track] { store.historyRepository.tracksByID }
 
     private var filteredEntries: [PlaybackHistoryItem] {
-        guard !query.isEmpty else { return entries }
-        let tracks = tracksByID
-        return entries.filter { item in
-            guard let track = tracks[item.trackId] else {
-                return "Música #\(item.trackId)".localizedCaseInsensitiveContains(query)
-            }
-            return [track.title, track.artist, track.release].contains {
-                $0.localizedCaseInsensitiveContains(query)
-            }
-        }
+        store.historyRepository.entries(matching: query)
     }
 
     private var orderedEntries: [PlaybackHistoryItem] {
@@ -51,14 +39,9 @@ struct HistoryView: View {
         List(orderedEntries, id: \.id) { item in
             HistoryTrackRow(item: item, loadedTrack: tracks[item.trackId])
                 .accessibilityIdentifier("history.entry.\(item.id)")
-                .task {
-                    if entries.count <= store.history.count {
-                        await store.loadMoreHistory(ifNeededAfter: item.id)
-                    }
-                }
         }
         .overlay {
-            if isSearching {
+            if store.historyRepository.isLoading && !query.isEmpty {
                 ProgressView("Pesquisando…")
             } else if !query.isEmpty && filteredEntries.isEmpty {
                 ContentUnavailableView("Nenhuma reprodução encontrada", systemImage: "magnifyingglass")
@@ -66,47 +49,18 @@ struct HistoryView: View {
         }
         .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
         .preservesLibraryScrollPosition()
-        .task(id: store.history) {
-            // Search and metadata include older pages, even when filtering
-            // removes every visible row that would normally trigger pagination.
-            let history = (try? await store.core?.playbackHistory()) ?? store.history
-            guard !Task.isCancelled else { return }
-            entries = history
-            publishSummary()
+        .task(id: RefreshRequest(coreID: store.core.map(ObjectIdentifier.init),
+                                 catalogRevision: store.libraryCatalogRevision, tracksRevision: store.tracksRevision)) {
+            await store.refreshHistory()
         }
-        .task(id: SearchRequest(query: query, entries: entries, metadataRevision: store.metadataRevision)) {
-            if resolvedMetadataRevision != store.metadataRevision {
-                resolvedTracks = [:]
-                resolvedMetadataRevision = store.metadataRevision
-            }
-            isSearching = !query.isEmpty
+        .task(id: SummaryRequest(query: query, revision: store.historyRepository.revision,
+                                 isLoading: store.historyRepository.isLoading)) {
             publishSummary()
-            if !query.isEmpty, let core = store.core {
-                do {
-                    try await Task.sleep(for: .milliseconds(200))
-                    let knownIDs = Set(tracksByID.keys)
-                    for id in Set(entries.map(\.trackId)).subtracting(knownIDs) {
-                        try Task.checkCancellation()
-                        if let track = try? await core.track(trackId: id) {
-                            resolvedTracks[id] = track
-                        }
-                    }
-                } catch { return }
-            }
-            guard !Task.isCancelled else { return }
-            isSearching = false
-            publishSummary()
-        }
-        .task {
-            while !Task.isCancelled {
-                await store.refreshHistory()
-                try? await Task.sleep(for: .seconds(1))
-            }
         }
     }
 
     private func publishSummary() {
-        if isSearching {
+        if store.historyRepository.isLoading && !query.isEmpty {
             onSummaryChange("Pesquisando…")
             return
         }
@@ -156,10 +110,10 @@ private struct HistoryTrackRow: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(TrackInfoCoordinator.self) private var trackInfo
     let item: PlaybackHistoryItem
-    @State var loadedTrack: Track?
+    let loadedTrack: Track?
 
     var body: some View {
-        let track = store.tracks.first { $0.id == item.trackId } ?? loadedTrack
+        let track = loadedTrack
         Group {
             if let track {
                 label(track.title)
@@ -173,9 +127,7 @@ private struct HistoryTrackRow: View {
                     }
             }
         }
-        .task(id: item.trackId) {
-            if track == nil { loadedTrack = try? await store.core?.track(trackId: item.trackId) }
-        }
+
     }
 
     private func label(_ title: String) -> some View {

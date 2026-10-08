@@ -458,6 +458,20 @@ impl LibraryApplication {
             .map_err(|error| catalog_artist_error(error, artist_id))
     }
 
+    pub(crate) async fn tracks_by_ids(&self, track_ids: Vec<TrackId>) -> CoreResult<Vec<Track>> {
+        self.persistence
+            .catalog_track_query
+            .find_many(track_ids)
+            .await
+            .map(|tracks| tracks.into_iter().map(track_from_catalog).collect())
+            .map_err(|error| match error {
+                CatalogTrackLookupError::Storage(message) => CoreError::Storage { message },
+                CatalogTrackLookupError::NotFound => CoreError::NotFound {
+                    message: "Tracks not found".into(),
+                },
+            })
+    }
+
     pub(crate) async fn track(&self, track_id: TrackId) -> CoreResult<Track> {
         self.persistence
             .catalog_track_query

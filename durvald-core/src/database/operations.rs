@@ -584,6 +584,22 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
         (),
     )?;
 
+    // Track history changes transactionally, including deletes caused by a
+    // catalog scan. Readers can check one scalar instead of materializing rows.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS playback_history_revision (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            revision INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT OR IGNORE INTO playback_history_revision(singleton, revision) VALUES (1, 0);
+        CREATE TRIGGER IF NOT EXISTS playback_history_insert_revision AFTER INSERT ON play_history
+        BEGIN UPDATE playback_history_revision SET revision = revision + 1 WHERE singleton = 1; END;
+        CREATE TRIGGER IF NOT EXISTS playback_history_update_revision AFTER UPDATE ON play_history
+        BEGIN UPDATE playback_history_revision SET revision = revision + 1 WHERE singleton = 1; END;
+        CREATE TRIGGER IF NOT EXISTS playback_history_delete_revision AFTER DELETE ON play_history
+        BEGIN UPDATE playback_history_revision SET revision = revision + 1 WHERE singleton = 1; END;"
+    )?;
+
     // Single-row table (session_id = 1 always) that persists the player state
     // across restarts so the user can resume exactly where they left off.
     conn.execute(
@@ -1118,6 +1134,30 @@ pub fn get_song_by_id(conn: &Connection, song_id: &str) -> DatabaseResult<Vec<So
         songs.push(song?);
     }
     Ok(songs)
+}
+
+/// Resolve a bounded batch in one query; absent IDs are omitted.
+pub fn get_songs_by_ids(conn: &Connection, song_ids: &[u64]) -> DatabaseResult<Vec<SongItem>> {
+    if song_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let placeholders = vec!["?"; song_ids.len()].join(",");
+    let query = format!(
+        "SELECT {} FROM songs WHERE songs.song_id IN ({placeholders}) ORDER BY songs.song_id",
+        song_columns!("songs")
+    );
+    let mut statement = conn.prepare(&query)?;
+    Ok(statement
+        .query_map(rusqlite::params_from_iter(song_ids), song_item_from_row)?
+        .collect::<Result<_, _>>()?)
+}
+
+pub fn get_playback_history_revision(conn: &Connection) -> DatabaseResult<u64> {
+    Ok(conn.query_row(
+        "SELECT revision FROM playback_history_revision WHERE singleton = 1",
+        [],
+        |row| row.get(0),
+    )?)
 }
 
 #[cfg(test)]
@@ -3926,6 +3966,15 @@ mod tests {
             vec![1, 2]
         );
         assert_eq!(get_tracks_page(&conn, 2, 2).unwrap()[0].song_id, 3);
+        assert!(get_songs_by_ids(&conn, &[]).unwrap().is_empty());
+        assert_eq!(
+            get_songs_by_ids(&conn, &[3, 1, 3, 999])
+                .unwrap()
+                .into_iter()
+                .map(|track| track.song_id)
+                .collect::<Vec<_>>(),
+            vec![1, 3]
+        );
         assert_eq!(
             get_releases_page(&conn, 2, 0)
                 .unwrap()
@@ -3944,6 +3993,32 @@ mod tests {
             vec![3, 2]
         );
         assert_eq!(get_play_history_page(&conn, 2, 2).unwrap()[0].song_id, 1);
+        assert_eq!(get_playback_history_revision(&conn).unwrap(), 3);
+        // Reopening an existing schema preserves the durable revision.
+        create_tables(&conn).unwrap();
+        assert_eq!(get_playback_history_revision(&conn).unwrap(), 3);
+        conn.execute(
+            "UPDATE play_history SET play_duration = 90 WHERE history_id = 1",
+            [],
+        )
+        .unwrap();
+        assert_eq!(get_playback_history_revision(&conn).unwrap(), 4);
+        let transaction = conn.unchecked_transaction().unwrap();
+        add_song_to_history(&transaction, 1, 180).unwrap();
+        transaction.rollback().unwrap();
+        assert_eq!(get_playback_history_revision(&conn).unwrap(), 4);
+        assert!(!remove_song_from_history(&conn, 999).unwrap());
+        assert_eq!(get_playback_history_revision(&conn).unwrap(), 4);
+        remove_song_from_history(&conn, 1).unwrap();
+        assert_eq!(get_playback_history_revision(&conn).unwrap(), 5);
+        // Foreign-key cascades from catalog removal must also invalidate history.
+        conn.execute("DELETE FROM songs WHERE song_id = 3", [])
+            .unwrap();
+        assert_eq!(get_playback_history_revision(&conn).unwrap(), 6);
+        assert_eq!(clear_play_history(&conn).unwrap(), 1);
+        assert_eq!(get_playback_history_revision(&conn).unwrap(), 7);
+        assert_eq!(clear_play_history(&conn).unwrap(), 0);
+        assert_eq!(get_playback_history_revision(&conn).unwrap(), 7);
     }
 
     #[test]
