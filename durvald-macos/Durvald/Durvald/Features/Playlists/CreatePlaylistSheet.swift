@@ -8,8 +8,7 @@ struct CreatePlaylistSheet: View {
 
     @State private var title: String
     @State private var playlistDescription: String
-    @State private var artwork: NSImage?
-    @State private var artworkBase64: String?
+    @State private var artworkImport = ArtworkImportState()
     @State private var isChoosingArtwork = false
     @State private var isSaving = false
     @State private var imageError: String?
@@ -25,8 +24,6 @@ struct CreatePlaylistSheet: View {
         self.onSave = onSave
         _title = State(initialValue: playlist?.name ?? "")
         _playlistDescription = State(initialValue: playlist?.description ?? "")
-        _artworkBase64 = State(initialValue: playlist?.artworkId)
-        _artwork = State(initialValue: Self.decodeArtwork(playlist?.artworkId))
     }
 
     private enum Field {
@@ -74,7 +71,7 @@ struct CreatePlaylistSheet: View {
                         guard await onSave(
                             normalizedTitle,
                             playlistDescription,
-                            artworkBase64
+                            artworkImport.originalBase64 ?? playlist?.artworkId
                         ) else { return }
                         dismiss()
                     }
@@ -83,7 +80,7 @@ struct CreatePlaylistSheet: View {
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .disabled(normalizedTitle.isEmpty || isSaving)
+                .disabled(normalizedTitle.isEmpty || isSaving || artworkImport.isLoading)
                 .accessibilityIdentifier("playlist.new.create")
             }
         }
@@ -105,7 +102,10 @@ struct CreatePlaylistSheet: View {
         }
         .onAppear {
             focusedField = .title
+            artworkImport.loadExisting(playlist?.artworkId, maximumPixelSize: 512)
         }
+        .onDisappear { artworkImport.cancel() }
+        .onChange(of: artworkImport.errorMessage) { _, message in imageError = message }
     }
 
     private var artworkPicker: some View {
@@ -116,7 +116,7 @@ struct CreatePlaylistSheet: View {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(.quaternary)
 
-                if let artwork {
+                if let artwork = artworkImport.preview {
                     Image(nsImage: artwork)
                         .resizable()
                         .scaledToFill()
@@ -140,43 +140,22 @@ struct CreatePlaylistSheet: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .overlay { if artworkImport.isLoading { ProgressView() } }
             .frame(width: 156, height: 156)
             .artworkGlassBorder(size: 156)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(artwork == nil ? "Selecionar imagem" : "Alterar imagem")
+        .accessibilityLabel(artworkImport.preview == nil ? "Selecionar imagem" : "Alterar imagem")
         .accessibilityIdentifier("playlist.new.artwork")
     }
 
     private func loadArtwork(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer {
-                if accessed { url.stopAccessingSecurityScopedResource() }
-            }
-
-            let data = try Data(contentsOf: url)
-            guard let image = NSImage(data: data) else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-            artwork = image
-            artworkBase64 = data.base64EncodedString()
+            artworkImport.select(url, maximumPixelSize: 512, includeOriginalBytes: true)
         } catch {
             imageError = error.localizedDescription
         }
-    }
-
-    private static func decodeArtwork(_ value: String?) -> NSImage? {
-        guard let value, !value.isEmpty else { return nil }
-        let base64: String
-        if value.hasPrefix("data:"), let range = value.range(of: "base64,") {
-            base64 = String(value[range.upperBound...])
-        } else {
-            base64 = value
-        }
-        guard let data = Data(base64Encoded: base64) else { return nil }
-        return NSImage(data: data)
     }
 }

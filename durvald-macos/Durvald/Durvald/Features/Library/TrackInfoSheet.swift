@@ -99,7 +99,7 @@ struct TrackInfoSheet: View {
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var isChoosingArtwork = false
-    @State private var artworkPreview: NSImage?
+    @State private var artworkImport = ArtworkImportState()
 
     private enum Tab: String, CaseIterable {
         case details = "Detalhes", artwork = "Capa", lyrics = "Letras", options = "Opções", file = "Arquivo"
@@ -136,7 +136,12 @@ struct TrackInfoSheet: View {
             allowsMultipleSelection: false,
             onCompletion: loadArtwork
         )
-        .task(id: trackID) { await load() }
+        .task(id: trackID) { artworkImport.reset(); await load() }
+        .onDisappear { artworkImport.cancel() }
+        .onChange(of: artworkImport.errorMessage) { _, message in
+            if let message { errorMessage = "Não foi possível abrir a imagem: \(message)" }
+        }
+        .onChange(of: artworkImport.revision) { _, _ in errorMessage = nil }
         .task(id: selectedTab) {
             guard selectedTab == .lyrics, !lyricsLoaded else { return }
             do {
@@ -276,7 +281,7 @@ struct TrackInfoSheet: View {
                 GeometryReader { geometry in
                     let size = max(0, min(geometry.size.width, geometry.size.height))
                     Group {
-                        if let artworkPreview {
+                        if let artworkPreview = artworkImport.preview {
                             Image(nsImage: artworkPreview)
                                 .resizable()
                                 .scaledToFill()
@@ -285,6 +290,7 @@ struct TrackInfoSheet: View {
                             ArtworkView(artworkID: info.track.artworkId, size: size)
                         }
                     }
+                        .overlay { if artworkImport.isLoading { ProgressView() } }
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .overlay(alignment: .bottom) {
                             Button("Alterar imagem") { isChoosingArtwork = true }
@@ -336,14 +342,7 @@ struct TrackInfoSheet: View {
     private func loadArtwork(_ result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            let data = try Data(contentsOf: url)
-            guard let image = NSImage(data: data) else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-            artworkPreview = image
-            errorMessage = nil
+            artworkImport.select(url, maximumPixelSize: 1024, includeOriginalBytes: false)
         } catch {
             errorMessage = "Não foi possível abrir a imagem: \(error.localizedDescription)"
         }

@@ -495,15 +495,10 @@ final class DurvaldCoreStore {
 
     func importM3U8(from url: URL) async throws -> PlaylistImportReport {
         guard let core else { throw PlaylistTransferError.cannotCreatePlaylist }
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        let document = try M3U8Playlist(data: Data(contentsOf: url))
-        let requestedURLs = document.resolvedURLs(relativeTo: url)
-
+        let requestedPaths = try await FileImportService.shared.playlistPaths(from: url)
         let indexedTracks = try await completeCatalogTracks()
-        let tracksByPath = Dictionary(indexedTracks.map {
-            (PlaylistTransferService.canonicalPath(URL(fileURLWithPath: $0.filePath)), $0)
-        }, uniquingKeysWith: { first, _ in first })
+        let tracksByPath = try await FileImportService.shared.pathIndex(indexedTracks.map(\.filePath))
+        try Task.checkCancellation()
 
         let playlistName = url.deletingPathExtension().lastPathComponent
         guard let playlist = await createPlaylist(named: playlistName) else {
@@ -512,16 +507,16 @@ final class DurvaldCoreStore {
         var importedCount = 0
         var missing: [String] = []
         var failures: [String] = []
-        for requestedURL in requestedURLs {
-            let path = PlaylistTransferService.canonicalPath(requestedURL)
-            guard let track = tracksByPath[path] else {
+        for requested in requestedPaths {
+            let requestedURL = requested.url
+            guard let index = tracksByPath[requested.canonicalPath] else {
                 missing.append(requestedURL.path)
                 continue
             }
             do {
                 _ = try await core.addTrackToPlaylist(
                     playlistId: playlist.id,
-                    trackId: track.id,
+                    trackId: indexedTracks[index].id,
                     position: UInt64(importedCount)
                 )
                 importedCount += 1

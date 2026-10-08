@@ -224,6 +224,10 @@ Callbacks de importação leem Data(contentsOf:) e criam NSImage; o store MainAc
 
 **Direção:** Serviço de importação em executor de I/O, thumbnail ImageIO e publicação no MainActor. Manter o security scope aberto até o término da leitura; não presumir que async significa fora da thread principal.
 
+**Correção implementada em 08/10/2026:** `FileImportService` executa leitura de arquivos, decodificação ImageIO, conversão base64, parsing M3U8 e resolução de symlinks em worker fora do MainActor. O worker abre o security scope e o fecha com `defer`, após terminar a leitura/uso dos bytes; o cancelamento do consumidor não encerra o acesso enquanto uma leitura síncrona ainda está em andamento. Verificações de cancelamento impedem a publicação do resultado e evitam decodificar uma leitura já cancelada.
+
+TrackInfoSheet e CreatePlaylistSheet usam `ArtworkImportState`: mostram progresso, publicam a prévia no MainActor e descartam seleções antigas/canceladas. A prévia ImageIO aplica orientação e limita o maior lado a 1024 pixels na faixa e 512 na playlist; os bytes originais da playlist são preservados para salvar, sem substituir a imagem pela thumbnail. A capa existente da playlist também é decodificada de forma assíncrona, incluindo data URLs. O M3U8 mantém ordem, duplicatas, caminhos relativos e o primeiro registro do catálogo por caminho canônico; leitura e indexação de caminhos precedem a criação da playlist. Testes cobrem execução fora da thread principal, limite da prévia, bytes originais, scope em sucesso/erro/cancelamento, base64, parsing M3U8, symlinks e descarte de respostas antigas. Não houve medição com Instruments.
+
 ### E07 — Thumbnails de playlists sem cache compartilhado (P2)
 
 **Evidência:** [Features/Playlists/PlaylistArtworkThumbnail.swift:52](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Playlists/PlaylistArtworkThumbnail.swift:52); [Features/Player/ArtworkRepository.swift:53](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/ArtworkRepository.swift:53).
