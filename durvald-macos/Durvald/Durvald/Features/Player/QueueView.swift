@@ -109,7 +109,7 @@ struct QueueView: View {
     @Environment(TrackInfoCoordinator.self) private var trackInfo
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(\.trackMenuNavigation) private var navigation
-    @State private var menuTracks: [Int64: Track] = [:]
+    @State private var menuTracks = QueueMenuTrackPresentation()
     @State private var selectedPanel: Panel = .details
     @State private var isClearQueueConfirmationPresented = false
     @State private var isTrackLinkHovered = false
@@ -164,11 +164,8 @@ struct QueueView: View {
         } message: {
             Text("Tem certeza de que deseja limpar a fila? Essa ação não pode ser desfeita.")
         }
-        .task(id: store.queue.map(\.trackId)) {
-            for item in store.queue where menuTracks[item.trackId] == nil {
-                guard !Task.isCancelled else { return }
-                menuTracks[item.trackId] = try? await store.core?.track(trackId: item.trackId)
-            }
+        .task(id: QueueMenuTrackRequest(store: store)) {
+            await menuTracks.refresh(store: store)
         }
     }
 
@@ -210,7 +207,7 @@ struct QueueView: View {
                     configureMenu: { controller, trackID in
                         guard let track = store.loadedTrack(id: trackID)
                             ?? store.playback?.currentTrack.flatMap({ $0.id == trackID ? $0 : nil })
-                            ?? menuTracks[trackID] else { return false }
+                            ?? menuTracks.tracksByID[trackID] else { return false }
                         controller.configure(track: track, store: store,
                             playlistCreation: playlistCreation, trackInfo: trackInfo,
                             navigation: navigation)

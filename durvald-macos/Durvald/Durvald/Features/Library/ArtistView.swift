@@ -66,7 +66,10 @@ struct ArtistView: View {
         didSet { lookupRevision &+= 1 }
     }
     @State private var latestRelease: ExternalReleaseGroup?
-    @State private var discographyPage: ArtistDiscographyPage?
+    @State private var discographyPageRevision: UInt64 = 0
+    @State private var discographyPage: ArtistDiscographyPage? {
+        didSet { discographyPageRevision &+= 1 }
+    }
     @State private var popularTracks: ArtistPopularTracks?
     @State private var popularTrackArtworkIDs: [String: String] = [:]
     @State private var popularTrackReleaseGroupIDs: [String: String] = [:]
@@ -315,7 +318,7 @@ struct ArtistView: View {
             }
             await cacheReleaseTracksAndResolvePopularArtwork()
         }
-        .task(id: discographyPage) {
+        .task(id: discographyPageRevision) {
             guard discographyPage != nil else { latestRelease = nil; return }
             let release = await store.latestArtistRelease(artistId: artist.id)
             guard !Task.isCancelled else { return }

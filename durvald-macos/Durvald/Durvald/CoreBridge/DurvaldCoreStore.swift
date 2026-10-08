@@ -23,7 +23,10 @@ final class DurvaldCoreStore {
         }
     }
     private(set) var activeTrackID: Int64?
-    private(set) var queue: [QueueItem] = []
+    private(set) var queueRevision: UInt64 = 0
+    private(set) var queue: [QueueItem] = [] {
+        didSet { queueRevision &+= 1 }
+    }
     private(set) var isPlaybackPaused = true
     private(set) var isSeeking = false
     private(set) var scanProgress: ScanProgress?

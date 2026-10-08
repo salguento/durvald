@@ -210,6 +210,10 @@ History usa entries e store.history em chaves de task. A janela de edição usa 
 
 **Direção:** Introduzir historyRevision + chave de consulta/revisão; manter arrays como payload. MusicLibraryPresentation já documenta esse padrão.
 
+**Correção implementada em 08/10/2026:** as tarefas do Histórico já usam identidade escalar do core, revisões de catálogo/faixas/histórico, consulta e ordem desde E02/E03; entries e índices são somente payload. A revisão dos demais consumidores encontrou e removeu o array de IDs da fila como chave de tarefa: `queueRevision` muda quando o snapshot da fila muda, enquanto atualizações de progresso/pausa mantêm a identidade. `QueueMenuTrackRequest` combina essa revisão com core e revisões de catálogo/faixas; `QueueMenuTrackPresentation` lê a fila dentro da tarefa, reutiliza metadados ao reordenar, remove registros fora da fila e invalida o cache na troca de fonte/metadados. Cancelamento e geração impedem a publicação de respostas antigas.
+
+A tarefa de último lançamento do artista usa `discographyPageRevision`, incrementada na publicação da página, em vez de comparar `ArtistDiscographyPage` com todos os seus itens. A identidade da edição em lote (`.id(trackInfo.trackIDs)`) foi preservada: ela representa a seleção editada e reinicia corretamente o estado do formulário. Testes cobrem estabilidade durante progresso/pausa, mudanças da fila, reutilização após reordenação, metadados atualizados, troca de core, cancelamento e respostas atrasadas. Não houve medição com Instruments.
+
 ### E06 — Leitura e decodificação síncronas de arquivos em ações de UI (P1)
 
 **Evidência:** [Features/Library/TrackInfoSheet.swift:336](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/TrackInfoSheet.swift:336); [Features/Playlists/CreatePlaylistSheet.swift:152](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Playlists/CreatePlaylistSheet.swift:152); [CoreBridge/DurvaldCoreStore.swift:405](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/CoreBridge/DurvaldCoreStore.swift:405).
