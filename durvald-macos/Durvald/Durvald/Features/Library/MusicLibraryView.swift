@@ -164,9 +164,8 @@ struct MusicLibraryView: View {
         }
         .task(id: !isPresented || normalizedSearchText.isEmpty ? nil : presentation.displayRevision) {
             guard isPresented, !normalizedSearchText.isEmpty else { return }
-            let missingPaths = Set(displayedTracks.map(\.filePath)).filter { fileSizes[$0] == nil }
-            guard !missingPaths.isEmpty else { return }
-            let sizes = await MusicLibraryFileSizes.read(Array(missingPaths))
+            let paths = Array(Set(displayedTracks.map(\.filePath)))
+            guard !paths.isEmpty, let sizes = try? await store.fileSizes(for: paths) else { return }
             guard !Task.isCancelled else { return }
             presentation.fileSizes.merge(sizes, uniquingKeysWith: { _, latest in latest })
         }

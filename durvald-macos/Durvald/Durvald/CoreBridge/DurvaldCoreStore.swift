@@ -92,6 +92,7 @@ final class DurvaldCoreStore {
     }
     @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
     @ObservationIgnored let spectrumPolling = SpectrumPollingCoordinator()
+    @ObservationIgnored private let fileMetadata: FileMetadataRepository
     @ObservationIgnored private var historyRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var nowPlaying: NowPlayingCoordinator?
     @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
@@ -146,8 +147,10 @@ final class DurvaldCoreStore {
         tracks: [Track] = [],
         releases: [Release] = [],
         artists: [Artist] = [],
-        history: [PlaybackHistoryItem] = []
+        history: [PlaybackHistoryItem] = [],
+        fileMetadata: FileMetadataRepository = FileMetadataRepository()
     ) {
+        self.fileMetadata = fileMetadata
         self.core = core
         self.playback = playback
         self.activeTrackID = playback?.currentTrack?.id
@@ -188,6 +191,15 @@ final class DurvaldCoreStore {
         catalogTracks.invalidate()
         catalogReleases.invalidate()
         historyRepository.invalidateTracks()
+    }
+
+    /// File metadata shared by all collections, scoped to this catalog revision.
+    func fileSizes(for paths: [String]) async throws -> [String: Int64] {
+        let revision = libraryCatalogRevision
+        let sizes = try await fileMetadata.read(paths, revision: revision)
+        try Task.checkCancellation()
+        guard revision == libraryCatalogRevision else { throw CancellationError() }
+        return sizes
     }
 
     /// Complete snapshots shared by library screens and playlist import. These

@@ -131,7 +131,7 @@ struct AlbumsView: View {
             (releases, tracks) = try await (loadedReleases, loadedTracks)
         } catch { return }
         guard !Task.isCancelled, revision == store.libraryCatalogRevision else { return }
-        let sizes = await MusicLibraryFileSizes.read(Array(Set(tracks.map(\.filePath))))
+        guard let sizes = try? await store.fileSizes(for: Array(Set(tracks.map(\.filePath)))) else { return }
         guard !Task.isCancelled, revision == store.libraryCatalogRevision else { return }
         completeReleases = releases
         completeTracks = tracks

@@ -112,22 +112,26 @@ final class MusicLibraryPresentation {
 
     func refreshCatalog(store: DurvaldCoreStore) async {
         let request = catalogRequest(for: store)
-        guard request != completedCatalogRequest else { return }
         let generation = UUID()
         catalogGeneration = generation
         do {
-            let tracks = try await store.completeCatalogTracks()
-            guard !Task.isCancelled, generation == catalogGeneration, catalogRequest(for: store) == request else { return }
-            // Publish catalog before file metadata finishes. The summary never
-            // gates the first table frame or sorting the complete collection.
-            catalogStoreID = request.storeID
-            catalogRevision = request.metadataRevision
-            libraryRevision = request.libraryRevision
-            catalogCoreID = request.coreID
-            catalog = tracks
-            catalogVersion &+= 1
+            let tracks: [Track]
+            if request == completedCatalogRequest, let catalog {
+                tracks = catalog
+            } else {
+                tracks = try await store.completeCatalogTracks()
+                guard !Task.isCancelled, generation == catalogGeneration, catalogRequest(for: store) == request else { return }
+                // Publish catalog before file metadata finishes. The summary never
+                // gates the first table frame or sorting the complete collection.
+                catalogStoreID = request.storeID
+                catalogRevision = request.metadataRevision
+                libraryRevision = request.libraryRevision
+                catalogCoreID = request.coreID
+                catalog = tracks
+                catalogVersion &+= 1
+            }
             let paths = Array(Set(tracks.map(\.filePath)))
-            let sizes = await MusicLibraryFileSizes.read(paths)
+            let sizes = try await store.fileSizes(for: paths)
             guard !Task.isCancelled, generation == catalogGeneration, catalogRequest(for: store) == request else { return }
             fileSizes = sizes
             librarySummary = MusicLibrarySummary(tracks: tracks, kind: .all, fileSizes: sizes)

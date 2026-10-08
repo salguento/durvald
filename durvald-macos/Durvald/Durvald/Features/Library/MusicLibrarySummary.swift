@@ -74,22 +74,3 @@ struct MusicLibrarySummaryView: View {
         .accessibilityIdentifier("library.summary")
     }
 }
-
-enum MusicLibraryFileSizes {
-    static func read(_ paths: [String]) async -> [String: Int64] {
-        let task = Task.detached(priority: .utility) {
-            var sizes: [String: Int64] = [:]
-            for path in paths {
-                guard !Task.isCancelled else { break }
-                let attributes = try? FileManager.default.attributesOfItem(atPath: path)
-                sizes[path] = (attributes?[.size] as? NSNumber)?.int64Value ?? -1
-            }
-            return sizes
-        }
-        return await withTaskCancellationHandler {
-            await task.value
-        } onCancel: {
-            task.cancel()
-        }
-    }
-}
