@@ -55,7 +55,24 @@ struct PageTopbarBackground: NSViewRepresentable {
     }
 }
 
-/// Observe the native titlebar without placing an overlay over its buttons.
+/// The native frame includes the titlebar even when the page view itself is
+/// clipped below it. Crop horizontally to the page, excluding sidebar/queue.
+enum TopbarHoverGeometry {
+    static func region(page: NSRect, layout: NSRect, frame: NSRect) -> NSRect {
+        let titlebar = NSRect(x: frame.minX, y: layout.maxY, width: frame.width,
+                              height: max(0, frame.maxY - layout.maxY))
+        let pageStrip = NSRect(x: page.minX, y: titlebar.minY, width: page.width, height: titlebar.height)
+        let clipped = titlebar.intersection(pageStrip)
+        return clipped.isEmpty ? .zero : clipped
+    }
+
+    static func contains(_ point: NSPoint, region: NSRect, appActive: Bool,
+                         windowVisible: Bool, miniaturized: Bool) -> Bool {
+        appActive && windowVisible && !miniaturized && !region.isEmpty && region.contains(point)
+    }
+}
+
+/// Track the real native titlebar region without adding a hit-test overlay.
 struct TopbarHoverObserver: NSViewRepresentable {
     @Binding var isHovered: Bool
 
@@ -65,12 +82,22 @@ struct TopbarHoverObserver: NSViewRepresentable {
 
     func updateNSView(_ view: ObserverView, context: Context) {
         view.isHovered = $isHovered
+        view.refreshTrackingRegion()
         view.updateHover()
+    }
+
+    static func dismantleNSView(_ view: ObserverView, coordinator: ()) {
+        view.stopObserving()
     }
 
     final class ObserverView: NSView {
         var isHovered: Binding<Bool>
-        private var timer: Timer?
+        private(set) var nativeTrackingArea: NSTrackingArea?
+        private weak var trackingHost: NSView?
+        private var notifications: [NSObjectProtocol] = []
+        private var isObserving = false
+        private var pendingHover: Bool?
+        private var publicationRevision: UInt64 = 0
 
         init(isHovered: Binding<Bool>) {
             self.isHovered = isHovered
@@ -84,31 +111,113 @@ struct TopbarHoverObserver: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            timer?.invalidate()
-            timer = nil
-            guard window != nil else { return }
-            let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
-                DispatchQueue.main.async { [weak self] in self?.updateHover() }
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            self.timer = timer
-        }
-
-        func updateHover() {
+            stopObserving()
             guard let window else { return }
-            let point = window.mouseLocationOutsideOfEventStream
-            let contentRegion = convert(bounds, to: nil)
-            let topbar = NSRect(
-                x: contentRegion.minX, y: window.contentLayoutRect.maxY,
-                width: contentRegion.width,
-                height: max(0, window.frame.height - window.contentLayoutRect.maxY)
-            )
-            let hovered = NSApp.isActive && window.isVisible && !window.isMiniaturized
-                && topbar.contains(point)
-            guard isHovered.wrappedValue != hovered else { return }
-            DispatchQueue.main.async { [weak self] in self?.isHovered.wrappedValue = hovered }
+            isObserving = true
+            let center = NotificationCenter.default
+            for name in [NSWindow.didResizeNotification, NSWindow.didMoveNotification,
+                         NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification,
+                         NSWindow.didChangeScreenNotification, NSWindow.didBecomeKeyNotification,
+                         NSWindow.didResignKeyNotification] {
+                notifications.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.refreshTrackingRegion()
+                        self?.updateHover()
+                    }
+                })
+            }
+            for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+                         NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
+                notifications.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.updateHover() }
+                })
+            }
+            notifications.append(center.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.stopObserving() }
+            })
+            refreshTrackingRegion()
+            updateHover()
         }
 
-        deinit { timer?.invalidate() }
+        override func layout() {
+            super.layout()
+            refreshTrackingRegion()
+            updateHover()
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            refreshTrackingRegion()
+            updateHover()
+        }
+
+        override func mouseEntered(with event: NSEvent) { updateHover(at: event.locationInWindow) }
+        override func mouseExited(with event: NSEvent) { publishHover(false) }
+        override func mouseMoved(with event: NSEvent) { updateHover(at: event.locationInWindow) }
+
+        func refreshTrackingRegion() {
+            guard isObserving, let window, let host = window.contentView?.superview else {
+                removeNativeTrackingArea()
+                return
+            }
+            let region = TopbarHoverGeometry.region(page: convert(bounds, to: nil), layout: window.contentLayoutRect,
+                                                    frame: host.convert(host.bounds, to: nil))
+            let rect = host.convert(region, from: nil)
+            guard !region.isEmpty else { removeNativeTrackingArea(); return }
+            if trackingHost === host, nativeTrackingArea?.rect == rect { return }
+            removeNativeTrackingArea()
+            let area = NSTrackingArea(rect: rect, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .enabledDuringMouseDrag],
+                                      owner: self, userInfo: nil)
+            host.addTrackingArea(area)
+            trackingHost = host
+            nativeTrackingArea = area
+        }
+
+        func updateHover(at point: NSPoint? = nil) {
+            guard isObserving, let window, let host = trackingHost, let area = nativeTrackingArea else {
+                publishHover(false)
+                return
+            }
+            let hovered = TopbarHoverGeometry.contains(point ?? window.mouseLocationOutsideOfEventStream,
+                region: host.convert(area.rect, to: nil), appActive: NSApp.isActive,
+                windowVisible: window.isVisible, miniaturized: window.isMiniaturized)
+            publishHover(hovered)
+        }
+
+        private func publishHover(_ hovered: Bool) {
+            guard pendingHover != hovered else { return }
+            publicationRevision &+= 1
+            let revision = publicationRevision
+            guard isHovered.wrappedValue != hovered else { pendingHover = nil; return }
+            pendingHover = hovered
+            // Defer binding writes out of representable/layout updates, while
+            // invalidating older queued publications on region/lifecycle changes.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, publicationRevision == revision else { return }
+                pendingHover = nil
+                if isHovered.wrappedValue != hovered { isHovered.wrappedValue = hovered }
+            }
+        }
+
+        func stopObserving() {
+            isObserving = false
+            notifications.forEach { NotificationCenter.default.removeObserver($0) }
+            notifications.removeAll()
+            removeNativeTrackingArea()
+            publishHover(false)
+        }
+
+        private func removeNativeTrackingArea() {
+            if let area = nativeTrackingArea { trackingHost?.removeTrackingArea(area) }
+            nativeTrackingArea = nil
+            trackingHost = nil
+        }
+
+        deinit {
+            notifications.forEach { NotificationCenter.default.removeObserver($0) }
+            if let area = nativeTrackingArea, let host = trackingHost {
+                MainActor.assumeIsolated { host.removeTrackingArea(area) }
+            }
+        }
     }
 }

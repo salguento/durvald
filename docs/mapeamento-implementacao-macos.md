@@ -268,6 +268,12 @@ Observer lê ponteiro e geometria a cada 100 ms enquanto anexado à janela, incl
 
 **Direção:** Avaliar NSTrackingArea em uma região real da topbar ou monitor compartilhado por janela. Resolver o recorte da região antes de remover o polling que atualmente evita interceptar os botões nativos.
 
+**Correção implementada em 08/10/2026:** TopbarHoverObserver substitui o timer de 100 ms por NSTrackingArea instalada no frame nativo da janela. A faixa acima de contentLayoutRect é recortada horizontalmente à largura da página, excluindo sidebar/fila e evitando que o recorte do próprio observer elimine a região da titlebar. Nenhuma view de captura é adicionada; hitTest continua retornando nil para preservar os controles nativos.
+
+Entrada, saída, movimento/drag do mouse e mudanças de layout, janela ou ativação da aplicação atualizam o hover. A área só é recriada quando host/retângulo mudam, e as áreas/notificações são removidas ao desmontar, trocar/fechar a janela ou desalocar o observer. Publicações do binding são adiadas e invalidadas por revisão para evitar writes durante layout e atualizações antigas após mudanças de estado. Os testes cobrem geometria, estados inativos/ocultos/minimizados, resize, cleanup e hit-test do botão nativo de fechar. A remoção das leituras periódicas foi verificada no código; o ganho de energia ainda não foi medido com Instruments.
+
+**Validação em 08/10/2026:** build e 149 testes unitários passaram, incluindo sete testes novos de TopbarHoverObserver. O teste visual testScrollEffectAcrossLibraryAndQueue não encontrou a janela principal antes de executar as interações. A mesma falha ocorreu com o observer anterior compilado a partir de HEAD; portanto, essa execução não validou visualmente o hover/scroll da implementação nova.
+
 ### E10 — Layout síncrono forçado na toolbar (P2)
 
 **Evidência:** [ContentView.swift:877](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/ContentView.swift:877); [ContentView.swift:919](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/ContentView.swift:919).
