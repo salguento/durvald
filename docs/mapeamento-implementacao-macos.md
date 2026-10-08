@@ -350,6 +350,12 @@ Ordena todos os resultados antes de prefix(10); o comparador recalcula folding d
 
 **Direção:** Preparar rank/chave normalizada uma vez por consulta e payload; guardar dez resultados ordenados num snapshot.
 
+**Correção implementada em 08/10/2026:** PlaylistSuggestionSnapshot prepara as sugestões uma vez ao concluir cada busca. O folding da consulta acontece uma vez e o de cada título uma vez, com o mesmo locale. Rank e título normalizado são calculados antes da comparação. Em vez de ordenar todo o payload, a preparação mantém os dez melhores candidatos em uma lista ordenada de no máximo onze itens durante a inserção, com trabalho O(n × 10) e memória auxiliar limitada. Empates preservam a ordem de entrada: faixas, álbuns e artistas. Os IDs, títulos originais e prioridade exata/prefixo/demais resultados foram preservados.
+
+PlaylistMusicPicker prepara o snapshot fora do MainActor e publica somente após verificar o cancelamento da busca. Renderização, linhas e divisores leem o array armazenado; não há mais ordenação/folding em computed property nem retenção do payload completo em state. Limpar/fechar a busca limpa o snapshot. Cinco testes novos verificam prioridade, acentos/case, empates/IDs entre tipos, limite de dez, substituição de consulta/payload e normalização única. A seleção limitada é comparada à ordenação completa anterior com 600 candidatos, seis consultas e três locales. Não foi medida latência da tela com Instruments.
+
+**Validação em 08/10/2026:** build e 178 testes unitários passaram, incluindo os cinco testes novos de PlaylistSuggestionSnapshot.
+
 ### E15 — Estatísticas de tamanho de arquivos reexecutadas por consumidores (P2)
 
 **Evidência:** [Features/Library/MusicLibrarySummary.swift:78](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/MusicLibrarySummary.swift:78); [Features/Library/AlbumsView.swift:144](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/AlbumsView.swift:144); [Features/Library/MusicLibraryPresentation.swift:145](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/MusicLibraryPresentation.swift:145).

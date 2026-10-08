@@ -10,7 +10,7 @@ struct PlaylistMusicPicker: View {
     @State private var isExpanded = false
     @State private var query = ""
     @State private var committedQuery = ""
-    @State private var results: SearchResults?
+    @State private var suggestions = PlaylistSuggestionSnapshot()
     @State private var isSearching = false
     @State private var selection: Selection?
     @State private var albumTracks: [Track] = []
@@ -21,27 +21,7 @@ struct PlaylistMusicPicker: View {
         case artist(Artist)
     }
 
-    private enum ResultItem: Identifiable {
-        case track(Track)
-        case album(Release)
-        case artist(Artist)
-
-        var id: String {
-            switch self {
-            case .track(let value): "track-\(value.id)"
-            case .album(let value): "album-\(value.id)"
-            case .artist(let value): "artist-\(value.id)"
-            }
-        }
-
-        var title: String {
-            switch self {
-            case .track(let value): value.title
-            case .album(let value): value.title
-            case .artist(let value): value.name
-            }
-        }
-    }
+    private typealias ResultItem = PlaylistSuggestionSnapshot.Item
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -108,6 +88,7 @@ struct PlaylistMusicPicker: View {
 
     @ViewBuilder
     private var displayedContent: some View {
+        let resultItems = suggestions.items
         if let selection {
             switch selection {
             case .album(let album): albumContent(album)
@@ -128,21 +109,6 @@ struct PlaylistMusicPicker: View {
                 }
             }
         }
-    }
-
-    private var resultItems: [ResultItem] {
-        guard let results else { return [] }
-        let items = results.tracks.map(ResultItem.track)
-            + results.releases.map(ResultItem.album)
-            + results.artists.map(ResultItem.artist)
-        return Array(items.sorted { relevance(of: $0) < relevance(of: $1) }.prefix(10))
-    }
-
-    private func relevance(of item: ResultItem) -> String {
-        let title = item.title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        let term = committedQuery.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        let rank = title == term ? "0" : title.hasPrefix(term) ? "1" : "2"
-        return rank + title
     }
 
     @ViewBuilder
@@ -310,7 +276,7 @@ struct PlaylistMusicPicker: View {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
             committedQuery = ""
-            results = nil
+            suggestions = PlaylistSuggestionSnapshot()
             isSearching = false
             return
         }
@@ -321,7 +287,12 @@ struct PlaylistMusicPicker: View {
         isSearching = true
         let found = await store.searchLibrary(query: normalized)
         guard !Task.isCancelled else { return }
-        results = found
+        let locale = Locale.current
+        let prepared = await Task.detached(priority: .userInitiated) {
+            PlaylistSuggestionSnapshot.build(results: found, query: normalized, locale: locale)
+        }.value
+        guard !Task.isCancelled else { return }
+        suggestions = prepared
         isSearching = false
     }
 
@@ -329,7 +300,7 @@ struct PlaylistMusicPicker: View {
         isSearchFocused = false
         query = ""
         committedQuery = ""
-        results = nil
+        suggestions = PlaylistSuggestionSnapshot()
         selection = nil
         albumTracks = []
         isExpanded = false
