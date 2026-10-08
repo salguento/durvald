@@ -38,7 +38,12 @@ final class DurvaldCoreStore {
     private(set) var artists: [Artist] = []
     private(set) var playlists: [Playlist] = []
     private(set) var history: [PlaybackHistoryItem] = []
-    private(set) var metadataRevision = 0
+    private(set) var metadataRevision = 0 {
+        didSet { invalidateCatalog() }
+    }
+    private(set) var libraryCatalogRevision: UInt64 = 0
+    @ObservationIgnored private let catalogTracks = CatalogPageCache<Track>()
+    @ObservationIgnored private let catalogReleases = CatalogPageCache<Release>()
     var errorMessage: String?
     private(set) var appSettings: Settings?
     private(set) var audioOutputState: AudioOutputState?
@@ -51,7 +56,9 @@ final class DurvaldCoreStore {
     private(set) var metadataUpdateTotal = 0
 
 
-    private(set) var core: DurvaldCore?
+    private(set) var core: DurvaldCore? {
+        didSet { invalidateCatalog() }
+    }
     @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
     @ObservationIgnored private var nowPlaying: NowPlayingCoordinator?
     @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
@@ -117,6 +124,33 @@ final class DurvaldCoreStore {
         self.releases = releases
         self.artists = artists
         self.history = history
+    }
+
+    private func invalidateCatalog() {
+        libraryCatalogRevision &+= 1
+        catalogTracks.invalidate()
+        catalogReleases.invalidate()
+    }
+
+    /// Complete snapshots shared by library screens and playlist import. These
+    /// do not mutate the visible, paginated collections or gate initial rendering.
+    func completeCatalogTracks() async throws -> [Track] {
+        try Task.checkCancellation()
+        if hasLoadedAllTracks { return tracks }
+        guard let core else { return tracks }
+        return try await catalogTracks.load {
+            let page = try await core.tracksPage(pageSize: 1_000, offset: $0)
+            return (page.items, page.nextOffset)
+        }
+    }
+
+    func completeCatalogReleases() async throws -> [Release] {
+        try Task.checkCancellation()
+        guard let core else { return releases }
+        return try await catalogReleases.load {
+            let page = try await core.releasesPage(pageSize: 1_000, offset: $0)
+            return (page.items, page.nextOffset)
+        }
     }
 
     func activateSystemMediaControls() {
@@ -192,6 +226,8 @@ final class DurvaldCoreStore {
     }
 
     private func reloadPrimaryLibrary(using core: DurvaldCore) async throws {
+        invalidateCatalog()
+        defer { invalidateCatalog() }
         hasLoadedAllTracks = false
         async let loadedTracks = core.tracksPage(
             pageSize: Self.libraryPageSize,
@@ -409,14 +445,7 @@ final class DurvaldCoreStore {
         let document = try M3U8Playlist(data: Data(contentsOf: url))
         let requestedURLs = document.resolvedURLs(relativeTo: url)
 
-        var indexedTracks: [Track] = []
-        var offset: UInt64 = 0
-        repeat {
-            let page = try await core.tracksPage(pageSize: Self.libraryPageSize, offset: offset)
-            indexedTracks.append(contentsOf: page.items)
-            guard let next = page.nextOffset else { break }
-            offset = next
-        } while true
+        let indexedTracks = try await completeCatalogTracks()
         let tracksByPath = Dictionary(indexedTracks.map {
             (PlaylistTransferService.canonicalPath(URL(fileURLWithPath: $0.filePath)), $0)
         }, uniquingKeysWith: { first, _ in first })
@@ -1573,6 +1602,7 @@ final class DurvaldCoreStore {
         Task {
             do {
                 try await core.setReleaseFavorite(releaseId: releaseID, favorite: favorite)
+                metadataRevision &+= 1
                 if let index = releases.firstIndex(where: { $0.id == releaseID }) {
                     releases[index].isFavorite = favorite
                 }
@@ -1594,6 +1624,7 @@ final class DurvaldCoreStore {
         Task {
             do {
                 try await core.setReleaseRating(releaseId: releaseID, rating: rating)
+                metadataRevision &+= 1
             } catch {
                 if let index = releases.firstIndex(where: { $0.id == releaseID }) {
                     releases[index].rating = previous
@@ -2169,6 +2200,7 @@ final class DurvaldCoreStore {
             let refreshedReleases = try await core.artistReleases(artistId: artistId)
             let refreshedByID = Dictionary(uniqueKeysWithValues: refreshedReleases.map { ($0.id, $0) })
             releases = releases.map { refreshedByID[$0.id] ?? $0 }
+            metadataRevision &+= 1
             return result
         } catch {
             errorMessage = String(describing: error)
@@ -2184,6 +2216,7 @@ final class DurvaldCoreStore {
             let refreshedReleases = try await core.syncArtistReleaseMetadata(artistId: artistId)
             let refreshedByID = Dictionary(uniqueKeysWithValues: refreshedReleases.map { ($0.id, $0) })
             releases = releases.map { refreshedByID[$0.id] ?? $0 }
+            metadataRevision &+= 1
             return refreshedReleases
         } catch {
             errorMessage = String(describing: error)
@@ -2241,6 +2274,7 @@ final class DurvaldCoreStore {
 
         if !refreshedByID.isEmpty {
             releases = releases.map { refreshedByID[$0.id] ?? $0 }
+            metadataRevision &+= 1
         }
     }
 

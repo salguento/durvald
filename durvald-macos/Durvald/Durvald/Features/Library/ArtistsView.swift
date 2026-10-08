@@ -57,7 +57,7 @@ struct ArtistsView: View {
         .onChange(of: onlyLocal) { _, _ in publishSummary() }
         .onChange(of: searchText) { _, _ in publishSummary() }
         .onChange(of: store.artists) { _, _ in publishSummary() }
-        .task(id: "\(store.metadataRevision):\(store.core != nil)") {
+        .task(id: "\(store.libraryCatalogRevision):\(store.core != nil)") {
             await refreshSummary()
         }
         .task(id: orderingTaskID) {
@@ -91,31 +91,15 @@ struct ArtistsView: View {
     }
 
     private func refreshSummary() async {
-        var artistIDs = Set(store.tracks.map(\.artistId))
-        artistIDs.formUnion(store.releases.map(\.artistId))
-        if let core = store.core {
-            do {
-                if !store.hasLoadedAllTracks {
-                    var offset: UInt64 = 0
-                    while !Task.isCancelled {
-                        let page = try await core.tracksPage(pageSize: 1_000, offset: offset)
-                        artistIDs.formUnion(page.items.map(\.artistId))
-                        guard let nextOffset = page.nextOffset, nextOffset > offset else { break }
-                        offset = nextOffset
-                    }
-                }
-                var offset: UInt64 = 0
-                while !Task.isCancelled {
-                    let page = try await core.releasesPage(pageSize: 1_000, offset: offset)
-                    artistIDs.formUnion(page.items.map(\.artistId))
-                    guard let nextOffset = page.nextOffset, nextOffset > offset else { break }
-                    offset = nextOffset
-                }
-            } catch {
-                return
-            }
-        }
-        guard !Task.isCancelled else { return }
+        let revision = store.libraryCatalogRevision
+        let artistIDs: Set<Int64>
+        do {
+            async let tracks = store.completeCatalogTracks()
+            async let releases = store.completeCatalogReleases()
+            let catalog = try await (tracks, releases)
+            artistIDs = Set(catalog.0.map(\.artistId) + catalog.1.map(\.artistId))
+        } catch { return }
+        guard !Task.isCancelled, revision == store.libraryCatalogRevision else { return }
         localArtistIDs = artistIDs
         publishSummary()
     }

@@ -8,6 +8,7 @@ final class MusicLibraryPresentation {
     struct CatalogRequest: Equatable {
         let storeID: ObjectIdentifier
         let tracksRevision: UInt64
+        let libraryRevision: UInt64
         let metadataRevision: Int
         let hasLoadedAllTracks: Bool
         let coreID: ObjectIdentifier?
@@ -44,6 +45,7 @@ final class MusicLibraryPresentation {
     private(set) var librarySummary: MusicLibrarySummary?
     var fileSizes: [String: Int64] = [:]
     private var catalogRevision: Int?
+    private var libraryRevision: UInt64?
     private var catalogStoreID: ObjectIdentifier?
     private var catalogCoreID: ObjectIdentifier?
     @ObservationIgnored private var completedCatalogRequest: CatalogRequest?
@@ -55,7 +57,7 @@ final class MusicLibraryPresentation {
         if !query.isEmpty {
             return usesLocalSearch ? store.tracks : (searchResults ?? [])
         }
-        if catalogStoreID == ObjectIdentifier(store), catalogRevision == store.metadataRevision, catalogCoreID == store.core.map(ObjectIdentifier.init), let catalog {
+        if catalogStoreID == ObjectIdentifier(store), catalogRevision == store.metadataRevision, libraryRevision == store.libraryCatalogRevision, catalogCoreID == store.core.map(ObjectIdentifier.init), let catalog {
             return catalog
         }
         return store.tracks
@@ -102,6 +104,7 @@ final class MusicLibraryPresentation {
 
     func catalogRequest(for store: DurvaldCoreStore) -> CatalogRequest {
         CatalogRequest(storeID: ObjectIdentifier(store), tracksRevision: store.tracksRevision,
+                       libraryRevision: store.libraryCatalogRevision,
                        metadataRevision: store.metadataRevision,
                        hasLoadedAllTracks: store.hasLoadedAllTracks,
                        coreID: store.core.map(ObjectIdentifier.init))
@@ -112,32 +115,14 @@ final class MusicLibraryPresentation {
         guard request != completedCatalogRequest else { return }
         let generation = UUID()
         catalogGeneration = generation
-        // Catalog fetching and FFI conversion are independent of table creation.
-        let core = store.core
-        let loadedTracks = store.tracks
-        let task = Task.detached(priority: .utility) { () throws -> [Track] in
-            var tracks = loadedTracks
-            if !request.hasLoadedAllTracks, let core {
-                var offset = UInt64(tracks.count)
-                while true {
-                    try Task.checkCancellation()
-                    let page = try await core.tracksPage(pageSize: 1_000, offset: offset)
-                    tracks.append(contentsOf: page.items)
-                    guard let next = page.nextOffset, next > offset else { break }
-                    offset = next
-                }
-            }
-            return tracks
-        }
         do {
-            let tracks = try await withTaskCancellationHandler {
-                try await task.value
-            } onCancel: { task.cancel() }
+            let tracks = try await store.completeCatalogTracks()
             guard !Task.isCancelled, generation == catalogGeneration, catalogRequest(for: store) == request else { return }
             // Publish catalog before file metadata finishes. The summary never
             // gates the first table frame or sorting the complete collection.
             catalogStoreID = request.storeID
             catalogRevision = request.metadataRevision
+            libraryRevision = request.libraryRevision
             catalogCoreID = request.coreID
             catalog = tracks
             catalogVersion &+= 1

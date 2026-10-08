@@ -100,7 +100,7 @@ struct AlbumsView: View {
             }
         }
         .onChange(of: searchText) { _, _ in publishSummary() }
-        .task(id: "\(store.metadataRevision):\(store.core != nil):\(minimumRating):\(ratingsEnabled)") {
+        .task(id: "\(store.libraryCatalogRevision):\(store.core != nil):\(minimumRating):\(ratingsEnabled)") {
             await refreshSummary()
         }
         .task(id: orderingTaskID) {
@@ -114,35 +114,17 @@ struct AlbumsView: View {
     private func refreshSummary() async {
         isLoadingCatalog = true
         defer { if !Task.isCancelled { isLoadingCatalog = false } }
-        var releases = store.releases
-        var tracks = store.tracks
-        if let core = store.core {
-            do {
-                releases = []
-                var offset: UInt64 = 0
-                while !Task.isCancelled {
-                    let page = try await core.releasesPage(pageSize: 1_000, offset: offset)
-                    releases.append(contentsOf: page.items)
-                    guard let nextOffset = page.nextOffset, nextOffset > offset else { break }
-                    offset = nextOffset
-                }
-                if !store.hasLoadedAllTracks {
-                    tracks = []
-                    offset = 0
-                    while !Task.isCancelled {
-                        let page = try await core.tracksPage(pageSize: 1_000, offset: offset)
-                        tracks.append(contentsOf: page.items)
-                        guard let nextOffset = page.nextOffset, nextOffset > offset else { break }
-                        offset = nextOffset
-                    }
-                }
-            } catch {
-                return
-            }
-        }
-        guard !Task.isCancelled else { return }
+        let revision = store.libraryCatalogRevision
+        let releases: [Release]
+        let tracks: [Track]
+        do {
+            async let loadedReleases = store.completeCatalogReleases()
+            async let loadedTracks = store.completeCatalogTracks()
+            (releases, tracks) = try await (loadedReleases, loadedTracks)
+        } catch { return }
+        guard !Task.isCancelled, revision == store.libraryCatalogRevision else { return }
         let sizes = await MusicLibraryFileSizes.read(Array(Set(tracks.map(\.filePath))))
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, revision == store.libraryCatalogRevision else { return }
         completeReleases = releases
         completeTracks = tracks
         fileSizes = sizes

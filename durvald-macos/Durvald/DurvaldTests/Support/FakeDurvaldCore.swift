@@ -2,6 +2,9 @@ import Foundation
 @testable import Durvald
 
 final class FakeDurvaldCore: DurvaldCore {
+    var tracksPageHandler: ((UInt64, UInt64) async throws -> TrackPage)?
+    var releasesPageHandler: ((UInt64, UInt64) async throws -> ReleasePage)?
+    var playlistResult: Playlist?
     var snapshot: PlaybackSnapshot
     var trackInfoResult: TrackInfo?
     var releaseTrackResults: [Track] = []
@@ -38,6 +41,16 @@ final class FakeDurvaldCore: DurvaldCore {
     required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
         fatalError("FakeDurvaldCore não aceita ponteiros do backend Rust")
     }
+
+    override func tracksPage(pageSize: UInt64, offset: UInt64) async throws -> TrackPage {
+        try await tracksPageHandler?(pageSize, offset) ?? TrackPage(items: [], nextOffset: nil)
+    }
+
+    override func releasesPage(pageSize: UInt64, offset: UInt64) async throws -> ReleasePage {
+        try await releasesPageHandler?(pageSize, offset) ?? ReleasePage(items: [], nextOffset: nil)
+    }
+
+    override func artists() async throws -> [Artist] { [] }
 
     override func trackInfo(trackId: Int64) async throws -> TrackInfo {
         guard let trackInfoResult else { throw NSError(domain: "FakeDurvaldCore.trackInfo", code: 1) }
@@ -115,6 +128,16 @@ final class FakeDurvaldCore: DurvaldCore {
         let item = snapshot.queue.remove(at: Int(from))
         snapshot.queue.insert(item, at: Int(to))
         for index in snapshot.queue.indices { snapshot.queue[index].position = UInt64(index) }
+    }
+
+    override func createPlaylist(name: String, description: String, artworkBase64: String?) async throws -> Playlist {
+        guard let playlistResult else { throw NSError(domain: "FakeDurvaldCore.createPlaylist", code: 1) }
+        return playlistResult
+    }
+
+    override func playlist(playlistId: Int64) async throws -> Playlist {
+        guard let playlistResult else { throw NSError(domain: "FakeDurvaldCore.playlist", code: 1) }
+        return playlistResult
     }
 
     override func playlistTracks(playlistId: Int64) async throws -> [Track] { playlistResultsByID[playlistId] ?? playlistTrackResults }
