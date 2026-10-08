@@ -208,7 +208,7 @@ struct QueueView: View {
                         isClearQueueConfirmationPresented = true
                     },
                     configureMenu: { controller, trackID in
-                        guard let track = store.tracks.first(where: { $0.id == trackID })
+                        guard let track = store.loadedTrack(id: trackID)
                             ?? store.playback?.currentTrack.flatMap({ $0.id == trackID ? $0 : nil })
                             ?? menuTracks[trackID] else { return false }
                         controller.configure(track: track, store: store,

@@ -31,16 +31,28 @@ final class DurvaldCoreStore {
     private(set) var lastScanResult: ScanResult?
     private(set) var tracksRevision: UInt64 = 0
     private(set) var tracks: [Track] = [] {
-        didSet { tracksRevision &+= 1 }
+        didSet {
+            loadedTracksByID = firstRecordIndex(tracks, key: { $0.id })
+            tracksRevision &+= 1
+        }
     }
+    @ObservationIgnored private var loadedTracksByID: [Int64: Track] = [:]
+    @ObservationIgnored private var loadedReleasesByID: [Int64: Release] = [:]
+    @ObservationIgnored private var loadedArtistsByID: [Int64: Artist] = [:]
     private(set) var hasLoadedAllTracks = false
     private(set) var releasesRevision: UInt64 = 0
     private(set) var releases: [Release] = [] {
-        didSet { releasesRevision &+= 1 }
+        didSet {
+            loadedReleasesByID = firstRecordIndex(releases, key: { $0.id })
+            releasesRevision &+= 1
+        }
     }
     private(set) var artistsRevision: UInt64 = 0
     private(set) var artists: [Artist] = [] {
-        didSet { artistsRevision &+= 1 }
+        didSet {
+            loadedArtistsByID = firstRecordIndex(artists, key: { $0.id })
+            artistsRevision &+= 1
+        }
     }
     private(set) var playlistsRevision: UInt64 = 0
     private(set) var playlists: [Playlist] = [] {
@@ -138,7 +150,29 @@ final class DurvaldCoreStore {
         self.releases = releases
         self.artists = artists
         self.history = history
+        loadedTracksByID = firstRecordIndex(tracks, key: { $0.id })
+        loadedReleasesByID = firstRecordIndex(releases, key: { $0.id })
+        loadedArtistsByID = firstRecordIndex(artists, key: { $0.id })
         historyRepository.seed(entries: history, tracks: tracks)
+    }
+
+    // Observe the scalar revision while keeping the indexes out of Observation.
+    // Indexes update with the arrays so menu actions see optimistic edits at once.
+    func loadedTrack(id: Int64) -> Track? {
+        _ = tracksRevision
+        return loadedTracksByID[id]
+    }
+
+    func loadedRelease(id: Int64?) -> Release? {
+        _ = releasesRevision
+        guard let id else { return nil }
+        return loadedReleasesByID[id]
+    }
+
+    func loadedArtist(id: Int64?) -> Artist? {
+        _ = artistsRevision
+        guard let id else { return nil }
+        return loadedArtistsByID[id]
     }
 
     private func invalidateCatalog() {

@@ -537,7 +537,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         self.sourcePlaylist = nil
         self.album = nil
         self.selectedTracks = selectedTracks.isEmpty ? [track] : selectedTracks
-        self.track = store.tracks.first { $0.id == track.id } ?? track
+        self.track = store.loadedTrack(id: track.id) ?? track
         self.store = store
         self.navigation = navigation
         playlists = store.playlists
@@ -560,7 +560,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         self.sourcePlaylist = nil
         self.selectedTracks = []
         self.track = nil
-        self.album = store.releases.first { $0.id == album.id } ?? album
+        self.album = store.loadedRelease(id: album.id) ?? album
         self.store = store
         playlists = store.playlists
         additionalActions = []

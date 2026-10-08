@@ -51,18 +51,28 @@ struct ArtistView: View {
     var informationOnly = false
     @Bindable var toolbarState = ArtistToolbarState()
 
-    @State private var tracks: [Track] = []
-    @State private var albums: [Release] = []
+    @State private var lookupRevision: UInt64 = 0
+    @State private var lookups = PreparedLibraryListing(ArtistLookupSnapshot())
+    @State private var tracks: [Track] = [] {
+        didSet { lookupRevision &+= 1 }
+    }
+    @State private var albums: [Release] = [] {
+        didSet { lookupRevision &+= 1 }
+    }
     @State private var details: ArtistDetails?
     @State private var identity: ArtistIdentity?
     @State private var identityCandidates: ArtistIdentityCandidates?
-    @State private var discographyItems: [ExternalReleaseGroup] = []
+    @State private var discographyItems: [ExternalReleaseGroup] = [] {
+        didSet { lookupRevision &+= 1 }
+    }
     @State private var latestRelease: ExternalReleaseGroup?
     @State private var discographyPage: ArtistDiscographyPage?
     @State private var popularTracks: ArtistPopularTracks?
     @State private var popularTrackArtworkIDs: [String: String] = [:]
     @State private var popularTrackReleaseGroupIDs: [String: String] = [:]
-    @State private var releaseDetailsByGroupID: [String: ExternalReleaseDetails] = [:]
+    @State private var releaseDetailsByGroupID: [String: ExternalReleaseDetails] = [:] {
+        didSet { lookupRevision &+= 1 }
+    }
     @State private var isCachingReleaseTracks = false
     @State private var similarArtistArtworkIDs: [Int64: String] = [:]
     @State private var catalogRefreshResults: [ArtistRefreshSectionResult] = []
@@ -83,6 +93,10 @@ struct ArtistView: View {
         NSFont.preferredFont(forTextStyle: .largeTitle).pointSize * 1.275 * 1.35
     private let headerControlHeight: CGFloat = 36
     private let headerIconControlWidth: CGFloat = 38
+
+    private var lookupKey: LibraryListingKey {
+        LibraryListingKey(storeID: ObjectIdentifier(store), payloadRevision: lookupRevision, scope: String(artist.id))
+    }
 
     private var artistArtworkID: String? {
         ArtistPresentationPolicy.portraitArtworkID(
@@ -226,6 +240,14 @@ struct ArtistView: View {
         .onChange(of: isLoading, initial: true) { _, value in
             toolbarState.isLoading = value
         }
+        .task(id: lookupKey) {
+            let key = lookupKey
+            let payload = (tracks, albums, discographyItems, releaseDetailsByGroupID)
+            await lookups.prepare(key: key, payload: payload) { payload in
+                ArtistLookupSnapshot.build(tracks: payload.0, albums: payload.1, discography: payload.2,
+                                           details: payload.3)
+            }
+        }
         .task(id: store.metadataRevision) {
             guard store.metadataRevision > 0 else { return }
             async let refreshedTracks = store.tracks(forArtistID: artist.id)
@@ -308,11 +330,8 @@ struct ArtistView: View {
                     .frame(width: 500, height: identitySheetHeight)
             }
         }
-        .onChange(of: store.releases) { _, refreshedReleases in
-            let refreshedByID = Dictionary(
-                uniqueKeysWithValues: refreshedReleases.map { ($0.id, $0) }
-            )
-            albums = albums.map { refreshedByID[$0.id] ?? $0 }
+        .onChange(of: store.releasesRevision) { _, _ in
+            albums = albums.map { store.loadedRelease(id: $0.id) ?? $0 }
         }
         .onChange(of: store.isUpdatingLibraryMetadata) { wasUpdating, isUpdating in
             guard wasUpdating, !isUpdating else { return }
@@ -1203,7 +1222,7 @@ struct ArtistView: View {
 
     private func externalFallbackArtworkID(for album: Release) -> String? {
         guard album.artworkId == nil else { return nil }
-        return discographyItems.first { $0.localReleaseId == album.id }?.artwork?.image.managedPath
+        return lookups.value.externalByLocalReleaseID[album.id]?.artwork?.image.managedPath
     }
 
     private func externalReleaseSubtitle(_ release: ExternalReleaseGroup) -> String {
@@ -1463,8 +1482,9 @@ struct ArtistView: View {
                     .accessibilityAddTraits(.isHeader)
 
                 if let latestRelease {
+                    let localRelease = latestRelease.localReleaseId.flatMap { lookups.value.albumsByID[$0] }
                     Button {
-                        if let local = albums.first(where: { $0.id == latestRelease.localReleaseId }) {
+                        if let local = localRelease {
                             selectAlbum(local)
                         } else {
                             onSelectExternalRelease(latestRelease)
@@ -1472,7 +1492,7 @@ struct ArtistView: View {
                     } label: {
                         HStack(alignment: .center, spacing: 15) {
                             ArtworkView(
-                                artworkID: albums.first(where: { $0.id == latestRelease.localReleaseId })?.artworkId
+                                artworkID: localRelease?.artworkId
                                     ?? latestRelease.artwork?.image.managedPath,
                                 size: highlightArtworkSize
                             )
@@ -1487,7 +1507,7 @@ struct ArtistView: View {
 
                                 AlbumTitleLabel(
                                     title: latestRelease.title,
-                                    isFavorite: albums.first(where: { $0.id == latestRelease.localReleaseId })?.isFavorite == true,
+                                    isFavorite: localRelease?.isFavorite == true,
                                     font: latestReleaseTitleFont
                                 )
                                     .lineLimit(2)
@@ -1507,7 +1527,7 @@ struct ArtistView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Abrir lançamento \(latestRelease.title)")
-                    .albumContextMenu(album: albums.first { $0.id == latestRelease.localReleaseId })
+                    .albumContextMenu(album: localRelease)
                     .accessibilityIdentifier("artist.latestRelease.\(latestRelease.musicbrainzId)")
                     if discographyPage?.remoteExhausted == false {
                         Text("Mais recente no catálogo disponível. Continue a atualização da discografia para consultar os demais lançamentos.")
@@ -1816,7 +1836,7 @@ struct ArtistView: View {
     @ViewBuilder
     private func popularTrackRow(_ item: ArtistPopularTrack) -> some View {
         if let localTrackID = item.localTrackId,
-           let localTrack = tracks.first(where: { $0.id == localTrackID }) {
+           let localTrack = lookups.value.tracksByID[localTrackID] {
             popularLocalTrackRow(localTrack, rank: Int(item.rank))
         } else {
             let matchedRelease = popularExternalRelease(for: item.title)
@@ -1846,8 +1866,8 @@ struct ArtistView: View {
     }
 
     private func popularLocalTrackRow(_ track: Track, rank: Int) -> some View {
-        let currentTrack = store.tracks.first(where: { $0.id == track.id }) ?? track
-        let release = albums.first(where: { $0.id == track.releaseId })
+        let currentTrack = store.loadedTrack(id: track.id) ?? track
+        let release = lookups.value.albumsByID[track.releaseId]
         let playRanking: () -> Void = {
             _ = Task {
                 await store.playTracks(
@@ -1890,7 +1910,7 @@ struct ArtistView: View {
         if let items = popularTracks?.items, !items.isEmpty {
             return items.compactMap { item in
                 item.localTrackId.flatMap { trackID in
-                    tracks.first(where: { $0.id == trackID })
+                    lookups.value.tracksByID[trackID]
                 }
             }
         }
@@ -2151,7 +2171,7 @@ struct ArtistView: View {
         for release in discographyItems {
             guard let details = releaseDetailsByGroupID[release.musicbrainzId] else { continue }
             for track in details.tracks {
-                for key in popularTrackTitleKeys(track.title) {
+                for key in PopularTrackTitle.keys(track.title) {
                     if releaseGroupByTitle[key] == nil {
                         releaseGroupByTitle[key] = release.musicbrainzId
                     }
@@ -2171,7 +2191,7 @@ struct ArtistView: View {
         guard let groupID = popularTrackValue(for: title, in: popularTrackReleaseGroupIDs) else {
             return nil
         }
-        return discographyItems.first(where: { $0.musicbrainzId == groupID })
+        return lookups.value.externalByGroupID[groupID]
     }
 
     private func popularTrackDuration(
@@ -2179,65 +2199,16 @@ struct ArtistView: View {
         release: ExternalReleaseGroup?
     ) -> Double? {
         guard let release else { return nil }
-        let requestedKeys = Set(popularTrackTitleKeys(title))
-
-        if let details = releaseDetailsByGroupID[release.musicbrainzId],
-           let remoteTrack = details.tracks.first(where: {
-               !requestedKeys.isDisjoint(with: popularTrackTitleKeys($0.title))
-           }), let duration = remoteTrack.durationSeconds, duration > 0 {
-            return Double(duration)
-        }
-
-        if let localReleaseID = release.localReleaseId,
-           let localTrack = tracks.first(where: {
-               $0.releaseId == localReleaseID
-                   && !requestedKeys.isDisjoint(with: popularTrackTitleKeys($0.title))
-                   && $0.durationSeconds > 0
-           }) {
-            return localTrack.durationSeconds
-        }
-
-        return nil
+        return lookups.value.duration(for: title, release: release)
     }
 
     private func popularTrackValue<Value>(for title: String, in values: [String: Value]) -> Value? {
-        for key in popularTrackTitleKeys(title) {
+        for key in PopularTrackTitle.keys(title) {
             if let value = values[key] {
                 return value
             }
         }
         return nil
-    }
-
-    private func popularTrackTitleKeys(_ value: String) -> [String] {
-        let normalized = popularTrackTitleKey(value)
-        guard !normalized.isEmpty else { return [] }
-
-        var keys = [normalized]
-        for (opening, closing) in [("(", ")"), ("[", "]")] where normalized.hasSuffix(closing) {
-            guard let openingRange = normalized.range(of: opening, options: .backwards) else { continue }
-            let base = String(normalized[..<openingRange.lowerBound])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !base.isEmpty, !keys.contains(base) {
-                keys.append(base)
-            }
-        }
-        return keys
-    }
-
-    private func popularTrackTitleKey(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "‐", with: "-")
-            .replacingOccurrences(of: "‑", with: "-")
-            .replacingOccurrences(of: "‒", with: "-")
-            .replacingOccurrences(of: "–", with: "-")
-            .replacingOccurrences(of: "—", with: "-")
-            .replacingOccurrences(of: "−", with: "-")
-            .replacingOccurrences(of: "‘", with: "'")
-            .replacingOccurrences(of: "’", with: "'")
-            .split(whereSeparator: \.isWhitespace)
-            .joined(separator: " ")
-            .lowercased()
     }
 
     private func selectAlbum(_ album: Release) {

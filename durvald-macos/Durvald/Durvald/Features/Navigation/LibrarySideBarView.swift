@@ -331,7 +331,7 @@ struct LibrarySidebarView: View {
     }
 
     private func fallbackArtworkID(for artist: Artist) -> String? {
-        store.releases.first { $0.artistId == artist.id }?.artworkId
+        presentation.value.artistFallbackArtwork[artist.id]
     }
 
 }

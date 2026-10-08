@@ -107,8 +107,8 @@ struct PlayerBar: View {
 
     private var trackInformation: some View {
         let track = store.playback?.currentTrack
-        let album = store.releases.first { $0.id == track?.releaseId }
-        let artist = store.artists.first { $0.id == track?.artistId }
+        let album = store.loadedRelease(id: track?.releaseId)
+        let artist = store.loadedArtist(id: track?.artistId)
 
         return HStack(alignment: .center, spacing: 8) {
             playerArtwork(track, album: album)
@@ -281,8 +281,8 @@ struct PlayerBar: View {
 
     private var trailingControls: some View {
         let track = store.playback?.currentTrack
-        let album = store.releases.first { $0.id == track?.releaseId }
-        let artist = store.artists.first { $0.id == track?.artistId }
+        let album = store.loadedRelease(id: track?.releaseId)
+        let artist = store.loadedArtist(id: track?.artistId)
 
         return HStack(spacing: 8) {
             trackActions(track, album: album, artist: artist)

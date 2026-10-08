@@ -99,9 +99,7 @@ struct ArtistListingSnapshot {
             (!key.onlyLocal || localIDs.contains($0.id))
             && (key.query.isEmpty || $0.name.localizedCaseInsensitiveContains(key.query))
         }
-        var firstRelease: [Int64: Release] = [:]
-        for release in releases where firstRelease[release.artistId] == nil { firstRelease[release.artistId] = release }
-        let artwork = firstRelease.compactMapValues(\.artworkId)
+        let artwork = firstRecordIndex(releases, key: { $0.artistId }).compactMapValues(\.artworkId)
         let localCount = filtered.filter { localIDs.contains($0.id) }.count
         let indexedCount = filtered.count - localCount
         let localText = "\(localCount.formatted()) \(localCount == 1 ? "artista local" : "artistas locais")"
@@ -137,6 +135,7 @@ struct HistoryListingSnapshot {
 }
 
 struct SidebarListingSnapshot {
+    var artistFallbackArtwork: [Int64: String] = [:]
     var albums: [Release] = []
     var artists: [Artist] = []
     var playlists: [Playlist] = []
@@ -149,7 +148,8 @@ struct SidebarListingSnapshot {
             return Self(albums: CollectionListingSorter.albums(filtered, order: key.order, lastPlayedByRelease: recency))
         case "artists":
             let filtered = artists.filter { key.query.isEmpty || $0.name.localizedStandardContains(key.query) }
-            return Self(artists: CollectionListingSorter.artists(filtered, order: key.order, releases: albums, lastPlayedByRelease: recency))
+            return Self(artistFallbackArtwork: firstRecordIndex(albums, key: { $0.artistId }).compactMapValues(\.artworkId),
+                        artists: CollectionListingSorter.artists(filtered, order: key.order, releases: albums, lastPlayedByRelease: recency))
         case "playlists":
             let filtered = playlists.filter { key.query.isEmpty || $0.name.localizedStandardContains(key.query) }
             return Self(playlists: CollectionListingSorter.playlists(filtered, order: key.order, tracksByPlaylist: tracks, releases: albums))

@@ -60,7 +60,7 @@ struct AlbumView: View {
 
     private var currentAlbum: Release? {
         guard let album else { return nil }
-        return store.releases.first(where: { $0.id == album.id })
+        return store.loadedRelease(id: album.id)
             ?? refreshedAlbum
             ?? album
     }
@@ -246,7 +246,7 @@ struct AlbumView: View {
                         )
                     }
                     Button("Abrir artista", systemImage: "person") {
-                        guard let artist = store.artists.first(where: { $0.id == album.artistId }) else {
+                        guard let artist = store.loadedArtist(id: album.artistId) else {
                             return
                         }
                         onSelectArtist(artist)
@@ -334,7 +334,7 @@ struct AlbumView: View {
     private var selectedArtist: Artist? {
         if let externalArtist { return externalArtist }
         guard let album else { return nil }
-        return store.artists.first(where: { $0.id == album.artistId })
+        return store.loadedArtist(id: album.artistId)
     }
 
     @ViewBuilder
