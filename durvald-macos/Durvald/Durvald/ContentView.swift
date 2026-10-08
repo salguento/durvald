@@ -874,11 +874,15 @@ private struct LibraryToolbarHost<Content: View>: NSViewRepresentable {
 // Keep the representable's native sizing separate from SwiftUI's hosting
 // canvas. Resizing the toolbar must relayout the canvas, not scale a cached
 // rendering of its metadata and controls to fit a smaller native item.
-private final class LibraryToolbarHostingView<Content: View>: NSView {
+final class LibraryToolbarHostingView<Content: View>: NSView {
     let hostingView: NSHostingView<Content>
 
-    init(rootView: Content) {
-        hostingView = NSHostingView(rootView: rootView)
+    convenience init(rootView: Content) {
+        self.init(hostingView: NSHostingView(rootView: rootView))
+    }
+
+    init(hostingView: NSHostingView<Content>) {
+        self.hostingView = hostingView
         super.init(frame: .zero)
         hostingView.sizingOptions = []
         hostingView.layerContentsRedrawPolicy = .duringViewResize
@@ -912,10 +916,14 @@ private final class LibraryToolbarHostingView<Content: View>: NSView {
     }
 
     private func layoutHostedContent() {
+        // Frame/bounds setters and layout can describe the same geometry.
+        // Only force an extra subtree pass when the hosting canvas changes;
+        // AppKit still lays out dirty content normally at an unchanged size.
+        guard hostingView.frame != bounds else { return }
         // Update the canvas synchronously with the native item. Waiting for
         // the next layout pass leaves its previous width visible for a frame
         // precisely when the search changes between expanded and compact.
-        if hostingView.frame != bounds { hostingView.frame = bounds }
+        hostingView.frame = bounds
         hostingView.layoutSubtreeIfNeeded()
     }
 }

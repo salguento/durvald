@@ -284,6 +284,12 @@ Host chama layoutHostedContent em frame, bounds e layout, que força layoutSubtr
 
 **Direção:** Medir Long Platform View Updates durante resize. Guardar por mudança efetiva/tamanho se equivalente, preservando o canvas síncrono no instante de transição da busca.
 
+**Correção implementada em 08/10/2026:** LibraryToolbarHostingView força layoutSubtreeIfNeeded somente quando o frame do NSHostingView difere dos bounds do host, incluindo tamanho e origem. Chamadas redundantes de setFrameSize, setBoundsSize e layout deixam de forçar uma nova passagem. Mudanças reais continuam ajustando e fazendo layout do canvas antes de retornar, preservando a sincronização necessária nas transições compacta/expandida. A atualização de rootView e o layout normal de conteúdo invalidado no mesmo tamanho foram preservados; a negociação de largura e seu observer não foram alterados.
+
+Quatro testes novos usam um NSHostingView instrumentado para observar as passagens e a geometria efetiva. Após o primeiro layout, 300 chamadas com a mesma geometria não forçam nenhuma passagem adicional; uma sequência de 100 larguras diferentes com chamadas redundantes de bounds/layout força exatamente 100 passagens. Os testes também cobrem transições entre larguras compacta/expandida, alteração da origem dos bounds e conteúdo invalidado sem resize. Esses resultados verificam a eliminação do trabalho redundante no host, não medem latência da interface nem Long Platform View Updates; o perfil com Instruments continua pendente.
+
+**Validação em 08/10/2026:** build e 153 testes unitários passaram. Os testes de interface testLibraryToolbarKeepsSizeAndSearchFocusAcrossNativeWindowResizes e testLibraryToolbarKeepsControlSizesWhenPanelsToggle falharam ao aguardar a janela principal, antes das interações com a toolbar. A falha de inicialização já havia sido reproduzida na validação do E09 com o observer anterior; resize/foco na interface real ainda não foram validados nesta execução.
+
 ### E11 — Cálculo de cor média e composição do header do artista (P2)
 
 **Evidência:** [Features/Library/ArtistView.swift:375](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/ArtistView.swift:375); [Features/Library/ArtistView.swift:2281](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/ArtistView.swift:2281).
