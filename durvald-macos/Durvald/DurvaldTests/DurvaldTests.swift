@@ -249,17 +249,29 @@ final class DurvaldCoreStoreTests: XCTestCase {
 
     @MainActor
     func testAlbumMenuHasRequestedOrderAndSharingSubmenu() {
-        let controller = TrackMenuController()
-        let creation = PlaylistCreationCoordinator()
-        controller.configure(album: Fixtures.release, store: DurvaldCoreStore(), playlistCreation: creation)
+        let defaults = UserDefaults.standard
+        let previousRatingPreference = defaults.object(forKey: RatingPreferences.enabledKey)
+        defer {
+            if let previousRatingPreference {
+                defaults.set(previousRatingPreference, forKey: RatingPreferences.enabledKey)
+            } else {
+                defaults.removeObject(forKey: RatingPreferences.enabledKey)
+            }
+        }
+        for ratingsEnabled in [true, false] {
+            defaults.set(ratingsEnabled, forKey: RatingPreferences.enabledKey)
+            let controller = TrackMenuController()
+            let creation = PlaylistCreationCoordinator()
+            controller.configure(album: Fixtures.release, store: DurvaldCoreStore(), playlistCreation: creation)
 
-        XCTAssertEqual(controller.rootMenu.items.map { $0.isSeparatorItem ? "—" : $0.title },
-            ["Tocar", "Aleatório", "—", "Adicionar à playlist", "Tocar de próxima", "Adicionar à fila",
-             "—", "Favoritar", "—", "Compartilhar"])
-        XCTAssertEqual(controller.rootMenu.items.last?.submenu?.items.first?.title, "Copiar título")
-        creation.requestAlbum(1)
-        XCTAssertEqual(creation.pendingReleaseID, 1)
-        XCTAssertNil(creation.pendingTrackID)
+            let expected = ["Tocar", "Aleatório", "—", "Adicionar à playlist", "Tocar de próxima", "Adicionar à fila",
+                            "—", "Favoritar"] + (ratingsEnabled ? ["Avaliação"] : []) + ["—", "Compartilhar"]
+            XCTAssertEqual(controller.rootMenu.items.map { $0.isSeparatorItem ? "—" : $0.title }, expected)
+            XCTAssertEqual(controller.rootMenu.items.last?.submenu?.items.first?.title, "Copiar título")
+            creation.requestAlbum(1)
+            XCTAssertEqual(creation.pendingReleaseID, 1)
+            XCTAssertNil(creation.pendingTrackID)
+        }
     }
 
     @MainActor

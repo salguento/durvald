@@ -66,8 +66,13 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         settle()
         let table = try XCTUnwrap(descendants(host).first { $0 is NSTableView } as? NSTableView)
         let scroll = try XCTUnwrap(table.enclosingScrollView)
-        XCTAssertEqual(scroll.contentView.bounds.minY, 0, accuracy: 0.5)
-        scroll.contentView.scroll(to: NSPoint(x: 0, y: 320))
+        // AppKit reserves the native table header inside the clip view. Saved
+        // offsets measure distance from that inset-adjusted top, not document Y.
+        let topOrigin = -scroll.contentView.contentInsets.top
+        XCTAssertEqual(scroll.contentView.contentInsets.top, try XCTUnwrap(table.headerView).frame.height, accuracy: 0.5)
+        XCTAssertEqual(scroll.contentView.bounds.minY, topOrigin, accuracy: 0.5)
+        XCTAssertEqual(offsets[1] ?? -1, 0, accuracy: 0.5)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: topOrigin + 320))
         scroll.reflectScrolledClipView(scroll.contentView)
         settle()
         XCTAssertEqual(offsets[1] ?? -1, 320, accuracy: 0.5)
@@ -75,11 +80,11 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         settle()
         host.rootView = page(entryID: 2)
         settle()
-        XCTAssertEqual(scroll.contentView.bounds.minY, 0, accuracy: 0.5)
+        XCTAssertEqual(scroll.contentView.bounds.minY, topOrigin, accuracy: 0.5)
         XCTAssertEqual(offsets[1] ?? -1, 320, accuracy: 0.5)
         host.rootView = page(entryID: 1)
         settle()
-        XCTAssertEqual(scroll.contentView.bounds.minY, 320, accuracy: 0.5)
+        XCTAssertEqual(scroll.contentView.bounds.minY, topOrigin + 320, accuracy: 0.5)
         XCTAssertEqual(offsets[2] ?? -1, 0, accuracy: 0.5)
         // A saved offset beyond the current document is constrained safely.
         offsets[2] = 100_000
