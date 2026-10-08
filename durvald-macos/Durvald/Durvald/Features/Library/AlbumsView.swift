@@ -73,6 +73,9 @@ struct AlbumsView: View {
     @State private var completeTracks: [Track] = []
     @State private var fileSizes: [String: Int64] = [:]
     @State private var isLoadingCatalog = true
+    @State private var payloadRevision: UInt64 = 0
+    @State private var orderingRevision: UInt64 = 0
+    @State private var presentation = PreparedLibraryListing(AlbumListingSnapshot())
 
     let onSelectAlbum: (Release) -> Void
     var onSummaryChange: (String) -> Void = { _ in }
@@ -83,7 +86,7 @@ struct AlbumsView: View {
             mainGridMinimumCardWidth: AlbumsViewLayout.gridMinimumCardWidth,
             mainListArtworkSize: AlbumsViewLayout.listArtworkSize
         ) { size in
-            ForEach(orderedReleases, id: \.id) { release in
+            ForEach(presentation.value.items, id: \.id) { release in
                 CollectionListingItem(title: release.title, subtitle: release.artist, isFavorite: release.isFavorite, mode: listingMode, artworkSize: size, action: { onSelectAlbum(release) }) {
                     ArtworkView(artworkID: release.artworkId, size: size)
                 }
@@ -95,19 +98,24 @@ struct AlbumsView: View {
         .overlay {
             if !normalizedSearchText.isEmpty && isLoadingCatalog {
                 ProgressView("Pesquisando…")
-            } else if !normalizedSearchText.isEmpty && orderedReleases.isEmpty {
+            } else if !normalizedSearchText.isEmpty && presentation.value.items.isEmpty && !presentation.isPreparing {
                 ContentUnavailableView("Nenhum álbum encontrado", systemImage: "magnifyingglass")
             }
         }
-        .onChange(of: searchText) { _, _ in publishSummary() }
-        .task(id: "\(store.libraryCatalogRevision):\(store.core != nil):\(minimumRating):\(ratingsEnabled)") {
+        .task(id: "\(store.libraryCatalogRevision):\(store.core != nil)") {
             await refreshSummary()
         }
         .task(id: orderingTaskID) {
             guard listingOrder == .recent, let core = store.core else { return }
-            lastPlayedByRelease = (try? await core.releasePlaybackRecency())?.reduce(into: [:]) {
+            let recency: [Int64: String] = (try? await core.releasePlaybackRecency())?.reduce(into: [:]) {
                 if let releaseID = Int64($1.key) { $0[releaseID] = $1.value }
             } ?? [:]
+            guard !Task.isCancelled else { return }
+            lastPlayedByRelease = recency
+            orderingRevision &+= 1
+        }
+        .task(id: preparationKey) {
+            await prepareListing()
         }
     }
 
@@ -128,50 +136,37 @@ struct AlbumsView: View {
         completeReleases = releases
         completeTracks = tracks
         fileSizes = sizes
-        publishSummary()
+        payloadRevision &+= 1
     }
 
-    private func publishSummary() {
-        let releaseIDs = Set(filteredReleases.map(\.id))
-        let tracks = completeTracks.filter { releaseIDs.contains($0.releaseId) }
-        let summary = MusicLibrarySummary(tracks: tracks, kind: .all, fileSizes: fileSizes)
-        let hours = summary.durationSeconds / 3600
-        let minutes = (summary.durationSeconds / 60) % 60
-        let duration = hours > 0
-            ? "\(hours) \(hours == 1 ? "hora" : "horas"), \(minutes) \(minutes == 1 ? "minuto" : "minutos")"
-            : "\(minutes) \(minutes == 1 ? "minuto" : "minutos")"
-        let size = summary.totalBytes.map {
-            ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
-        } ?? "—"
-        let count = releaseIDs.count
-        let prefix = normalizedSearchText.isEmpty ? "" : "Resultados para “\(normalizedSearchText)” • "
-        onSummaryChange("\(prefix)\(count.formatted()) \(count == 1 ? "item" : "itens"), \(duration), \(size)")
+    private func prepareListing() async {
+        let key = preparationKey
+        let releases = completeReleases ?? store.releases
+        let updates = store.releases
+        let tracks = completeTracks
+        let sizes = fileSizes
+        let recency = lastPlayedByRelease
+        await presentation.prepare(key: key, payload: (releases, updates, tracks, sizes, recency)) { payload in
+            AlbumListingSnapshot.build(releases: payload.0, updates: payload.1, tracks: payload.2, sizes: payload.3, key: key, recency: payload.4)
+        }
+        guard !Task.isCancelled else { return }
+        onSummaryChange(presentation.value.summary)
+    }
+
+    private var preparationKey: LibraryListingKey {
+        LibraryListingKey(storeID: ObjectIdentifier(store), catalogRevision: store.libraryCatalogRevision,
+                          releasesRevision: store.releasesRevision, payloadRevision: payloadRevision,
+                          orderingRevision: orderingRevision, query: normalizedSearchText,
+                          order: ratingsEnabled || listingOrder != .rating ? listingOrder : .recent,
+                          minimumRating: minimumRating, ratingsEnabled: ratingsEnabled)
     }
 
     private var normalizedSearchText: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var filteredReleases: [Release] {
-        let updated = Dictionary(store.releases.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
-        let query = normalizedSearchText
-        return (completeReleases ?? store.releases).map { updated[$0.id] ?? $0 }.filter {
-            (!ratingsEnabled || minimumRating == 0 || Int($0.rating ?? 0) >= minimumRating)
-                && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query)
-                    || $0.artist.localizedCaseInsensitiveContains(query))
-        }
-    }
-
-    private var orderedReleases: [Release] {
-        CollectionListingSorter.albums(
-            filteredReleases,
-            order: ratingsEnabled || listingOrder != .rating ? listingOrder : .recent,
-            lastPlayedByRelease: lastPlayedByRelease
-        )
-    }
-
     private var orderingTaskID: String {
-        "\(listingOrder.rawValue):\(store.core != nil)"
+        "\(listingOrder.rawValue):\(store.libraryCatalogRevision):\(store.historyRepository.revision):\(store.core != nil)"
     }
 }
 

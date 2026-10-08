@@ -8,6 +8,8 @@ struct PlaylistsView: View {
     @AppStorage("playlists.listingOrder") private var listingOrder: CollectionListingOrder = .recent
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     @State private var tracksByPlaylist: [Int64: [Track]] = [:]
+    @State private var orderingRevision: UInt64 = 0
+    @State private var presentation = PreparedLibraryListing<[Playlist]>([])
     @State private var isChoosingImport = false
     @State private var isImporting = false
     @State private var importReport: PlaylistImportReport?
@@ -17,7 +19,7 @@ struct PlaylistsView: View {
 
     var body: some View {
         CollectionListingLayout(mode: listingMode) { size in
-            ForEach(orderedPlaylists, id: \.id) { playlist in
+            ForEach(presentation.value, id: \.id) { playlist in
                 CollectionListingItem(title: playlist.name, mode: listingMode, artworkSize: size, action: { onSelectPlaylist(playlist) }) {
                     PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: size)
                 }
@@ -71,6 +73,15 @@ struct PlaylistsView: View {
         .task(id: orderingTaskID) {
             await loadOrderingTracksIfNeeded()
         }
+        .task(id: preparationKey) {
+            let key = preparationKey
+            let playlists = store.playlists
+            let tracks = tracksByPlaylist
+            let releases = store.releases
+            await presentation.prepare(key: key, payload: (playlists, tracks, releases)) { payload in
+                CollectionListingSorter.playlists(payload.0, order: key.order, tracksByPlaylist: payload.1, releases: payload.2)
+            }
+        }
     }
 
     private func importPlaylist(_ result: Result<[URL], Error>) {
@@ -86,17 +97,17 @@ struct PlaylistsView: View {
         }
     }
 
-    private var orderedPlaylists: [Playlist] {
-        CollectionListingSorter.playlists(
-            store.playlists,
-            order: ratingsEnabled || listingOrder != .rating ? listingOrder : .recent,
-            tracksByPlaylist: tracksByPlaylist,
-            releases: store.releases
-        )
+    private var preparationKey: LibraryListingKey {
+        LibraryListingKey(storeID: ObjectIdentifier(store), catalogRevision: store.libraryCatalogRevision,
+                          releasesRevision: store.releasesRevision, playlistsRevision: store.playlistsRevision,
+                          orderingRevision: orderingRevision,
+                          order: ratingsEnabled || listingOrder != .rating ? listingOrder : .recent,
+                          ratingsEnabled: ratingsEnabled)
     }
 
-    private var orderingTaskID: String {
-        "\(listingOrder.rawValue):\(store.playlists.map(\.id))"
+    private var orderingTaskID: LibraryListingKey {
+        LibraryListingKey(storeID: ObjectIdentifier(store), catalogRevision: store.libraryCatalogRevision,
+                          playlistsRevision: store.playlistsRevision, order: listingOrder, ratingsEnabled: ratingsEnabled)
     }
 
     private func loadOrderingTracksIfNeeded() async {
@@ -108,6 +119,8 @@ struct PlaylistsView: View {
             guard !Task.isCancelled else { return }
             loaded[playlist.id] = try? await core.playlistTracks(playlistId: playlist.id)
         }
+        guard !Task.isCancelled else { return }
         tracksByPlaylist = loaded
+        orderingRevision &+= 1
     }
 }

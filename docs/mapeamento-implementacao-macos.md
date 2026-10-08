@@ -182,6 +182,10 @@ Computed properties filtram, constroem Dictionary/Set e ordenam coleções. O co
 
 **Direção:** Preparar um snapshot por chave de revisão/consulta/ordem; pré-calcular recência/data/nota por artista. Usar MusicLibraryPresentation como referência, não executar um novo detached task em todo body.
 
+**Correção implementada em 08/10/2026:** `PreparedLibraryListing` prepara snapshots fora do MainActor, acionados por chaves escalares de revisão do catálogo/coleções, consulta, filtros e ordem. Álbuns, Artistas, Histórico, Playlists e as coleções da sidebar renderizam os arrays preparados; filtros, índices e resumos não são reconstruídos em `body`. A mesma chave reutiliza o resultado concluído. Mudanças de chave cancelam o trabalho anterior e uma geração impede a publicação de resultados antigos, inclusive ao retornar à consulta já armazenada.
+
+O store expõe revisões de lançamentos, artistas e playlists para invalidar esses snapshots sem comparar ou interpolar arrays completos. Os comparadores de artistas e playlists usam critérios pré-calculados antes da ordenação, preservando desempates e valores ausentes; a ordenação alfabética dispensa os cálculos de metadados. A apresentação de artistas também prepara o índice de artwork de fallback. Testes cobrem reutilização, invalidação, cancelamento, resultados atrasados, execução fora da thread principal, filtros, resumos, busca na sidebar e os seis modos de ordenação de artistas/playlists. O ganho em tempo e frequência ainda requer medição com Instruments.
+
 ### E04 — Lookups lineares em linhas e cards (P1)
 
 **Evidência:** [Features/Library/HistoryView.swift:162](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/HistoryView.swift:162); [Features/Library/ArtistsView.swift:137](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/ArtistsView.swift:137); [Features/Library/ArtistView.swift:2170](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/ArtistView.swift:2170).

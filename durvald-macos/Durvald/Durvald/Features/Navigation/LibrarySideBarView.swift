@@ -29,6 +29,8 @@ struct LibrarySidebarView: View {
     @State private var isDropAreaTargeted = false
     @State private var isPlaylistDropTargeted = false
     @State private var tracksByPlaylist: [Int64: [Track]] = [:]
+    @State private var orderingRevision: UInt64 = 0
+    @State private var presentation = PreparedLibraryListing(SidebarListingSnapshot())
 
     var body: some View {
         selectedSectionContent
@@ -75,6 +77,17 @@ struct LibrarySidebarView: View {
         }
         .task(id: orderingTaskID) {
             await loadOrderingMetadataIfNeeded()
+        }
+        .task(id: preparationKey) {
+            let key = preparationKey
+            let albums = store.releases
+            let artists = store.artists
+            let playlists = store.playlists
+            let tracks = tracksByPlaylist
+            let recency = albumLastPlayedByRelease
+            await presentation.prepare(key: key, payload: (albums, artists, playlists, tracks, recency)) { payload in
+                SidebarListingSnapshot.build(albums: payload.0, artists: payload.1, playlists: payload.2, tracks: payload.3, recency: payload.4, key: key)
+            }
         }
     }
 
@@ -190,7 +203,7 @@ struct LibrarySidebarView: View {
 
         case .playlists:
             CollectionListingLayout(mode: playlistListingMode, isSidebar: true) { size in
-                ForEach(localPlaylists, id: \.id) { playlist in
+                ForEach(presentation.value.playlists, id: \.id) { playlist in
                     CollectionListingItem(title: playlist.name, mode: playlistListingMode, artworkSize: size, isSelected: selectedPlaylistID == playlist.id, action: { onSelectPlaylist(playlist) }) {
                         PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: size)
                     }
@@ -206,7 +219,7 @@ struct LibrarySidebarView: View {
 
         case .albums:
             CollectionListingLayout(mode: albumListingMode, isSidebar: true) { size in
-                ForEach(localAlbums, id: \.id) { album in
+                ForEach(presentation.value.albums, id: \.id) { album in
                     CollectionListingItem(title: album.title, subtitle: album.artist, isFavorite: album.isFavorite, mode: albumListingMode, artworkSize: size, action: { onSelectAlbum(album) }) {
                         ArtworkView(artworkID: album.artworkId, size: size)
                     }
@@ -218,7 +231,7 @@ struct LibrarySidebarView: View {
 
         case .artists:
             CollectionListingLayout(mode: artistListingMode, isSidebar: true) { size in
-                ForEach(localArtists, id: \.id) { artist in
+                ForEach(presentation.value.artists, id: \.id) { artist in
                     CollectionListingItem(
                         title: artist.name,
                         mode: artistListingMode,
@@ -273,40 +286,36 @@ struct LibrarySidebarView: View {
             .accessibilityAddTraits(.isHeader)
     }
 
-    private var localPlaylists: [Playlist] {
-        let filtered = committedLocalQuery.isEmpty ? store.playlists : store.playlists.filter {
-            $0.name.localizedStandardContains(committedLocalQuery)
+    private var activeOrder: CollectionListingOrder {
+        switch section {
+        case .albums: albumListingOrder
+        case .artists: artistListingOrder
+        default: playlistListingOrder
         }
-        return CollectionListingSorter.playlists(
-            filtered,
-            order: playlistListingOrder,
-            tracksByPlaylist: tracksByPlaylist,
-            releases: store.releases
-        )
     }
 
-    private var localAlbums: [Release] {
-        let filtered = committedLocalQuery.isEmpty ? store.releases : store.releases.filter {
-            $0.title.localizedStandardContains(committedLocalQuery)
-                || $0.artist.localizedStandardContains(committedLocalQuery)
-        }
-        return CollectionListingSorter.albums(
-            filtered,
-            order: albumListingOrder,
-            lastPlayedByRelease: albumLastPlayedByRelease
-        )
+    private var preparationKey: LibraryListingKey {
+        LibraryListingKey(storeID: ObjectIdentifier(store), catalogRevision: store.libraryCatalogRevision,
+                          releasesRevision: store.releasesRevision, artistsRevision: store.artistsRevision,
+                          playlistsRevision: store.playlistsRevision, orderingRevision: orderingRevision,
+                          scope: section.rawValue, query: committedLocalQuery, order: activeOrder)
     }
 
-    private var orderingTaskID: String {
-        "\(section.rawValue):\(albumListingOrder.rawValue):\(artistListingOrder.rawValue):\(playlistListingOrder.rawValue):\(store.core != nil):\(store.playlists.map(\.id))"
+    private var orderingTaskID: LibraryListingKey {
+        LibraryListingKey(storeID: ObjectIdentifier(store), catalogRevision: store.libraryCatalogRevision,
+                          playlistsRevision: store.playlistsRevision, payloadRevision: store.historyRepository.revision,
+                          scope: section.rawValue, order: activeOrder)
     }
 
     private func loadOrderingMetadataIfNeeded() async {
         if (section == .albums && albumListingOrder == .recent)
             || (section == .artists && artistListingOrder == .recent) {
-            albumLastPlayedByRelease = (try? await store.core?.releasePlaybackRecency())?.reduce(into: [:]) {
+            let recency: [Int64: String] = (try? await store.core?.releasePlaybackRecency())?.reduce(into: [:]) {
                 if let releaseID = Int64($1.key) { $0[releaseID] = $1.value }
             } ?? [:]
+            guard !Task.isCancelled else { return }
+            albumLastPlayedByRelease = recency
+            orderingRevision &+= 1
         }
         guard section == .playlists,
               playlistListingOrder == .recent || playlistListingOrder == .artist || playlistListingOrder == .releaseDate,
@@ -316,19 +325,9 @@ struct LibrarySidebarView: View {
             guard !Task.isCancelled else { return }
             loaded[playlist.id] = try? await core.playlistTracks(playlistId: playlist.id)
         }
+        guard !Task.isCancelled else { return }
         tracksByPlaylist = loaded
-    }
-
-    private var localArtists: [Artist] {
-        let filtered = committedLocalQuery.isEmpty ? store.artists : store.artists.filter {
-            $0.name.localizedStandardContains(committedLocalQuery)
-        }
-        return CollectionListingSorter.artists(
-            filtered,
-            order: artistListingOrder,
-            releases: store.releases,
-            lastPlayedByRelease: albumLastPlayedByRelease
-        )
+        orderingRevision &+= 1
     }
 
     private func fallbackArtworkID(for artist: Artist) -> String? {

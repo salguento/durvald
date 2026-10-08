@@ -83,26 +83,40 @@ enum CollectionListingSorter {
         releases: [Release],
         lastPlayedByRelease: [Int64: String]
     ) -> [Artist] {
-        let releasesByArtist = Dictionary(grouping: releases, by: \.artistId)
+        struct Rank {
+            var recent: String? = nil
+            var added: Int64? = nil
+            var date: String? = nil
+            var rating: UInt8 = 0
+        }
+        var ranks: [Int64: Rank] = [:]
+        for release in releases where order != .alphabetical && order != .artist {
+            var rank = ranks[release.artistId] ?? Rank()
+            if let value = lastPlayedByRelease[release.id] { rank.recent = max(rank.recent ?? "", value) }
+            rank.added = max(rank.added ?? release.id, release.id)
+            if let value = release.releaseDate { rank.date = max(rank.date ?? "", value) }
+            rank.rating = max(rank.rating, release.rating ?? 0)
+            ranks[release.artistId] = rank
+        }
         return artists.sorted { lhs, rhs in
-            let leftReleases = releasesByArtist[lhs.id] ?? []
-            let rightReleases = releasesByArtist[rhs.id] ?? []
+            let leftRank = ranks[lhs.id] ?? Rank()
+            let rightRank = ranks[rhs.id] ?? Rank()
             switch order {
             case .recent:
-                let left = leftReleases.compactMap { lastPlayedByRelease[$0.id] }.max()
-                let right = rightReleases.compactMap { lastPlayedByRelease[$0.id] }.max()
+                let left = leftRank.recent
+                let right = rightRank.recent
                 if left != right { return (left ?? "") > (right ?? "") }
             case .recentlyAdded:
-                let left = leftReleases.map(\.id).max() ?? lhs.id
-                let right = rightReleases.map(\.id).max() ?? rhs.id
+                let left = leftRank.added ?? lhs.id
+                let right = rightRank.added ?? rhs.id
                 if left != right { return left > right }
             case .releaseDate:
-                let left = leftReleases.compactMap(\.releaseDate).max()
-                let right = rightReleases.compactMap(\.releaseDate).max()
+                let left = leftRank.date
+                let right = rightRank.date
                 if left != right { return (left ?? "") > (right ?? "") }
             case .rating:
-                let left = leftReleases.compactMap(\.rating).max() ?? 0
-                let right = rightReleases.compactMap(\.rating).max() ?? 0
+                let left = leftRank.rating
+                let right = rightRank.rating
                 if left != right { return left > right }
             case .alphabetical, .artist:
                 break
@@ -117,38 +131,50 @@ enum CollectionListingSorter {
         tracksByPlaylist: [Int64: [Track]],
         releases: [Release]
     ) -> [Playlist] {
-        let releaseDates = Dictionary(uniqueKeysWithValues: releases.map { ($0.id, $0.releaseDate) })
+        let releaseDates = order == .releaseDate
+            ? Dictionary(uniqueKeysWithValues: releases.map { ($0.id, $0.releaseDate) }) : [:]
+        struct Rank {
+            let recent: String?
+            let artist: String?
+            let date: String?
+            let rating: UInt8
+        }
+        let ranks: [Int64: Rank]
+        if order == .alphabetical || order == .recentlyAdded {
+            ranks = [:]
+        } else {
+            ranks = tracksByPlaylist.mapValues { tracks in
+                Rank(recent: order == .recent ? latestPlayback(in: tracks) : nil,
+                     artist: order == .artist ? firstArtist(in: tracks) : nil,
+                     date: order == .releaseDate ? latestReleaseDate(in: tracks, releaseDates: releaseDates) : nil,
+                     rating: order == .rating ? tracks.compactMap(\.rating).max() ?? 0 : 0)
+            }
+        }
         return playlists.sorted { lhs, rhs in
             switch order {
             case .recent:
-                let left = latestPlayback(in: tracksByPlaylist[lhs.id] ?? [])
-                let right = latestPlayback(in: tracksByPlaylist[rhs.id] ?? [])
+                let left = ranks[lhs.id]?.recent
+                let right = ranks[rhs.id]?.recent
                 if left != right { return (left ?? "") > (right ?? "") }
             case .recentlyAdded:
                 if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
             case .alphabetical:
                 break
             case .artist:
-                let left = firstArtist(in: tracksByPlaylist[lhs.id] ?? [])
-                let right = firstArtist(in: tracksByPlaylist[rhs.id] ?? [])
+                let left = ranks[lhs.id]?.artist
+                let right = ranks[rhs.id]?.artist
                 if left != right {
                     guard let left else { return false }
                     guard let right else { return true }
                     return left.localizedStandardCompare(right) == .orderedAscending
                 }
             case .releaseDate:
-                let left = latestReleaseDate(
-                    in: tracksByPlaylist[lhs.id] ?? [],
-                    releaseDates: releaseDates
-                )
-                let right = latestReleaseDate(
-                    in: tracksByPlaylist[rhs.id] ?? [],
-                    releaseDates: releaseDates
-                )
+                let left = ranks[lhs.id]?.date
+                let right = ranks[rhs.id]?.date
                 if left != right { return (left ?? "") > (right ?? "") }
             case .rating:
-                let left = (tracksByPlaylist[lhs.id] ?? []).compactMap(\.rating).max() ?? 0
-                let right = (tracksByPlaylist[rhs.id] ?? []).compactMap(\.rating).max() ?? 0
+                let left = ranks[lhs.id]?.rating ?? 0
+                let right = ranks[rhs.id]?.rating ?? 0
                 if left != right { return left > right }
             }
             return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending

@@ -11,6 +11,7 @@ struct HistoryView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Binding var searchText: String
     @AppStorage("history.newestFirst") private var newestFirst = true
+    @State private var presentation = PreparedLibraryListing(HistoryListingSnapshot())
     var onSummaryChange: (String) -> Void = { _ in }
 
     private struct RefreshRequest: Equatable {
@@ -18,32 +19,22 @@ struct HistoryView: View {
         let catalogRevision: UInt64
         let tracksRevision: UInt64
     }
-    private struct SummaryRequest: Equatable {
-        let query: String
-        let revision: UInt64
-        let isLoading: Bool
-    }
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var tracksByID: [Int64: Track] { store.historyRepository.tracksByID }
-
-    private var filteredEntries: [PlaybackHistoryItem] {
-        store.historyRepository.entries(matching: query)
-    }
-
-    private var orderedEntries: [PlaybackHistoryItem] {
-        filteredEntries.sorted { newestFirst ? $0.id > $1.id : $0.id < $1.id }
+    private var preparationKey: LibraryListingKey {
+        LibraryListingKey(storeID: ObjectIdentifier(store), payloadRevision: store.historyRepository.revision,
+                          query: query, newestFirst: newestFirst)
     }
 
     var body: some View {
-        let tracks = tracksByID
-        List(orderedEntries, id: \.id) { item in
+        let tracks = presentation.value.tracksByID
+        List(presentation.value.items, id: \.id) { item in
             HistoryTrackRow(item: item, loadedTrack: tracks[item.trackId])
                 .accessibilityIdentifier("history.entry.\(item.id)")
         }
         .overlay {
             if store.historyRepository.isLoading && !query.isEmpty {
                 ProgressView("Pesquisando…")
-            } else if !query.isEmpty && filteredEntries.isEmpty {
+            } else if !query.isEmpty && presentation.value.items.isEmpty && !presentation.isPreparing {
                 ContentUnavailableView("Nenhuma reprodução encontrada", systemImage: "magnifyingglass")
             }
         }
@@ -53,27 +44,22 @@ struct HistoryView: View {
                                  catalogRevision: store.libraryCatalogRevision, tracksRevision: store.tracksRevision)) {
             await store.refreshHistory()
         }
-        .task(id: SummaryRequest(query: query, revision: store.historyRepository.revision,
-                                 isLoading: store.historyRepository.isLoading)) {
-            publishSummary()
+        .task(id: preparationKey) {
+            let key = preparationKey
+            let entries = store.historyRepository.entries
+            let tracks = store.historyRepository.tracksByID
+            await presentation.prepare(key: key, payload: (entries, tracks)) { payload in
+                HistoryListingSnapshot.build(entries: payload.0, tracks: payload.1, key: key)
+            }
+            guard !Task.isCancelled else { return }
+            onSummaryChange(presentation.value.summary)
+        }
+        .onChange(of: store.historyRepository.isLoading) { _, loading in
+            if loading && !query.isEmpty { onSummaryChange("Pesquisando…") }
+            else { onSummaryChange(presentation.value.summary) }
         }
     }
 
-    private func publishSummary() {
-        if store.historyRepository.isLoading && !query.isEmpty {
-            onSummaryChange("Pesquisando…")
-            return
-        }
-        let items = filteredEntries
-        let count = items.count
-        let songs = Set(items.map(\.trackId)).count
-        let duration = items.reduce(UInt64.zero) { $0 + $1.durationSeconds }
-        let time = duration >= 3600
-            ? String(format: "%llu:%02llu:%02llu", duration / 3600, duration / 60 % 60, duration % 60)
-            : String(format: "%llu:%02llu", duration / 60, duration % 60)
-        let prefix = query.isEmpty ? "" : "Resultados para “\(query)” • "
-        onSummaryChange("\(prefix)\(count.formatted()) \(count == 1 ? "reprodução" : "reproduções"), \(songs.formatted()) \(songs == 1 ? "música" : "músicas"), \(time) de reprodução")
-    }
 }
 
 struct HistoryToolbarOptionsMenu: View {

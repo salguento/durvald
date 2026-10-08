@@ -21,6 +21,10 @@ struct ArtistsView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @State private var lastPlayedByRelease: [Int64: String] = [:]
     @State private var localArtistIDs: Set<Int64>?
+    @State private var completeReleases: [Release]?
+    @State private var payloadRevision: UInt64 = 0
+    @State private var orderingRevision: UInt64 = 0
+    @State private var presentation = PreparedLibraryListing(ArtistListingSnapshot())
 
     let onSelectArtist: (Artist) -> Void
     var onSummaryChange: (String) -> Void = { _ in }
@@ -32,7 +36,7 @@ struct ArtistsView: View {
             mainListArtworkSize: ArtistsViewLayout.portraitSize
         ) { availableSize in
             let portraitSize = min(availableSize, ArtistsViewLayout.portraitSize)
-            ForEach(orderedArtists, id: \.id) { artist in
+            ForEach(presentation.value.items, id: \.id) { artist in
                 CollectionListingItem(
                     title: artist.name,
                     mode: listingMode,
@@ -42,7 +46,7 @@ struct ArtistsView: View {
                 ) {
                     ArtistPortraitView(
                         artist: artist,
-                        fallbackArtworkID: fallbackArtworkID(for: artist),
+                        fallbackArtworkID: presentation.value.fallbackArtwork[artist.id],
                         size: portraitSize
                     )
                 }
@@ -50,80 +54,74 @@ struct ArtistsView: View {
             }
         }
         .overlay {
-            if !normalizedSearchText.isEmpty && filteredArtists.isEmpty {
+            if !normalizedSearchText.isEmpty && presentation.value.items.isEmpty && !presentation.isPreparing {
                 ContentUnavailableView("Nenhum artista encontrado", systemImage: "magnifyingglass")
             }
         }
-        .onChange(of: onlyLocal) { _, _ in publishSummary() }
-        .onChange(of: searchText) { _, _ in publishSummary() }
-        .onChange(of: store.artists) { _, _ in publishSummary() }
         .task(id: "\(store.libraryCatalogRevision):\(store.core != nil)") {
             await refreshSummary()
         }
         .task(id: orderingTaskID) {
             guard listingOrder == .recent, let core = store.core else { return }
-            lastPlayedByRelease = (try? await core.releasePlaybackRecency())?.reduce(into: [:]) {
+            let recency: [Int64: String] = (try? await core.releasePlaybackRecency())?.reduce(into: [:]) {
                 if let releaseID = Int64($1.key) { $0[releaseID] = $1.value }
             } ?? [:]
+            guard !Task.isCancelled else { return }
+            lastPlayedByRelease = recency
+            orderingRevision &+= 1
         }
-    }
-
-    private var orderedArtists: [Artist] {
-        CollectionListingSorter.artists(
-            filteredArtists,
-            order: ratingsEnabled || listingOrder != .rating ? listingOrder : .alphabetical,
-            releases: store.releases,
-            lastPlayedByRelease: lastPlayedByRelease
-        )
+        .task(id: preparationKey) { await prepareListing() }
     }
 
     private var normalizedSearchText: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var filteredArtists: [Artist] {
-        let query = normalizedSearchText
-        let localIDs = localArtistIDs ?? Set(store.tracks.map(\.artistId) + store.releases.map(\.artistId))
-        return store.artists.filter {
-            (!onlyLocal || localIDs.contains($0.id))
-                && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query))
-        }
-    }
-
     private func refreshSummary() async {
         let revision = store.libraryCatalogRevision
         let artistIDs: Set<Int64>
+        let releases: [Release]
         do {
             async let tracks = store.completeCatalogTracks()
-            async let releases = store.completeCatalogReleases()
-            let catalog = try await (tracks, releases)
+            async let loadedReleases = store.completeCatalogReleases()
+            let catalog = try await (tracks, loadedReleases)
             artistIDs = Set(catalog.0.map(\.artistId) + catalog.1.map(\.artistId))
+            releases = catalog.1
         } catch { return }
         guard !Task.isCancelled, revision == store.libraryCatalogRevision else { return }
         localArtistIDs = artistIDs
-        publishSummary()
+        completeReleases = releases
+        payloadRevision &+= 1
     }
 
-    private func publishSummary() {
-        guard let localArtistIDs else {
-            onSummaryChange("Carregando…")
-            return
+    private func prepareListing() async {
+        let key = preparationKey
+        let artists = store.artists
+        let releases = completeReleases ?? store.releases
+        let updates = store.releases
+        let localIDs = localArtistIDs
+        let loadedTracks = store.tracks
+        let recency = lastPlayedByRelease
+        await presentation.prepare(key: key, payload: (artists: artists, releases: releases, updates: updates, localIDs: localIDs, tracks: loadedTracks, recency: recency)) { payload in
+            let updated = Dictionary(payload.updates.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+            let current = payload.releases.map { updated[$0.id] ?? $0 }
+            return ArtistListingSnapshot.build(artists: payload.artists, releases: current, localIDs: payload.localIDs ?? Set(payload.tracks.map(\.artistId) + current.map(\.artistId)), key: key, recency: payload.recency)
         }
-        let artists = filteredArtists
-        let localCount = artists.filter { localArtistIDs.contains($0.id) }.count
-        let indexedCount = artists.count - localCount
-        let localText = "\(localCount.formatted()) \(localCount == 1 ? "artista local" : "artistas locais")"
-        let indexedText = "\(indexedCount.formatted()) \(indexedCount == 1 ? "artista indexado" : "artistas indexados")"
-        let prefix = normalizedSearchText.isEmpty ? "" : "Resultados para “\(normalizedSearchText)” • "
-        onSummaryChange("\(prefix)\(localText), \(indexedText)")
+        guard !Task.isCancelled else { return }
+        onSummaryChange(presentation.value.summary)
     }
 
-    private func fallbackArtworkID(for artist: Artist) -> String? {
-        store.releases.first { $0.artistId == artist.id }?.artworkId
+    private var preparationKey: LibraryListingKey {
+        LibraryListingKey(storeID: ObjectIdentifier(store), catalogRevision: store.libraryCatalogRevision,
+                          tracksRevision: store.tracksRevision, releasesRevision: store.releasesRevision,
+                          artistsRevision: store.artistsRevision, payloadRevision: payloadRevision,
+                          orderingRevision: orderingRevision, query: normalizedSearchText,
+                          order: ratingsEnabled || listingOrder != .rating ? listingOrder : .alphabetical,
+                          ratingsEnabled: ratingsEnabled, onlyLocal: onlyLocal)
     }
 
     private var orderingTaskID: String {
-        "\(listingOrder.rawValue):\(store.core != nil)"
+        "\(listingOrder.rawValue):\(store.libraryCatalogRevision):\(store.historyRepository.revision):\(store.core != nil)"
     }
 }
 

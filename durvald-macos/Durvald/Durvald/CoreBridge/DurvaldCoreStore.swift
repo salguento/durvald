@@ -34,9 +34,18 @@ final class DurvaldCoreStore {
         didSet { tracksRevision &+= 1 }
     }
     private(set) var hasLoadedAllTracks = false
-    private(set) var releases: [Release] = []
-    private(set) var artists: [Artist] = []
-    private(set) var playlists: [Playlist] = []
+    private(set) var releasesRevision: UInt64 = 0
+    private(set) var releases: [Release] = [] {
+        didSet { releasesRevision &+= 1 }
+    }
+    private(set) var artistsRevision: UInt64 = 0
+    private(set) var artists: [Artist] = [] {
+        didSet { artistsRevision &+= 1 }
+    }
+    private(set) var playlistsRevision: UInt64 = 0
+    private(set) var playlists: [Playlist] = [] {
+        didSet { playlistsRevision &+= 1 }
+    }
     private(set) var history: [PlaybackHistoryItem] = []
     @ObservationIgnored let historyRepository = PlaybackHistoryRepository()
     private(set) var metadataRevision = 0 {
