@@ -28,9 +28,9 @@ final class NowPlayingCoordinatorTests: XCTestCase {
 final class WindowSplitLayoutPolicyTests: XCTestCase {
     func testSidebarLeavesMinimumWidthForContentAndDivider() {
         XCTAssertEqual(WindowSplitLayoutPolicy.sidebarMaximumWidth(screenMaximum: 600, navigationWidth: 900, dividerWidth: 1), 539)
-        // Opening a 260 pt inspector leaves a 640 pt navigation split.
+        // A narrower navigation split must still reserve the detail column minimum.
         XCTAssertEqual(WindowSplitLayoutPolicy.sidebarMaximumWidth(screenMaximum: 600, navigationWidth: 640, dividerWidth: 1), 279)
-        // Closing it restores the previous allowance.
+        // Widening the navigation split restores the previous allowance.
         XCTAssertEqual(WindowSplitLayoutPolicy.sidebarMaximumWidth(screenMaximum: 600, navigationWidth: 900, dividerWidth: 1), 539)
     }
 

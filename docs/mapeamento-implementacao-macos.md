@@ -590,11 +590,17 @@ Validação: 24 testes direcionados aprovados (CODE_SIGNING_ALLOWED=NO), incluin
 
 ### R14 — Infraestrutura de inspector sem ponto de uso encontrado (P3)
 
-**Ocorrências:** [Features/Navigation/WindowSplitLayout.swift:183](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/WindowSplitLayout.swift:183); [Features/Navigation/WindowSplitLayout.swift:244](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/WindowSplitLayout.swift:244); [Features/Navigation/WindowSplitLayout.swift:33](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/WindowSplitLayout.swift:33).
+**Arquivo auditado:** [Features/Navigation/WindowSplitLayout.swift](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/WindowSplitLayout.swift). Ocorrências originais: InspectorLayoutController (linha 183), InspectorSplitLayout (linha 244) e prepareInspectorPresentation (linha 33), removidas após confirmação de ausência de consumidores.
 
 Busca por símbolos no código macOS encontra definições desses tipos/método, mas nenhuma chamada fora do próprio arquivo. O painel atual é overlay; ainda há comentário de inspector/nested split.
 
 **Contrato de reutilização sugerido:** Marcar como legado candidato a remoção ou reintegrar num protótipo de inspector. Confirmar projeto/configurações antes de excluir; remover comentários que descrevem uma hierarquia que não está ativa.
+
+**Implementado — exclusão confirmada e executada:** A busca por símbolos em todo o repositório, incluindo arquivos ocultos e configurações do Xcode, confirmou que InspectorSplitLayout e prepareInspectorPresentation não possuíam consumidores. InspectorLayoutController era apenas instanciado pelo coordenador, sem âncora ativa. ContentView usa SidebarSplitLayout na NavigationSplitView e apresenta a fila por overlay, com reserva por safeAreaInset e QueueSidebarBackground. O projeto usa grupos de arquivos sincronizados e não possui referências explícitas aos símbolos legados.
+
+Foram excluídos InspectorLayoutController, InspectorSplitLayout, inspectorController e prepareInspectorPresentation. A política de largura e o bridge ativo da sidebar permanecem no arquivo. Comentários de WindowSplitLayout, QueueTableView e dos testes de largura agora descrevem a composição atual; o inventário também registra a remoção. As configurações de toolbar/safe area dentro do controlador removido não tinham caminho de execução, portanto não precisaram ser transferidas.
+
+Validação: compilação e os dois WindowSplitLayoutPolicyTests existentes aprovados (CODE_SIGNING_ALLOWED=NO). A busca posterior não encontrou os símbolos removidos no código ou nas configurações. Nenhum teste novo foi necessário para a exclusão de código sem consumidores; a suíte completa e os testes visuais não foram executados.
 
 ## O que já está bem compartilhado ou otimizado
 
@@ -694,7 +700,7 @@ Os testes existentes em `MusicLibraryPerformanceTests` verificam revisões, iden
 | [Features/Navigation/LibraryNavigationHistory.swift:1](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/LibraryNavigationHistory.swift:1) | Histórico de rotas próprio adequado ao produto; centralizado. |
 | [Features/Navigation/LibrarySideBarView.swift:1](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/LibrarySideBarView.swift:1) | N04/N06, R01/R05; layout e seleção próprios sobre split nativo. |
 | [Features/Navigation/SideBarSection.swift:1](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/SideBarSection.swift:1) | Modelo único de abas; preservar. |
-| [Features/Navigation/WindowSplitLayout.swift:1](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/WindowSplitLayout.swift:1) | R14; bridge de sidebar ativo e inspector aparentemente legado. |
+| [Features/Navigation/WindowSplitLayout.swift:1](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Navigation/WindowSplitLayout.swift:1) | R14 concluído; bridge de sidebar ativo, infraestrutura de inspector sem consumidores removida. |
 | [Features/Player/ArtworkRepository.swift:1](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/ArtworkRepository.swift:1) | E08/R08; cache limitado, single-flight e downsample existentes. |
 | [Features/Player/ArtworkView.swift:1](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/ArtworkView.swift:1) | R08; consumidor shared, task por request e borda comum. |
 | [Features/Player/LyricsView.swift:1](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/LyricsView.swift:1) | ScrollView/texto nativos; renderer reutilizado em painel/popover. |

@@ -70,8 +70,8 @@ struct QueueTableView: NSViewRepresentable {
         let scrollView = NSScrollView()
         scrollView.drawsBackground = false
         scrollView.backgroundColor = .clear
-        // The clip view is a separate drawing surface; keep the inspector's
-        // native glass visible in the viewport, including empty/overscroll areas.
+        // The clip view is a separate drawing surface; keep the queue panel's
+        // glass background visible in the viewport, including empty/overscroll areas.
         scrollView.contentView.drawsBackground = false
         scrollView.contentView.backgroundColor = .clear
         scrollView.hasVerticalScroller = true
