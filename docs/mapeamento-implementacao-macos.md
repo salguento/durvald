@@ -462,6 +462,12 @@ Compartilham cápsula, padding 3, altura 30 e material regular, mas cada um copi
 
 **Contrato de reutilização sugerido:** GlassTabPicker com modos de distribuição e estilo comum. Tornar diferenças de layout parâmetros; não espalhar cópias de opacidade/spacing para manter aparência.
 
+**Implementação em 08/10/2026:** Features/Shared/GlassTabPicker.swift centraliza opções identificáveis, Binding de seleção, cápsula/material regular, padding e spacing de 3 pt, altura de 30 pt, área clicável, destaque selecionado e opacidades de janela ativa/inativa. Distribuição e foreground são parâmetros: selectedExpands/selectedPrimary preserva a sidebar esquerda, enquanto equal/allPrimary mantém as três abas da direita com largura uniforme. A animação de seleção de 0,18 s permanece configurada somente na direita; a animação de ativação da janela continua compartilhada em 0,15 s.
+
+Na esquerda, GeometryReader continua sem contribuir largura ideal dos labels ao NavigationSplitView; abas não selecionadas reservam 28 pt e a selecionada ocupa o restante. ViewThatFits mantém o limiar comum baseado no maior label completo, com fallback para ícone. Labels, help, traits de seleção e identificadores de acessibilidade existentes são preservados. Na direita, o inset horizontal externo de 8 pt continua no consumidor, e os cálculos de máscara/inset da fila passam a usar a altura do componente compartilhado.
+
+Validação: build macOS aprovado (CODE_SIGNING_ALLOWED=NO) e diff sem erros de whitespace. Por se tratar de extração de apresentação, não foram adicionados testes que apenas reproduzem a implementação nem repetida a suíte completa. Resize e aparência das duas sidebars não receberam nova validação visual nesta alteração.
+
 ### R06 — Botões de opções circulares e menus de visualização (P2)
 
 **Ocorrências:** [Features/Library/HistoryView.swift:125](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/HistoryView.swift:125); [Features/Library/MusicLibraryToolbarControls.swift:4](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/MusicLibraryToolbarControls.swift:4); [Features/Library/CollectionListing.swift:174](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/CollectionListing.swift:174); [Features/Library/ArtistView.swift:2482](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/ArtistView.swift:2482).

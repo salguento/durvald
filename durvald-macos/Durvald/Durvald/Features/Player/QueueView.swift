@@ -99,7 +99,7 @@ struct QueueView: View {
         var id: Self { self }
     }
 
-    private static let pickerHeight: CGFloat = 30
+    private static let pickerHeight = GlassTabPicker<Panel>.height
     private static let pickerFadeHeight: CGFloat = 24
     private static let contentTopSpacing: CGFloat = 18
     // Account for the first section label's 4 pt inset inside its row.
@@ -221,33 +221,13 @@ struct QueueView: View {
     }
 
     private var panelPicker: some View {
-        HStack(spacing: 3) {
-            ForEach(Panel.allCases) { panel in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        selectedPanel = panel
-                    }
-                } label: {
-                    Text(panel.rawValue)
-                        .foregroundStyle(Color(nsColor: appearsActive ? .labelColor : .secondaryLabelColor))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: Self.pickerHeight - 6)
-                        .contentShape(Rectangle())
-                        .background {
-                            if selectedPanel == panel {
-                                Capsule()
-                                    .fill(Color(nsColor: .labelColor).opacity(appearsActive ? 0.12 : 0.07))
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-                .accessibilityAddTraits(selectedPanel == panel ? .isSelected : [])
-            }
-        }
-        .padding(3)
-        .frame(maxWidth: .infinity)
-        .glassEffect(.regular, in: .capsule)
-        .animation(.easeOut(duration: 0.15), value: appearsActive)
+        GlassTabPicker(
+            options: Panel.allCases.map { GlassTabOption(value: $0, title: $0.rawValue) },
+            selection: $selectedPanel,
+            distribution: .equal,
+            foreground: .allPrimary,
+            selectionAnimation: .easeInOut(duration: 0.18)
+        )
         .padding(.horizontal, 8)
         .frame(height: Self.pickerHeight, alignment: .bottom)
     }

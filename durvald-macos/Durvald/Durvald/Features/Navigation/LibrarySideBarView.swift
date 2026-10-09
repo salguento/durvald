@@ -470,86 +470,19 @@ private struct SidebarPlaylistButton: View {
 
 private struct SidebarSectionPicker: View {
     @Binding var selection: SidebarSection
-    @Environment(\.appearsActive) private var appearsActive
-
-    private var selectedForeground: Color {
-        Color(
-            nsColor: appearsActive
-                ? .labelColor
-                : .secondaryLabelColor
-        )
-    }
 
     var body: some View {
-        // Read the column's allocated width without contributing a label-driven
-        // ideal width to NavigationSplitView's sizing negotiations.
-        GeometryReader { geometry in
-            tabs(availableWidth: max(0, geometry.size.width - 6))
-                .padding(3)
-        }
-        .frame(height: 30)
-        .glassEffect(.regular, in: .capsule)
-        .animation(.easeOut(duration: 0.15), value: appearsActive)
-        .accessibilityElement(children: .contain)
+        GlassTabPicker(
+            options: SidebarSection.allCases.map {
+                GlassTabOption(value: $0, title: $0.title, icon: $0.icon,
+                               accessibilityIdentifier: "sidebar.section.\($0.rawValue)")
+            },
+            selection: $selection,
+            distribution: .selectedExpands,
+            foreground: .selectedPrimary
+        )
         .accessibilityLabel("Conteúdo da barra lateral")
         .accessibilityIdentifier("sidebar.sectionPicker")
-    }
-
-    private func tabs(availableWidth: CGFloat) -> some View {
-        let otherTabsWidth = CGFloat(SidebarSection.allCases.count - 1) * (28 + 3)
-        let selectedWidth = max(0, availableWidth - otherTabsWidth)
-
-        return HStack(spacing: 3) {
-            ForEach(SidebarSection.allCases) { item in
-                Button {
-                    selection = item
-                } label: {
-                    ViewThatFits(in: .horizontal) {
-                        if item == selection {
-                            // Every tab uses the same fitting threshold, based
-                            // on the widest complete label in the current font.
-                            ZStack {
-                                ForEach(SidebarSection.allCases) { candidate in
-                                    HStack(spacing: 5) {
-                                        Image(systemName: candidate.icon)
-                                        Text(candidate.title)
-                                            .lineLimit(1)
-                                    }
-                                    .opacity(candidate == item ? 1 : 0)
-                                    .accessibilityHidden(candidate != item)
-                                }
-                            }
-                            .fixedSize(horizontal: true, vertical: false)
-                        }
-
-                        Image(systemName: item.icon)
-                    }
-                    .foregroundStyle(
-                        item == selection
-                            ? selectedForeground
-                            : Color.secondary
-                    )
-                    .frame(height: 24)
-                    .frame(width: item == selection ? selectedWidth : 28)
-                    .contentShape(Rectangle())
-                    .background {
-                        if item == selection {
-                            Capsule()
-                                .fill(Color(nsColor: .labelColor).opacity(appearsActive ? 0.12 : 0.07))
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-                .help(item.title)
-                .accessibilityLabel(item.title)
-                .accessibilityAddTraits(
-                    item == selection ? .isSelected : []
-                )
-                .accessibilityIdentifier(
-                    "sidebar.section.\(item.rawValue)"
-                )
-            }
-        }
     }
 }
 
