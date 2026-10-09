@@ -1635,35 +1635,13 @@ struct ArtistView: View {
     }
 
     private var artistPlaybackControls: some View {
-        HStack(spacing: 8) {
-            Button {
-                Task { await store.playTracks(tracks, shuffleEnabled: false) }
-            } label: {
-                Label("Reproduzir", systemImage: "play.fill")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 16)
-                    .frame(height: headerControlHeight)
-                    .background(Color.accentColor, in: .capsule)
-                    .contentShape(.capsule)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("collection.play")
-
-            Button {
-                Task { await store.playTracks(tracks, shuffleEnabled: true) }
-            } label: {
-                Image(systemName: "shuffle")
-                    .frame(width: headerIconControlWidth, height: headerControlHeight)
-                    .contentShape(.capsule)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .help("Reproduzir aleatoriamente")
-            .accessibilityLabel("Reproduzir aleatoriamente")
-            .accessibilityIdentifier("collection.shuffle")
-        }
-        .disabled(isLoading || tracks.isEmpty)
+        CollectionPlaybackControls(
+            isEnabled: !isLoading && !tracks.isEmpty,
+            presentation: .prominentPlay,
+            controlHeight: headerControlHeight,
+            collection: .tracks(tracks),
+            iconControlWidth: headerIconControlWidth
+        )
     }
 
     private var isFollowing: Bool {

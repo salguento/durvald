@@ -31,6 +31,7 @@ final class FakeDurvaldCore: DurvaldCore {
 
     private(set) var pauseCallCount = 0
     private(set) var resumeCallCount = 0
+    private(set) var shuffleRequests: [Bool] = []
     private(set) var playbackOperations: [String] = []
     private(set) var seekCalls: [UInt64] = []
     private(set) var maximumConcurrentSeeks = 0
@@ -126,6 +127,12 @@ final class FakeDurvaldCore: DurvaldCore {
 
     override func releaseTracks(releaseId: Int64) async throws -> [Track] {
         releaseTrackResults
+    }
+
+    override func setShuffleEnabled(enabled: Bool) async throws -> PlaybackSnapshot {
+        shuffleRequests.append(enabled)
+        snapshot.shuffleEnabled = enabled
+        return snapshot
     }
 
     override func clearQueue() async throws {

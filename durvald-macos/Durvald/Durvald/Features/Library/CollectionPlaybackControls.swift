@@ -4,8 +4,10 @@ struct CollectionPlaybackControls: View {
     enum Presentation {
         case separate
         case groupedCompactShuffle
+        case prominentPlay
     }
 
+    @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
 
@@ -14,8 +16,8 @@ struct CollectionPlaybackControls: View {
     let controlHeight: CGFloat
     let isFavorite: Bool?
     let onToggleFavorite: (() -> Void)?
-    let onPlay: () -> Void
-    let onShuffle: () -> Void
+    let collection: PlaybackCollection
+    let iconControlWidth: CGFloat
 
     init(
         isEnabled: Bool,
@@ -23,16 +25,16 @@ struct CollectionPlaybackControls: View {
         controlHeight: CGFloat = 34,
         isFavorite: Bool? = nil,
         onToggleFavorite: (() -> Void)? = nil,
-        onPlay: @escaping () -> Void,
-        onShuffle: @escaping () -> Void
+        collection: PlaybackCollection,
+        iconControlWidth: CGFloat = 38
     ) {
         self.isEnabled = isEnabled
         self.presentation = presentation
         self.controlHeight = controlHeight
         self.isFavorite = isFavorite
         self.onToggleFavorite = onToggleFavorite
-        self.onPlay = onPlay
-        self.onShuffle = onShuffle
+        self.collection = collection
+        self.iconControlWidth = iconControlWidth
     }
 
     private var backgroundOpacity: Double {
@@ -47,14 +49,41 @@ struct CollectionPlaybackControls: View {
         switch presentation {
         case .separate:
             HStack(spacing: 10) {
-                control("Play", systemImage: "play.fill", action: onPlay)
-                control("Shuffle", systemImage: "shuffle", action: onShuffle)
+                control("Play", systemImage: "play.fill", action: { perform(.play) })
+                control("Shuffle", systemImage: "shuffle", action: { perform(.shuffle) })
             }
+
+        case .prominentPlay:
+            HStack(spacing: 8) {
+                Button { perform(.play) } label: {
+                    Label("Reproduzir", systemImage: "play.fill")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .frame(height: controlHeight)
+                        .background(Color.accentColor, in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("collection.play")
+
+                Button { perform(.shuffle) } label: {
+                    Image(systemName: "shuffle")
+                        .frame(width: iconControlWidth, height: controlHeight)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.regular.interactive(), in: .capsule)
+                .help("Reproduzir aleatoriamente")
+                .accessibilityLabel("Reproduzir aleatoriamente")
+                .accessibilityIdentifier("collection.shuffle")
+            }
+            .disabled(!isEnabled)
 
         case .groupedCompactShuffle:
             HStack(spacing: 10) {
                 HStack(spacing: 0) {
-                    Button(action: onPlay) {
+                    Button(action: { perform(.play) }) {
                         Label("Play", systemImage: "play.fill")
                             .padding(.horizontal, 16)
                             .frame(height: controlHeight)
@@ -67,7 +96,7 @@ struct CollectionPlaybackControls: View {
                         .frame(width: 1, height: 18)
                         .accessibilityHidden(true)
 
-                    Button(action: onShuffle) {
+                    Button(action: { perform(.shuffle) }) {
                         Image(systemName: "shuffle")
                             .padding(.horizontal, 14)
                             .frame(height: controlHeight)
@@ -102,6 +131,11 @@ struct CollectionPlaybackControls: View {
             .font(.body.weight(.medium))
             .foregroundStyle(Color.accentColor.opacity(appearsActive ? 1 : 0.63))
         }
+    }
+
+    private func perform(_ action: PlaybackCollection.Action) {
+        guard isEnabled else { return }
+        Task { await collection.perform(action, using: store) }
     }
 
     private func control(

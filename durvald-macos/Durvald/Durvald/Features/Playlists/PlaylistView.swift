@@ -212,26 +212,7 @@ struct PlaylistView: View {
                             favorite: !currentPlaylist.isFavorite
                         )
                     },
-                    onPlay: {
-                        guard !tracks.isEmpty else { return }
-                        Task {
-                            await store.playPlaylist(
-                                playlistID: playlist.id,
-                                startingAtPosition: 0,
-                                shuffleEnabled: false
-                            )
-                        }
-                    },
-                    onShuffle: {
-                        guard !tracks.isEmpty else { return }
-                        Task {
-                            await store.playPlaylist(
-                                playlistID: playlist.id,
-                                startingAtPosition: 0,
-                                shuffleEnabled: true
-                            )
-                        }
-                    }
+                    collection: .playlist(playlist.id)
                 )
 
                 Spacer(minLength: 24)

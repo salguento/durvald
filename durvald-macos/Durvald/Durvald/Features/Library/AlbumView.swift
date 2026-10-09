@@ -219,22 +219,7 @@ struct AlbumView: View {
                             favorite: !currentAlbum.isFavorite
                         )
                     },
-                    onPlay: {
-                        Task {
-                            await store.playRelease(
-                                releaseID: album.id,
-                                shuffleEnabled: false
-                            )
-                        }
-                    },
-                    onShuffle: {
-                        Task {
-                            await store.playRelease(
-                                releaseID: album.id,
-                                shuffleEnabled: true
-                            )
-                        }
-                    }
+                    collection: .release(album.id)
                 )
 
                 Spacer(minLength: 24)
