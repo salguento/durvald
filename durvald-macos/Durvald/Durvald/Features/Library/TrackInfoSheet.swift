@@ -325,7 +325,7 @@ struct TrackInfoSheet: View {
             }
         case .file:
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
-                row("Duração") { Text(durationText(info.track.durationSeconds)) }
+                row("Duração") { Text(DurationFormatter.text(info.track.durationSeconds)) }
                 if let bitrate = info.track.bitrate { row("Bitrate") { Text("\(bitrate) kbps") } }
                 if let rate = info.track.sampleRate { row("Amostragem") { Text("\(rate) Hz") } }
                 if let depth = info.track.bitDepth { row("Profundidade") { Text("\(depth) bits") } }
@@ -418,10 +418,6 @@ struct TrackInfoSheet: View {
         }
     }
 
-    private func durationText(_ duration: Double) -> String {
-        let seconds = max(0, Int(duration.rounded()))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
 
     private func accept(_ value: TrackInfo) {
         info = value

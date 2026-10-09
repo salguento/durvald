@@ -391,13 +391,13 @@ struct CollectionListingItem<Artwork: View>: View {
             AlbumTitleLabel(
                 title: title,
                 isFavorite: isFavorite,
-                font: AlbumListingTypography.title
+                font: LibraryTypography.listingTitle
             )
             .lineLimit(1)
             .frame(maxWidth: .infinity, alignment: usesCenteredGridText ? .center : .leading)
             if let subtitle {
                 Text(subtitle)
-                    .font(AlbumListingTypography.secondary)
+                    .font(LibraryTypography.listingSecondary)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: usesCenteredGridText ? .center : .leading)

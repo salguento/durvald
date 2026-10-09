@@ -587,9 +587,4 @@ struct PlaylistView: View {
         guard matchingPositions.count == 1, let index = matchingPositions.first else { return nil }
         return index + 1
     }
-
-    private func durationText(_ duration: Double) -> String {
-        let totalSeconds = max(0, Int(duration.rounded()))
-        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
-    }
 }

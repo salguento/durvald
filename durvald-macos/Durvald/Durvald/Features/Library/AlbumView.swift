@@ -343,7 +343,7 @@ struct AlbumView: View {
             genre,
             year,
             trackLabel,
-            albumDurationText(album.durationSeconds),
+            DurationFormatter.text(seconds: album.durationSeconds, context: .albumHeader),
             fileQualityText
         ].joined(separator: " • ")
     }
@@ -363,16 +363,6 @@ struct AlbumView: View {
         return candidate
     }
 
-    private func albumDurationText(_ durationSeconds: UInt64) -> String {
-        let totalMinutes = Int(durationSeconds) / 60
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-
-        if hours > 0 {
-            return minutes > 0 ? "\(hours) h \(minutes) min" : "\(hours) h"
-        }
-        return "\(totalMinutes) min"
-    }
 
     private var fileQualityText: String {
         let tracksByFormat = Dictionary(grouping: tracks) { track -> String in
@@ -458,7 +448,7 @@ struct AlbumView: View {
         let trackLabel = count == 1 ? "1 faixa" : "\(count) faixas"
         let duration = externalDetails.map {
             $0.durationSeconds > 0
-                ? albumDurationText($0.durationSeconds)
+                ? DurationFormatter.text(seconds: $0.durationSeconds, context: .albumHeader)
                 : "Duração indisponível"
         } ?? "Duração indisponível"
         return [genre, year, trackLabel, duration, "MusicBrainz"].joined(separator: " • ")
@@ -614,7 +604,7 @@ struct AlbumView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(track.durationSeconds.map { durationText(Double($0)) } ?? "—")
+            Text(track.durationSeconds.map { DurationFormatter.text(Double($0)) } ?? "—")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
@@ -630,14 +620,5 @@ struct AlbumView: View {
         }
 
         return "\(track.discNumber).\(track.trackNumber)"
-    }
-
-    private func durationText(_ duration: Double) -> String {
-        let totalSeconds = max(0, Int(duration.rounded()))
-        return String(
-            format: "%d:%02d",
-            totalSeconds / 60,
-            totalSeconds % 60
-        )
     }
 }

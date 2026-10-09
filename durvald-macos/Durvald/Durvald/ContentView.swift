@@ -310,7 +310,7 @@ struct ContentView: View {
                     accessory: .reservedClear, focusColor: .accentColor
                 )
                 .frame(minWidth: 180, idealWidth: 260, maxWidth: 300,
-                       minHeight: 36, maxHeight: 36)
+                       minHeight: ToolbarControlMetrics.size, maxHeight: ToolbarControlMetrics.size)
                 .animation(.easeOut(duration: 0.15), value: appearsActive)
                 .offset(x: pageChrome.globalSearchOffset)
             }
@@ -441,7 +441,7 @@ struct ContentView: View {
                 libraryTopbarControls(searchWidth: searchWidth, prefersCompact: compact)
                     .padding(.trailing, panelReservation)
             }
-            .frame(width: geometry.size.width, height: 36, alignment: .trailing)
+            .frame(width: geometry.size.width, height: ToolbarControlMetrics.size, alignment: .trailing)
         }
         .environment(\.appearsActive, appearsActive)
         .environment(store)
@@ -451,7 +451,7 @@ struct ContentView: View {
         }
 
         return LibraryToolbarHost(content: content, minimumWidth: minimumWidth, preferredWidth: preferredWidth)
-        .frame(minWidth: minimumWidth, maxWidth: .infinity, minHeight: 36, maxHeight: 36)
+        .frame(minWidth: minimumWidth, maxWidth: .infinity, minHeight: ToolbarControlMetrics.size, maxHeight: ToolbarControlMetrics.size)
         .background {
             LibraryToolbarWidthObserver(
                 trailingReservation: Layout.queueToggleWidth + 24,
@@ -473,16 +473,11 @@ struct ContentView: View {
         if shell.navigationHistory.current == .songs {
             MusicLibrarySummaryView(summary: musicLibrarySummary)
         } else {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(shell.navigationHistory.current.title).font(.headline)
-                Text(librarySummaryText).font(.caption)
-            }
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .frame(maxWidth: 480, alignment: .leading)
-            .help(librarySummaryText)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("\(shell.navigationHistory.current.rawValue).summary")
+            LibrarySummaryView(
+                title: shell.navigationHistory.current.title,
+                text: librarySummaryText,
+                identifier: "\(shell.navigationHistory.current.rawValue).summary"
+            )
         }
     }
 

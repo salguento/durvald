@@ -97,11 +97,11 @@ struct LibrarySearchView: View {
                             AlbumTitleLabel(
                                 title: release.title,
                                 isFavorite: release.isFavorite,
-                                font: AlbumListingTypography.title
+                                font: LibraryTypography.listingTitle
                             )
                                 .lineLimit(1)
                             Text(release.artist)
-                                .font(AlbumListingTypography.secondary)
+                                .font(LibraryTypography.listingSecondary)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }

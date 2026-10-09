@@ -46,15 +46,6 @@ enum AlbumGridLayout {
     }
 }
 
-enum AlbumListingTypography {
-    static let title = Font.system(
-        size: NSFont.preferredFont(forTextStyle: .subheadline).pointSize + 1
-    )
-    static let secondary = Font.system(
-        size: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 1
-    )
-}
-
 enum AlbumsViewLayout {
     static let gridMinimumCardWidth: CGFloat = 240
     static let listArtworkSize: CGFloat = 96
@@ -206,12 +197,12 @@ struct AlbumCard: View {
                         AlbumTitleLabel(
                             title: release.title,
                             isFavorite: release.isFavorite,
-                            font: AlbumListingTypography.title
+                            font: LibraryTypography.listingTitle
                         )
                             .lineLimit(titleLineLimit)
 
                         Text(subtitle ?? release.artist)
-                            .font(AlbumListingTypography.secondary)
+                            .font(LibraryTypography.listingSecondary)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }

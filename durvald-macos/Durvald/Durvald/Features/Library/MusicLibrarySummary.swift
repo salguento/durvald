@@ -13,7 +13,7 @@ struct MusicLibrarySummary: Equatable {
 
     init(tracks: [Track], kind: Kind, query: String = "", fileSizes: [String: Int64] = [:], isPending: Bool = false, onlyFavorites: Bool = false) {
         trackCount = tracks.count
-        durationSeconds = Int(tracks.reduce(0.0) { $0 + max(0, $1.durationSeconds) }.rounded())
+        durationSeconds = DurationFormatter.totalSeconds(tracks.lazy.map(\.durationSeconds))
         self.kind = kind
         self.query = query
         self.isPending = isPending
@@ -24,53 +24,13 @@ struct MusicLibrarySummary: Equatable {
             : nil
     }
 
-    var text: String {
-        let count = "\(trackCount.formatted()) \(trackCount == 1 ? "música" : "músicas")"
-        let qualifier: String
-        switch kind {
-        case .all: qualifier = ""
-        case .selected: qualifier = trackCount == 1 ? " selecionada" : " selecionadas"
-        case .search: qualifier = ""
-        }
-        let prefix: String
-        if kind == .search {
-            prefix = "Resultados para “\(query)” • " + (onlyFavorites ? "Somente favoritas • " : "")
-        } else {
-            prefix = onlyFavorites ? "Resultados para “Somente favoritas” • " : ""
-        }
-        if isPending { return "\(prefix)Pesquisando…" }
-        if trackCount == 0 { return "\(prefix)Nenhum item" }
-        let duration = durationSeconds >= 3600
-            ? String(format: "%d:%02d:%02d", durationSeconds / 3600, (durationSeconds / 60) % 60, durationSeconds % 60)
-            : String(format: "%d:%02d", durationSeconds / 60, durationSeconds % 60)
-        let size: String
-        if let totalBytes {
-            let formatter = ByteCountFormatter()
-            formatter.countStyle = .file
-            formatter.allowedUnits = [.useKB, .useMB, .useGB, .useTB]
-            size = formatter.string(fromByteCount: totalBytes)
-        } else {
-            size = "—"
-        }
-        return "\(prefix)\(count)\(qualifier), \(duration) de duração, \(size)"
-    }
+    var text: String { SummaryPresentation.music(self) }
 }
 
 struct MusicLibrarySummaryView: View {
     let summary: MusicLibrarySummary
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text("Músicas")
-                .font(.headline)
-            Text(summary.text)
-                .font(.caption)
-        }
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .frame(maxWidth: 480, alignment: .leading)
-        .help(summary.text)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("library.summary")
+        LibrarySummaryView(title: "Músicas", text: summary.text, identifier: "library.summary")
     }
 }

@@ -76,15 +76,9 @@ struct AlbumListingSnapshot {
         }
         let ids = Set(filtered.map(\.id))
         let summary = MusicLibrarySummary(tracks: tracks.filter { ids.contains($0.releaseId) }, kind: .all, fileSizes: sizes)
-        let hours = summary.durationSeconds / 3600
-        let minutes = summary.durationSeconds / 60 % 60
-        let duration = hours > 0
-            ? "\(hours) \(hours == 1 ? "hora" : "horas"), \(minutes) \(minutes == 1 ? "minuto" : "minutos")"
-            : "\(minutes) \(minutes == 1 ? "minuto" : "minutos")"
-        let size = summary.totalBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "—"
-        let prefix = key.query.isEmpty ? "" : "Resultados para “\(key.query)” • "
         return Self(items: CollectionListingSorter.albums(filtered, order: key.order, lastPlayedByRelease: recency),
-                    summary: "\(prefix)\(ids.count.formatted()) \(ids.count == 1 ? "item" : "itens"), \(duration), \(size)")
+                    summary: SummaryPresentation.albums(count: ids.count, durationSeconds: summary.durationSeconds,
+                                                        totalBytes: summary.totalBytes, query: key.query))
     }
 }
 
@@ -102,11 +96,9 @@ struct ArtistListingSnapshot {
         let artwork = firstRecordIndex(releases, key: { $0.artistId }).compactMapValues(\.artworkId)
         let localCount = filtered.filter { localIDs.contains($0.id) }.count
         let indexedCount = filtered.count - localCount
-        let localText = "\(localCount.formatted()) \(localCount == 1 ? "artista local" : "artistas locais")"
-        let indexedText = "\(indexedCount.formatted()) \(indexedCount == 1 ? "artista indexado" : "artistas indexados")"
-        let prefix = key.query.isEmpty ? "" : "Resultados para “\(key.query)” • "
         return Self(items: CollectionListingSorter.artists(filtered, order: key.order, releases: releases, lastPlayedByRelease: recency),
-                    fallbackArtwork: artwork, summary: "\(prefix)\(localText), \(indexedText)")
+                    fallbackArtwork: artwork,
+                    summary: SummaryPresentation.artists(localCount: localCount, indexedCount: indexedCount, query: key.query))
     }
 }
 
@@ -123,13 +115,10 @@ struct HistoryListingSnapshot {
             }
             return [track.title, track.artist, track.release].contains { $0.localizedCaseInsensitiveContains(key.query) }
         }
-        let duration = filtered.reduce(UInt64.zero) { $0 + $1.durationSeconds }
-        let time = duration >= 3600
-            ? String(format: "%llu:%02llu:%02llu", duration / 3600, duration / 60 % 60, duration % 60)
-            : String(format: "%llu:%02llu", duration / 60, duration % 60)
+        let duration = DurationFormatter.totalSeconds(filtered.lazy.map(\.durationSeconds))
         let songs = Set(filtered.map(\.trackId)).count
-        let prefix = key.query.isEmpty ? "" : "Resultados para “\(key.query)” • "
-        let summary = "\(prefix)\(filtered.count.formatted()) \(filtered.count == 1 ? "reprodução" : "reproduções"), \(songs.formatted()) \(songs == 1 ? "música" : "músicas"), \(time) de reprodução"
+        let summary = SummaryPresentation.history(playCount: filtered.count, songCount: songs,
+                                                  durationSeconds: duration, query: key.query)
         return Self(items: filtered.sorted { key.newestFirst ? $0.id > $1.id : $0.id < $1.id }, tracksByID: tracks, summary: summary)
     }
 }

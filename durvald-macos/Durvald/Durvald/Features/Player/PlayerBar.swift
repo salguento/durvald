@@ -587,8 +587,7 @@ struct PlayerBar: View {
     }
 
     private func time(_ seconds: Double) -> String {
-        let value = max(0, Int(seconds))
-        return String(format: "%d:%02d", value / 60, value % 60)
+        DurationFormatter.text(seconds, rounding: .towardZero)
     }
 
     private var repeatIcon: String {

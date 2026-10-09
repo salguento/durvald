@@ -39,11 +39,7 @@ struct TrackRowModel: Equatable {
 
     /// Local rows display zero; external rankings distinguish unknown duration.
     func durationText(unknown: String? = nil) -> String {
-        guard let durationSeconds, durationSeconds.isFinite,
-              durationSeconds.rounded() < Double(Int.max) else { return unknown ?? "0:00" }
-        let seconds = Int(max(0, durationSeconds.rounded()))
-        if seconds == 0, let unknown { return unknown }
-        return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
+        DurationFormatter.text(durationSeconds, unknown: unknown)
     }
 }
 

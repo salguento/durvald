@@ -2343,10 +2343,10 @@ private struct ExternalReleaseCard: View {
 
                     VStack(alignment: .leading, spacing: 0) {
                         Text(release.title)
-                            .font(AlbumListingTypography.title)
+                            .font(LibraryTypography.listingTitle)
                             .lineLimit(1)
                         Text(subtitle)
-                            .font(AlbumListingTypography.secondary)
+                            .font(LibraryTypography.listingSecondary)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
