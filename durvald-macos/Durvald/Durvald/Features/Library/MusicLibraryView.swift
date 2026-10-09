@@ -9,11 +9,6 @@ import AppKit
 import SwiftUI
 
 struct MusicLibraryView: View {
-    private struct SearchRequest: Equatable {
-        let query: String
-        let metadataRevision: Int
-        let usesLocalSearch: Bool
-    }
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(TrackInfoCoordinator.self) private var trackInfo
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
@@ -21,11 +16,15 @@ struct MusicLibraryView: View {
     @Environment(\.libraryScrollOffset) private var savedScrollOffset
     @State private var selectedTrackIDs = Set<Int64>()
     @Binding var searchText: String
-    @State private var searchRevision: UInt64 = 0
-    @State private var searchResults: [Track]?
-    @State private var committedSearchQuery = ""
-    @State private var isSearching = false
-    @State private var searchRequestID = UUID()
+    @State private var search = SearchPresentation<[Track]>()
+    private var searchRevision: UInt64 { search.revision }
+    private var searchResults: [Track]? { search.value }
+    private var committedSearchQuery: String { search.committedQuery }
+    private var isSearching: Bool { search.isSearching }
+    private var searchRequest: SearchRequest {
+        .init(query: normalizedSearchText, storeID: ObjectIdentifier(store), coreID: store.core.map(ObjectIdentifier.init),
+              metadataRevision: store.metadataRevision, scope: usesLocalSearch ? "music.local" : "music.remote")
+    }
     let presentation: MusicLibraryPresentation
     var isPresented = true
     var navigationEntryID = 0
@@ -150,7 +149,9 @@ struct MusicLibraryView: View {
                 trackNumberColumnIntroduced = true
             }
         }
-        .task(id: isPresented ? SearchRequest(query: normalizedSearchText, metadataRevision: store.metadataRevision, usesLocalSearch: usesLocalSearch) : nil) {
+        .onChange(of: isPresented) { _, presented in if !presented { search.cancel() } }
+        .onDisappear { search.cancel() }
+        .task(id: isPresented ? searchRequest : nil) {
             guard isPresented else { return }
             await refreshSearch()
         }
@@ -218,33 +219,11 @@ struct MusicLibraryView: View {
     }
 
     private func refreshSearch() async {
-        let requestID = UUID()
-        searchRequestID = requestID
-        isSearching = false
-        let query = normalizedSearchText
-        guard !query.isEmpty, !usesLocalSearch else {
-            searchResults = nil
-            searchRevision &+= 1
-            committedSearchQuery = ""
-            return
+        guard !usesLocalSearch else { search.reset(); return }
+        let current = searchRequest
+        await search.run(current, timing: .music, isCurrent: { isPresented && searchRequest == current }) {
+            await store.searchLibrary(query: $0).tracks
         }
-        let loadingIndicator = Task { @MainActor in
-            do { try await Task.sleep(for: .milliseconds(250)) }
-            catch { return }
-            guard !Task.isCancelled, searchRequestID == requestID else { return }
-            isSearching = true
-        }
-        defer {
-            loadingIndicator.cancel()
-            if searchRequestID == requestID { isSearching = false }
-        }
-        do { try await Task.sleep(for: .milliseconds(80)) }
-        catch { return }
-        let results = await store.searchLibrary(query: query)
-        guard !Task.isCancelled, searchRequestID == requestID, normalizedSearchText == query else { return }
-        searchResults = results.tracks
-        searchRevision &+= 1
-        committedSearchQuery = query
     }
 
     @ViewBuilder

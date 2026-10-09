@@ -9,9 +9,14 @@ struct PlaylistMusicPicker: View {
 
     @State private var isExpanded = false
     @State private var query = ""
-    @State private var committedQuery = ""
-    @State private var suggestions = PlaylistSuggestionSnapshot()
-    @State private var isSearching = false
+    @State private var searchPresentation = SearchPresentation<PlaylistSuggestionSnapshot>()
+    private var committedQuery: String { searchPresentation.committedQuery }
+    private var suggestions: PlaylistSuggestionSnapshot { searchPresentation.value ?? PlaylistSuggestionSnapshot() }
+    private var isSearching: Bool { searchPresentation.isSearching }
+    private var searchRequest: SearchRequest {
+        .init(query: query.trimmingCharacters(in: .whitespacesAndNewlines), storeID: ObjectIdentifier(store),
+              coreID: store.core.map(ObjectIdentifier.init), metadataRevision: store.metadataRevision, scope: "playlist.suggestions")
+    }
     @State private var selection: Selection?
     @State private var albumTracks: [Track] = []
     @State private var isLoadingAlbum = false
@@ -55,7 +60,8 @@ struct PlaylistMusicPicker: View {
             guard isExpanded else { return }
             closeSearch()
         }
-        .task(id: query) { await search() }
+        .task(id: searchRequest) { await search() }
+        .onDisappear { searchPresentation.cancel() }
         .task(id: selectedAlbumID) { await loadSelectedAlbum() }
     }
 
@@ -81,11 +87,11 @@ struct PlaylistMusicPicker: View {
             case .album(let album): albumContent(album)
             case .artist(let artist): artistContent(artist)
             }
-        } else if committedQuery.isEmpty {
-            EmptyView()
         } else if isSearching {
             ProgressView("Pesquisando…")
                 .controlSize(.small)
+        } else if committedQuery.isEmpty {
+            EmptyView()
         } else if resultItems.isEmpty {
             ContentUnavailableView.search(text: committedQuery)
         } else {
@@ -260,34 +266,23 @@ struct PlaylistMusicPicker: View {
     }
 
     private func search() async {
-        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else {
-            committedQuery = ""
-            suggestions = PlaylistSuggestionSnapshot()
-            isSearching = false
-            return
+        let current = searchRequest
+        await searchPresentation.run(current, timing: .suggestions, isCurrent: { searchRequest == current }) { normalized in
+            selection = nil
+            let found = await store.searchLibrary(query: normalized)
+            try Task.checkCancellation()
+            let locale = Locale.current
+            let worker = Task.detached(priority: .userInitiated) {
+                PlaylistSuggestionSnapshot.build(results: found, query: normalized, locale: locale)
+            }
+            return await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
         }
-        try? await Task.sleep(for: .milliseconds(200))
-        guard !Task.isCancelled else { return }
-        selection = nil
-        committedQuery = normalized
-        isSearching = true
-        let found = await store.searchLibrary(query: normalized)
-        guard !Task.isCancelled else { return }
-        let locale = Locale.current
-        let prepared = await Task.detached(priority: .userInitiated) {
-            PlaylistSuggestionSnapshot.build(results: found, query: normalized, locale: locale)
-        }.value
-        guard !Task.isCancelled else { return }
-        suggestions = prepared
-        isSearching = false
     }
 
     private func closeSearch() {
         isSearchFocused = false
         query = ""
-        committedQuery = ""
-        suggestions = PlaylistSuggestionSnapshot()
+        searchPresentation.reset()
         selection = nil
         albumTracks = []
         isExpanded = false

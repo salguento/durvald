@@ -11,7 +11,9 @@ struct HistoryView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Binding var searchText: String
     @AppStorage("history.newestFirst") private var newestFirst = true
-    @State private var presentation = PreparedLibraryListing(HistoryListingSnapshot())
+    @State private var search = SearchPresentation<HistoryListingSnapshot>()
+    private var snapshot: HistoryListingSnapshot { search.value ?? HistoryListingSnapshot() }
+    private var searchPending: Bool { store.historyRepository.isLoading || search.isPending }
     var onSummaryChange: (String) -> Void = { _ in }
 
     private struct RefreshRequest: Equatable {
@@ -26,15 +28,15 @@ struct HistoryView: View {
     }
 
     var body: some View {
-        let tracks = presentation.value.tracksByID
-        List(presentation.value.items, id: \.id) { item in
+        let tracks = snapshot.tracksByID
+        List(snapshot.items, id: \.id) { item in
             HistoryTrackRow(item: item, loadedTrack: tracks[item.trackId])
                 .accessibilityIdentifier("history.entry.\(item.id)")
         }
         .overlay {
-            if store.historyRepository.isLoading && !query.isEmpty {
+            if searchPending && !query.isEmpty {
                 ProgressView("Pesquisando…")
-            } else if !query.isEmpty && presentation.value.items.isEmpty && !presentation.isPreparing {
+            } else if !query.isEmpty && snapshot.items.isEmpty && !search.isPending {
                 ContentUnavailableView("Nenhuma reprodução encontrada", systemImage: "magnifyingglass")
             }
         }
@@ -48,16 +50,23 @@ struct HistoryView: View {
             let key = preparationKey
             let entries = store.historyRepository.entries
             let tracks = store.historyRepository.tracksByID
-            await presentation.prepare(key: key, payload: (entries, tracks)) { payload in
-                HistoryListingSnapshot.build(entries: payload.0, tracks: payload.1, key: key)
+            let current = SearchRequest(query: key.query, storeID: ObjectIdentifier(store),
+                                        sourceRevision: key.payloadRevision, scope: "history")
+            let published = await search.run(current, timing: .history, allowsEmpty: true,
+                                             isCurrent: { preparationKey == key }) { _ in
+                let worker = Task.detached(priority: .userInitiated) {
+                    HistoryListingSnapshot.build(entries: entries, tracks: tracks, key: key)
+                }
+                return await withTaskCancellationHandler { await worker.value } onCancel: { worker.cancel() }
             }
-            guard !Task.isCancelled else { return }
-            onSummaryChange(presentation.value.summary)
+            guard published else { return }
+            onSummaryChange(snapshot.summary)
         }
-        .onChange(of: store.historyRepository.isLoading) { _, loading in
+        .onChange(of: searchPending) { _, loading in
             if loading && !query.isEmpty { onSummaryChange("Pesquisando…") }
-            else { onSummaryChange(presentation.value.summary) }
+            else { onSummaryChange(snapshot.summary) }
         }
+        .onDisappear { search.cancel() }
     }
 
 }

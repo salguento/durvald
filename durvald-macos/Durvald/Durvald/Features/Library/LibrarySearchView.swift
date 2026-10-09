@@ -4,9 +4,14 @@ struct LibrarySearchView: View {
     @Environment(DurvaldCoreStore.self) private var store
 
     @Binding var searchText: String
-    @State private var committedQuery = ""
-    @State private var searchResults: SearchResults?
-    @State private var isSearching = false
+    @State private var search = SearchPresentation<SearchResults>()
+    private var committedQuery: String { search.committedQuery }
+    private var searchResults: SearchResults? { search.value }
+    private var isSearching: Bool { search.isSearching }
+    private var request: SearchRequest {
+        .init(query: normalizedSearchText, storeID: ObjectIdentifier(store), coreID: store.core.map(ObjectIdentifier.init),
+              metadataRevision: store.metadataRevision, scope: "global")
+    }
 
     var body: some View {
         resultsList(searchResults)
@@ -31,30 +36,13 @@ struct LibrarySearchView: View {
                 }
             }
         .accessibilityIdentifier("search.page")
-        .task(id: store.metadataRevision) {
-            guard store.metadataRevision > 0, !normalizedSearchText.isEmpty else { return }
-            searchResults = await store.searchLibrary(query: normalizedSearchText)
-        }
-        .task(id: searchText) {
-            let query = normalizedSearchText
-
-            guard !query.isEmpty else {
-                committedQuery = ""
-                searchResults = nil
-                isSearching = false
-                return
+        .task(id: request) {
+            let current = request
+            await search.run(current, timing: .global, isCurrent: { request == current }) {
+                await store.searchLibrary(query: $0)
             }
-
-            try? await Task.sleep(for: .milliseconds(200))
-            guard !Task.isCancelled else { return }
-
-            isSearching = true
-            let results = await store.searchLibrary(query: query)
-            guard !Task.isCancelled else { return }
-            committedQuery = query
-            searchResults = results
-            isSearching = false
         }
+        .onDisappear { search.cancel() }
     }
 
     private var normalizedSearchText: String {
