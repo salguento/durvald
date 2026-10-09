@@ -616,8 +616,21 @@ struct MusicLibraryTableView: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, shouldReorderColumn columnIndex: Int, toColumn newColumnIndex: Int) -> Bool {
-            let actions = tableView.column(withIdentifier: .init(MusicLibraryColumn.actions.rawValue))
-            return columnIndex != actions && newColumnIndex != actions
+            let columns = tableView.tableColumns
+            guard columns.indices.contains(columnIndex) else { return false }
+            let source = MusicLibraryColumn(rawValue: columns[columnIndex].identifier.rawValue)
+            guard source != .artwork, source != .trackNumber else { return false }
+            // AppKit probes -1 at the beginning of native header tracking.
+            // It is permission to begin dragging, not a destination index.
+            if newColumnIndex == -1 { return true }
+            guard columns.indices.contains(newColumnIndex) else { return false }
+            // Moving across a fixed column would shift it even if it wasn't
+            // dragged. Reject the entire move whenever its path includes one.
+            let affected = min(columnIndex, newColumnIndex)...max(columnIndex, newColumnIndex)
+            return !affected.contains { index in
+                let column = MusicLibraryColumn(rawValue: columns[index].identifier.rawValue)
+                return column == .artwork || column == .trackNumber
+            }
         }
 
         func tableViewColumnDidResize(_ notification: Notification) {
@@ -874,18 +887,21 @@ private final class MusicLibraryHeaderView: NSTableHeaderView {
     private(set) var contextColumnIdentifier: NSUserInterfaceItemIdentifier?
 
     override var isOpaque: Bool { false }
+    override var mouseDownCanMoveWindow: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
-        // Draw the native labels over the shared material, without each cell's
-        // opaque bezel or a second header background at the toolbar join.
-        guard let tableView else { return }
-        for (index, column) in tableView.tableColumns.enumerated() where !column.isHidden {
-            let rect = headerRect(ofColumn: index)
-            guard rect.intersects(dirtyRect) else { continue }
-            column.headerCell.drawInterior(withFrame: rect, in: self)
+        if draggedColumn >= 0 {
+            // AppKit owns the column's drag image, tracking and feedback.
+            super.draw(dirtyRect)
+        } else {
+            // Keep the shared toolbar/header material visible at rest.
+            guard let tableView else { return }
+            for (index, column) in tableView.tableColumns.enumerated() where !column.isHidden {
+                let rect = headerRect(ofColumn: index)
+                guard rect.intersects(dirtyRect) else { continue }
+                column.headerCell.drawInterior(withFrame: rect, in: self)
+            }
         }
-        // A single physical pixel, using the semantic system separator color,
-        // marks the content edge without adding a bezel to the shared material.
         let pixel = 1 / (window?.backingScaleFactor ?? 2)
         let separator = NSRect(x: bounds.minX,
                                y: isFlipped ? bounds.maxY - pixel : bounds.minY,

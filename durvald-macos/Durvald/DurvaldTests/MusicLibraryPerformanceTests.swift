@@ -5,6 +5,57 @@ import XCTest
 
 @MainActor
 final class MusicLibraryPerformanceTests: XCTestCase {
+    func testColumnReorderingKeepsArtworkAndTrackNumberFixedAndPersistsOrder() throws {
+        var saved = MusicLibraryColumnLayout()
+        saved.order.removeAll { $0 == .trackNumber }
+        saved.order.insert(.trackNumber, at: 1)
+        let page = MusicLibraryTableView(
+            tracks: [], selection: .constant([]), savedScrollOffset: .constant(0),
+            layout: saved, ratingsEnabled: true, artworkSize: 32,
+            groupArtwork: false, activeTrackID: nil,
+            onLayoutChange: { saved = $0 }, onPlay: { _ in }, onLoadMore: { _ in },
+            configureMenu: { _, _ in }, cellContent: { _, _ in AnyView(EmptyView()) }
+        )
+        let coordinator = page.makeCoordinator()
+        let table = NSTableView()
+        for value in MusicLibraryColumn.allCases where value != .actions {
+            table.addTableColumn(NSTableColumn(identifier: .init(value.rawValue)))
+        }
+        coordinator.tableView = table
+        coordinator.applyLayout()
+        let before = table.tableColumns.map(\.identifier)
+        let artwork = table.column(withIdentifier: .init("artwork"))
+        let number = table.column(withIdentifier: .init("trackNumber"))
+        let title = table.column(withIdentifier: .init("title"))
+        let album = table.column(withIdentifier: .init("album"))
+        XCTAssertTrue(coordinator.tableView(table, shouldReorderColumn: title, toColumn: -1))
+        XCTAssertFalse(coordinator.tableView(table, shouldReorderColumn: artwork, toColumn: -1))
+        XCTAssertFalse(coordinator.tableView(table, shouldReorderColumn: number, toColumn: -1))
+        for target in table.tableColumns.indices {
+            XCTAssertFalse(coordinator.tableView(table, shouldReorderColumn: artwork, toColumn: target))
+            XCTAssertFalse(coordinator.tableView(table, shouldReorderColumn: number, toColumn: target))
+        }
+        XCTAssertFalse(coordinator.tableView(table, shouldReorderColumn: title, toColumn: artwork))
+        XCTAssertFalse(coordinator.tableView(table, shouldReorderColumn: album, toColumn: number))
+        XCTAssertTrue(coordinator.tableView(table, shouldReorderColumn: title, toColumn: album))
+        table.moveColumn(title, toColumn: album)
+        coordinator.tableViewColumnDidMove(Notification(name: NSTableView.columnDidMoveNotification, object: table))
+        XCTAssertEqual(table.tableColumns[artwork].identifier, before[artwork])
+        XCTAssertEqual(table.tableColumns[number].identifier, before[number])
+        XCTAssertEqual(saved.order, table.tableColumns.compactMap { MusicLibraryColumn(rawValue: $0.identifier.rawValue) })
+        XCTAssertEqual(saved.order[album], .title)
+        // The same saved order must survive the next SwiftUI update.
+        coordinator.parent = MusicLibraryTableView(
+            tracks: [], selection: .constant([]), savedScrollOffset: .constant(0),
+            layout: saved, ratingsEnabled: true, artworkSize: 32,
+            groupArtwork: false, activeTrackID: nil,
+            onLayoutChange: { saved = $0 }, onPlay: { _ in }, onLoadMore: { _ in },
+            configureMenu: { _, _ in }, cellContent: { _, _ in AnyView(EmptyView()) }
+        )
+        coordinator.applyLayout()
+        XCTAssertEqual(table.tableColumns[album].identifier.rawValue, "title")
+    }
+
     func testDisplayRevisionReusesUnchangedKeyAndInvalidatesChangedPayload() async {
         let model = MusicLibraryPresentation()
         var track = Fixtures.track
@@ -56,7 +107,8 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = host
-        defer { window.contentView = nil }
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
         func settle() {
             host.layoutSubtreeIfNeeded()
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
@@ -66,6 +118,32 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         settle()
         let table = try XCTUnwrap(descendants(host).first { $0 is NSTableView } as? NSTableView)
         let scroll = try XCTUnwrap(table.enclosingScrollView)
+        let header = try XCTUnwrap(table.headerView)
+        XCTAssertTrue(table.allowsColumnReordering)
+        XCTAssertFalse(header.mouseDownCanMoveWindow,
+                       "The translucent header must handle column dragging instead of moving the window")
+        // Exercise the real header event handler, not just the move policy.
+        let artistIndex = table.column(withIdentifier: .init("artist"))
+        let durationIndex = table.column(withIdentifier: .init("duration"))
+        func point(for index: Int) -> NSPoint {
+            let rect = header.headerRect(ofColumn: index)
+            return header.convert(NSPoint(x: rect.midX, y: rect.midY), to: nil)
+        }
+        let startPoint = point(for: artistIndex)
+        let destinationPoint = point(for: durationIndex)
+        func mouseEvent(_ type: NSEvent.EventType, at point: NSPoint) throws -> NSEvent {
+            try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                            timestamp: ProcessInfo.processInfo.systemUptime,
+                                            windowNumber: window.windowNumber, context: nil,
+                                            eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        NSApp.postEvent(try mouseEvent(.leftMouseDragged, at: NSPoint(x: startPoint.x - 12, y: startPoint.y)), atStart: false)
+        NSApp.postEvent(try mouseEvent(.leftMouseDragged, at: destinationPoint), atStart: false)
+        NSApp.postEvent(try mouseEvent(.leftMouseUp, at: destinationPoint), atStart: false)
+        header.mouseDown(with: try mouseEvent(.leftMouseDown, at: startPoint))
+        XCTAssertEqual(table.column(withIdentifier: .init("artist")), durationIndex)
+        // Restore the fixture's original order before testing scroll history.
+        table.moveColumn(durationIndex, toColumn: artistIndex)
         // AppKit reserves the native table header inside the clip view. Saved
         // offsets measure distance from that inset-adjusted top, not document Y.
         let topOrigin = -scroll.contentView.contentInsets.top
