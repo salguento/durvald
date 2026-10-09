@@ -1,13 +1,5 @@
 import SwiftUI
 
-struct ArtistToolbarBackgroundPreferenceKey: PreferenceKey {
-    static let defaultValue: Visibility? = nil
-
-    static func reduce(value: inout Visibility?, nextValue: () -> Visibility?) {
-        if let next = nextValue() { value = next }
-    }
-}
-
 @Observable
 final class ArtistToolbarState {
     var searchText = ""
@@ -143,20 +135,20 @@ struct ArtistView: View {
         }
     }
 
+    private var pageChrome: PageChromePolicy {
+        PageChromePolicy(kind: .artist, queuePresented: false,
+                         scrolled: isArtistScrolled, hovered: isTopbarHovered)
+    }
+
     private var artistPage: some View {
         GeometryReader { visible in
             GeometryReader { geometry in
-                let visibleFrame = visible.frame(in: .global)
-                let fullFrame = geometry.frame(in: .global)
-                let sideInsets = EdgeInsets(
-                    top: 0,
-                    leading: max(0, visibleFrame.minX - fullFrame.minX),
-                    bottom: 0,
-                    trailing: max(0, fullFrame.maxX - visibleFrame.maxX)
-                )
+                let viewport = PageViewport(visibleFrame: visible.frame(in: .global),
+                                            canvasFrame: geometry.frame(in: .global))
+                let sideInsets = viewport.sideInsets
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        artistHeaderArtwork(width: visible.size.width + sideInsets.leading)
+                        artistHeaderArtwork(width: viewport.leadingExpandedWidth)
                         .overlay {
                             GeometryReader { header in
                                 let titleY = header.size.height * 2 / 3 + 32
@@ -186,9 +178,9 @@ struct ArtistView: View {
                         .accessibilityIdentifier("artist.header.\(artist.id)")
 
                         VStack(alignment: .leading, spacing: 24) {
-                            artistHighlights(width: visible.size.width, sideInsets: sideInsets)
+                            artistHighlights(viewport: viewport)
 
-                            discographySections(width: visible.size.width, sideInsets: sideInsets)
+                            discographySections(viewport: viewport)
 
                             if isLoading {
                                 ProgressView("Carregando artista…")
@@ -206,7 +198,7 @@ struct ArtistView: View {
                         .padding(.trailing, sideInsets.trailing)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                        artistFooter(width: visible.size.width, sideInsets: sideInsets)
+                        artistFooter(viewport: viewport)
                             .padding(.leading, sideInsets.leading)
                             .padding(.trailing, sideInsets.trailing)
                     }
@@ -214,9 +206,9 @@ struct ArtistView: View {
                     .background(pageBackgroundColor)
                 }
                 .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-                .scrollEdgeEffectHidden(!isArtistScrolled && !isTopbarHovered, for: .top)
+                .scrollEdgeEffectHidden(pageChrome.hidesTopScrollEdge, for: .top)
                 .onScrollGeometryChange(for: Bool.self) {
-                    $0.contentOffset.y + $0.contentInsets.top > 1
+                    PageChromePolicy.isScrolled(offset: $0.contentOffset.y + $0.contentInsets.top)
                 } action: { _, scrolled in
                     isArtistScrolled = scrolled
                 }
@@ -224,17 +216,17 @@ struct ArtistView: View {
             }
             // Draw the actual scrolling page under both panels. Only interactive
             // content receives side margins; no reflected background is generated.
-            .ignoresSafeArea(.container, edges: .horizontal)
+            .ignoresSafeArea(.container, edges: pageChrome.canvasSafeAreaEdges)
         }
-        .ignoresSafeArea(.container, edges: [.top, .bottom])
+        .ignoresSafeArea(.container, edges: pageChrome.visibleSafeAreaEdges)
         .background {
             TopbarHoverObserver(isHovered: $isTopbarHovered)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
         .preference(
-            key: ArtistToolbarBackgroundPreferenceKey.self,
-            value: isArtistScrolled ? .automatic : (isTopbarHovered ? .visible : .hidden)
+            key: PageToolbarBackgroundPreferenceKey.self,
+            value: pageChrome.toolbarVisibility
         )
         .onChange(of: tracks, initial: true) { _, value in
             toolbarState.tracks = value
@@ -1048,8 +1040,9 @@ struct ArtistView: View {
     }
 
     @ViewBuilder
-    private func discographySections(width: CGFloat, sideInsets: EdgeInsets) -> some View {
-        let scrollableWidth = width + sideInsets.leading + sideInsets.trailing
+    private func discographySections(viewport: PageViewport) -> some View {
+        let sideInsets = viewport.sideInsets
+        let scrollableWidth = viewport.expandedWidth
 
         if !albums.isEmpty {
             VStack(alignment: .leading, spacing: 16) {
@@ -1456,7 +1449,9 @@ struct ArtistView: View {
         }
     }
 
-    private func artistHighlights(width: CGFloat, sideInsets: EdgeInsets) -> some View {
+    private func artistHighlights(viewport: PageViewport) -> some View {
+        let width = viewport.visibleWidth
+        let sideInsets = viewport.sideInsets
         let highlightArtworkSize: CGFloat = 160
         let popularTrackRowHeight = highlightArtworkSize / 3
         let latestReleaseTitleFont = Font.system(
@@ -1465,7 +1460,7 @@ struct ArtistView: View {
         let latestReleaseMetadataFont = Font.system(
             size: NSFont.preferredFont(forTextStyle: .caption1).pointSize + 2
         )
-        let contentWidth = max(0, width + sideInsets.leading + sideInsets.trailing)
+        let contentWidth = viewport.expandedWidth
         // Size the blocks and scroll viewport from the visible content column.
         let initialVisibleWidth = max(0, width - 48)
         let latestReleaseBlockWidth = min(420, max(360, initialVisibleWidth * 0.40))
@@ -1918,8 +1913,10 @@ struct ArtistView: View {
         return mostPlayedLocalTracks
     }
 
-    private func artistFooter(width: CGFloat, sideInsets: EdgeInsets) -> some View {
-        let scrollableWidth = width + sideInsets.leading + sideInsets.trailing
+    private func artistFooter(viewport: PageViewport) -> some View {
+        let width = viewport.visibleWidth
+        let sideInsets = viewport.sideInsets
+        let scrollableWidth = viewport.expandedWidth
 
         return VStack(alignment: .leading, spacing: 36) {
             VStack(alignment: .leading, spacing: 16) {

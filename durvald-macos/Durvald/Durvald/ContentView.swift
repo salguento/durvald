@@ -43,7 +43,7 @@ struct ContentView: View {
     @State private var musicSearchText = ""
     @State private var contentColumnWidth: CGFloat = 0
     @State private var fullDetailColumnWidth: CGFloat = 0
-    @State private var libraryToolbarMeasurements: [String: LibraryToolbarMeasurement] = [:]
+    @State private var libraryToolbarMeasurements: [String: PageToolbarMeasurement] = [:]
     @State private var isLibrarySearchExpanded = false
     @State private var musicLibrarySummary = MusicLibrarySummary(tracks: [], kind: .all)
     @State private var shell = ContentShellState()
@@ -63,9 +63,9 @@ struct ContentView: View {
         static let compactNavigationWidth: CGFloat = 700
         static let contentMinimumWidth = WindowSplitLayoutPolicy.contentMinimumWidth
         static let queueMinimumWidth: CGFloat = 260
-        static let queueIdealWidth: CGFloat = 300
+        static let queueIdealWidth = PageChromePolicy.queueWidth
         static let queueMaximumWidth: CGFloat = 380
-        static let queueToggleWidth: CGFloat = 38
+        static let queueToggleWidth = PageChromePolicy.queueToggleWidth
         static let playerHorizontalMargin: CGFloat = 32
         static let playerTopMargin: CGFloat = 12
     }
@@ -113,7 +113,7 @@ struct ContentView: View {
             contentToolbarBackgroundVisibility,
             for: .windowToolbar
         )
-        .onPreferenceChange(ArtistToolbarBackgroundPreferenceKey.self) { visibility in
+        .onPreferenceChange(PageToolbarBackgroundPreferenceKey.self) { visibility in
             var transaction = Transaction(animation: nil)
             transaction.disablesAnimations = true
             withTransaction(transaction) { artistToolbarBackground = visibility ?? .hidden }
@@ -247,19 +247,19 @@ struct ContentView: View {
         }
             .onChange(of: shell.navigationHistory.currentEntryID, initial: true) { _, entryID in
                 if shell.navigationHistory.current == .songs { musicEntryID = entryID }
-                isContentScrolled = pageScrollOffsets.offset(for: entryID) > 1
+                isContentScrolled = PageChromePolicy.isScrolled(offset: pageScrollOffsets.offset(for: entryID))
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
-                if shell.isQueuePresented && !isArtistDetail {
+                if pageChrome.kind == .standard && pageChrome.observesHover {
                     TopbarHoverObserver(isHovered: $isContentTopbarHovered)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
             }
             .overlay {
-                if shell.isQueuePresented && !isArtistDetail {
-                    PageTopbarBackground(isVisible: isContentScrolled || isContentTopbarHovered)
+                if pageChrome.usesPageBackdrop {
+                    PageTopbarBackground(isVisible: pageChrome.backdropVisible)
                         .ignoresSafeArea(.container, edges: .top)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
@@ -278,7 +278,7 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
                     .padding(.horizontal, Layout.playerHorizontalMargin)
-                    .padding(.trailing, shell.isQueuePresented ? Layout.queueIdealWidth : 0)
+                    .padding(.trailing, pageChrome.queueReservation)
                     .padding(.top, Layout.playerTopMargin)
                     .padding(.bottom, 20)
                     .frame(maxWidth: .infinity)
@@ -312,7 +312,7 @@ struct ContentView: View {
                 .frame(minWidth: 180, idealWidth: 260, maxWidth: 300,
                        minHeight: 36, maxHeight: 36)
                 .animation(.easeOut(duration: 0.15), value: appearsActive)
-                .offset(x: shell.isQueuePresented ? -Layout.queueIdealWidth / 2 : 0)
+                .offset(x: pageChrome.globalSearchOffset)
             }
             .sharedBackgroundVisibility(.hidden)
         }
@@ -395,8 +395,9 @@ struct ContentView: View {
     }
 
     private var libraryToolbarDetailWidth: CGFloat {
-        fullDetailColumnWidth > 0 ? fullDetailColumnWidth
-            : contentColumnWidth + (shell.isQueuePresented ? Layout.queueIdealWidth : 0)
+        PageViewport.column(visibleWidth: contentColumnWidth,
+            measuredFullWidth: fullDetailColumnWidth,
+            trailingReservation: pageChrome.queueReservation).fullWidth
     }
 
     private var libraryExpandedControlsMinimumWidth: CGFloat {
@@ -408,28 +409,21 @@ struct ContentView: View {
     }
 
     private var libraryContentToolbar: some View {
-        let navigationWidth: CGFloat = shell.columnVisibility == .detailOnly ? 280 : 76
         let detailWidth = libraryToolbarDetailWidth
-        let measuredWidth = libraryToolbarMeasurements[libraryToolbarLayoutKey].map {
-            $0.availableWidth + detailWidth - $0.detailWidth
-        }
-        let hostWidth = max(80, measuredWidth
-                            ?? (detailWidth - navigationWidth - Layout.queueToggleWidth - 48))
-        let panelReservation = shell.isQueuePresented ? Layout.queueIdealWidth - Layout.queueToggleWidth - 16 : 0
-        let minimumWidth = (isArtistDetail ? 124 : 80) + panelReservation
-        // Keep the last native measurement for each sidebar configuration.
-        // The right overlay only reserves space inside this same toolbar item.
-        let preferredWidth = max(minimumWidth, hostWidth)
+        let layout = PageToolbarLayout(kind: pageChrome.kind, queuePresented: shell.isQueuePresented,
+                                       expandedMinimumWidth: libraryExpandedControlsMinimumWidth,
+                                       summaryLeadingPadding: Layout.librarySummaryLeadingPadding)
+        let panelReservation = layout.panelReservation
+        let minimumWidth = layout.minimumWidth
+        let preferredWidth = layout.preferredWidth(detailWidth: detailWidth,
+            sidebarVisible: shell.columnVisibility != .detailOnly,
+            measurement: libraryToolbarMeasurements[libraryToolbarLayoutKey])
 
         let content = GeometryReader { geometry in
-            // Decide from the space AppKit actually assigned, never from a
-            // preferred width that can lag behind the current resize frame.
-            let compact = geometry.size.width - panelReservation < libraryExpandedControlsMinimumWidth
-            let menuReservation: CGFloat = isArtistDetail ? 88 : 44
-            let searchWidth = min(220, max(36, geometry.size.width - panelReservation - menuReservation))
-            let controlsReservation: CGFloat = (compact ? 36 : searchWidth) + menuReservation
-            let summaryWidth = max(0, geometry.size.width - panelReservation - controlsReservation - 8
-                                   - Layout.librarySummaryLeadingPadding)
+            let controls = layout.controls(assignedWidth: geometry.size.width)
+            let compact = controls.compact
+            let searchWidth = controls.searchWidth
+            let summaryWidth = controls.summaryWidth
 
             ZStack(alignment: .trailing) {
                 if !isArtistDetail {
@@ -686,12 +680,14 @@ struct ContentView: View {
         pageScrollOffset(for: shell.navigationHistory.currentEntryID)
     }
 
+    private var pageChrome: PageChromePolicy {
+        PageChromePolicy(kind: isArtistDetail ? .artist : .standard,
+                         queuePresented: shell.isQueuePresented,
+                         scrolled: isContentScrolled, hovered: isContentTopbarHovered)
+    }
+
     private var contentToolbarBackgroundVisibility: Visibility {
-        if isArtistDetail { return artistToolbarBackground }
-        guard shell.isQueuePresented else { return .automatic }
-        // The explicit native backdrop supplies the material with the panel
-        // open; suppress the automatic one to avoid stacking two effects.
-        return .hidden
+        isArtistDetail ? artistToolbarBackground : pageChrome.toolbarVisibility
     }
 
     private func pageScrollOffset(for entryID: Int) -> Binding<CGFloat> {
@@ -700,7 +696,7 @@ struct ContentView: View {
             set: {
                 pageScrollOffsets.setOffset($0, for: entryID)
                 guard entryID == shell.navigationHistory.currentEntryID else { return }
-                let scrolled = $0 > 1
+                let scrolled = PageChromePolicy.isScrolled(offset: $0)
                 if isContentScrolled != scrolled { isContentScrolled = scrolled }
             }
         )
@@ -879,16 +875,12 @@ final class LibraryToolbarHostingView<Content: View>: NSView {
     }
 }
 
-private struct LibraryToolbarMeasurement {
-    let availableWidth: CGFloat
-    let detailWidth: CGFloat
-}
 
 private struct LibraryToolbarWidthObserver: NSViewRepresentable {
     let trailingReservation: CGFloat
     let detailWidth: CGFloat
     let layoutKey: String
-    @Binding var measurements: [String: LibraryToolbarMeasurement]
+    @Binding var measurements: [String: PageToolbarMeasurement]
 
     func makeNSView(context: Context) -> WidthObserverView { WidthObserverView() }
 
@@ -901,7 +893,7 @@ private struct LibraryToolbarWidthObserver: NSViewRepresentable {
             var transaction = Transaction(animation: nil)
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                measurements[layoutKey] = LibraryToolbarMeasurement(
+                measurements[layoutKey] = PageToolbarMeasurement(
                     availableWidth: width, detailWidth: detailWidth)
             }
         }

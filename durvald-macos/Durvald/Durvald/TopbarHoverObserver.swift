@@ -43,13 +43,10 @@ struct PageTopbarBackground: NSViewRepresentable {
             super.layout()
             guard let window, let content = window.contentView else { return }
             let pageRegion = convert(bounds, to: nil)
-            let contentRegion = content.convert(content.bounds, to: nil)
-            let titlebar = NSRect(
-                x: pageRegion.minX,
-                y: window.contentLayoutRect.maxY,
-                width: pageRegion.width,
-                height: max(0, contentRegion.maxY - window.contentLayoutRect.maxY)
-            )
+            let host = content.superview ?? content
+            let frameRegion = host.convert(host.bounds, to: nil)
+            let titlebar = TopbarHoverGeometry.region(page: pageRegion, layout: window.contentLayoutRect,
+                                                      frame: frameRegion)
             effect.frame = convert(titlebar, from: nil)
         }
     }
