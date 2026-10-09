@@ -26,7 +26,6 @@ enum ArtistTrackOrder: String, CaseIterable, Identifiable {
     }
 }
 
-
 struct ArtistView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -42,51 +41,123 @@ struct ArtistView: View {
     var informationOnly = false
     @Bindable var toolbarState = ArtistToolbarState()
 
-    @State private var lookupRevision: UInt64 = 0
-    @State private var lookups = PreparedLibraryListing(ArtistLookupSnapshot())
-    @State private var tracks: [Track] = [] {
-        didSet { lookupRevision &+= 1 }
+    @State private var presentation = ArtistPresentation()
+
+    private var lookupRevision: UInt64 {
+        get { presentation.lookupRevision }
+        nonmutating set { presentation.lookupRevision = newValue }
     }
-    @State private var albums: [Release] = [] {
-        didSet { lookupRevision &+= 1 }
+    private var lookups: PreparedLibraryListing<ArtistLookupSnapshot> {
+        get { presentation.lookups }
+        nonmutating set { presentation.lookups = newValue }
     }
-    @State private var details: ArtistDetails?
-    @State private var identity: ArtistIdentity?
-    @State private var identityCandidates: ArtistIdentityCandidates?
-    @State private var discographyItems: [ExternalReleaseGroup] = [] {
-        didSet { lookupRevision &+= 1 }
+    private var tracks: [Track] {
+        get { presentation.tracks }
+        nonmutating set { presentation.tracks = newValue }
     }
-    @State private var latestRelease: ExternalReleaseGroup?
-    @State private var discographyPageRevision: UInt64 = 0
-    @State private var discographyPage: ArtistDiscographyPage? {
-        didSet { discographyPageRevision &+= 1 }
+    private var albums: [Release] {
+        get { presentation.albums }
+        nonmutating set { presentation.albums = newValue }
     }
-    @State private var popularTracks: ArtistPopularTracks?
-    @State private var popularTrackArtworkIDs: [String: String] = [:]
-    @State private var popularTrackReleaseGroupIDs: [String: String] = [:]
-    @State private var releaseDetailsByGroupID: [String: ExternalReleaseDetails] = [:] {
-        didSet { lookupRevision &+= 1 }
+    private var details: ArtistDetails? {
+        get { presentation.details }
+        nonmutating set { presentation.details = newValue }
     }
-    @State private var isCachingReleaseTracks = false
-    @State private var similarArtistArtworkIDs: [Int64: String] = [:]
-    @State private var catalogRefreshResults: [ArtistRefreshSectionResult] = []
-    @State private var isRefreshingCatalog = false
-    @State private var isLoadingMoreDiscography = false
-    @State private var isIdentityPopoverPresented = false
-    @State private var identitySheetHeight: CGFloat = 500
-    @State private var isIdentityPickerPresented = false
-    @State private var isLoadingIdentityCandidates = false
-    @State private var isSavingIdentity = false
+    private var identity: ArtistIdentity? {
+        get { presentation.identity }
+        nonmutating set { presentation.identity = newValue }
+    }
+    private var identityCandidates: ArtistIdentityCandidates? {
+        get { presentation.identityCandidates }
+        nonmutating set { presentation.identityCandidates = newValue }
+    }
+    private var discographyItems: [ExternalReleaseGroup] {
+        get { presentation.discographyItems }
+        nonmutating set { presentation.discographyItems = newValue }
+    }
+    private var latestRelease: ExternalReleaseGroup? {
+        get { presentation.latestRelease }
+        nonmutating set { presentation.latestRelease = newValue }
+    }
+    private var discographyPageRevision: UInt64 {
+        get { presentation.discographyPageRevision }
+        nonmutating set { presentation.discographyPageRevision = newValue }
+    }
+    private var discographyPage: ArtistDiscographyPage? {
+        get { presentation.discographyPage }
+        nonmutating set { presentation.discographyPage = newValue }
+    }
+    private var popularTracks: ArtistPopularTracks? {
+        get { presentation.popularTracks }
+        nonmutating set { presentation.popularTracks = newValue }
+    }
+    private var popularTrackArtworkIDs: [String: String] {
+        get { presentation.popularTrackArtworkIDs }
+        nonmutating set { presentation.popularTrackArtworkIDs = newValue }
+    }
+    private var popularTrackReleaseGroupIDs: [String: String] {
+        get { presentation.popularTrackReleaseGroupIDs }
+        nonmutating set { presentation.popularTrackReleaseGroupIDs = newValue }
+    }
+    private var releaseDetailsByGroupID: [String: ExternalReleaseDetails] {
+        get { presentation.releaseDetailsByGroupID }
+        nonmutating set { presentation.releaseDetailsByGroupID = newValue }
+    }
+    private var isCachingReleaseTracks: Bool {
+        get { presentation.isCachingReleaseTracks }
+        nonmutating set { presentation.isCachingReleaseTracks = newValue }
+    }
+    private var similarArtistArtworkIDs: [Int64: String] {
+        get { presentation.similarArtistArtworkIDs }
+        nonmutating set { presentation.similarArtistArtworkIDs = newValue }
+    }
+    private var catalogRefreshResults: [ArtistRefreshSectionResult] {
+        get { presentation.catalogRefreshResults }
+        nonmutating set { presentation.catalogRefreshResults = newValue }
+    }
+    private var isRefreshingCatalog: Bool {
+        get { presentation.isRefreshingCatalog }
+        nonmutating set { presentation.isRefreshingCatalog = newValue }
+    }
+    private var isLoadingMoreDiscography: Bool {
+        get { presentation.isLoadingMoreDiscography }
+        nonmutating set { presentation.isLoadingMoreDiscography = newValue }
+    }
+    private var isIdentityPickerPresented: Bool {
+        get { presentation.isIdentityPickerPresented }
+        nonmutating set { presentation.isIdentityPickerPresented = newValue }
+    }
+    private var isLoadingIdentityCandidates: Bool {
+        get { presentation.isLoadingIdentityCandidates }
+        nonmutating set { presentation.isLoadingIdentityCandidates = newValue }
+    }
+    private var isSavingIdentity: Bool {
+        get { presentation.isSavingIdentity }
+        nonmutating set { presentation.isSavingIdentity = newValue }
+    }
+    private var selectedCandidateID: String? {
+        get { presentation.selectedCandidateID }
+        nonmutating set { presentation.selectedCandidateID = newValue }
+    }
+    private var isLoading: Bool {
+        get { presentation.isLoading }
+        nonmutating set { presentation.isLoading = newValue }
+    }
+
     @State private var isClearIdentityConfirmationPresented = false
-    @State private var selectedCandidateID: String?
+    @State private var identitySheetHeight: CGFloat = 500
+    @State private var isIdentityPopoverPresented = false
     @State private var isTopbarHovered = false
     @State private var isArtistScrolled = false
-    @State private var isLoading = true
     @State private var artworkAverageColor: NSColor?
     @ScaledMetric(relativeTo: .largeTitle) private var artistNameFontSize =
         NSFont.preferredFont(forTextStyle: .largeTitle).pointSize * 1.275 * 1.35
     private let headerControlHeight: CGFloat = 36
     private let headerIconControlWidth: CGFloat = 38
+
+    private var artistRequest: ArtistPresentation.Request {
+        .init(artistID: artist.id, coreID: store.core.map(ObjectIdentifier.init), language: enrichmentLanguage)
+    }
 
     private var lookupKey: LibraryListingKey {
         LibraryListingKey(storeID: ObjectIdentifier(store), payloadRevision: lookupRevision, scope: String(artist.id))
@@ -124,12 +195,11 @@ struct ArtistView: View {
                     ContentUnavailableView("Informações do artista indisponíveis", systemImage: "person.crop.rectangle")
                 }
             }
-            .task(id: artist.id) {
-                albums = await store.releases(forArtistID: artist.id)
-                details = await store.artistDetails(artistId: artist.id, language: Locale.current.language.languageCode?.identifier ?? "en")
-                identity = await store.artistIdentity(artistId: artist.id)
+            .task(id: artistRequest) {
+                await presentation.load(artistID: artist.id, using: store,
+                                        language: enrichmentLanguage, informationOnly: true)
             }
-            .sheet(isPresented: $isIdentityPickerPresented) { identityPicker }
+            .sheet(isPresented: $presentation.isIdentityPickerPresented) { identityPicker }
         } else {
             artistPage
         }
@@ -235,87 +305,20 @@ struct ArtistView: View {
             toolbarState.isLoading = value
         }
         .task(id: lookupKey) {
-            let key = lookupKey
-            let payload = (tracks, albums, discographyItems, releaseDetailsByGroupID)
-            await lookups.prepare(key: key, payload: payload) { payload in
-                ArtistLookupSnapshot.build(tracks: payload.0, albums: payload.1, discography: payload.2,
-                                           details: payload.3)
-            }
+            await presentation.prepareLookups()
         }
         .task(id: store.metadataRevision) {
             guard store.metadataRevision > 0 else { return }
-            async let refreshedTracks = store.tracks(forArtistID: artist.id)
-            async let refreshedAlbums = store.releases(forArtistID: artist.id)
-            let result = await (refreshedTracks, refreshedAlbums)
-            tracks = result.0
-            albums = result.1
+            await presentation.refreshLocalLibrary(using: store, artistID: artist.id)
         }
-        .task(id: artist.id) {
-            isLoading = true
-            details = nil
+        .task(id: artistRequest) {
             artworkAverageColor = nil
-            identity = nil
-            identityCandidates = nil
-            selectedCandidateID = nil
-            discographyItems = []
-            latestRelease = nil
-            discographyPage = nil
-            popularTracks = nil
-            popularTrackArtworkIDs = [:]
-            popularTrackReleaseGroupIDs = [:]
-            releaseDetailsByGroupID = [:]
-            isCachingReleaseTracks = false
-            similarArtistArtworkIDs = [:]
-            catalogRefreshResults = []
-            async let loadedTracks = store.tracks(forArtistID: artist.id)
-            async let loadedAlbums = store.releases(forArtistID: artist.id)
-            async let loadedIdentity = store.artistIdentity(artistId: artist.id)
-            async let loadedDetails = store.artistDetails(
-                artistId: artist.id,
-                language: enrichmentLanguage
-            )
-            async let loadedDiscography = store.artistDiscography(artistId: artist.id)
-            async let loadedPopularTracks = store.artistPopularTracks(artistId: artist.id)
-            let (resolvedTracks, resolvedAlbums, resolvedIdentity, resolvedDetails, resolvedDiscography, resolvedPopularTracks) = await (
-                loadedTracks,
-                loadedAlbums,
-                loadedIdentity,
-                loadedDetails,
-                loadedDiscography,
-                loadedPopularTracks
-            )
-            tracks = resolvedTracks.sorted {
-                if $0.release != $1.release {
-                    return $0.release.localizedStandardCompare($1.release) == .orderedAscending
-                }
-                if $0.discNumber != $1.discNumber { return $0.discNumber < $1.discNumber }
-                if $0.trackNumber != $1.trackNumber { return $0.trackNumber < $1.trackNumber }
-                return $0.title.localizedStandardCompare($1.title) == .orderedAscending
-            }
-            albums = resolvedAlbums.sorted {
-                $0.title.localizedStandardCompare($1.title) == .orderedAscending
-            }
-            identity = resolvedIdentity
-            popularTracks = resolvedPopularTracks
-            details = resolvedDetails
-            if let resolvedDiscography {
-                applyDiscographyPage(resolvedDiscography, reset: true)
-            }
-            isLoading = false
-            if let synchronizedAlbums = await store.syncArtistReleaseMetadata(artistId: artist.id) {
-                albums = synchronizedAlbums.sorted {
-                    $0.title.localizedStandardCompare($1.title) == .orderedAscending
-                }
-            }
-            await cacheReleaseTracksAndResolvePopularArtwork()
+            await presentation.load(artistID: artist.id, using: store, language: enrichmentLanguage)
         }
         .task(id: discographyPageRevision) {
-            guard discographyPage != nil else { latestRelease = nil; return }
-            let release = await store.latestArtistRelease(artistId: artist.id)
-            guard !Task.isCancelled else { return }
-            latestRelease = release
+            await presentation.loadLatestRelease()
         }
-        .sheet(isPresented: $isIdentityPickerPresented) {
+        .sheet(isPresented: $presentation.isIdentityPickerPresented) {
             identityPicker
         }
         .sheet(isPresented: $isIdentityPopoverPresented) {
@@ -325,7 +328,7 @@ struct ArtistView: View {
             }
         }
         .onChange(of: store.releasesRevision) { _, _ in
-            albums = albums.map { store.loadedRelease(id: $0.id) ?? $0 }
+            presentation.reconcileReleases(using: store)
         }
         .onChange(of: store.isUpdatingLibraryMetadata) { wasUpdating, isUpdating in
             guard wasUpdating, !isUpdating else { return }
@@ -834,114 +837,27 @@ struct ArtistView: View {
     }
 
     private func presentIdentityPicker() {
-        selectedCandidateID = nil
-        if identity?.status != .resolved {
-            identityCandidates = nil
-        }
-        isIdentityPickerPresented = true
+        presentation.presentIdentityPicker()
     }
 
     private func loadIdentityCandidates() async {
-        guard !isLoadingIdentityCandidates, !isSavingIdentity else { return }
-        isLoadingIdentityCandidates = true
-        defer { isLoadingIdentityCandidates = false }
-
-        guard let result = await store.resolveArtistCandidates(artistId: artist.id) else {
-            identityCandidates = nil
-            return
-        }
-        identity = result.identity
-        identityCandidates = result
-        if let selectedCandidateID,
-           !result.candidates.contains(where: { $0.musicbrainzId == selectedCandidateID }) {
-            self.selectedCandidateID = nil
-        }
+        await presentation.loadIdentityCandidates()
     }
 
     private func confirmSelectedIdentity() async {
-        guard let selectedCandidateID, !isSavingIdentity else { return }
-        isSavingIdentity = true
-        defer { isSavingIdentity = false }
-
-        guard let confirmed = await store.confirmArtistIdentity(
-            artistId: artist.id,
-            musicbrainzId: selectedCandidateID
-        ) else { return }
-
-        identity = confirmed
-        identityCandidates = nil
-        self.selectedCandidateID = nil
-        isIdentityPickerPresented = false
-        await reloadCachedEnrichment()
-        await refreshEnrichment()
+        await presentation.confirmSelectedIdentity()
     }
 
     private func clearIdentity() async {
-        guard !isSavingIdentity else { return }
-        isSavingIdentity = true
-
-        guard let cleared = await store.clearArtistIdentity(artistId: artist.id) else {
-            isSavingIdentity = false
-            return
-        }
-        identity = cleared
-        identityCandidates = nil
-        selectedCandidateID = nil
-        await reloadCachedEnrichment()
-        isSavingIdentity = false
-
-        if cleared.status != .resolved {
-            await loadIdentityCandidates()
-        }
+        await presentation.clearIdentity()
     }
 
     private func reloadCachedEnrichment() async {
-        async let cachedDetails = store.artistDetails(
-            artistId: artist.id,
-            language: enrichmentLanguage
-        )
-        async let cachedDiscography = store.artistDiscography(artistId: artist.id)
-        async let cachedPopularTracks = store.artistPopularTracks(artistId: artist.id)
-        let (newDetails, newDiscography, newPopularTracks) = await (cachedDetails, cachedDiscography, cachedPopularTracks)
-        popularTracks = newPopularTracks
-        details = newDetails
-        catalogRefreshResults = []
-        if let newDiscography {
-            applyDiscographyPage(newDiscography, reset: true)
-        } else {
-            discographyItems = []
-            discographyPage = nil
-        }
+        await presentation.reloadCachedEnrichment()
     }
 
     private func refreshEnrichment(force: Bool = false) async {
-        guard !isRefreshingCatalog else { return }
-        isRefreshingCatalog = true
-        defer { isRefreshingCatalog = false }
-
-        async let refreshedDetails = store.refreshArtistDetailsWithResult(
-            artistId: artist.id,
-            language: enrichmentLanguage,
-            force: force
-        )
-        async let refreshedCatalog = store.refreshArtistCatalog(
-            artistId: artist.id,
-            language: enrichmentLanguage,
-            force: force
-        )
-        let (detailsRefresh, catalogResult) = await (refreshedDetails, refreshedCatalog)
-        popularTracks = await store.artistPopularTracks(artistId: artist.id)
-        if let newDetails = detailsRefresh.details {
-            details = newDetails
-        }
-        catalogRefreshResults = mergeRefreshResults(
-            detailsRefresh.result?.sections ?? [],
-            catalogResult?.sections ?? []
-        )
-        if catalogResult != nil,
-           let refreshedPage = await store.artistDiscography(artistId: artist.id) {
-            applyDiscographyPage(refreshedPage, reset: true)
-        }
+        await presentation.refreshEnrichment(force: force)
     }
 
     private func identityCalloutTitle(for identity: ArtistIdentity) -> String {
@@ -1365,88 +1281,16 @@ struct ArtistView: View {
         return timestamp.map { Date(timeIntervalSince1970: TimeInterval($0)) }
     }
 
-    private func mergeRefreshResults(_ groups: [ArtistRefreshSectionResult]...) -> [ArtistRefreshSectionResult] {
-        var merged: [ArtistRefreshSectionResult] = []
-        for result in groups.flatMap({ $0 }) {
-            if let index = merged.firstIndex(where: { $0.section == result.section }) {
-                merged[index] = result
-            } else {
-                merged.append(result)
-            }
-        }
-        return merged
-    }
-
-    private func mergeRefreshResults(_ incoming: [ArtistRefreshSectionResult]) {
-        catalogRefreshResults = mergeRefreshResults(catalogRefreshResults, incoming)
-    }
-
     private func retryEnrichmentSection(_ section: ArtistRefreshSection) async {
-        guard !isRefreshingCatalog else { return }
-        isRefreshingCatalog = true
-        defer { isRefreshingCatalog = false }
-        guard let result = await store.refreshArtistSections(
-            artistId: artist.id, language: enrichmentLanguage,
-            sections: [section], force: true
-        ) else { return }
-        mergeRefreshResults(result.sections)
-        switch section {
-        case .profile, .portrait, .similarArtists:
-            details = await store.artistDetails(
-                artistId: artist.id,
-                language: enrichmentLanguage
-            )
-
-        case .discography, .covers:
-            if let page = await store.artistDiscography(artistId: artist.id) {
-                applyDiscographyPage(page, reset: true)
-                await cacheReleaseTracksAndResolvePopularArtwork()
-            }
-
-        case .popularTracks:
-            popularTracks = await store.artistPopularTracks(artistId: artist.id)
-        }
-    }
-
-    private func applyDiscographyPage(_ page: ArtistDiscographyPage, reset: Bool) {
-        if reset || discographyPage?.catalogGeneration != page.catalogGeneration {
-            discographyItems = page.items
-        } else {
-            let known = Set(discographyItems.map(\.musicbrainzId))
-            discographyItems.append(contentsOf: page.items.filter { !known.contains($0.musicbrainzId) })
-        }
-        discographyPage = page
+        await presentation.retryEnrichmentSection(section)
     }
 
     private func loadMoreDiscography(from offset: UInt64) async {
-        guard !isLoadingMoreDiscography else { return }
-        isLoadingMoreDiscography = true
-        defer { isLoadingMoreDiscography = false }
-        if let page = await store.artistDiscography(artistId: artist.id, offset: offset) {
-            applyDiscographyPage(page, reset: false)
-            await cacheReleaseTracksAndResolvePopularArtwork()
-        }
+        await presentation.loadMoreDiscography(from: offset)
     }
 
     private func refreshCatalog() async {
-        guard !isRefreshingCatalog else { return }
-        isRefreshingCatalog = true
-        defer { isRefreshingCatalog = false }
-        let result = await store.refreshArtistCatalog(
-            artistId: artist.id,
-            language: enrichmentLanguage
-        )
-        popularTracks = await store.artistPopularTracks(artistId: artist.id)
-        if let result {
-            mergeRefreshResults(result.sections)
-        }
-        if result != nil, let page = await store.artistDiscography(artistId: artist.id) {
-            applyDiscographyPage(page, reset: true)
-            albums = await store.releases(forArtistID: artist.id).sorted {
-                $0.title.localizedStandardCompare($1.title) == .orderedAscending
-            }
-            await cacheReleaseTracksAndResolvePopularArtwork()
-        }
+        await presentation.refreshCatalog()
     }
 
     private func artistHighlights(viewport: PageViewport) -> some View {
@@ -2097,71 +1941,12 @@ struct ArtistView: View {
 
     @MainActor
     private func loadSimilarArtistPortrait(_ similar: SimilarArtist) async {
-        if let managedPath = similar.portrait?.managedPath {
-            similarArtistArtworkIDs[similar.artistId] = managedPath
-            return
-        }
-        guard store.enrichmentSettings?.enabled == true,
-              store.enrichmentSettings?.offline == false else { return }
-        _ = await store.refreshArtistSections(
-            artistId: similar.artistId,
-            language: enrichmentLanguage,
-            sections: [.portrait]
-        )
-        guard !Task.isCancelled,
-              let refreshed = await store.artistDetails(
-                  artistId: similar.artistId,
-                  language: enrichmentLanguage
-              ),
-              let managedPath = refreshed.portrait?.managedPath else { return }
-        similarArtistArtworkIDs[similar.artistId] = managedPath
+        await presentation.loadSimilarArtistPortrait(similar)
     }
 
     @MainActor
     private func cacheReleaseTracksAndResolvePopularArtwork() async {
-        guard !isCachingReleaseTracks else { return }
-        let pending = discographyItems.filter {
-            releaseDetailsByGroupID[$0.musicbrainzId] == nil
-        }
-        guard !pending.isEmpty else {
-            rebuildPopularTrackArtworkIDs()
-            return
-        }
-        isCachingReleaseTracks = true
-        defer { isCachingReleaseTracks = false }
-
-        for release in pending {
-            guard !Task.isCancelled else { return }
-            guard let releaseDetails = await store.externalReleaseDetails(
-                artistId: artist.id,
-                releaseGroupMbid: release.musicbrainzId,
-                reportErrors: false
-            ) else { continue }
-            releaseDetailsByGroupID[release.musicbrainzId] = releaseDetails
-            rebuildPopularTrackArtworkIDs()
-        }
-    }
-
-    private func rebuildPopularTrackArtworkIDs() {
-        var artworkByTitle: [String: String] = [:]
-        var releaseGroupByTitle: [String: String] = [:]
-        for release in discographyItems {
-            guard let details = releaseDetailsByGroupID[release.musicbrainzId] else { continue }
-            for track in details.tracks {
-                for key in PopularTrackTitle.keys(track.title) {
-                    if releaseGroupByTitle[key] == nil {
-                        releaseGroupByTitle[key] = release.musicbrainzId
-                    }
-                    if let artworkID = release.artwork?.image.managedPath,
-                       artworkByTitle[key] == nil {
-                        artworkByTitle[key] = artworkID
-                        releaseGroupByTitle[key] = release.musicbrainzId
-                    }
-                }
-            }
-        }
-        popularTrackArtworkIDs = artworkByTitle
-        popularTrackReleaseGroupIDs = releaseGroupByTitle
+        await presentation.cacheReleaseTracksAndResolvePopularArtwork()
     }
 
     private func popularExternalRelease(for title: String) -> ExternalReleaseGroup? {

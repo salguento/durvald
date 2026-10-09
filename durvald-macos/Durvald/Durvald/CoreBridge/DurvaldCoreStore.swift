@@ -70,8 +70,7 @@ final class DurvaldCoreStore {
         didSet { invalidateCatalog() }
     }
     private(set) var libraryCatalogRevision: UInt64 = 0
-    @ObservationIgnored private let catalogTracks = CatalogPageCache<Track>()
-    @ObservationIgnored private let catalogReleases = CatalogPageCache<Release>()
+    @ObservationIgnored private let libraryRepository: LibraryRepository
     var errorMessage: String?
     private(set) var appSettings: Settings?
     private(set) var audioOutputState: AudioOutputState?
@@ -99,7 +98,6 @@ final class DurvaldCoreStore {
     @ObservationIgnored private var favoriteEdits: [Int64: PersonalValueEdit<Bool>] = [:]
     @ObservationIgnored private var releaseRatingEdits: [Int64: PersonalValueEdit<UInt8?>] = [:]
     @ObservationIgnored private var ratingEdits: [Int64: PersonalValueEdit<UInt8?>] = [:]
-    @ObservationIgnored private let fileMetadata: FileMetadataRepository
     @ObservationIgnored private var historyRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var nowPlaying: NowPlayingCoordinator?
     @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
@@ -116,6 +114,7 @@ final class DurvaldCoreStore {
     private static let libraryBookmarksKey = "durvald.library-security-bookmarks"
     @ObservationIgnored private var activeLibraryScopes: [URL] = []
     @ObservationIgnored private var volumeTask: Task<Void, Never>?
+    @ObservationIgnored private let playbackCoordinator = PlaybackCoordinator()
     @ObservationIgnored private var isChangingTrack = false
     @ObservationIgnored private var isMovingQueue = false
     @ObservationIgnored private var seekTask: Task<Void, Never>?
@@ -157,7 +156,7 @@ final class DurvaldCoreStore {
         history: [PlaybackHistoryItem] = [],
         fileMetadata: FileMetadataRepository = FileMetadataRepository()
     ) {
-        self.fileMetadata = fileMetadata
+        self.libraryRepository = LibraryRepository(files: fileMetadata)
         self.core = core
         self.playback = playback
         self.activeTrackID = playback?.currentTrack?.id
@@ -195,39 +194,23 @@ final class DurvaldCoreStore {
 
     private func invalidateCatalog() {
         libraryCatalogRevision &+= 1
-        catalogTracks.invalidate()
-        catalogReleases.invalidate()
+        libraryRepository.invalidate()
         historyRepository.invalidateTracks()
     }
 
     /// File metadata shared by all collections, scoped to this catalog revision.
     func fileSizes(for paths: [String]) async throws -> [String: Int64] {
-        let revision = libraryCatalogRevision
-        let sizes = try await fileMetadata.read(paths, revision: revision)
-        try Task.checkCancellation()
-        guard revision == libraryCatalogRevision else { throw CancellationError() }
-        return sizes
+        try await libraryRepository.fileSizes(for: paths)
     }
 
     /// Complete snapshots shared by library screens and playlist import. These
     /// do not mutate the visible, paginated collections or gate initial rendering.
     func completeCatalogTracks() async throws -> [Track] {
-        try Task.checkCancellation()
-        if hasLoadedAllTracks { return tracks }
-        guard let core else { return tracks }
-        return try await catalogTracks.load {
-            let page = try await core.tracksPage(pageSize: 1_000, offset: $0)
-            return (page.items, page.nextOffset)
-        }
+        try await libraryRepository.completeTracks(core: core, visible: tracks, isComplete: hasLoadedAllTracks)
     }
 
     func completeCatalogReleases() async throws -> [Release] {
-        try Task.checkCancellation()
-        guard let core else { return releases }
-        return try await catalogReleases.load {
-            let page = try await core.releasesPage(pageSize: 1_000, offset: $0)
-            return (page.items, page.nextOffset)
-        }
+        try await libraryRepository.completeReleases(core: core, visible: releases)
     }
 
     func activateSystemMediaControls() {
@@ -991,55 +974,13 @@ final class DurvaldCoreStore {
         }
 
         do {
-            let tracks = try await core.releaseTracks(releaseId: releaseID).sorted {
-                if $0.discNumber != $1.discNumber {
-                    return $0.discNumber < $1.discNumber
-                }
-
-                if $0.trackNumber != $1.trackNumber {
-                    return $0.trackNumber < $1.trackNumber
-                }
-
-                return $0.id < $1.id
-            }
-
-            guard !tracks.isEmpty else {
-                errorMessage = "Este álbum não possui faixas."
-                return
-            }
-
-            let startIndex: Array<Track>.Index
-            if let trackID {
-                guard let selectedIndex = tracks.firstIndex(where: { $0.id == trackID }) else {
-                    errorMessage = "A faixa selecionada não pertence a este álbum."
-                    return
-                }
-                startIndex = selectedIndex
-            } else {
-                startIndex = tracks.startIndex
-            }
-
-            var selectedTracks = Array(tracks[startIndex...])
-            if shuffleEnabled == true {
-                selectedTracks.shuffle()
-            }
-
-            guard let firstTrack = selectedTracks.first else { return }
-
-            try await core.clearQueue()
-            playback = try await core.play(trackId: firstTrack.id)
-
-            for track in selectedTracks.dropFirst() {
-                try await core.addToQueue(trackId: track.id)
-            }
-
-            if let shuffleEnabled {
-                playback = try await core.setShuffleEnabled(enabled: shuffleEnabled)
-            }
-
+            guard self.core === core else { return }
+            try await playbackCoordinator.playRelease(id: releaseID, startingAt: trackID, shuffle: shuffleEnabled, core: core,
+                isCurrent: { self.core === core }, publish: { self.playback = $0 })
+            guard self.core === core else { return }
             await refreshPlayback()
         } catch {
-            errorMessage = String(describing: error)
+            if self.core === core { errorMessage = String(describing: error) }
         }
     }
 
@@ -1058,25 +999,13 @@ final class DurvaldCoreStore {
         }
 
         do {
-            let orderedTracks: [Track]
-            if let trackID,
-               let startIndex = tracks.firstIndex(where: { $0.id == trackID }) {
-                orderedTracks = Array(tracks[startIndex...])
-            } else {
-                orderedTracks = tracks
-            }
-            let selectedTracks = shuffleEnabled ? orderedTracks.shuffled() : orderedTracks
-            guard let firstTrack = selectedTracks.first else { return }
-
-            try await core.clearQueue()
-            playback = try await core.play(trackId: firstTrack.id)
-            for track in selectedTracks.dropFirst() {
-                try await core.addToQueue(trackId: track.id)
-            }
-            playback = try await core.setShuffleEnabled(enabled: shuffleEnabled)
+            guard self.core === core else { return }
+            try await playbackCoordinator.playTracks(tracks, startingAt: trackID, shuffle: shuffleEnabled, core: core,
+                isCurrent: { self.core === core }, publish: { self.playback = $0 })
+            guard self.core === core else { return }
             await refreshPlayback()
         } catch {
-            errorMessage = String(describing: error)
+            if self.core === core { errorMessage = String(describing: error) }
         }
     }
 
@@ -1095,32 +1024,13 @@ final class DurvaldCoreStore {
         }
 
         do {
-            let tracks = try await core.playlistTracks(playlistId: playlistID)
-            guard tracks.indices.contains(position) else {
-                errorMessage = "A posição selecionada não pertence a esta playlist."
-                return
-            }
-
-            var selectedTracks = Array(tracks[position...])
-            if shuffleEnabled == true {
-                selectedTracks.shuffle()
-            }
-
-            guard let firstTrack = selectedTracks.first else { return }
-            try await core.clearQueue()
-            playback = try await core.play(trackId: firstTrack.id)
-
-            for track in selectedTracks.dropFirst() {
-                try await core.addToQueue(trackId: track.id)
-            }
-
-            if let shuffleEnabled {
-                playback = try await core.setShuffleEnabled(enabled: shuffleEnabled)
-            }
-
+            guard self.core === core else { return }
+            try await playbackCoordinator.playPlaylist(id: playlistID, position: position, shuffle: shuffleEnabled, core: core,
+                isCurrent: { self.core === core }, publish: { self.playback = $0 })
+            guard self.core === core else { return }
             await refreshPlayback()
         } catch {
-            errorMessage = String(describing: error)
+            if self.core === core { errorMessage = String(describing: error) }
         }
     }
 
