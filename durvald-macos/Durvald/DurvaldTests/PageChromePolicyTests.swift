@@ -116,6 +116,16 @@ final class PageChromePolicyTests: XCTestCase {
         XCTAssertFalse(layout.controls(assignedWidth: 700).compact)
     }
 
+    func testExpandedCompactSearchReservesItsActualWidthWithoutHidingSummary() {
+        let layout = PageToolbarLayout(kind: .standard, queuePresented: false, expandedMinimumWidth: 400)
+        let collapsed = layout.controls(assignedWidth: 360)
+        let expanded = layout.controls(assignedWidth: 360, searchExpanded: true)
+        XCTAssertTrue(expanded.compact)
+        XCTAssertEqual(expanded.searchWidth, 220)
+        XCTAssertEqual(expanded.summaryWidth, 80)
+        XCTAssertEqual(collapsed.summaryWidth - expanded.summaryWidth, 220 - 36)
+    }
+
     func testSidebarFallbackAndArtistMinimumReserveTheirDifferentControls() {
         let standard = PageToolbarLayout(kind: .standard, queuePresented: false, expandedMinimumWidth: 400)
         let shown = standard.preferredWidth(detailWidth: 900, sidebarVisible: true, measurement: nil)

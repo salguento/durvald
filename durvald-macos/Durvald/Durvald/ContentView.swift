@@ -398,10 +398,9 @@ struct ContentView: View {
 
     private var libraryExpandedControlsMinimumWidth: CGFloat {
         if isArtistDetail { return 308 }
-        let textWidth = min(480, (librarySummaryText as NSString).size(withAttributes: [
-            .font: NSFont.preferredFont(forTextStyle: .caption1)
-        ]).width)
-        return textWidth + 220 + 44 + 8 + Layout.librarySummaryLeadingPadding
+        // Result counts change while typing; they must not switch the search
+        // between compact and expanded presentation.
+        return 120 + 220 + 44 + 8 + Layout.librarySummaryLeadingPadding
     }
 
     private var libraryContentToolbar: some View {
@@ -416,7 +415,8 @@ struct ContentView: View {
             measurement: libraryToolbarMeasurements[libraryToolbarLayoutKey])
 
         let content = GeometryReader { geometry in
-            let controls = layout.controls(assignedWidth: geometry.size.width)
+            let controls = layout.controls(assignedWidth: geometry.size.width,
+                                           searchExpanded: isLibrarySearchExpanded)
             let compact = controls.compact
             let searchWidth = controls.searchWidth
             let summaryWidth = controls.summaryWidth
@@ -431,8 +431,6 @@ struct ContentView: View {
                     .clipped()
                     .padding(.leading, Layout.librarySummaryLeadingPadding)
                     .frame(width: geometry.size.width, alignment: .leading)
-                    .opacity(compact && isLibrarySearchExpanded ? 0 : 1)
-                    .accessibilityHidden(compact && isLibrarySearchExpanded)
                 }
                 libraryTopbarControls(searchWidth: searchWidth, prefersCompact: compact)
                     .padding(.trailing, panelReservation)

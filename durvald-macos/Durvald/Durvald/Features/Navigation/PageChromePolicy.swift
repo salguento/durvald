@@ -79,12 +79,12 @@ struct PageToolbarLayout {
         return max(minimumWidth, hostWidth)
     }
 
-    func controls(assignedWidth: CGFloat) -> Controls {
+    func controls(assignedWidth: CGFloat, searchExpanded: Bool = false) -> Controls {
         let available = assignedWidth - panelReservation
         let compact = available < expandedMinimumWidth
         let menuWidth: CGFloat = kind == .artist ? 88 : 44
         let searchWidth = min(220, max(36, available - menuWidth))
-        let controlsWidth = (compact ? 36 : searchWidth) + menuWidth
+        let controlsWidth = (compact && !searchExpanded ? 36 : searchWidth) + menuWidth
         return Controls(compact: compact, searchWidth: searchWidth,
             summaryWidth: max(0, available - controlsWidth - 8 - summaryLeadingPadding))
     }
