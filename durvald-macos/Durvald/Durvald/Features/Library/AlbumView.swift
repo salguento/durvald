@@ -169,8 +169,10 @@ struct AlbumView: View {
                             RatingControl(
                                 rating: currentAlbum.rating,
                                 isEditable: true,
-                                onChange: { rating in
-                                    store.setReleaseRating(releaseID: currentAlbum.id, rating: rating)
+                                identity: .release(currentAlbum.id),
+                                onCommit: { rating in
+                                    await store.setReleaseRating(releaseID: currentAlbum.id, rating: rating,
+                                                                 fallbackRelease: currentAlbum)
                                 }
                             )
                             .padding(.top, 6)
@@ -308,12 +310,12 @@ struct AlbumView: View {
     private func ratingMenu(releaseID: Int64, rating: UInt8?) -> some View {
         Menu("Avaliação") {
             Button("Sem avaliação") {
-                store.setReleaseRating(releaseID: releaseID, rating: nil)
+                Task { await store.setReleaseRating(releaseID: releaseID, rating: nil, fallbackRelease: currentAlbum) }
             }
             Divider()
             ForEach(1...5, id: \.self) { value in
                 Button {
-                    store.setReleaseRating(releaseID: releaseID, rating: UInt8(value))
+                    Task { await store.setReleaseRating(releaseID: releaseID, rating: UInt8(value), fallbackRelease: currentAlbum) }
                 } label: {
                     Label(
                         "\(value) de 5",
@@ -567,21 +569,16 @@ struct AlbumView: View {
                     Task { await TrackRowPlayback.release(album.id, startingAt: track.id).perform(using: store) }
                 },
                 onToggleFavorite: { isFavorite in
-                    if let index = tracks.firstIndex(where: { $0.id == track.id }) {
-                        tracks[index].isFavorite = isFavorite
-                    }
-                    Task { await store.setTrackFavorite(trackID: track.id, favorite: isFavorite) }
+                    await store.setTrackFavorite(trackID: track.id, favorite: isFavorite, fallbackTrack: track)
                 }
             ) {
                 if ratingsEnabled {
                     RatingControl(
                         rating: model.rating,
                         isEditable: true,
-                        onChange: { rating in
-                            if let index = tracks.firstIndex(where: { $0.id == track.id }) {
-                                tracks[index].rating = rating
-                            }
-                            Task { await store.setTrackRating(trackID: track.id, rating: rating) }
+                        identity: .track(track.id),
+                        onCommit: { rating in
+                            await store.setTrackRating(trackID: track.id, rating: rating, fallbackTrack: track)
                         }
                     )
                 }

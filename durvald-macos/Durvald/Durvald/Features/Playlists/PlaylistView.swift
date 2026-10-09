@@ -540,21 +540,16 @@ struct PlaylistView: View {
                     }
                 },
                 onToggleFavorite: { isFavorite in
-                    if let index = tracks.firstIndex(where: { $0.id == track.id }) {
-                        tracks[index].isFavorite = isFavorite
-                    }
-                    Task { await store.setTrackFavorite(trackID: track.id, favorite: isFavorite) }
+                    await store.setTrackFavorite(trackID: track.id, favorite: isFavorite, fallbackTrack: track)
                 }
             ) {
                 if ratingsEnabled {
                     RatingControl(
                         rating: model.rating,
                         isEditable: true,
-                        onChange: { rating in
-                            if let index = tracks.firstIndex(where: { $0.id == track.id }) {
-                                tracks[index].rating = rating
-                            }
-                            Task { await store.setTrackRating(trackID: track.id, rating: rating) }
+                        identity: .track(track.id),
+                        onCommit: { rating in
+                            await store.setTrackRating(trackID: track.id, rating: rating, fallbackTrack: track)
                         }
                     )
                 }

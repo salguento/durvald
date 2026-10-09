@@ -192,7 +192,7 @@ struct PlayerBar: View {
 
     private func trackActions(_ track: Track?, album: Release?, artist: Artist?) -> some View {
         let isFavorite = track?.isFavorite == true
-        let favoriteLabel = isFavorite ? "Desfavoritar faixa" : "Favoritar faixa"
+        let favoriteLabel = PersonalValueLabels.favorite(isFavorite)
 
         return HStack(spacing: 8) {
             Button {
@@ -211,7 +211,7 @@ struct PlayerBar: View {
             Button {
                 if let track {
                     Task {
-                        await store.setTrackFavorite(trackID: track.id, favorite: !isFavorite)
+                        await store.setTrackFavorite(trackID: track.id, favorite: !isFavorite, fallbackTrack: track)
                     }
                 }
             } label: {
@@ -229,18 +229,18 @@ struct PlayerBar: View {
             .buttonStyle(.plain)
             .help(favoriteLabel)
             .accessibilityLabel(favoriteLabel)
-            .accessibilityValue(isFavorite ? "Favorita" : "Não favorita")
+            .accessibilityValue(PersonalValueLabels.favoriteValue(isFavorite))
             .accessibilityIdentifier("player.favorite")
 
             if !isNarrow {
                 Menu {
                     if let track {
                         Button(
-                            track.isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
+                            PersonalValueLabels.favorite(track.isFavorite),
                             systemImage: track.isFavorite ? "star.slash" : "star"
                         ) {
                             Task {
-                                await store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite)
+                                await store.setTrackFavorite(trackID: track.id, favorite: !track.isFavorite, fallbackTrack: track)
                             }
                         }
                         Button("Adicionar à fila", systemImage: "text.badge.plus") {

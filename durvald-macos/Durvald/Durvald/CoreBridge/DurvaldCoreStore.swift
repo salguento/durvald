@@ -88,10 +88,17 @@ final class DurvaldCoreStore {
         didSet {
             invalidateCatalog()
             historyRepository.reset()
+            favoriteEdits.removeAll()
+            ratingEdits.removeAll()
+            releaseRatingEdits.removeAll()
         }
     }
     @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
     @ObservationIgnored let spectrumPolling = SpectrumPollingCoordinator()
+    @ObservationIgnored private let personalWrites = PersonalWriteQueue()
+    @ObservationIgnored private var favoriteEdits: [Int64: PersonalValueEdit<Bool>] = [:]
+    @ObservationIgnored private var releaseRatingEdits: [Int64: PersonalValueEdit<UInt8?>] = [:]
+    @ObservationIgnored private var ratingEdits: [Int64: PersonalValueEdit<UInt8?>] = [:]
     @ObservationIgnored private let fileMetadata: FileMetadataRepository
     @ObservationIgnored private var historyRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var nowPlaying: NowPlayingCoordinator?
@@ -1535,6 +1542,11 @@ final class DurvaldCoreStore {
             guard snapshot.currentTrack?.id == request.trackID else { return }
             snapshot.positionSeconds = Double(request.seconds)
         }
+        if var track = snapshot.currentTrack {
+            if let edit = favoriteEdits[track.id], edit.isPending { track.isFavorite = edit.value }
+            if let edit = ratingEdits[track.id], edit.isPending { track.rating = edit.value }
+            snapshot.currentTrack = track
+        }
         guard playback != snapshot else { return }
         playback = snapshot
     }
@@ -1580,53 +1592,76 @@ final class DurvaldCoreStore {
     }
     
 
-    func setTrackFavorite(trackID: Int64, favorite: Bool) async {
+    @discardableResult
+    func setTrackFavorite(trackID: Int64, favorite: Bool, fallbackTrack: Track? = nil) async -> Bool {
         guard let core else {
             errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
-            return
+            return false
         }
-
-        do {
-            try await core.setTrackFavorite(trackId: trackID, favorite: favorite)
-            if let index = tracks.firstIndex(where: { $0.id == trackID }) {
-                tracks[index].isFavorite = favorite
-            }
-            if playback?.currentTrack?.id == trackID {
-                playback?.currentTrack?.isFavorite = favorite
-            }
+        let baseline = loadedTrack(id: trackID)
+            ?? (playback?.currentTrack?.id == trackID ? playback?.currentTrack : nil) ?? fallbackTrack
+        let previous = baseline?.isFavorite ?? false
+        var edit = favoriteEdits[trackID] ?? PersonalValueEdit(previous)
+        let ticket = edit.begin(favorite)
+        favoriteEdits[trackID] = edit
+        publishFavorite(favorite, trackID: trackID)
+        return await personalWrites.perform(key: "favorite.\(trackID)") { [self] in
+            guard self.core === core else { return false }
+            let succeeded: Bool
+            do {
+                try await core.setTrackFavorite(trackId: trackID, favorite: favorite)
+                succeeded = true
+            } catch { if self.core === core { errorMessage = String(describing: error) }; succeeded = false }
+            guard self.core === core, var latest = favoriteEdits[trackID] else { return false }
+            latest.finish(ticket, succeeded: succeeded)
+            favoriteEdits[trackID] = latest.isPending ? latest : nil
+            publishFavorite(latest.value, trackID: trackID)
             metadataRevision &+= 1
-        } catch {
-            errorMessage = String(describing: error)
+            return succeeded
         }
     }
 
-    func setTrackRating(trackID: Int64, rating: UInt8?) async {
+    @discardableResult
+    func setTrackRating(trackID: Int64, rating: UInt8?, fallbackTrack: Track? = nil) async -> Bool {
         guard let core else {
             errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
-            return
+            return false
         }
-        let previous = tracks.first(where: { $0.id == trackID })?.rating
-        let previousPlaybackRating = playback?.currentTrack?.id == trackID
-            ? playback?.currentTrack?.rating
-            : nil
-        if let index = tracks.firstIndex(where: { $0.id == trackID }) {
+        let baseline = loadedTrack(id: trackID)
+            ?? (playback?.currentTrack?.id == trackID ? playback?.currentTrack : nil) ?? fallbackTrack
+        let previous = baseline?.rating
+        var edit = ratingEdits[trackID] ?? PersonalValueEdit(previous)
+        let ticket = edit.begin(rating)
+        ratingEdits[trackID] = edit
+        publishRating(rating, trackID: trackID)
+        return await personalWrites.perform(key: "rating.\(trackID)") { [self] in
+            guard self.core === core else { return false }
+            let succeeded: Bool
+            do {
+                try await core.setTrackRating(trackId: trackID, rating: rating)
+                succeeded = true
+            } catch { if self.core === core { errorMessage = String(describing: error) }; succeeded = false }
+            guard self.core === core, var latest = ratingEdits[trackID] else { return false }
+            latest.finish(ticket, succeeded: succeeded)
+            ratingEdits[trackID] = latest.isPending ? latest : nil
+            publishRating(latest.value, trackID: trackID)
+            metadataRevision &+= 1
+            return succeeded
+        }
+    }
+
+    private func publishFavorite(_ favorite: Bool, trackID: Int64) {
+        if let index = tracks.firstIndex(where: { $0.id == trackID }), tracks[index].isFavorite != favorite {
+            tracks[index].isFavorite = favorite
+        }
+        if playback?.currentTrack?.id == trackID { playback?.currentTrack?.isFavorite = favorite }
+    }
+
+    private func publishRating(_ rating: UInt8?, trackID: Int64) {
+        if let index = tracks.firstIndex(where: { $0.id == trackID }), tracks[index].rating != rating {
             tracks[index].rating = rating
         }
-        if playback?.currentTrack?.id == trackID {
-            playback?.currentTrack?.rating = rating
-        }
-        do {
-            try await core.setTrackRating(trackId: trackID, rating: rating)
-            metadataRevision &+= 1
-        } catch {
-            if let index = tracks.firstIndex(where: { $0.id == trackID }) {
-                tracks[index].rating = previous
-            }
-            if playback?.currentTrack?.id == trackID {
-                playback?.currentTrack?.rating = previousPlaybackRating
-            }
-            errorMessage = String(describing: error)
-        }
+        if playback?.currentTrack?.id == trackID { playback?.currentTrack?.rating = rating }
     }
 
     func refreshAfterMetadataEdit(_ info: TrackInfo) async {
@@ -1670,25 +1705,31 @@ final class DurvaldCoreStore {
         }
     }
 
-    func setReleaseRating(releaseID: Int64, rating: UInt8?) {
-        guard let core else {
-            errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
-            return
+    @discardableResult
+    func setReleaseRating(releaseID: Int64, rating: UInt8?, fallbackRelease: Release? = nil) async -> Bool {
+        guard let core else { errorMessage = "O core ainda está abrindo. Tente novamente em instantes."; return false }
+        let previous = (releases.first { $0.id == releaseID } ?? fallbackRelease)?.rating
+        var edit = releaseRatingEdits[releaseID] ?? PersonalValueEdit(previous)
+        let ticket = edit.begin(rating)
+        releaseRatingEdits[releaseID] = edit
+        publishReleaseRating(rating, releaseID: releaseID)
+        return await personalWrites.perform(key: "release.rating.\(releaseID)") { [self] in
+            guard self.core === core else { return false }
+            let succeeded: Bool
+            do { try await core.setReleaseRating(releaseId: releaseID, rating: rating); succeeded = true }
+            catch { if self.core === core { errorMessage = String(describing: error) }; succeeded = false }
+            guard self.core === core, var latest = releaseRatingEdits[releaseID] else { return false }
+            latest.finish(ticket, succeeded: succeeded)
+            releaseRatingEdits[releaseID] = latest.isPending ? latest : nil
+            publishReleaseRating(latest.value, releaseID: releaseID)
+            metadataRevision &+= 1
+            return succeeded
         }
-        let previous = releases.first(where: { $0.id == releaseID })?.rating
-        if let index = releases.firstIndex(where: { $0.id == releaseID }) {
+    }
+
+    private func publishReleaseRating(_ rating: UInt8?, releaseID: Int64) {
+        if let index = releases.firstIndex(where: { $0.id == releaseID }), releases[index].rating != rating {
             releases[index].rating = rating
-        }
-        Task {
-            do {
-                try await core.setReleaseRating(releaseId: releaseID, rating: rating)
-                metadataRevision &+= 1
-            } catch {
-                if let index = releases.firstIndex(where: { $0.id == releaseID }) {
-                    releases[index].rating = previous
-                }
-                errorMessage = String(describing: error)
-            }
         }
     }
 

@@ -101,10 +101,10 @@ struct MusicLibraryView: View {
                     Task { await store.loadMoreTracks(ifNeededAfter: trackID) }
                 },
                 onFavoriteChange: { track, favorite in
-                    Task { await store.setTrackFavorite(trackID: track.id, favorite: favorite) }
+                    await store.setTrackFavorite(trackID: track.id, favorite: favorite, fallbackTrack: track)
                 },
                 onRatingChange: { track, rating in
-                    Task { await store.setTrackRating(trackID: track.id, rating: rating) }
+                    await store.setTrackRating(trackID: track.id, rating: rating, fallbackTrack: track)
                 },
                 configureMenu: { controller, track in
                     controller.configure(

@@ -82,23 +82,31 @@ extension View {
 
 struct TrackListTrailingControls<AdditionalControls: View>: View {
     @Environment(DurvaldCoreStore.self) private var store
-    @State private var optimisticFavorite: Bool? = nil
+    @State private var favoriteEdit = PersonalValueEdit(false)
 
     let track: Track
     let onPlay: () -> Void
-    let onToggleFavorite: (Bool) -> Void
+    let onToggleFavorite: (Bool) async -> Bool
     @ViewBuilder let additionalControls: () -> AdditionalControls
 
+    init(track: Track, onPlay: @escaping () -> Void,
+         onToggleFavorite: @escaping (Bool) async -> Bool,
+         @ViewBuilder additionalControls: @escaping () -> AdditionalControls) {
+        self.track = track
+        self.onPlay = onPlay
+        self.onToggleFavorite = onToggleFavorite
+        self.additionalControls = additionalControls
+        _favoriteEdit = State(initialValue: PersonalValueEdit(track.isFavorite))
+    }
+
     private var isFavorite: Bool {
-        optimisticFavorite ?? TrackRowModel(track).isFavorite
+        favoriteEdit.value
     }
 
     var body: some View {
         HStack(spacing: 8) {
             Button {
-                let newValue = !isFavorite
-                optimisticFavorite = newValue
-                onToggleFavorite(newValue)
+                toggleFavorite()
             } label: {
                 Image(systemName: isFavorite ? "star.fill" : "star")
                     .foregroundStyle(isFavorite ? Color.accentColor : .secondary)
@@ -126,9 +134,7 @@ struct TrackListTrailingControls<AdditionalControls: View>: View {
                     TrackRowModel.favoriteLabel(isFavorite),
                     systemImage: isFavorite ? "star.slash" : "star"
                 ) {
-                    let newValue = !isFavorite
-                    optimisticFavorite = newValue
-                    onToggleFavorite(newValue)
+                    toggleFavorite()
                 }
             } label: {
                 Image(systemName: "ellipsis")
@@ -143,10 +149,16 @@ struct TrackListTrailingControls<AdditionalControls: View>: View {
             .accessibilityLabel("Opções da faixa")
             .trackOptionsMenu(track: track, onPlay: onPlay)
         }
-        .onChange(of: track.isFavorite) { _, newValue in
-            if optimisticFavorite == newValue {
-                optimisticFavorite = nil
-            }
+        .onChange(of: track.id, initial: true) { _, _ in favoriteEdit.reset(track.isFavorite) }
+        .onChange(of: track.isFavorite) { _, value in favoriteEdit.receive(value) }
+    }
+
+    private func toggleFavorite() {
+        let value = !favoriteEdit.value
+        let ticket = favoriteEdit.begin(value)
+        Task { @MainActor in
+            let succeeded = await onToggleFavorite(value)
+            favoriteEdit.finish(ticket, succeeded: succeeded)
         }
     }
 
@@ -487,6 +499,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
     private var selectedTracks: [Track] = []
     private var track: Track?
     private var album: Release?
+    private var albumRatingEdit = PersonalValueEdit<UInt8?>(nil)
     private var sourcePlaylist: Playlist?
     private var onEditPlaylist: () -> Void = {}
     private var store: DurvaldCoreStore?
@@ -559,7 +572,14 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         self.sourcePlaylist = nil
         self.selectedTracks = []
         self.track = nil
-        self.album = store.loadedRelease(id: album.id) ?? album
+        let resolvedAlbum = store.loadedRelease(id: album.id) ?? album
+        if self.album?.id != resolvedAlbum.id {
+            albumRatingEdit.reset(resolvedAlbum.rating)
+        } else {
+            albumRatingEdit.receive(resolvedAlbum.rating)
+        }
+        self.album = resolvedAlbum
+        self.album?.rating = albumRatingEdit.value
         self.store = store
         playlists = store.playlists
         additionalActions = []
@@ -841,22 +861,30 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         let tracks = selectedTracks
         let favorite = !tracks.allSatisfy(\.isFavorite)
         Task {
-            for track in tracks { await store.setTrackFavorite(trackID: track.id, favorite: favorite) }
+            for track in tracks { await store.setTrackFavorite(trackID: track.id, favorite: favorite, fallbackTrack: track) }
         }
     }
 
     @objc private func setRating(_ sender: NSMenuItem) {
         let rating = sender.tag == 0 ? nil : UInt8(sender.tag)
         if let album, let store {
-            store.setReleaseRating(releaseID: album.id, rating: rating)
-            self.album?.rating = rating
+            let ticket = albumRatingEdit.begin(rating)
+            self.album?.rating = albumRatingEdit.value
             rebuildRootMenu()
+            Task { @MainActor [weak self] in
+                let succeeded = await store.setReleaseRating(releaseID: album.id, rating: rating,
+                                                            fallbackRelease: album)
+                guard let self, self.album?.id == album.id else { return }
+                albumRatingEdit.finish(ticket, succeeded: succeeded)
+                self.album?.rating = albumRatingEdit.value
+                rebuildRootMenu()
+            }
             return
         }
         guard let store else { return }
         let tracks = selectedTracks
         Task {
-            for track in tracks { await store.setTrackRating(trackID: track.id, rating: rating) }
+            for track in tracks { await store.setTrackRating(trackID: track.id, rating: rating, fallbackTrack: track) }
         }
     }
 

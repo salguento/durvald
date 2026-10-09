@@ -10,22 +10,28 @@ enum RatingPreferences {
 
 struct RatingControl: View {
     let rating: UInt8?
+    var identity: PersonalEditIdentity? = nil
     var isEditable = false
     var accentForeground: Color = .accentColor
     var onChange: (UInt8?) -> Void = { _ in }
-    @State private var selectedRating: UInt8?
+    var onCommit: ((UInt8?) async -> Bool)? = nil
+    @State private var edit: PersonalValueEdit<UInt8?>
 
     init(
         rating: UInt8?,
         isEditable: Bool = false,
         accentForeground: Color = .accentColor,
-        onChange: @escaping (UInt8?) -> Void = { _ in }
+        identity: PersonalEditIdentity? = nil,
+        onChange: @escaping (UInt8?) -> Void = { _ in },
+        onCommit: ((UInt8?) async -> Bool)? = nil
     ) {
         self.rating = rating
+        self.identity = identity
         self.isEditable = isEditable
         self.accentForeground = accentForeground
         self.onChange = onChange
-        _selectedRating = State(initialValue: rating)
+        self.onCommit = onCommit
+        _edit = State(initialValue: PersonalValueEdit(rating))
     }
 
     var body: some View {
@@ -33,24 +39,33 @@ struct RatingControl: View {
             ForEach(1...5, id: \.self) { value in
                 Button {
                     guard isEditable else { return }
-                    let updatedRating = selectedRating == UInt8(value) ? nil : UInt8(value)
-                    selectedRating = updatedRating
-                    onChange(updatedRating)
+                    let value = PersonalValueLabels.ratingAfterClick(UInt8(value), current: edit.value)
+                    let ticket = edit.begin(value)
+                    if let onCommit {
+                        Task { @MainActor in
+                            let succeeded = await onCommit(value)
+                            edit.finish(ticket, succeeded: succeeded)
+                        }
+                    } else {
+                        onChange(value)
+                        edit.finish(ticket, succeeded: true)
+                    }
                 } label: {
-                    Image(systemName: value <= Int(selectedRating ?? 0) ? "star.fill" : "star")
-                        .foregroundStyle(value <= Int(selectedRating ?? 0) ? accentForeground : Color.secondary)
+                    Image(systemName: value <= Int(edit.value ?? 0) ? "star.fill" : "star")
+                        .foregroundStyle(value <= Int(edit.value ?? 0) ? accentForeground : Color.secondary)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!isEditable)
-                .accessibilityLabel("\(value) de 5")
+                .accessibilityLabel(PersonalValueLabels.star(value))
             }
         }
+        .onChange(of: identity, initial: true) { _, _ in edit.reset(rating) }
         .onChange(of: rating) { _, updatedRating in
-            selectedRating = updatedRating
+            edit.receive(updatedRating)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Avaliação")
-        .accessibilityValue(selectedRating.map { "\($0) de 5" } ?? "Sem avaliação")
+        .accessibilityValue(PersonalValueLabels.rating(edit.value))
     }
 }

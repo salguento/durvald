@@ -1886,7 +1886,8 @@ struct ArtistView: View {
                 Task {
                     await store.setTrackFavorite(
                         trackID: track.id,
-                        favorite: !currentTrack.isFavorite
+                        favorite: !currentTrack.isFavorite,
+                        fallbackTrack: currentTrack
                     )
                 }
             },

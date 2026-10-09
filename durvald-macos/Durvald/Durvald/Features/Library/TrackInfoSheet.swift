@@ -214,7 +214,7 @@ struct TrackInfoSheet: View {
             if let info {
                 Button {
                     Task {
-                        await store.setTrackFavorite(trackID: trackID, favorite: !info.track.isFavorite)
+                        await store.setTrackFavorite(trackID: trackID, favorite: !info.track.isFavorite, fallbackTrack: info.track)
                         if let refreshed = try? await store.core?.trackInfo(trackId: trackID) { self.info = refreshed }
                     }
                 } label: {
@@ -269,7 +269,7 @@ struct TrackInfoSheet: View {
                 if ratingsEnabled {
                     row("Avaliação") {
                         RatingControl(rating: info.track.rating, isEditable: true,
-                                      accentForeground: accent, onChange: updateRating)
+                                      accentForeground: accent, identity: .track(trackID), onCommit: updateRating)
                             .accessibilityIdentifier("trackInfo.rating")
                     }
                 }
@@ -441,16 +441,11 @@ struct TrackInfoSheet: View {
         original = draft
     }
 
-    private func updateRating(_ rating: UInt8?) {
-        guard var info else { return }
-        info.track.rating = rating
-        self.info = info
-        Task {
-            await store.setTrackRating(trackID: trackID, rating: rating)
-            if let refreshed = try? await store.core?.trackInfo(trackId: trackID) {
-                self.info = refreshed
-            }
-        }
+    private func updateRating(_ rating: UInt8?) async -> Bool {
+        guard let info else { return false }
+        let succeeded = await store.setTrackRating(trackID: trackID, rating: rating, fallbackTrack: info.track)
+        if let refreshed = try? await store.core?.trackInfo(trackId: trackID) { self.info = refreshed }
+        return succeeded
     }
 
     private func load() async {

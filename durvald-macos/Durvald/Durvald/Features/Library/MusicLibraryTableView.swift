@@ -92,8 +92,8 @@ struct MusicLibraryTableView: NSViewRepresentable {
     let onLayoutChange: (MusicLibraryColumnLayout) -> Void
     let onPlay: (Track) -> Void
     let onLoadMore: (Int64) -> Void
-    var onFavoriteChange: (Track, Bool) -> Void = { _, _ in }
-    var onRatingChange: (Track, UInt8?) -> Void = { _, _ in }
+    var onFavoriteChange: (Track, Bool) async -> Bool = { _, _ in true }
+    var onRatingChange: (Track, UInt8?) async -> Bool = { _, _ in true }
     let configureMenu: (TrackMenuController, Track) -> Void
     let cellContent: (Track, MusicLibraryColumn) -> AnyView
 
@@ -510,9 +510,11 @@ struct MusicLibraryTableView: NSViewRepresentable {
             if value == .favorite || value == .rating {
                 let cell = (tableView.makeView(withIdentifier: identifier, owner: nil) as? MusicLibraryNativeControlCell)
                     ?? MusicLibraryNativeControlCell(identifier: identifier, kind: value == .favorite ? .favorite : .rating)
+                let commitFavorite = parent.onFavoriteChange
+                let commitRating = parent.onRatingChange
                 cell.configure(track: track, selected: parent.selection.contains(track.id),
-                               onFavoriteChange: { [weak self] favorite in self?.parent.onFavoriteChange(track, favorite) },
-                               onRatingChange: { [weak self] rating in self?.parent.onRatingChange(track, rating) })
+                               onFavoriteChange: { favorite in await commitFavorite(track, favorite) },
+                               onRatingChange: { rating in await commitRating(track, rating) })
                 return cell
             }
             if value == .title {

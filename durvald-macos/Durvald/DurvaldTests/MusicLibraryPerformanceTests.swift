@@ -35,7 +35,7 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         let beforeRollback = store.tracksRevision
         await store.setTrackRating(trackID: Fixtures.track.id, rating: 5)
         XCTAssertEqual(store.tracks.first?.rating, 3)
-        XCTAssertEqual(store.metadataRevision, metadataRevision)
+        XCTAssertEqual(store.metadataRevision, metadataRevision + 1, "Rollback invalidates collection snapshots too")
         XCTAssertGreaterThanOrEqual(store.tracksRevision, beforeRollback + 2)
         XCTAssertNotEqual(MusicLibraryPresentation().catalogRequest(for: store), request)
     }
@@ -131,11 +131,11 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         XCTAssertEqual(table.numberOfRows, 1)
     }
 
-    func testNativeControlsToggleClearAndReplaceActionsOnReuse() {
+    func testNativeControlsToggleClearAndReplaceActionsOnReuse() async {
         let favorite = MusicLibraryNativeControlCell(identifier: .init("favorite"), kind: .favorite)
         var favoriteChanges: [Bool] = []
         favorite.configure(track: Fixtures.track, selected: false,
-                           onFavoriteChange: { favoriteChanges.append($0) }, onRatingChange: { _ in })
+                           onFavoriteChange: { favoriteChanges.append($0); return true }, onRatingChange: { _ in true })
         XCTAssertTrue(favorite.buttons[0].isHidden)
         let row = HoveringMusicRow()
         row.addSubview(favorite)
@@ -146,6 +146,7 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         favorite.updateHoverVisibility()
         XCTAssertTrue(favorite.buttons[0].isHidden)
         favorite.buttons[0].performClick(nil)
+        await Task.yield()
         XCTAssertEqual(favoriteChanges, [true])
         XCTAssertFalse(favorite.buttons[0].isHidden)
         XCTAssertEqual(favorite.buttons[0].accessibilityLabel(), "Desfavoritar faixa")
@@ -153,20 +154,23 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         var replacement = Fixtures.track(id: 2, trackNumber: 2, discNumber: 1)
         replacement.isFavorite = true
         favorite.configure(track: replacement, selected: true,
-                           onFavoriteChange: { replacementChanges.append($0) }, onRatingChange: { _ in })
+                           onFavoriteChange: { replacementChanges.append($0); return true }, onRatingChange: { _ in true })
         favorite.buttons[0].performClick(nil)
+        await Task.yield()
         XCTAssertEqual(favoriteChanges, [true])
         XCTAssertEqual(replacementChanges, [false])
         XCTAssertEqual(favorite.buttons[0].accessibilityIdentifier(), "track.2.favorite")
         let rating = MusicLibraryNativeControlCell(identifier: .init("rating"), kind: .rating)
         var ratings: [UInt8?] = []
         rating.configure(track: Fixtures.track, selected: false,
-                         onFavoriteChange: { _ in }, onRatingChange: { ratings.append($0) })
+                         onFavoriteChange: { _ in true }, onRatingChange: { ratings.append($0); return true })
         rating.buttons[2].performClick(nil)
+        await Task.yield()
         XCTAssertEqual(ratings.count, 1)
         XCTAssertEqual(ratings[0], 3)
         XCTAssertTrue(rating.buttons.allSatisfy { !$0.isHidden })
         rating.buttons[2].performClick(nil)
+        await Task.yield()
         XCTAssertEqual(ratings.count, 2)
         XCTAssertNil(ratings[1])
         XCTAssertTrue(rating.buttons.allSatisfy(\.isHidden))
