@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(DurvaldCoreStore.self) private var store
-    @State private var draft = SettingsDraft(GeneralSettingsValues())
+    @State private var draft = EditingState(GeneralSettingsValues())
     @State private var selectedTab = SettingsTab.general
 
     private enum SettingsTab: Hashable {
@@ -27,14 +27,10 @@ struct SettingsView: View {
 
                 HStack {
                     Spacer()
-                    Button("Salvar") {
-                        store.updateSettings(
-                            crossFade: draft.value.crossFade,
-                            crossFadeDuration: UInt32(draft.value.crossFadeDuration),
-                            normalizeVolume: draft.value.normalizeVolume,
-                            explicitContent: draft.value.explicitContent
-                        )
-                    }
+                    if let error = draft.errorMessage { Text(error).foregroundStyle(.red) }
+                    Button("Salvar") { Task { await save() } }
+                        .disabled(!draft.isDirty || draft.isSaving || store.core == nil)
+
                 }
             }
             .padding()
@@ -66,14 +62,22 @@ struct SettingsView: View {
         }
         .frame(width: 600, height: 420)
         .background(WindowTrafficLightsHider(closesOnEscape: true))
-        .task { apply(store.appSettings) }
+        .task(id: store.core.map(ObjectIdentifier.init)) {
+            draft.refresh(store.appSettings.map(GeneralSettingsValues.init) ?? GeneralSettingsValues(),
+                          sourceID: store.core.map(ObjectIdentifier.init))
+        }
         .onChange(of: store.appSettings.map(GeneralSettingsValues.init)) { _, values in
             if let values { draft.receive(values) }
         }
     }
 
-    private func apply(_ settings: Settings?) {
-        guard let settings else { return }
-        draft.receive(GeneralSettingsValues(settings))
+    private func save() async {
+        guard let ticket = draft.beginSaving() else { return }
+        let submitted = ticket.value
+        let succeeded = await store.updateSettings(crossFade: submitted.crossFade,
+            crossFadeDuration: UInt32(submitted.crossFadeDuration), normalizeVolume: submitted.normalizeVolume,
+            explicitContent: submitted.explicitContent)
+        if succeeded { draft.finish(ticket, confirmed: submitted) }
+        else { draft.fail(ticket, message: store.errorMessage ?? "Não foi possível salvar as configurações.") }
     }
 }

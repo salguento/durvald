@@ -1970,31 +1970,30 @@ final class DurvaldCoreStore {
         }
     }
 
+    @discardableResult
     func updateSettings(
         crossFade: Bool,
         crossFadeDuration: UInt32,
         normalizeVolume: Bool,
         explicitContent: Bool
-    ) {
-        guard let core else { return }
-
-        Task {
-            do {
-                var settings = try await core.settings()
-
-                settings.crossFade = crossFade
-                settings.crossFadeDuration = crossFadeDuration
-                settings.normalizeVolume = normalizeVolume
-                settings.explicitContent = explicitContent
-
-                // Autoplay, fonte, qualidade e opções ainda não implementadas
-                // no cliente macOS permanecem intocados.
-                try await core.updateSettings(settings: settings)
-                guard self.core === core, !Task.isCancelled else { return }
-                publishSettings(settings)
-            } catch {
-                errorMessage = String(describing: error)
-            }
+    ) async -> Bool {
+        guard let core else { return false }
+        do {
+            var settings = try await core.settings()
+            guard self.core === core, !Task.isCancelled else { return false }
+            settings.crossFade = crossFade
+            settings.crossFadeDuration = crossFadeDuration
+            settings.normalizeVolume = normalizeVolume
+            settings.explicitContent = explicitContent
+            // Preserve settings outside this form.
+            try await core.updateSettings(settings: settings)
+            guard self.core === core, !Task.isCancelled else { return false }
+            publishSettings(settings)
+            return true
+        } catch {
+            guard self.core === core else { return false }
+            errorMessage = String(describing: error)
+            return false
         }
     }
 
@@ -2043,17 +2042,22 @@ final class DurvaldCoreStore {
         }
     }
 
-    func updateEqualizer(_ equalizer: EqualizerSettings) async {
-        guard let core else { return }
+    @discardableResult
+    func updateEqualizer(_ equalizer: EqualizerSettings) async -> Bool {
+        guard let core else { return false }
         do {
             var settings = try await core.settings()
+            guard self.core === core, !Task.isCancelled else { return false }
             settings.equalizer = equalizer
             try await core.updateSettings(settings: settings)
-            guard self.core === core, !Task.isCancelled else { return }
+            guard self.core === core, !Task.isCancelled else { return false }
             publishSettings(settings)
             await refreshEqualizerMetrics()
+            return self.core === core && !Task.isCancelled
         } catch {
+            guard self.core === core else { return false }
             errorMessage = String(describing: error)
+            return false
         }
     }
 
@@ -2379,15 +2383,18 @@ final class DurvaldCoreStore {
 
     /// Persiste novas preferências de enriquecimento e atualiza a propriedade observável.
     /// Não inicia nenhuma operação de rede.
-    func configureEnrichment(_ settings: EnrichmentSettings) {
-        guard let core else { return }
-        Task {
-            do {
-                try await core.configureEnrichment(settings: settings)
-                enrichmentSettings = settings
-            } catch {
-                errorMessage = String(describing: error)
-            }
+    @discardableResult
+    func configureEnrichment(_ settings: EnrichmentSettings) async -> Bool {
+        guard let core else { return false }
+        do {
+            try await core.configureEnrichment(settings: settings)
+            guard self.core === core, !Task.isCancelled else { return false }
+            enrichmentSettings = settings
+            return true
+        } catch {
+            guard self.core === core else { return false }
+            errorMessage = String(describing: error)
+            return false
         }
     }
 

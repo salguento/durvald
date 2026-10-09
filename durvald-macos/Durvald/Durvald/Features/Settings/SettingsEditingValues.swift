@@ -1,28 +1,5 @@
 import Foundation
 
-/// A remote snapshot can advance while the user keeps an unsaved draft.
-struct SettingsDraft<Value: Equatable> {
-    var value: Value
-    private(set) var snapshot: Value
-
-    init(_ value: Value) {
-        self.value = value
-        snapshot = value
-    }
-
-    var isDirty: Bool { value != snapshot }
-
-    mutating func receive(_ snapshot: Value) {
-        if !isDirty { value = snapshot }
-        self.snapshot = snapshot
-    }
-
-    mutating func reset(to snapshot: Value) {
-        value = snapshot
-        self.snapshot = snapshot
-    }
-}
-
 struct GeneralSettingsValues: Equatable {
     var crossFade = false
     var crossFadeDuration = 5

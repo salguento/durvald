@@ -47,12 +47,7 @@ struct BatchMetadataDraft: Equatable {
     func applying(to source: TrackMetadataEdit) throws -> TrackMetadataEdit {
         func number(_ field: BatchMetadataValue, name: String, maximum: UInt32) throws -> UInt32? {
             guard field.isEnabled else { return nil }
-            let value = field.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !value.isEmpty else { return nil }
-            guard let parsed = UInt32(value), parsed <= maximum, name != "Ano" || parsed > 0 else {
-                throw TrackMetadataDraft.DraftError.invalid("\(name): informe um número válido até \(maximum).")
-            }
-            return parsed
+            return try MetadataDraftValidation.number(field.text, name: name, maximum: maximum)
         }
         func required(_ field: BatchMetadataValue, current: String, name: String) throws -> String {
             guard field.isEnabled else { return current }
@@ -114,8 +109,13 @@ struct BatchMetadataOperationReceipt: Codable {
 @Observable
 final class BatchMetadataPresentation {
     var infos: [TrackInfo] = []
-    var draft: BatchMetadataDraft?
-    var isWorking = false
+    var editing = EditingState<BatchMetadataDraft?>(nil, isDirty: { value, _ in value?.hasChanges == true })
+    var draft: BatchMetadataDraft? {
+        get { editing.value }
+        set { editing.value = newValue }
+    }
+    private var isLoading = false
+    var isWorking: Bool { isLoading || editing.isSaving }
     var completed = 0
     var total = 0
     var failures: [BatchMetadataFailure] = []
@@ -128,18 +128,17 @@ final class BatchMetadataPresentation {
     }
     private var loadedRequest: Request?
     private var trackIDs: [Int64] = []
-    @ObservationIgnored private var writesInProgress = false
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
     func load(trackIDs: [Int64], using store: DurvaldCoreStore) async {
-        guard !writesInProgress else { return }
+        guard !editing.isSaving else { return }
         let selection = Request(trackIDs: trackIDs, coreID: store.core.map(ObjectIdentifier.init), storeID: ObjectIdentifier(store))
         if loadedRequest != selection {
             infos = []
-            draft = nil
+            editing.reset(to: nil)
             lastOperationTrackIDs = []
             failures = []
             statusMessage = nil
@@ -148,12 +147,13 @@ final class BatchMetadataPresentation {
         loadedRequest = selection
         let request = UUID()
         generation = request
+        isLoading = false
         guard infos.isEmpty, let core = store.core else {
             if store.core == nil { statusMessage = "A biblioteca ainda está abrindo." }
             return
         }
-        isWorking = true
-        defer { if generation == request { isWorking = false } }
+        isLoading = true
+        defer { if generation == request { isLoading = false } }
         total = trackIDs.count
         completed = 0
         failures = []
@@ -168,24 +168,23 @@ final class BatchMetadataPresentation {
             completed += 1
         }
         infos = loaded
-        draft = loaded.isEmpty ? nil : BatchMetadataDraft(infos: loaded)
+        editing.reset(to: loaded.isEmpty ? nil : BatchMetadataDraft(infos: loaded))
         lastOperationTrackIDs = BatchMetadataOperationReceipt.load(for: trackIDs, defaults: defaults)?.changedTrackIDs ?? []
-        isWorking = false
+        isLoading = false
         if !failures.isEmpty { statusMessage = "Algumas faixas não puderam ser carregadas." }
     }
 
     func save(using store: DurvaldCoreStore, writeChangesToFiles: Bool) async {
-        guard !isWorking, let core = store.core, let draft, draft.hasChanges else { return }
+        guard !isWorking, let core = store.core, let draft, editing.isDirty else { return }
         let edits: [TrackMetadataEdit]
         do {
             edits = try infos.map { try draft.applying(to: $0.metadata) }
         } catch {
-            statusMessage = error.localizedDescription
+            editing.errorMessage = error.localizedDescription
+            statusMessage = editing.errorMessage
             return
         }
-        isWorking = true
-        writesInProgress = true
-        defer { isWorking = false; writesInProgress = false }
+        guard let ticket = editing.beginSaving() else { return }
         failures = []
         completed = 0
         total = infos.count
@@ -208,7 +207,7 @@ final class BatchMetadataPresentation {
         if store.core === core, let last = refreshed.last { await store.refreshAfterMetadataEdit(last) }
         let failedIDs = Set(failures.map(\.trackID))
         infos = refreshed + infos.filter { failedIDs.contains($0.track.id) }
-        self.draft = infos.isEmpty ? nil : BatchMetadataDraft(infos: infos)
+        editing.finish(ticket, confirmed: infos.isEmpty ? nil : BatchMetadataDraft(infos: infos))
         statusMessage = failures.isEmpty
             ? "\(lastOperationTrackIDs.count) faixas atualizadas."
             : "\(lastOperationTrackIDs.count) atualizadas; \(failures.count) falharam."
@@ -216,14 +215,12 @@ final class BatchMetadataPresentation {
             selectedTrackIDs: trackIDs,
             changedTrackIDs: lastOperationTrackIDs
         ).persist(defaults: defaults)
-        isWorking = false
+        editing.errorMessage = failures.isEmpty ? nil : statusMessage
     }
 
     func undoLastOperation(using store: DurvaldCoreStore) async {
         guard !isWorking, let core = store.core, !lastOperationTrackIDs.isEmpty else { return }
-        isWorking = true
-        writesInProgress = true
-        defer { isWorking = false; writesInProgress = false }
+        guard let ticket = editing.beginSaving() else { return }
         failures = []
         completed = 0
         total = lastOperationTrackIDs.count
@@ -243,20 +240,21 @@ final class BatchMetadataPresentation {
             selectedTrackIDs: trackIDs,
             changedTrackIDs: lastOperationTrackIDs
         ).persist(defaults: defaults)
-        await reloadAfterUndo(core: core)
+        let restoredDraft = await reloadAfterUndo(core: core)
+        editing.finish(ticket, confirmed: restoredDraft)
         statusMessage = failures.isEmpty
             ? "Operação desfeita em \(restored.count) faixas."
             : "\(restored.count) restauradas; \(failures.count) falharam."
-        isWorking = false
+        editing.errorMessage = failures.isEmpty ? nil : statusMessage
     }
 
-    private func reloadAfterUndo(core: DurvaldCore) async {
+    private func reloadAfterUndo(core: DurvaldCore) async -> BatchMetadataDraft? {
         var values: [TrackInfo] = []
         for id in trackIDs {
             if let value = try? await core.trackInfo(trackId: id) { values.append(value) }
         }
         infos = values
-        draft = values.isEmpty ? nil : BatchMetadataDraft(infos: values)
+        return values.isEmpty ? nil : BatchMetadataDraft(infos: values)
     }
 
 }

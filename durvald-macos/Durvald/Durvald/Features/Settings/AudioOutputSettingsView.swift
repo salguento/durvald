@@ -2,7 +2,7 @@ import SwiftUI
 
 struct AudioOutputSettingsView: View {
     @Environment(DurvaldCoreStore.self) private var store
-    @State private var draft = SettingsDraft("")
+    @State private var draft = EditingState("")
     @State private var isApplyingSelection = false
 
     var body: some View {

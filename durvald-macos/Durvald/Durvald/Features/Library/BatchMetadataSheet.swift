@@ -72,7 +72,7 @@ struct BatchMetadataSheet: View {
                 Button("Fechar") { dismiss() }.keyboardShortcut(.cancelAction).disabled(presentation.isWorking)
                 Button("Aplicar") { Task { await presentation.save(using: store, writeChangesToFiles: writeChangesToFiles) } }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(presentation.isWorking || presentation.draft?.hasChanges != true)
+                    .disabled(presentation.isWorking || !presentation.editing.isDirty)
                     .accessibilityIdentifier("batchMetadata.save")
             }
         }

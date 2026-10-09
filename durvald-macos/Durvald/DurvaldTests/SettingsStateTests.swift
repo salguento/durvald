@@ -6,7 +6,7 @@ import XCTest
 final class SettingsStateTests: XCTestCase {
     func testGeneralDraftSurvivesAudioAndEqualizerUpdates() {
         var remote = settingsFixture()
-        var draft = SettingsDraft(GeneralSettingsValues(remote))
+        var draft = EditingState(GeneralSettingsValues(remote))
         draft.value.crossFade = true
         draft.value.crossFadeDuration = 12
         remote.preferredOutputDeviceId = "DAC"
@@ -18,7 +18,7 @@ final class SettingsStateTests: XCTestCase {
     }
 
     func testDirtyEqualizerSurvivesRemoteChangesAndCleanDraftTracksThem() {
-        var draft = SettingsDraft(settingsFixture().equalizer)
+        var draft = EditingState(settingsFixture().equalizer)
         var remote = draft.value
         remote.preampDb = 2
         draft.receive(remote)
@@ -34,7 +34,7 @@ final class SettingsStateTests: XCTestCase {
     }
 
     func testSaveAcknowledgementKeepsEditsMadeWhileSaving() {
-        var draft = SettingsDraft(settingsFixture().equalizer)
+        var draft = EditingState(settingsFixture().equalizer)
         draft.value.preampDb = 4
         let submitted = draft.value
         draft.value.preampDb = 6
@@ -57,14 +57,14 @@ final class SettingsStateTests: XCTestCase {
             let normalized = remote.editingValue
             XCTAssertEqual(normalized.preset, new)
             XCTAssertEqual(normalized.bandGainsDb, remote.bandGainsDb)
-            var draft = SettingsDraft(normalized)
+            var draft = EditingState(normalized)
             draft.receive(remote.editingValue)
             XCTAssertFalse(draft.isDirty)
         }
     }
 
     func testPendingAudioSelectionSurvivesPollingAndCanRollBack() {
-        var draft = SettingsDraft("A")
+        var draft = EditingState("A")
         draft.value = "B"
         draft.receive("A")
         XCTAssertEqual(draft.value, "B")
@@ -122,12 +122,47 @@ final class SettingsStateTests: XCTestCase {
         await store.refreshAudioOutputs()
         var equalizer = core.configuration.equalizer
         equalizer.preampDb = 5
-        await store.updateEqualizer(equalizer)
+        let saved = await store.updateEqualizer(equalizer)
+        XCTAssertTrue(saved)
         XCTAssertEqual(store.appSettings?.equalizer, equalizer)
         core.failUpdate = true
         equalizer.preampDb = 9
-        await store.updateEqualizer(equalizer)
+        let failed = await store.updateEqualizer(equalizer)
+        XCTAssertFalse(failed)
         XCTAssertEqual(store.appSettings?.equalizer.preampDb, 5)
+    }
+
+    func testGeneralSettingsSaveReportsFailureAndPreservesFieldsOutsideTheForm() async {
+        let core = SettingsTestCore()
+        core.configuration.preferredOutputDeviceId = "DAC"
+        core.configuration.equalizer.preampDb = 3
+        let store = DurvaldCoreStore(core: core)
+        let saved = await store.updateSettings(crossFade: true, crossFadeDuration: 12,
+                                               normalizeVolume: true, explicitContent: false)
+        XCTAssertTrue(saved)
+        XCTAssertEqual(store.appSettings?.crossFadeDuration, 12)
+        XCTAssertEqual(store.appSettings?.preferredOutputDeviceId, "DAC")
+        XCTAssertEqual(store.appSettings?.equalizer.preampDb, 3)
+        core.failUpdate = true
+        let failed = await store.updateSettings(crossFade: false, crossFadeDuration: 20,
+                                                normalizeVolume: false, explicitContent: true)
+        XCTAssertFalse(failed)
+        XCTAssertEqual(store.appSettings?.crossFadeDuration, 12)
+        XCTAssertNotNil(store.errorMessage)
+    }
+
+    func testEnrichmentSaveAcknowledgesOnlySuccessfulWrites() async {
+        let core = SettingsTestCore()
+        let store = DurvaldCoreStore(core: core)
+        let first = EnrichmentSettings(enabled: true, offline: false, preferredLanguage: "pt")
+        let saved = await store.configureEnrichment(first)
+        XCTAssertTrue(saved)
+        XCTAssertEqual(store.enrichmentSettings, first)
+        core.failUpdate = true
+        let failed = await store.configureEnrichment(.init(enabled: false, offline: false, preferredLanguage: "en"))
+        XCTAssertFalse(failed)
+        XCTAssertEqual(store.enrichmentSettings, first)
+        XCTAssertNotNil(store.errorMessage)
     }
 
     func testCancelledMetricsReadDoesNotPublish() async {
@@ -179,6 +214,9 @@ private final class SettingsTestCore: DurvaldCore {
     override func updateSettings(settings: Settings) async throws {
         if failUpdate { throw NSError(domain: "settings", code: 2) }
         configuration = settings
+    }
+    override func configureEnrichment(settings: EnrichmentSettings) async throws {
+        if failUpdate { throw NSError(domain: "settings", code: 4) }
     }
     override func audioOutputState() async throws -> AudioOutputState { output }
     override func selectAudioOutputDevice(deviceId: String?) async throws -> AudioOutputState {

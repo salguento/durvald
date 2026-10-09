@@ -5,7 +5,7 @@ struct EqualizerSettingsView: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     var isActive = true
-    @State private var draft = SettingsDraft(EqualizerSettings(
+    @State private var draft = EditingState(EqualizerSettings(
         enabled: false, preampDb: 0, bandGainsDb: Array(repeating: 0, count: 10), preset: "Flat"
     ))
 
@@ -77,18 +77,20 @@ struct EqualizerSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Salvar") {
-                    let submitted = draft.value
-                    Task {
-                        await store.updateEqualizer(submitted)
-                    }
-                }
+                if let error = draft.errorMessage { Text(error).font(.caption).foregroundStyle(.red) }
+                Button("Salvar") { Task { await save() } }
+                .disabled(!draft.isDirty || draft.isSaving || store.core == nil)
                 .keyboardShortcut(.defaultAction)
             }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { apply(store.appSettings?.equalizer) }
+        .task(id: store.core.map(ObjectIdentifier.init)) {
+            let settings = store.appSettings?.equalizer
+            let valid = settings?.bandGainsDb.count == 10 ? settings?.editingValue : nil
+            draft.refresh(valid ?? EqualizerSettings(enabled: false, preampDb: 0,
+                bandGainsDb: Array(repeating: 0, count: 10), preset: "Flat"), sourceID: store.core.map(ObjectIdentifier.init))
+        }
         .task(id: isActive && scenePhase == .active) {
             guard isActive, scenePhase == .active else { return }
             while !Task.isCancelled {
@@ -99,6 +101,13 @@ struct EqualizerSettingsView: View {
         .onChange(of: store.appSettings?.equalizer) { _, settings in
             apply(settings)
         }
+    }
+
+    private func save() async {
+        guard let ticket = draft.beginSaving() else { return }
+        let succeeded = await store.updateEqualizer(ticket.value)
+        if succeeded { draft.finish(ticket, confirmed: ticket.value.editingValue) }
+        else { draft.fail(ticket, message: store.errorMessage ?? "Não foi possível salvar o equalizador.") }
     }
 
     private func selectPreset(_ name: String) {

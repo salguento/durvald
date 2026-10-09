@@ -55,14 +55,6 @@ struct TrackMetadataDraft: Equatable {
     }
 
     func metadata() throws -> TrackMetadataEdit {
-        func number(_ text: String, name: String, maximum: UInt32) throws -> UInt32? {
-            let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return nil }
-            guard let value = UInt32(text), value <= maximum, name != "Ano" || value > 0 else {
-                throw DraftError.invalid("\(name): informe um número válido até \(maximum).")
-            }
-            return value
-        }
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !album.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -70,9 +62,9 @@ struct TrackMetadataDraft: Equatable {
         }
         return TrackMetadataEdit(
             title: title, artist: artist, albumArtist: albumArtist, album: album, genre: genre,
-            year: try number(year, name: "Ano", maximum: 9999),
-            trackNumber: try number(trackNumber, name: "Faixa", maximum: 255),
-            discNumber: try number(discNumber, name: "Disco", maximum: 255),
+            year: try MetadataDraftValidation.number(year, name: "Ano", maximum: 9999),
+            trackNumber: try MetadataDraftValidation.number(trackNumber, name: "Faixa", maximum: 255),
+            discNumber: try MetadataDraftValidation.number(discNumber, name: "Disco", maximum: 255),
             composer: composer, comment: comment
         )
     }
@@ -93,10 +85,16 @@ struct TrackInfoSheet: View {
     var onSelectTrack: (Int64) -> Void = { _ in }
 
     @State private var info: TrackInfo?
-    @State private var draft: TrackMetadataDraft?
-    @State private var original: TrackMetadataDraft?
-    @State private var isSaving = false
-    @State private var errorMessage: String?
+    @State private var editing = EditingState<TrackMetadataDraft?>(nil)
+    private var draft: TrackMetadataDraft? {
+        get { editing.value }
+        nonmutating set { editing.value = newValue }
+    }
+    private var isSaving: Bool { editing.isSaving }
+    private var errorMessage: String? {
+        get { editing.errorMessage }
+        nonmutating set { editing.errorMessage = newValue }
+    }
     @State private var statusMessage: String?
     @State private var isChoosingArtwork = false
     @State private var artworkImport = ArtworkImportState()
@@ -107,6 +105,17 @@ struct TrackInfoSheet: View {
     @State private var selectedTab: Tab = .details
     @State private var lyrics: String?
     @State private var lyricsLoaded = false
+
+    private struct LoadRequest: Equatable {
+        let trackID: Int64
+        let coreID: ObjectIdentifier?
+    }
+
+    private struct LyricsRequest: Equatable {
+        let tab: Tab
+        let trackID: Int64?
+        let coreID: ObjectIdentifier?
+    }
 
     private let accent = Color.accentColor
     private static let tabPickerMaxWidth: CGFloat = 620 - 28
@@ -129,20 +138,26 @@ struct TrackInfoSheet: View {
         .background(Self.surface)
         .background(WindowTrafficLightsHider())
         .ignoresSafeArea(.container, edges: .top)
-        .interactiveDismissDisabled(isSaving || draft != original)
+        .interactiveDismissDisabled(isSaving || editing.isDirty)
         .artworkFileImporter(isPresented: $isChoosingArtwork, state: artworkImport, policy: .trackMetadata)
-        .task(id: trackID) { artworkImport.reset(); await load() }
+        .task(id: LoadRequest(trackID: trackID, coreID: store.core.map(ObjectIdentifier.init))) { artworkImport.reset(); await load() }
         .onDisappear { artworkImport.cancel() }
         .onChange(of: artworkImport.errorMessage) { _, message in
             if let message { errorMessage = "Não foi possível abrir a imagem: \(message)" }
         }
         .onChange(of: artworkImport.revision) { _, _ in errorMessage = nil }
-        .task(id: selectedTab) {
-            guard selectedTab == .lyrics, !lyricsLoaded else { return }
+        .task(id: LyricsRequest(tab: selectedTab, trackID: info?.track.id, coreID: store.core.map(ObjectIdentifier.init))) {
+            guard selectedTab == .lyrics, info?.track.id == trackID, !lyricsLoaded else { return }
+            let coreID = store.core.map(ObjectIdentifier.init)
             do {
-                lyrics = try await store.lyrics(for: trackID)
+                let value = try await store.lyrics(for: trackID)
+                guard !Task.isCancelled, store.core.map(ObjectIdentifier.init) == coreID else { return }
+                lyrics = value
                 lyricsLoaded = true
-            } catch { errorMessage = "Não foi possível carregar a letra: \(error.localizedDescription)" }
+            } catch {
+                guard !Task.isCancelled, store.core.map(ObjectIdentifier.init) == coreID else { return }
+                errorMessage = "Não foi possível carregar a letra: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -344,10 +359,10 @@ struct TrackInfoSheet: View {
             }
             Button("Desfazer última alteração") { Task { await undo() } }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
-                .disabled(isSaving || info?.canUndo != true || draft != original)
+                .disabled(isSaving || info?.canUndo != true || editing.isDirty)
                 .accessibilityIdentifier("trackInfo.undo")
             Spacer()
-            Button(draft == original ? "Fechar" : "Cancelar") { dismiss() }
+            Button(!editing.isDirty ? "Fechar" : "Cancelar") { dismiss() }
                 .keyboardShortcut(.cancelAction)
                 .buttonStyle(.plain)
                 .frame(width: 96, height: 24)
@@ -359,8 +374,8 @@ struct TrackInfoSheet: View {
                 .foregroundStyle(.white)
                 .frame(width: 96, height: 24)
                 .background(accent, in: RoundedRectangle(cornerRadius: 7))
-                .disabled(isSaving || draft == nil || draft == original)
-                .opacity(isSaving || draft == nil || draft == original ? 0.5 : 1)
+                .disabled(isSaving || draft == nil || !editing.isDirty)
+                .opacity(isSaving || draft == nil || !editing.isDirty ? 0.5 : 1)
                 .accessibilityIdentifier("trackInfo.save")
         }
     }
@@ -373,7 +388,7 @@ struct TrackInfoSheet: View {
 
     private func navigationButton(systemName: String, offset: Int, label: String) -> some View {
         Button {
-            guard !isSaving, draft == original, let id = adjacentTrackID(offset: offset) else { return }
+            guard !isSaving, !editing.isDirty, let id = adjacentTrackID(offset: offset) else { return }
             onSelectTrack(id)
         } label: {
             Image(systemName: systemName)
@@ -382,8 +397,8 @@ struct TrackInfoSheet: View {
                 .frame(width: 24, height: 24)
         }
         .buttonStyle(.plain)
-        .disabled(isSaving || draft == nil || draft != original || adjacentTrackID(offset: offset) == nil)
-        .help(draft != original ? "Salve ou cancele as alterações antes de trocar de música." : label)
+        .disabled(isSaving || draft == nil || editing.isDirty || adjacentTrackID(offset: offset) == nil)
+        .help(editing.isDirty ? "Salve ou cancele as alterações antes de trocar de música." : label)
         .accessibilityLabel(label)
         .accessibilityIdentifier(offset < 0 ? "trackInfo.previous" : "trackInfo.next")
     }
@@ -421,8 +436,7 @@ struct TrackInfoSheet: View {
 
     private func accept(_ value: TrackInfo) {
         info = value
-        draft = TrackMetadataDraft(value.metadata)
-        original = draft
+        editing.reset(to: TrackMetadataDraft(value.metadata))
     }
 
     private func updateRating(_ rating: UInt8?) async -> Bool {
@@ -433,42 +447,66 @@ struct TrackInfoSheet: View {
     }
 
     private func load() async {
+        guard !Task.isCancelled else { return }
+        editing.reset(to: nil)
+        info = nil
+        lyrics = nil
+        lyricsLoaded = false
+        statusMessage = nil
+        let generation = editing.generation
         guard let core = store.core else {
             errorMessage = "A biblioteca ainda está abrindo. Tente novamente em instantes."
             return
         }
-        do { accept(try await core.trackInfo(trackId: trackID)) }
-        catch { errorMessage = error.localizedDescription }
+        do {
+            let value = try await core.trackInfo(trackId: trackID)
+            guard !Task.isCancelled, editing.generation == generation, store.core === core else { return }
+            accept(value)
+        } catch {
+            guard !Task.isCancelled, editing.generation == generation, store.core === core else { return }
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func save() async {
         guard !isSaving, let draft, let core = store.core else { return }
-        errorMessage = nil
         statusMessage = nil
+        let metadata: TrackMetadataEdit
+        do { metadata = try draft.metadata() }
+        catch { errorMessage = "Não foi possível salvar: \(error.localizedDescription)"; return }
+        guard let ticket = editing.beginSaving() else { return }
         do {
-            let metadata = try draft.metadata()
-            isSaving = true
-            defer { isSaving = false }
             let value = try await core.saveTrackMetadata(trackId: trackID, metadata: metadata, writeToFile: writeChangesToFiles)
             BatchMetadataOperationReceipt.clear()
-            accept(value)
+            guard store.core === core else {
+                editing.fail(ticket, message: "A biblioteca mudou durante a gravação."); return
+            }
             await store.refreshAfterMetadataEdit(value)
+            guard store.core === core else {
+                editing.fail(ticket, message: "A biblioteca mudou durante a gravação."); return
+            }
+            guard editing.finish(ticket, confirmed: TrackMetadataDraft(value.metadata)) else { return }
+            info = value
             statusMessage = "Salvo."
-        } catch { errorMessage = "Não foi possível salvar: \(error.localizedDescription)" }
+        } catch { editing.fail(ticket, message: "Não foi possível salvar: \(error.localizedDescription)") }
     }
 
     private func undo() async {
-        guard !isSaving, let core = store.core else { return }
-        isSaving = true
-        errorMessage = nil
+        guard !isSaving, let core = store.core, let ticket = editing.beginSaving() else { return }
         statusMessage = nil
-        defer { isSaving = false }
         do {
             let value = try await core.undoTrackMetadata(trackId: trackID)
             BatchMetadataOperationReceipt.clear()
-            accept(value)
+            guard store.core === core else {
+                editing.fail(ticket, message: "A biblioteca mudou durante o desfazer."); return
+            }
             await store.refreshAfterMetadataEdit(value)
+            guard store.core === core else {
+                editing.fail(ticket, message: "A biblioteca mudou durante o desfazer."); return
+            }
+            guard editing.finish(ticket, confirmed: TrackMetadataDraft(value.metadata)) else { return }
+            info = value
             statusMessage = "Alteração desfeita."
-        } catch { errorMessage = "Não foi possível desfazer: \(error.localizedDescription)" }
+        } catch { editing.fail(ticket, message: "Não foi possível desfazer: \(error.localizedDescription)") }
     }
 }
