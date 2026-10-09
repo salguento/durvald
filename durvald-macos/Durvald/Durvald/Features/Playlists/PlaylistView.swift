@@ -267,23 +267,16 @@ struct PlaylistView: View {
                 .accessibilityIdentifier("playlist.options")
                 .playlistOptionsMenu(playlist: currentPlaylist)
 
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-
-                    TextField("Pesquisar", text: $trackSearchText)
-                        .textFieldStyle(.plain)
-                        .focused($isTrackSearchFocused)
-                        .onExitCommand {
-                            trackSearchText = ""
-                            isTrackSearchFocused = false
-                        }
-                }
-                .padding(.horizontal, 12)
+                InlineSearchField(
+                    text: $trackSearchText, focus: $isTrackSearchFocused,
+                    identifier: "playlist.tracks.search",
+                    containerIdentifier: "playlist.tracks.search",
+                    onExit: {
+                        trackSearchText = ""
+                        isTrackSearchFocused = false
+                    }
+                )
                 .frame(width: 147, height: 36)
-                .background(Color.primary.opacity(0.08), in: .capsule)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("playlist.tracks.search")
 
                 Menu {
                     Picker("Organizar", selection: $trackOrder) {

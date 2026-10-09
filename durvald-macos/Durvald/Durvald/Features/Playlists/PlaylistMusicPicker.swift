@@ -60,29 +60,16 @@ struct PlaylistMusicPicker: View {
     }
 
     private var searchHeader: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
-
-            TextField("Pesquisar músicas, álbuns ou artistas", text: $query)
-                .textFieldStyle(.plain)
-                .focused($isSearchFocused)
-                .onSubmit { isSearchFocused = true }
-                .accessibilityIdentifier("playlist.addMusic.search")
-
-            Button {
-                closeSearch()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help("Fechar pesquisa")
-        }
-        .padding(.horizontal, 12)
-        .frame(height: 36)
-        .background(.quaternary, in: .capsule)
+        InlineSearchField(
+            text: $query, focus: $isSearchFocused,
+            placeholder: "Pesquisar músicas, álbuns ou artistas",
+            identifier: "playlist.addMusic.search",
+            fieldIdentifier: "playlist.addMusic.search",
+            style: .picker, accessory: .close,
+            onAction: closeSearch,
+            onSubmit: { isSearchFocused = true },
+            onExit: closeSearch
+        )
         .padding(.horizontal, 6)
     }
 

@@ -73,49 +73,13 @@ struct LibraryToolbarSearchField: View {
             .frame(width: isCollapsed ? 36 : expandedWidth, height: 36)
             .overlay(alignment: .trailing) {
                 if !isCollapsed {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        ToolbarSearchTextField(
-                            text: $searchText, isFocused: $isFocused,
-                            isPresented: !isCollapsed, focusRequest: focusRequest,
-                            placeholder: "", accessibilityLabel: placeholder,
-                            accessibilityIdentifier: "\(identifier).field"
-                        )
-                        .overlay(alignment: .leading) {
-                            if searchText.isEmpty {
-                                Text(placeholder)
-                                    .font(.system(size: NSFont.systemFontSize))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .allowsHitTesting(false)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                        if !searchText.isEmpty {
-                            Button { searchText = "" } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Limpar pesquisa")
-                            .accessibilityIdentifier("\(identifier).clear")
-                        }
-                    }
-                    .padding(.horizontal, 12)
+                    ToolbarSearchField(
+                        text: $searchText, isFocused: $isFocused,
+                        focusRequest: $focusRequest, placeholder: placeholder,
+                        identifier: identifier,
+                        onActivate: { if !isFocused { focusRequest += 1 } }
+                    )
                     .frame(width: expandedWidth, height: 36)
-                    .glassEffect(.regular.interactive(), in: .capsule)
-                    .overlay {
-                        if isFocused && appearsActive {
-                            Capsule()
-                                .strokeBorder(Color(nsColor: .keyboardFocusIndicatorColor), lineWidth: 2)
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .contentShape(Capsule())
-                    .simultaneousGesture(TapGesture().onEnded {
-                        if !isFocused { focusRequest += 1 }
-                    })
-                    .accessibilityIdentifier("\(identifier).container")
                 }
             }
             .overlay {

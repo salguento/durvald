@@ -267,23 +267,16 @@ struct AlbumView: View {
                 .accessibilityIdentifier("album.options")
                 .albumOptionsMenu(album: currentAlbum)
 
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-
-                    TextField("Pesquisar", text: $trackSearchText)
-                        .textFieldStyle(.plain)
-                        .focused($isTrackSearchFocused)
-                        .onExitCommand {
-                            trackSearchText = ""
-                            isTrackSearchFocused = false
-                        }
-                }
-                .padding(.horizontal, 12)
+                InlineSearchField(
+                    text: $trackSearchText, focus: $isTrackSearchFocused,
+                    identifier: "album.tracks.search",
+                    containerIdentifier: "album.tracks.search",
+                    onExit: {
+                        trackSearchText = ""
+                        isTrackSearchFocused = false
+                    }
+                )
                 .frame(width: 147, height: 36)
-                .background(Color.primary.opacity(0.08), in: .capsule)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("album.tracks.search")
 
                 Menu {
                     Picker("Organizar", selection: $trackOrder) {

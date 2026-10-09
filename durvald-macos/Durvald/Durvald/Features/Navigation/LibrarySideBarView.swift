@@ -564,58 +564,24 @@ private struct SidebarSectionSearchField: View {
     var body: some View {
         Group {
             if isExpanded {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16, weight: .regular))
-                        .symbolRenderingMode(.monochrome)
-                        .frame(width: 20)
-                        .foregroundStyle(.secondary)
-
-                    TextField("Pesquisar", text: $text)
-                        .textFieldStyle(.plain)
-                        .focused($isFocused)
-                        .onExitCommand {
-                            if text.isEmpty {
-                                isFocused = false
-                                isExpanded = false
-                            } else {
-                                text = ""
-                            }
+                InlineSearchField(
+                    text: $text, focus: $isFocused,
+                    identifier: "sidebar.sectionSearch",
+                    style: .sidebar, accessory: .reservedClear,
+                    onExit: {
+                        if text.isEmpty {
+                            isFocused = false
+                            isExpanded = false
+                        } else {
+                            text = ""
                         }
-                        .task {
-                            await Task.yield()
-                            isFocused = true
-                        }
-                        .accessibilityIdentifier(
-                            "sidebar.sectionSearch.field"
-                        )
-
-                    Button {
-                        text = ""
-                        Task { @MainActor in
-                            await Task.yield()
-                            isFocused = true
-                        }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .opacity(text.isEmpty ? 0 : 1)
-                    .allowsHitTesting(!text.isEmpty)
-                    .accessibilityHidden(text.isEmpty)
-                    .accessibilityLabel("Limpar pesquisa")
-                    .accessibilityIdentifier("sidebar.sectionSearch.clear")
-                }
-                .padding(.horizontal, 8)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: 32,
-                    alignment: .leading
                 )
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("sidebar.sectionSearch.container")
-                .glassEffect(.regular, in: .capsule)
+                .task {
+                    await Task.yield()
+                    isFocused = true
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(.opacity)
 
             } else {

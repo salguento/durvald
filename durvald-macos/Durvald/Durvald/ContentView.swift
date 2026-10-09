@@ -303,63 +303,14 @@ struct ContentView: View {
 
         if shell.navigationHistory.current == .search {
             ToolbarItem(id: "global-search", placement: .principal) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-
-                    ToolbarSearchTextField(
-                        text: $shell.searchText,
-                        isFocused: $shell.isSearchFocused,
-                        isPresented: true,
-                        focusRequest: shell.searchFocusRequest,
-                        placeholder: ""
-                    )
-                    .frame(maxWidth: .infinity)
-                    .overlay(alignment: .leading) {
-                        if shell.searchText.isEmpty {
-                            Text("Biblioteca")
-                                .font(.system(size: NSFont.systemFontSize))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .allowsHitTesting(false)
-                                .accessibilityHidden(true)
-                        }
-                    }
-                    .accessibilityLabel("Pesquisar na biblioteca")
-                    .accessibilityIdentifier("search.field")
-
-                    Button {
-                        shell.searchText = ""
-                        requestSearchFocus()
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .opacity(shell.searchText.isEmpty ? 0 : 1)
-                    .allowsHitTesting(!shell.searchText.isEmpty)
-                    .accessibilityHidden(shell.searchText.isEmpty)
-                    .accessibilityLabel("Limpar pesquisa")
-                    .accessibilityIdentifier("search.clear")
-                }
-                .padding(.horizontal, 12)
-                .frame(
-                    minWidth: 180,
-                    idealWidth: 260,
-                    maxWidth: 300,
-                    minHeight: 36,
-                    maxHeight: 36
+                ToolbarSearchField(
+                    text: $shell.searchText, isFocused: $shell.isSearchFocused,
+                    focusRequest: $shell.searchFocusRequest, placeholder: "Biblioteca",
+                    identifier: "search", accessibilityLabel: "Pesquisar na biblioteca",
+                    accessory: .reservedClear, focusColor: .accentColor
                 )
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("search.container")
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .overlay {
-                    Capsule()
-                        .strokeBorder(Color.accentColor, lineWidth: 2)
-                        .opacity(shell.isSearchFocused && appearsActive ? 1 : 0)
-                        .animation(.easeOut(duration: 0.15), value: appearsActive)
-                }
+                .frame(minWidth: 180, idealWidth: 260, maxWidth: 300,
+                       minHeight: 36, maxHeight: 36)
                 .animation(.easeOut(duration: 0.15), value: appearsActive)
                 .offset(x: shell.isQueuePresented ? -Layout.queueIdealWidth / 2 : 0)
             }
