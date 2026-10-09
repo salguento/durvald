@@ -1821,10 +1821,10 @@ struct ArtistView: View {
         }
         .padding(.vertical, 8)
         .playTrackOnDoubleClick {
-            Task { await store.play(trackID: track.id) }
+            Task { await TrackRowPlayback.track(track.id).perform(using: store) }
         }
         .trackContextMenu(track: track) {
-            Task { await store.play(trackID: track.id) }
+            Task { await TrackRowPlayback.track(track.id).perform(using: store) }
         }
         .accessibilityIdentifier("artist.track.\(track.id)")
     }
@@ -2257,32 +2257,11 @@ private struct PopularTrackListRow: View {
                 ArtworkView(artworkID: artworkID, size: 44)
             }
 
-            VStack(alignment: .leading, spacing: 3) {
-                if let externalURL {
-                    Link(destination: externalURL) {
-                        Text(title)
-                            .foregroundStyle(.primary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    .buttonStyle(.plain)
-                } else if let trackID {
-                    Text(title)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .activeTrackTitle(trackID: trackID)
-                } else {
-                    Text(title)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
+            TrackRowText(
+                model: TrackRowModel(trackID: trackID, title: title, artworkID: artworkID,
+                                     durationSeconds: durationSeconds, isFavorite: isFavorite),
+                subtitle: subtitle, showsEmptySubtitle: true, titleURL: externalURL, spacing: 3
+            )
             .frame(maxWidth: .infinity, alignment: .leading)
             .layoutPriority(1)
 
@@ -2300,7 +2279,7 @@ private struct PopularTrackListRow: View {
                 .opacity(isFavorite || isHovered ? 1 : 0)
                 .allowsHitTesting(isFavorite || isHovered)
                 .accessibilityHidden(!isFavorite && !isHovered)
-                .help(isFavorite ? "Desfavoritar faixa" : "Favoritar faixa")
+                .help(TrackRowModel.favoriteLabel(isFavorite))
 
                 Text(durationText)
                     .font(.caption)
@@ -2317,7 +2296,7 @@ private struct PopularTrackListRow: View {
                     }
                     if let onToggleFavorite {
                         Button(
-                            isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
+                            TrackRowModel.favoriteLabel(isFavorite),
                             systemImage: isFavorite ? "star.slash" : "star",
                             action: onToggleFavorite
                         )
@@ -2348,10 +2327,8 @@ private struct PopularTrackListRow: View {
     }
 
     private var durationText: String {
-        guard let durationSeconds, durationSeconds > 0 else { return "—" }
-        let totalSeconds = Int(durationSeconds.rounded())
-        guard totalSeconds > 0 else { return "—" }
-        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+        TrackRowModel(trackID: trackID, title: title, durationSeconds: durationSeconds)
+            .durationText(unknown: "—")
     }
 }
 

@@ -139,24 +139,13 @@ struct LibrarySearchView: View {
     }
 
     private func trackRow(_ track: Track) -> some View {
-        HStack(spacing: 10) {
-            ArtworkView(artworkID: track.artworkId, size: 42)
+        let model = TrackRowModel(track)
+        return HStack(spacing: 10) {
+            ArtworkView(artworkID: model.artworkID, size: 42)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(track.title)
-                    .activeTrackTitle(trackID: track.id)
-                    .lineLimit(1)
-                Text(track.artist)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            TrackRowText(model: model, showsEmptySubtitle: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityLabel(
-                track.artist.isEmpty
-                    ? track.title
-                    : "\(track.title), \(track.artist)"
-            )
+            .accessibilityLabel(model.accessibilityLabel)
             .accessibilityHint("Reproduz esta faixa agora")
             .accessibilityIdentifier("search.track.\(track.id)")
 
@@ -166,14 +155,14 @@ struct LibrarySearchView: View {
                 Image(systemName: "plus.circle")
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("Adicionar \(track.title) à fila")
+            .accessibilityLabel(model.enqueueLabel)
             .accessibilityIdentifier("search.track.\(track.id).addToQueue")
         }
         .playTrackOnDoubleClick {
-            Task { await store.play(trackID: track.id) }
+            Task { await TrackRowPlayback.track(track.id).perform(using: store) }
         }
         .trackContextMenu(track: track) {
-            Task { await store.play(trackID: track.id) }
+            Task { await TrackRowPlayback.track(track.id).perform(using: store) }
         }
     }
 }

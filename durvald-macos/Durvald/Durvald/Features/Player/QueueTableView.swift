@@ -9,6 +9,10 @@ struct QueueTableRow: Equatable {
     let artworkID: String?
     let isCurrent: Bool
     let isPaused: Bool
+
+    var presentation: TrackRowModel {
+        TrackRowModel(trackID: trackID, title: title, artist: artist, artworkID: artworkID)
+    }
 }
 
 /// Native macOS table used for queue actions and row reordering.
@@ -218,7 +222,7 @@ struct QueueTableView: NSViewRepresentable {
                 cell.clearButton.action = #selector(clearQueue(_:))
             }
 
-            cell.titleLabel.stringValue = value.title
+            cell.titleLabel.stringValue = value.presentation.title
             let isFirstUpcoming = row == firstUpcomingRow
             cell.clearButton.isHidden = !isFirstUpcoming
             cell.configureSectionHeader(
@@ -226,9 +230,9 @@ struct QueueTableView: NSViewRepresentable {
                 topSpacing: isFirstUpcoming && row > 0 ? 14 : 4,
                 accessibilityIdentifier: value.isCurrent ? "queue.nowPlaying" : "queue.upNext"
             )
-            cell.artistLabel.stringValue = value.artist
+            cell.artistLabel.stringValue = value.presentation.artist
             cell.artistLabel.isHidden = value.artist.isEmpty
-            cell.loadArtwork(value.artworkID, using: parent.core)
+            cell.loadArtwork(value.presentation.artworkID, using: parent.core)
 
             cell.updateTitleColor(isCurrent: value.isCurrent, isWindowActive: isWindowActive)
 
@@ -257,7 +261,7 @@ struct QueueTableView: NSViewRepresentable {
             )
             cell.playButton.setAccessibilityHelp(actionLabel)
             cell.configureHover()
-            cell.toolTip = "\(value.title), \(value.artist)"
+            cell.toolTip = value.presentation.accessibilityLabel
             return cell
         }
 

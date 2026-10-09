@@ -553,28 +553,18 @@ struct AlbumView: View {
     }
 
     private func trackRow(_ track: Track) -> some View {
-        HStack(spacing: 12) {
+        let model = TrackRowModel(track)
+        return HStack(spacing: 12) {
             AlbumTrackPosition(trackID: track.id, number: trackNumber(for: track))
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(track.title)
-                    .activeTrackTitle(trackID: track.id)
-                    .lineLimit(1)
-
-                if !track.artist.isEmpty && track.artist != artistName {
-                    Text(track.artist)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            TrackRowText(model: model, subtitle: track.artist != artistName ? track.artist : "")
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             TrackListTrailingControls(
                 track: track,
                 onPlay: {
                     guard let album else { return }
-                    Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
+                    Task { await TrackRowPlayback.release(album.id, startingAt: track.id).perform(using: store) }
                 },
                 onToggleFavorite: { isFavorite in
                     if let index = tracks.firstIndex(where: { $0.id == track.id }) {
@@ -585,7 +575,7 @@ struct AlbumView: View {
             ) {
                 if ratingsEnabled {
                     RatingControl(
-                        rating: track.rating,
+                        rating: model.rating,
                         isEditable: true,
                         onChange: { rating in
                             if let index = tracks.firstIndex(where: { $0.id == track.id }) {
@@ -602,17 +592,17 @@ struct AlbumView: View {
                     Image(systemName: "plus.circle")
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Adicionar \(track.title) à fila")
+                .accessibilityLabel(model.enqueueLabel)
             }
         }
         .padding(.vertical, 9)
         .playTrackOnDoubleClick {
             guard let album else { return }
-            Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
+            Task { await TrackRowPlayback.release(album.id, startingAt: track.id).perform(using: store) }
         }
         .trackContextMenu(track: track) {
             guard let album else { return }
-            Task { await store.playRelease(releaseID: album.id, startingAt: track.id) }
+            Task { await TrackRowPlayback.release(album.id, startingAt: track.id).perform(using: store) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("album.track.\(track.id)")

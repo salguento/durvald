@@ -517,6 +517,7 @@ struct PlaylistView: View {
 
     private func trackRow(_ track: Track, position: Int) -> some View {
         let isActive = activeTrackPosition == position
+        let model = TrackRowModel(track)
 
         return HStack(spacing: 12) {
             AlbumTrackPosition(
@@ -526,30 +527,16 @@ struct PlaylistView: View {
             )
                 .offset(x: -6)
 
-            ArtworkView(artworkID: track.artworkId, size: 42)
+            ArtworkView(artworkID: model.artworkID, size: 42)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(track.title)
-                    .foregroundStyle(isActive ? Color.accentColor : Color.primary)
-                    .lineLimit(1)
-
-                if !track.artist.isEmpty {
-                    Text(track.artist)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            TrackRowText(model: model, activeOverride: isActive, inactiveColor: .primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             TrackListTrailingControls(
                 track: track,
                 onPlay: {
                     Task {
-                        await store.playPlaylist(
-                            playlistID: playlist.id,
-                            startingAtPosition: position - 1
-                        )
+                        await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store)
                     }
                 },
                 onToggleFavorite: { isFavorite in
@@ -561,7 +548,7 @@ struct PlaylistView: View {
             ) {
                 if ratingsEnabled {
                     RatingControl(
-                        rating: track.rating,
+                        rating: model.rating,
                         isEditable: true,
                         onChange: { rating in
                             if let index = tracks.firstIndex(where: { $0.id == track.id }) {
@@ -578,17 +565,14 @@ struct PlaylistView: View {
                     Image(systemName: "plus.circle")
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Adicionar \(track.title) à fila")
+                .accessibilityLabel(model.enqueueLabel)
             }
         }
         .padding(.vertical, 8)
         .padding(.trailing, 16)
         .playTrackOnDoubleClick {
             Task {
-                await store.playPlaylist(
-                    playlistID: playlist.id,
-                    startingAtPosition: position - 1
-                )
+                await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store)
             }
         }
         .background {
@@ -604,10 +588,7 @@ struct PlaylistView: View {
         )
         .trackContextMenu(track: track) {
             Task {
-                await store.playPlaylist(
-                    playlistID: playlist.id,
-                    startingAtPosition: position - 1
-                )
+                await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store)
             }
         }
         .accessibilityElement(children: .contain)

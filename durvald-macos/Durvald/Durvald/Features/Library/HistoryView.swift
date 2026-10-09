@@ -104,7 +104,7 @@ private struct HistoryTrackRow: View {
             if let track {
                 label(track.title)
                     .trackContextMenu(track: track) {
-                        Task { await store.play(trackID: track.id) }
+                        Task { await TrackRowPlayback.track(track.id).perform(using: store) }
                     }
             } else {
                 label("Música #\(item.trackId)")
@@ -117,10 +117,8 @@ private struct HistoryTrackRow: View {
     }
 
     private func label(_ title: String) -> some View {
-        VStack(alignment: .leading) {
-            Text(title).activeTrackTitle(trackID: item.trackId)
-            Text(playbackDate).font(.caption).foregroundStyle(.secondary)
-        }
+        TrackRowText(model: TrackRowModel(trackID: item.trackId, title: title),
+                     subtitle: playbackDate, spacing: nil, lineLimit: nil)
     }
 
     private var playbackDate: String {

@@ -518,7 +518,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
             if value == .title {
                 let cell = (tableView.makeView(withIdentifier: identifier, owner: nil) as? MusicLibraryTitleCell)
                     ?? MusicLibraryTitleCell(identifier: identifier)
-                cell.textField?.stringValue = track.title
+                cell.textField?.stringValue = TrackRowModel(track).title
                 cell.textField?.textColor = parent.selection.contains(track.id)
                     ? MusicLibrarySelectionStyle.accentForeground
                     : (track.id == parent.activeTrackID ? .controlAccentColor : .labelColor)
@@ -574,7 +574,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
                 return
             }
             rowView.setAccessibilityIdentifier("track.\(track.id)")
-            rowView.setAccessibilityLabel("\(track.title), \(track.artist)")
+            rowView.setAccessibilityLabel(TrackRowModel(track).accessibilityLabel)
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
@@ -819,12 +819,11 @@ private extension MusicLibraryColumn {
 
     func text(for track: Track) -> String? {
         switch self {
-        case .title: track.title
-        case .artist: track.artist
-        case .album: track.release
+        case .title: TrackRowModel(track).title
+        case .artist: TrackRowModel(track).artist
+        case .album: TrackRowModel(track).album
         case .duration:
-            String(format: "%d:%02d", Int(max(0, track.durationSeconds.rounded())) / 60,
-                   Int(max(0, track.durationSeconds.rounded())) % 60)
+            TrackRowModel(track).durationText()
         case .plays: track.playCount.formatted()
         case .trackNumber: track.trackNumber == 0 ? "—" : String(track.trackNumber)
         case .discNumber: track.discNumber == 0 ? "—" : String(track.discNumber)

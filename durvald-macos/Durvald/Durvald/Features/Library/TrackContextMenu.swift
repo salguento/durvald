@@ -90,7 +90,7 @@ struct TrackListTrailingControls<AdditionalControls: View>: View {
     @ViewBuilder let additionalControls: () -> AdditionalControls
 
     private var isFavorite: Bool {
-        optimisticFavorite ?? track.isFavorite
+        optimisticFavorite ?? TrackRowModel(track).isFavorite
     }
 
     var body: some View {
@@ -106,8 +106,8 @@ struct TrackListTrailingControls<AdditionalControls: View>: View {
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .help(isFavorite ? "Desfavoritar faixa" : "Favoritar faixa")
-            .accessibilityLabel(isFavorite ? "Desfavoritar faixa" : "Favoritar faixa")
+            .help(TrackRowModel.favoriteLabel(isFavorite))
+            .accessibilityLabel(TrackRowModel.favoriteLabel(isFavorite))
 
             Text(durationText)
                 .font(.caption)
@@ -123,7 +123,7 @@ struct TrackListTrailingControls<AdditionalControls: View>: View {
                     Task { await store.addToQueue(trackID: track.id) }
                 }
                 Button(
-                    isFavorite ? "Desfavoritar faixa" : "Favoritar faixa",
+                    TrackRowModel.favoriteLabel(isFavorite),
                     systemImage: isFavorite ? "star.slash" : "star"
                 ) {
                     let newValue = !isFavorite
@@ -151,8 +151,7 @@ struct TrackListTrailingControls<AdditionalControls: View>: View {
     }
 
     private var durationText: String {
-        let totalSeconds = max(0, Int(track.durationSeconds.rounded()))
-        return String(format: "%d:%02d", totalSeconds / 60, totalSeconds % 60)
+        TrackRowModel(track).durationText()
     }
 }
 
