@@ -211,6 +211,12 @@ struct ArtistView: View {
     }
 
     private var artistPage: some View {
+        GeometryReader { chrome in
+            artistPage(topbarInset: chrome.safeAreaInsets.top)
+        }
+    }
+
+    private func artistPage(topbarInset: CGFloat) -> some View {
         GeometryReader { visible in
             GeometryReader { geometry in
                 let viewport = PageViewport(visibleFrame: visible.frame(in: .global),
@@ -218,7 +224,8 @@ struct ArtistView: View {
                 let sideInsets = viewport.sideInsets
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        artistHeaderArtwork(width: viewport.leadingExpandedWidth)
+                        artistHeaderArtwork(width: viewport.visibleWidth)
+                        .backgroundExtensionEffect()
                         .overlay {
                             GeometryReader { header in
                                 let titleY = header.size.height * 2 / 3 + 32
@@ -231,14 +238,14 @@ struct ArtistView: View {
                                         .accessibilityAddTraits(.isHeader)
                                         .frame(maxWidth: max(1, visible.size.width - 48))
                                         .position(
-                                            x: sideInsets.leading + visible.size.width / 2,
+                                            x: visible.size.width / 2,
                                             y: titleY
                                         )
 
                                     collectionControls
                                         .frame(width: max(1, visible.size.width - 48))
                                         .position(
-                                            x: sideInsets.leading + visible.size.width / 2,
+                                            x: visible.size.width / 2,
                                             y: controlsY
                                         )
                                 }
@@ -275,6 +282,9 @@ struct ArtistView: View {
                     .frame(minHeight: geometry.size.height, alignment: .top)
                     .background(pageBackgroundColor)
                 }
+                // Measure before extending the page under the titlebar. Only the
+                // indicator is inset; the portrait and scroll offsets stay intact.
+                .contentMargins(.top, topbarInset, for: .scrollIndicators)
                 .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
                 .scrollEdgeEffectHidden(pageChrome.hidesTopScrollEdge, for: .top)
                 .onScrollGeometryChange(for: Bool.self) {
@@ -284,8 +294,8 @@ struct ArtistView: View {
                 }
                 .preservesLibraryScrollPosition(isContentReady: !isLoading)
             }
-            // Draw the actual scrolling page under both panels. Only interactive
-            // content receives side margins; no reflected background is generated.
+            // Preserve both sidebars' safe areas. Only the header's reflected
+            // background extends beneath them; the portrait stays in the visible column.
             .ignoresSafeArea(.container, edges: pageChrome.canvasSafeAreaEdges)
         }
         .ignoresSafeArea(.container, edges: pageChrome.visibleSafeAreaEdges)

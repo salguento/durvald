@@ -121,17 +121,13 @@ struct ContentView: View {
         .overlay(alignment: .trailing) {
             if shell.isQueuePresented {
                 GeometryReader { geometry in
-                    QueueView(topInset: geometry.safeAreaInsets.top)
-                        .ignoresSafeArea(edges: .top)
+                    NativeSidebarPane {
+                        QueueView(topInset: geometry.safeAreaInsets.top)
+                    }
+                    .ignoresSafeArea(edges: .top)
                 }
                 .frame(width: Layout.queueIdealWidth)
                 .frame(maxHeight: .infinity)
-                .background {
-                    QueueSidebarBackground()
-                        .ignoresSafeArea(edges: .top)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }

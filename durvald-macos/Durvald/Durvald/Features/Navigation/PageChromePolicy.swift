@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Page-specific exceptions remain explicit instead of mirroring the header.
+/// Page-specific safe areas and toolbar behavior remain explicit.
 struct PageChromePolicy {
     enum Kind { case standard, artist }
     let kind: Kind
@@ -15,7 +15,8 @@ struct PageChromePolicy {
     var backdropVisible: Bool { scrolled || hovered }
     var hidesTopScrollEdge: Bool { !backdropVisible }
     var visibleSafeAreaEdges: Edge.Set { kind == .artist ? [.top, .bottom] : [] }
-    var canvasSafeAreaEdges: Edge.Set { kind == .artist ? .horizontal : [] }
+    // Preserve both panel safe areas so the artist header can reflect beneath them.
+    var canvasSafeAreaEdges: Edge.Set { [] }
 
     var toolbarVisibility: Visibility {
         if kind == .artist {
@@ -44,9 +45,8 @@ struct PageViewport: Equatable {
     var sideInsets: EdgeInsets {
         EdgeInsets(top: 0, leading: leadingInset, bottom: 0, trailing: trailingInset)
     }
-    // Artist artwork extends only to the leading panel. Interactive content
-    // stays centered in visibleWidth; horizontal scrollers span both sides.
-    var leadingExpandedWidth: CGFloat { visibleWidth + leadingInset }
+    // Artist artwork uses visibleWidth; its native background effect extends
+    // beneath either sidebar without enlarging the original portrait.
     var expandedWidth: CGFloat { visibleWidth + leadingInset + trailingInset }
 
     static func column(visibleWidth: CGFloat, measuredFullWidth: CGFloat,

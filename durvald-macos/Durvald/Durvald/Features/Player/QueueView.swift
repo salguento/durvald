@@ -1,19 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Use the semantic sidebar material, sampling the page inside this window.
-struct QueueSidebarBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .sidebar
-        view.blendingMode = .withinWindow
-        view.state = .followsWindowActiveState
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
-}
-
 private struct QueueArtistCard: View {
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(\.trackMenuNavigation) private var navigation
@@ -100,7 +87,6 @@ struct QueueView: View {
     }
 
     private static let pickerHeight = GlassTabPicker<Panel>.height
-    private static let pickerFadeHeight: CGFloat = 24
     private static let contentTopSpacing: CGFloat = 18
     // Account for the first section label's 4 pt inset inside its row.
     private static let listTopInset: CGFloat = pickerHeight + contentTopSpacing - 4
@@ -129,24 +115,6 @@ struct QueueView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .frame(height: topInset + Self.pickerHeight + Self.pickerFadeHeight)
-                .mask {
-                    VStack(spacing: 0) {
-                        Rectangle()
-                            .frame(height: topInset + Self.pickerHeight)
-                        LinearGradient(
-                            colors: [.black, .clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: Self.pickerFadeHeight)
-                    }
-                }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
 
             panelPicker
                 .padding(.top, topInset)

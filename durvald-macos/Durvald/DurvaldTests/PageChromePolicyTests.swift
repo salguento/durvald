@@ -34,7 +34,7 @@ final class PageChromePolicyTests: XCTestCase {
             XCTAssertTrue(top.hidesTopScrollEdge)
             XCTAssertFalse(hover.hidesTopScrollEdge)
             XCTAssertEqual(top.visibleSafeAreaEdges, [.top, .bottom])
-            XCTAssertEqual(top.canvasSafeAreaEdges, .horizontal)
+            XCTAssertEqual(top.canvasSafeAreaEdges, [])
         }
         let standard = PageChromePolicy(kind: .standard, queuePresented: false)
         XCTAssertEqual(standard.visibleSafeAreaEdges, [])
@@ -50,18 +50,19 @@ final class PageChromePolicyTests: XCTestCase {
         XCTAssertTrue(PageChromePolicy.isScrolled(offset: -58 + 60))
     }
 
-    func testArtistViewportExpandsArtworkOnlyLeftAndScrollerAcrossBothPanels() {
-        let viewport = PageViewport(visibleFrame: CGRect(x: 220, y: 80, width: 600, height: 400),
-                                    canvasFrame: CGRect(x: 0, y: 0, width: 1120, height: 500))
-        XCTAssertEqual(viewport.visibleWidth, 600)
-        XCTAssertEqual(viewport.leadingInset, 220)
-        XCTAssertEqual(viewport.trailingInset, 300)
-        XCTAssertEqual(viewport.leadingExpandedWidth, 820)
-        XCTAssertEqual(viewport.fullWidth, 1120)
-        XCTAssertEqual(viewport.sideInsets.top, 0)
-        XCTAssertEqual(viewport.sideInsets.bottom, 0)
-        XCTAssertEqual(viewport.leadingInset + viewport.visibleWidth / 2, 520,
-                       "The title stays centered in the visible column")
+    func testArtistViewportLimitsArtworkToVisibleColumnForBothPanels() {
+        for queueWidth: CGFloat in [0, 300] {
+            let availableWidth: CGFloat = 1120 - 220 - queueWidth
+            let visible = CGRect(x: 220, y: 80, width: availableWidth, height: 400)
+            let viewport = PageViewport(visibleFrame: visible, canvasFrame: visible)
+            XCTAssertEqual(viewport.visibleWidth, availableWidth)
+            XCTAssertEqual(viewport.leadingInset, 0)
+            XCTAssertEqual(viewport.trailingInset, 0)
+            XCTAssertEqual(viewport.expandedWidth, availableWidth)
+            XCTAssertEqual(viewport.fullWidth, availableWidth)
+            XCTAssertEqual(viewport.sideInsets.top, 0)
+            XCTAssertEqual(viewport.sideInsets.bottom, 0)
+        }
     }
 
     func testViewportDoesNotInventSideMarginsOrMirrorTrailingPanel() {
@@ -71,7 +72,7 @@ final class PageChromePolicyTests: XCTestCase {
         XCTAssertEqual(same.trailingInset, 0)
         let queueOnly = PageViewport(visibleFrame: visible,
             canvasFrame: CGRect(x: 100, y: 0, width: 900, height: 400))
-        XCTAssertEqual(queueOnly.leadingExpandedWidth, 600)
+        XCTAssertEqual(queueOnly.visibleWidth, 600)
         XCTAssertEqual(queueOnly.trailingInset, 300)
         let clipped = PageViewport(visibleFrame: visible,
             canvasFrame: CGRect(x: 120, y: 0, width: 500, height: 400))
