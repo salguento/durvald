@@ -208,7 +208,13 @@ struct CollectionListingMenu: View {
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
 
     var body: some View {
-        Menu {
+        ToolbarOptionsButton(
+            title: "Organizar listagem",
+            controlSize: controlSize,
+            controlWidth: controlWidth,
+            outline: .capsule,
+            appearance: usesGlassEffect ? .glass : .automatic
+        ) {
             if let onlyLocal {
                 Toggle("Somente locais", isOn: onlyLocal)
                     .accessibilityIdentifier("artists.onlyLocal")
@@ -241,36 +247,8 @@ struct CollectionListingMenu: View {
                         .tag(option)
                 }
             }
-        } label: {
-            ZStack {
-                Color.clear
-                Image(systemName: "line.3.horizontal.decrease")
-            }
-            .frame(width: controlWidth ?? controlSize, height: controlSize)
-            .contentShape(Capsule())
         }
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .frame(width: controlWidth ?? controlSize, height: controlSize)
-        .contentShape(Capsule())
-        .clipShape(Capsule())
-        .modifier(CollectionListingGlassEffect(enabled: usesGlassEffect))
-        .help("Organizar listagem")
-        .accessibilityLabel("Organizar listagem")
         .accessibilityValue("\(order.title), \(mode.title)")
-    }
-}
-
-private struct CollectionListingGlassEffect: ViewModifier {
-    let enabled: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if enabled {
-            content.buttonStyle(.plain).glassEffect(.regular, in: .capsule)
-        } else {
-            content.buttonStyle(.automatic)
-        }
     }
 }
 

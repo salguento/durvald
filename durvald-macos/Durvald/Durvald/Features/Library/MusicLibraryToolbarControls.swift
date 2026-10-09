@@ -9,7 +9,7 @@ struct MusicLibraryViewOptionsMenu: View {
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
 
     var body: some View {
-        Menu {
+        ToolbarOptionsButton(title: "Opções de visualização") {
             Picker("Mostrar", selection: $onlyFavorites) {
                 Text("Todas as músicas").tag(false)
                 Text("Somente favoritas").tag(true)
@@ -32,22 +32,7 @@ struct MusicLibraryViewOptionsMenu: View {
             }
             Divider()
             Button("Mostrar opções de visualização", action: onShowViewOptions)
-        } label: {
-            ZStack {
-                Color.clear
-                Image(systemName: "line.3.horizontal.decrease")
-            }
-            .frame(width: 36, height: 36)
-            .contentShape(Circle())
         }
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .frame(width: 36, height: 36)
-        .contentShape(Circle())
-        .clipShape(Circle())
-        .help("Opções de visualização")
-        .accessibilityLabel("Opções de visualização")
         .accessibilityIdentifier("library.viewOptions")
     }
 

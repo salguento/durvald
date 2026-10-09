@@ -66,28 +66,12 @@ struct HistoryToolbarOptionsMenu: View {
     @AppStorage("history.newestFirst") private var newestFirst = true
 
     var body: some View {
-        Menu {
+        ToolbarOptionsButton(title: "Opções de visualização") {
             Picker("Ordenar", selection: $newestFirst) {
                 Text("Mais recentes").tag(true)
                 Text("Mais antigas").tag(false)
             }
-        } label: {
-            ZStack {
-                Color.clear
-                Image(systemName: "line.3.horizontal.decrease")
-            }
-            .frame(width: 36, height: 36)
-            .contentShape(Circle())
         }
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .frame(width: 36, height: 36)
-        .contentShape(Circle())
-        .clipShape(Circle())
-        .glassEffect(.regular, in: .circle)
-        .help("Opções de visualização")
-        .accessibilityLabel("Opções de visualização")
         .accessibilityIdentifier("history.viewOptions")
     }
 }

@@ -2391,7 +2391,7 @@ struct ArtistDetailToolbarControls: View {
     @Binding var isSearchExpanded: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: ToolbarControlMetrics.spacing) {
             LibraryToolbarSearchField(
                 searchText: $state.searchText,
                 placeholder: "Pesquisar faixas",
@@ -2401,32 +2401,16 @@ struct ArtistDetailToolbarControls: View {
                 isExpanded: $isSearchExpanded
             )
 
-            Menu {
+            ToolbarOptionsButton(title: "Organizar ou filtrar faixas") {
                 Picker("Organizar", selection: $state.order) {
                     ForEach(ArtistTrackOrder.allCases) { order in
                         Text(order.title).tag(order)
                     }
                 }
-            } label: {
-                ZStack {
-                    Color.clear
-                    Image(systemName: "line.3.horizontal.decrease")
-                }
-                .frame(width: 36, height: 36)
-                .contentShape(Circle())
             }
-            .menuIndicator(.hidden)
-            .buttonStyle(.plain)
-            .fixedSize()
-            .frame(width: 36, height: 36)
-            .contentShape(Circle())
-            .clipShape(Circle())
-            .glassEffect(.regular, in: .circle)
-            .help("Organizar ou filtrar faixas")
-            .accessibilityLabel("Organizar ou filtrar faixas")
             .accessibilityIdentifier("artist.tracks.organize")
 
-            Menu {
+            ToolbarOptionsButton(title: "Opções", systemImage: "ellipsis") {
                 Button("Adicionar músicas à fila", systemImage: "text.line.last.and.arrowtriangle.forward") {
                     Task {
                         for track in state.tracks {
@@ -2435,23 +2419,7 @@ struct ArtistDetailToolbarControls: View {
                     }
                 }
                 .disabled(state.isLoading || state.tracks.isEmpty)
-            } label: {
-                ZStack {
-                    Color.clear
-                    Image(systemName: "ellipsis")
-                }
-                .frame(width: 36, height: 36)
-                .contentShape(Circle())
             }
-            .menuIndicator(.hidden)
-            .buttonStyle(.plain)
-            .fixedSize()
-            .frame(width: 36, height: 36)
-            .contentShape(Circle())
-            .clipShape(Circle())
-            .glassEffect(.regular, in: .circle)
-            .help("Opções")
-            .accessibilityLabel("Opções")
             .accessibilityIdentifier("artist.options")
         }
         .transaction { transaction in

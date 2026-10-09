@@ -476,6 +476,12 @@ Label, círculo 36, menuIndicator hidden, help, clip, glass e accessibility são
 
 **Contrato de reutilização sugerido:** ToolbarOptionsButton/Style compartilhado com conteúdo de Menu injetado; reunir tokens 36/spacing/vidro. Não unir ordenação de artista/faixa/coleção numa enum sem domínio claro.
 
+**Implementação em 09/10/2026:** Features/Shared/ToolbarOptionsButton.swift recebe conteúdo de Menu via ViewBuilder e centraliza símbolo, label, help, indicador oculto, fixedSize, área clicável, recorte e apresentação com vidro regular/estilo plain. ToolbarControlMetrics reúne tamanho de 36 pt e espaçamento de 8 pt usados pelas toolbars da biblioteca e do artista. Histórico, músicas, organização de faixas do artista e opções do artista usam o componente; o vidro antes aplicado externamente ao menu de músicas em ContentView passa a pertencer ao componente, evitando duplicação.
+
+CollectionListingMenu também usa o componente, parametrizando cápsula, tamanho/largura e presença de vidro. Preserva o padrão de 32 pt nas sidebars, 36 pt na toolbar e buttonStyle automático quando usesGlassEffect é falso. Conteúdo, bindings/AppStorage, critérios de ordenação, filtros de avaliações, ação de abrir opções e estados desabilitados continuam nos consumidores. Identificadores e valores de acessibilidade existentes permanecem nos respectivos menus.
+
+Validação: build macOS aprovado (CODE_SIGNING_ALLOWED=NO) e diff sem erros de whitespace. A extração de apresentação não adicionou testes que apenas reproduzem os modificadores nem repetiu a suíte completa. Aparência, abertura dos menus e navegação por teclado não receberam nova validação visual nesta alteração.
+
 ### R07 — Controles de reprodução de coleção (P2)
 
 **Ocorrências:** [Features/Library/CollectionPlaybackControls.swift:3](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/CollectionPlaybackControls.swift:3); [Features/Library/ArtistView.swift:1621](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Library/ArtistView.swift:1621); [Features/Player/PlayerBar.swift:5](/Users/salguento/Developer/durvald/durvald-macos/Durvald/Durvald/Features/Player/PlayerBar.swift:5).

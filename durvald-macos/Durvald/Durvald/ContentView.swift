@@ -497,7 +497,7 @@ struct ContentView: View {
             )
             .fixedSize()
         } else {
-            HStack(spacing: 8) {
+            HStack(spacing: ToolbarControlMetrics.spacing) {
                 LibraryToolbarSearchField(
                     searchText: librarySearchText,
                     placeholder: librarySearchPlaceholder,
@@ -510,7 +510,6 @@ struct ContentView: View {
                     MusicLibraryViewOptionsMenu(onShowViewOptions: {
                         openWindow(id: "music-view-options")
                     })
-                    .glassEffect(.regular, in: .circle)
                 } else if shell.navigationHistory.current == .history {
                     HistoryToolbarOptionsMenu()
                 } else {
@@ -528,7 +527,7 @@ struct ContentView: View {
             order: listingOrderBinding(for: destination),
             minimumRating: destination == .albums ? $albumMinimumRating : nil,
             onlyLocal: destination == .artists ? $artistOnlyLocal : nil,
-            controlSize: 36, controlWidth: 36, usesGlassEffect: true
+            controlSize: ToolbarControlMetrics.size, controlWidth: ToolbarControlMetrics.size, usesGlassEffect: true
         )
         .accessibilityIdentifier("\(destination.rawValue).listingMode")
     }
