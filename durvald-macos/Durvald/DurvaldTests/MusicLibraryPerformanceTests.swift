@@ -43,11 +43,11 @@ final class MusicLibraryPerformanceTests: XCTestCase {
     func testScrollRestorationPreservesIndependentHistoryPositions() throws {
         var offsets: [Int: CGFloat] = [1: 0, 2: 0]
         let tracks = (1...200).map { Fixtures.track(id: Int64($0), trackNumber: 1, discNumber: 1) }
-        func page(entryID: Int, visible: Bool = true) -> MusicLibraryTableView {
+        func page(entryID: Int, visible: Bool = true, bottomInset: CGFloat = 0) -> MusicLibraryTableView {
             MusicLibraryTableView(tracks: tracks, selection: .constant([]),
                                   savedScrollOffset: Binding(get: { offsets[entryID] ?? 0 }, set: { offsets[entryID] = $0 }),
                                   layout: MusicLibraryColumnLayout(), ratingsEnabled: true, artworkSize: 32,
-                                  groupArtwork: false, activeTrackID: nil, isPresented: visible,
+                                  groupArtwork: false, activeTrackID: nil, bottomContentInset: bottomInset, isPresented: visible,
                                   scrollRestorationID: entryID, onLayoutChange: { _ in },
                                   onPlay: { _ in }, onLoadMore: { _ in }, configureMenu: { _, _ in },
                                   cellContent: { _, _ in AnyView(EmptyView()) })
@@ -92,6 +92,21 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         settle()
         let maximum = max(0, table.frame.height - scroll.contentView.bounds.height)
         XCTAssertEqual(scroll.contentView.bounds.minY, maximum, accuracy: 1)
+
+        // Reserve the actual player overlay height without changing document
+        // rows. The final row must scroll above that entire reserved region.
+        for inset: CGFloat in [120, 180, 0] {
+            host.rootView = page(entryID: 2, bottomInset: inset)
+            settle()
+            var bottom = scroll.contentView.bounds
+            bottom.origin.y = 100_000
+            scroll.contentView.scroll(to: scroll.contentView.constrainBoundsRect(bottom).origin)
+            scroll.reflectScrolledClipView(scroll.contentView)
+            settle()
+            XCTAssertEqual(scroll.contentView.contentInsets.bottom, inset, accuracy: 0.5)
+            XCTAssertEqual(scroll.contentView.bounds.maxY - table.frame.maxY, inset, accuracy: 1)
+            XCTAssertGreaterThanOrEqual(scroll.contentView.bounds.maxY - inset, table.rect(ofRow: table.numberOfRows - 1).maxY)
+        }
     }
 
     func testSwiftUIVisibilityChangesPreserveNativeTableIdentity() throws {

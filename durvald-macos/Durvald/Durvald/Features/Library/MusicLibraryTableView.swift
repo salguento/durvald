@@ -86,6 +86,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
     let artworkSize: Double
     let groupArtwork: Bool
     let activeTrackID: Int64?
+    var bottomContentInset: CGFloat = 0
     var isPresented = true
     var scrollRestorationID = 0
     var tracksRevision: UInt64? = nil
@@ -141,7 +142,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
             if value == .favorite {
                 (column.headerCell as? MusicLibraryHeaderCell)?.symbol = NSImage(
                     systemSymbolName: "star", accessibilityDescription: value.label
-                )?.withSymbolConfiguration(.init(paletteColors: [.secondaryLabelColor]))
+                )?.withSymbolConfiguration(.init(paletteColors: [.headerTextColor]))
             }
             column.minWidth = value.isResizable ? value.minimumWidth : value.defaultWidth
             column.maxWidth = value.isResizable ? 10_000 : value.defaultWidth
@@ -156,7 +157,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
         table.menu = coordinator.trackMenu
         table.headerView?.menu = coordinator.headerMenu
 
-        let scrollView = NSScrollView()
+        let scrollView = MusicLibraryScrollView()
         scrollView.documentView = table
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = true
@@ -261,6 +262,14 @@ struct MusicLibraryTableView: NSViewRepresentable {
                     background.window?.makeFirstResponder(nil)
                 }
                 return false
+            }
+            if let scrollView {
+                var insets = scrollView.contentInsets
+                let bottom = max(0, parent.bottomContentInset)
+                if abs(insets.bottom - bottom) > 0.5 {
+                    insets.bottom = bottom
+                    scrollView.contentInsets = insets
+                }
             }
             if appliedScrollRestorationID != parent.scrollRestorationID {
                 appliedScrollRestorationID = parent.scrollRestorationID
@@ -843,6 +852,13 @@ private final class MusicLibraryNativeTableView: NSTableView {
     var contextRow = -1
     var nonselectableRows = IndexSet()
 
+    override func drawBackground(inClipRect clipRect: NSRect) {
+        // MusicLibraryRowView already draws the system alternating colors at
+        // reduced opacity. Drawing the table background as well makes those
+        // rows opaque and extends stripes into the empty player inset. Leave
+        // this layer clear so only actual row views paint their backgrounds.
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
         contextRow = row(at: convert(event.locationInWindow, from: nil))
         guard contextRow >= 0, !nonselectableRows.contains(contextRow) else { return nil }
@@ -857,6 +873,27 @@ private final class MusicLibraryNativeTableView: NSTableView {
 private final class MusicLibraryHeaderView: NSTableHeaderView {
     private(set) var contextColumnIdentifier: NSUserInterfaceItemIdentifier?
 
+    override var isOpaque: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        // Draw the native labels over the shared material, without each cell's
+        // opaque bezel or a second header background at the toolbar join.
+        guard let tableView else { return }
+        for (index, column) in tableView.tableColumns.enumerated() where !column.isHidden {
+            let rect = headerRect(ofColumn: index)
+            guard rect.intersects(dirtyRect) else { continue }
+            column.headerCell.drawInterior(withFrame: rect, in: self)
+        }
+        // A single physical pixel, using the semantic system separator color,
+        // marks the content edge without adding a bezel to the shared material.
+        let pixel = 1 / (window?.backingScaleFactor ?? 2)
+        let separator = NSRect(x: bounds.minX,
+                               y: isFlipped ? bounds.maxY - pixel : bounds.minY,
+                               width: bounds.width, height: pixel)
+        NSColor.separatorColor.setFill()
+        separator.intersection(dirtyRect).fill()
+    }
+
     override func menu(for event: NSEvent) -> NSMenu? {
         let index = column(at: convert(event.locationInWindow, from: nil))
         if let tableView, tableView.tableColumns.indices.contains(index) {
@@ -868,6 +905,46 @@ private final class MusicLibraryHeaderView: NSTableHeaderView {
     }
 }
 
+/// A single standard material above the scrolling document, underneath both
+/// the toolbar and native table header. Insets and horizontal header scrolling
+/// remain owned by NSScrollView.
+private final class MusicLibraryScrollView: NSScrollView {
+    private let headerBackdrop = MusicLibraryHeaderBackdrop()
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        headerBackdrop.material = .headerView
+        headerBackdrop.blendingMode = .withinWindow
+        headerBackdrop.state = .followsWindowActiveState
+        headerBackdrop.setAccessibilityIdentifier("library.unifiedHeaderBackground")
+        addSubview(headerBackdrop, positioned: .above, relativeTo: contentView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
+    override func layout() {
+        super.layout()
+        guard let header = (documentView as? NSTableView)?.headerView,
+              let headerClip = header.superview else { return }
+        (headerClip as? NSClipView)?.drawsBackground = false
+        // Keep the column labels above the effect, including after AppKit tiles
+        // the header again on column changes or window/sidebar resizing.
+        addSubview(headerBackdrop, positioned: .below, relativeTo: headerClip)
+        let rect = convert(header.bounds, from: header)
+        headerBackdrop.frame = NSRect(
+            x: bounds.minX,
+            y: isFlipped ? bounds.minY : rect.minY,
+            width: bounds.width,
+            height: max(0, isFlipped ? rect.maxY - bounds.minY : bounds.maxY - rect.minY)
+        )
+    }
+}
+
+private final class MusicLibraryHeaderBackdrop: NSVisualEffectView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 private final class MusicLibraryHeaderCell: NSTableHeaderCell {
     var symbol: NSImage?
 
@@ -877,7 +954,21 @@ private final class MusicLibraryHeaderCell: NSTableHeaderCell {
             symbol.draw(in: frame, from: .zero, operation: .sourceOver, fraction: 1,
                         respectFlipped: true, hints: nil)
         } else {
-            super.drawInterior(withFrame: cellFrame.insetBy(dx: 8, dy: 0), in: controlView)
+            // NSTableHeaderCell's interior drawing assumes its native bezel's
+            // text inset. Our transparent header shares the icon's center instead.
+            let text = NSMutableAttributedString(attributedString: attributedStringValue)
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.alignment = alignment
+            paragraph.lineBreakMode = .byTruncatingTail
+            text.addAttributes([
+                .font: font ?? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                .foregroundColor: NSColor.headerTextColor,
+                .paragraphStyle: paragraph,
+            ], range: NSRange(location: 0, length: text.length))
+            let height = min(cellFrame.height, ceil(text.size().height))
+            let frame = NSRect(x: cellFrame.minX + 8, y: cellFrame.midY - height / 2,
+                               width: max(0, cellFrame.width - 16), height: height)
+            text.draw(in: frame)
         }
     }
 }

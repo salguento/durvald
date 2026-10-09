@@ -75,7 +75,8 @@ struct MusicLibraryView: View {
 
     var body: some View {
         let displayedTracks = presentation.displayedTracks
-        return VStack(spacing: 0) {
+        return GeometryReader { geometry in
+            VStack(spacing: 0) {
             libraryControls
             MusicLibraryTableView(
                 tracks: displayedTracks,
@@ -86,6 +87,7 @@ struct MusicLibraryView: View {
                 artworkSize: artworkSize,
                 groupArtwork: groupArtwork,
                 activeTrackID: store.activeTrackID,
+                bottomContentInset: geometry.safeAreaInsets.bottom,
                 isPresented: isPresented,
                 scrollRestorationID: navigationEntryID,
                 tracksRevision: presentation.displayRevision,
@@ -126,7 +128,10 @@ struct MusicLibraryView: View {
                     )
                 }
             )
-            .ignoresSafeArea(.container, edges: .bottom)
+            // Let AppKit inset the header and first row while the document
+            // continues underneath the toolbar during scrolling.
+            .ignoresSafeArea(.container, edges: [.top, .bottom])
+            }
         }
         .overlay {
             if isSearching {

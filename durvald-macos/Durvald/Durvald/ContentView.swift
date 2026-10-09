@@ -254,7 +254,7 @@ struct ContentView: View {
                 }
             }
             .overlay {
-                if pageChrome.usesPageBackdrop {
+                if pageChrome.usesPageBackdrop && shell.navigationHistory.current != .songs {
                     PageTopbarBackground(isVisible: pageChrome.backdropVisible)
                         .ignoresSafeArea(.container, edges: .top)
                         .allowsHitTesting(false)
@@ -675,7 +675,11 @@ struct ContentView: View {
     }
 
     private var contentToolbarBackgroundVisibility: Visibility {
-        isArtistDetail ? artistToolbarBackground : pageChrome.toolbarVisibility
+        if shell.navigationHistory.current == .songs {
+            // The table owns one continuous backdrop for toolbar and column titles.
+            return .hidden
+        }
+        return isArtistDetail ? artistToolbarBackground : pageChrome.toolbarVisibility
     }
 
     private func pageScrollOffset(for entryID: Int) -> Binding<CGFloat> {
