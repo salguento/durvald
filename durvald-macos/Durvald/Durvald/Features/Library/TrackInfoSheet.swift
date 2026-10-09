@@ -130,12 +130,7 @@ struct TrackInfoSheet: View {
         .background(WindowTrafficLightsHider())
         .ignoresSafeArea(.container, edges: .top)
         .interactiveDismissDisabled(isSaving || draft != original)
-        .fileImporter(
-            isPresented: $isChoosingArtwork,
-            allowedContentTypes: [.image],
-            allowsMultipleSelection: false,
-            onCompletion: loadArtwork
-        )
+        .artworkFileImporter(isPresented: $isChoosingArtwork, state: artworkImport, policy: .trackMetadata)
         .task(id: trackID) { artworkImport.reset(); await load() }
         .onDisappear { artworkImport.cancel() }
         .onChange(of: artworkImport.errorMessage) { _, message in
@@ -339,14 +334,7 @@ struct TrackInfoSheet: View {
         }
     }
 
-    private func loadArtwork(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            artworkImport.select(url, maximumPixelSize: 1024, includeOriginalBytes: false)
-        } catch {
-            errorMessage = "Não foi possível abrir a imagem: \(error.localizedDescription)"
-        }
-    }
+
 
     private var footer: some View {
         HStack(spacing: 12) {

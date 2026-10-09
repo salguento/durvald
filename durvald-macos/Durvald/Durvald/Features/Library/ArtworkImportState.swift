@@ -13,6 +13,15 @@ final class ArtworkImportState {
     @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private var task: Task<Void, Never>?
 
+    func select(_ result: Result<[URL], Error>, policy: ArtworkImportPolicy) {
+        do {
+            guard let url = try result.get().first else { return }
+            select(url, maximumPixelSize: policy.maximumPixelSize, includeOriginalBytes: policy.includeOriginalBytes)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func select(_ url: URL, maximumPixelSize: Int, includeOriginalBytes: Bool) {
         hasSelection = true
         start {
@@ -23,7 +32,7 @@ final class ArtworkImportState {
     func loadExisting(_ base64: String?, maximumPixelSize: Int) {
         guard !hasSelection, preview == nil, !isLoading, let base64, !base64.isEmpty else { return }
         start(reportsErrors: false) {
-            try await FileImportService.shared.artwork(base64: base64, maximumPixelSize: maximumPixelSize)
+            try await ArtworkRepository.shared.importedArtwork(base64: base64, maximumPixelSize: maximumPixelSize)
         }
     }
 

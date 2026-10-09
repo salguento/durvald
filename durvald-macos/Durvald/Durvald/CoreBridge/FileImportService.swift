@@ -34,6 +34,12 @@ struct FileImportService: Sendable {
         }
     }
 
+    func artwork(data: Data, maximumPixelSize: Int) async throws -> ImportedArtwork {
+        try await Self.perform {
+            ImportedArtwork(preview: try Self.thumbnail(data, maximumPixelSize: maximumPixelSize), originalBase64: nil)
+        }
+    }
+
     func artwork(base64 value: String, maximumPixelSize: Int) async throws -> ImportedArtwork {
         try await Self.perform {
             let base64: String
@@ -78,14 +84,18 @@ struct FileImportService: Sendable {
     }
 
     private static func thumbnail(_ data: Data, maximumPixelSize: Int) throws -> CGImage {
-        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: max(1, maximumPixelSize),
-                kCGImageSourceShouldCacheImmediately: true
-              ] as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
-        return image
+        try Task.checkCancellation()
+        return try autoreleasepool {
+            guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: max(1, maximumPixelSize),
+                    kCGImageSourceShouldCacheImmediately: true
+                  ] as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
+            try Task.checkCancellation()
+            return image
+        }
     }
 
     static func perform<Value: Sendable>(_ work: @escaping @Sendable () throws -> Value) async throws -> Value {

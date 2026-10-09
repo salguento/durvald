@@ -9,25 +9,50 @@ struct ArtworkView: View {
     var showsBorder = true
     var onLowerRegionColorLoaded: ((NSColor?) -> Void)? = nil
 
-    @Environment(DurvaldCoreStore.self) private var store
+    var body: some View {
+        ArtworkImageView(
+            source: artworkID.map(ArtworkSource.managed), size: size,
+            aspectRatio: aspectRatio, alignment: alignment, showsBorder: showsBorder,
+            onLowerRegionColorLoaded: onLowerRegionColorLoaded
+        )
+    }
+}
+
+/// One request/publication policy for managed covers and inline playlist images.
+struct ArtworkImageView: View {
+    let source: ArtworkSource?
+    let size: CGFloat
+    var aspectRatio: CGFloat = 1
+    var alignment: Alignment = .center
+    var showsBorder = true
+    var fallbackSymbol = "music.note"
+    var fallbackFont: Font? = nil
+    var onLowerRegionColorLoaded: ((NSColor?) -> Void)? = nil
+
+    @Environment(DurvaldCoreStore.self) private var store: DurvaldCoreStore?
     @Environment(\.displayScale) private var displayScale
     @State private var image: NSImage?
     @State private var loadedRequest: Request?
 
     private struct Request: Equatable {
-        let artworkID: String?
+        let source: ArtworkSource?
         let pixelSize: Int
         let coreID: ObjectIdentifier?
     }
 
+    private var managedArtworkID: String? {
+        if case .managed(let id) = source { return id }
+        return nil
+    }
+
     var body: some View {
-        let core = store.core
+        let core = store?.core
         let request = Request(
-            artworkID: artworkID,
+            source: source,
             pixelSize: ArtworkRepository.pixelSize(for: size, scale: displayScale),
-            coreID: core.map(ObjectIdentifier.init)
+            coreID: managedArtworkID == nil ? nil : core.map(ObjectIdentifier.init)
         )
-        let cached = artworkID.flatMap { id in
+        let cached = managedArtworkID.flatMap { id in
             core.flatMap { ArtworkRepository.shared.cachedImage(for: id, pixelSize: request.pixelSize, using: $0) }
         }
         let displayedImage = loadedRequest == request ? image : cached
@@ -40,7 +65,8 @@ struct ArtworkView: View {
             } else {
                 ZStack {
                     Color.secondary.opacity(0.12)
-                    Image(systemName: "music.note")
+                    Image(systemName: fallbackSymbol)
+                        .font(fallbackFont)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -50,7 +76,7 @@ struct ArtworkView: View {
         .modifier(ArtworkBorderModifier(size: size, isEnabled: showsBorder))
         .task(id: request) {
             guard !Task.isCancelled else { return }
-            guard let artworkID, let core else {
+            guard let source else {
                 image = nil
                 loadedRequest = request
                 onLowerRegionColorLoaded?(nil)
@@ -58,7 +84,7 @@ struct ArtworkView: View {
             }
 
             let loaded = try? await ArtworkRepository.shared.image(
-                for: artworkID,
+                for: source,
                 pixelSize: request.pixelSize,
                 using: core
             )
@@ -69,7 +95,7 @@ struct ArtworkView: View {
             if let onLowerRegionColorLoaded {
                 let cgImage = loaded?.cgImage(forProposedRect: nil, context: nil, hints: nil)
                 let sample: ArtworkColorRepository.Sample?
-                if let cgImage {
+                if let cgImage, let artworkID = managedArtworkID, let core {
                     sample = try? await ArtworkColorRepository.shared.lowerRegionColor(
                         for: .init(coreID: ObjectIdentifier(core), artworkID: artworkID, pixelSize: request.pixelSize),
                         image: cgImage)

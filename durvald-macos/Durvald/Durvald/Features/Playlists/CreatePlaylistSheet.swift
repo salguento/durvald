@@ -86,12 +86,7 @@ struct CreatePlaylistSheet: View {
         }
         .padding(24)
         .frame(width: 320)
-        .fileImporter(
-            isPresented: $isChoosingArtwork,
-            allowedContentTypes: [.image],
-            allowsMultipleSelection: false,
-            onCompletion: loadArtwork
-        )
+        .artworkFileImporter(isPresented: $isChoosingArtwork, state: artworkImport, policy: .playlist)
         .alert("Não foi possível abrir a imagem", isPresented: Binding(
             get: { imageError != nil },
             set: { if !$0 { imageError = nil } }
@@ -150,12 +145,5 @@ struct CreatePlaylistSheet: View {
         .accessibilityIdentifier("playlist.new.artwork")
     }
 
-    private func loadArtwork(_ result: Result<[URL], Error>) {
-        do {
-            guard let url = try result.get().first else { return }
-            artworkImport.select(url, maximumPixelSize: 512, includeOriginalBytes: true)
-        } catch {
-            imageError = error.localizedDescription
-        }
-    }
+
 }

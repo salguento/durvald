@@ -1,5 +1,4 @@
 import AppKit
-import ImageIO
 import CryptoKit
 
 actor ArtworkLoadGate {
@@ -53,10 +52,9 @@ final class ArtworkRepository {
     private let playlistDecoder: @Sendable (String, Int) async throws -> ImportedArtwork?
     private var inFlight: [Request: Flight] = [:]
     // Keep the complete source bytes for at most one artwork at a time. Limiting
-    // only this serial decoding queue would still allow every visible cell to
+    // only decoding would still allow every visible cell to
     // read and retain its full-size source while waiting to be decoded.
     private let loadGate = ArtworkLoadGate()
-    private let decodingQueue = DispatchQueue(label: "xyz.salguento.durvald.artwork", qos: .userInitiated)
 
     private struct SendableCore: @unchecked Sendable {
         let value: DurvaldCore
@@ -80,6 +78,27 @@ final class ArtworkRepository {
         var bucket = 64
         while CGFloat(bucket) < requested { bucket *= 2 }
         return bucket
+    }
+
+    func image(for source: ArtworkSource, pixelSize: Int, using core: DurvaldCore? = nil) async throws -> NSImage? {
+        try Task.checkCancellation()
+        switch source {
+        case .managed(let id):
+            guard let core else { return nil }
+            return try await image(for: id, pixelSize: pixelSize, using: core)
+        case .base64(let value):
+            return try await playlistImage(base64: value, pixelSize: pixelSize)
+        }
+    }
+
+    /// Existing editor previews share thumbnail flights and cache with playlist rows.
+    func importedArtwork(base64: String, maximumPixelSize: Int) async throws -> ImportedArtwork {
+        let image = try await image(for: .base64(base64), pixelSize: maximumPixelSize)
+        try Task.checkCancellation()
+        guard let preview = image?.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return ImportedArtwork(preview: preview, originalBase64: base64)
     }
 
     func cachedImage(for artworkID: String, pixelSize: Int, using core: DurvaldCore) -> NSImage? {
@@ -136,24 +155,16 @@ final class ArtworkRepository {
                 throw error
             }
 
-            let thumbnail: CGImage? = await withCheckedContinuation { continuation in
-                decodingQueue.async {
-                    let thumbnail: CGImage? = autoreleasepool {
-                        guard let bytes,
-                              let source = CGImageSourceCreateWithData(bytes as CFData, [
-                                    kCGImageSourceShouldCache: false
-                                  ] as CFDictionary)
-                        else { return nil }
-
-                        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                            kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: pixelSize,
-                            kCGImageSourceShouldCacheImmediately: true
-                        ] as CFDictionary)
-                    }
-                    continuation.resume(returning: thumbnail)
-                }
+            let thumbnail: CGImage?
+            do {
+                if let bytes {
+                    thumbnail = try await FileImportService.shared.artwork(data: bytes, maximumPixelSize: pixelSize).preview
+                } else { thumbnail = nil }
+            } catch is CancellationError {
+                await loadGate.release()
+                throw CancellationError()
+            } catch {
+                thumbnail = nil
             }
             await loadGate.release()
 

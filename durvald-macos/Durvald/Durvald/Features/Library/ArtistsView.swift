@@ -131,10 +131,18 @@ struct ArtistPortraitView: View {
     let fallbackArtworkID: String?
     let size: CGFloat
     @State private var portraitArtworkID: String?
+    @State private var loadedRequest: Request?
+
+    private struct Request: Equatable {
+        let artistID: Int64
+        let coreID: ObjectIdentifier?
+    }
 
     var body: some View {
+        let request = Request(artistID: artist.id, coreID: store.core.map(ObjectIdentifier.init))
+        let currentPortrait = loadedRequest == request ? portraitArtworkID : nil
         Group {
-            if let artworkID = portraitArtworkID ?? fallbackArtworkID {
+            if let artworkID = currentPortrait ?? fallbackArtworkID {
                 ArtworkView(
                     artworkID: artworkID,
                     size: size,
@@ -156,11 +164,14 @@ struct ArtistPortraitView: View {
         .overlay {
             Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 1)
         }
-        .task(id: artist.id) {
-            portraitArtworkID = await store.artistDetails(
+        .task(id: request) {
+            let portrait = await store.artistDetails(
                 artistId: artist.id,
                 language: Locale.current.language.languageCode?.identifier ?? "en"
             )?.portrait?.managedPath
+            guard !Task.isCancelled else { return }
+            portraitArtworkID = portrait
+            loadedRequest = request
         }
     }
 }
