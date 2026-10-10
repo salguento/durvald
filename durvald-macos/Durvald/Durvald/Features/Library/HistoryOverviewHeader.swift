@@ -88,7 +88,7 @@ struct HistoryOverviewHeader: View {
                 AxisValueLabel {
                     if let key = value.as(String.self),
                        let day = snapshot.days.first(where: { dayKey($0) == key }) {
-                        Text(day.date, format: .dateTime.weekday(.abbreviated))
+                        Text(weekdayLabel(day.date, abbreviated: true))
                     }
                 }
             }
@@ -98,19 +98,9 @@ struct HistoryOverviewHeader: View {
             GeometryReader { geometry in
                 if let anchor = proxy.plotFrame {
                     let plot = geometry[anchor]
-                    ForEach(snapshot.days) { day in
-                        ForEach(Week.allCases) { week in
-                            if let frame = barFrame(day: day, week: week, proxy: proxy, plot: plot) {
-                                Rectangle()
-                                    .fill(.clear)
-                                    .contentShape(Rectangle())
-                                    .frame(width: frame.width, height: frame.height)
-                                    .help(barTooltip(day: day, week: week))
-                                    .position(x: frame.midX, y: frame.midY)
-                                    .accessibilityHidden(true)
-                            }
-                        }
-                    }
+                    HistoryChartTooltips(regions: tooltipRegions(proxy: proxy, plot: plot))
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .accessibilityHidden(true)
                 }
             }
         }
@@ -120,23 +110,38 @@ struct HistoryOverviewHeader: View {
     }
 
     private func bar(day: HistoryWeekSnapshot.Day, week: Week) -> some ChartContent {
-        BarMark(x: .value("Dia", dayKey(day)), y: .value("Músicas", week.count(for: day)), width: .ratio(1))
+        BarMark(x: .value("Dia", dayKey(day)), y: .value("Músicas", Double(week.count(for: day))), width: .ratio(1))
             .foregroundStyle(by: .value("Semana", week.title))
             .position(by: .value("Semana", week.title), axis: .horizontal, span: .ratio(barGroupSpan))
-            .accessibilityLabel(Text(day.date, format: .dateTime.weekday(.wide)))
+            .accessibilityLabel(Text(weekdayLabel(day.date)))
             .accessibilityValue("\(week.title): \(week.count(for: day)) músicas")
+    }
+
+    private func weekdayLabel(_ date: Date, abbreviated: Bool = false) -> String {
+        let label = date.formatted(.dateTime.weekday(abbreviated ? .abbreviated : .wide)
+            .locale(Locale(identifier: "pt_BR"))).replacingOccurrences(of: ".", with: "")
+        return label.prefix(1).uppercased() + label.dropFirst()
     }
 
     private func barTooltip(day: HistoryWeekSnapshot.Day, week: Week) -> String {
         let count = week.count(for: day)
-        let weekday = day.date.formatted(.dateTime.weekday(.wide))
+        let weekday = weekdayLabel(day.date)
         return "\(weekday) · \(week.title)\n\(count.formatted()) \(count == 1 ? "música" : "músicas")"
+    }
+
+    private func tooltipRegions(proxy: ChartProxy, plot: CGRect) -> [HistoryChartTooltipRegion] {
+        snapshot.days.flatMap { day in
+            Week.allCases.compactMap { week in
+                guard let frame = barFrame(day: day, week: week, proxy: proxy, plot: plot) else { return nil }
+                return HistoryChartTooltipRegion(frame: frame, text: barTooltip(day: day, week: week))
+            }
+        }
     }
 
     private func barFrame(day: HistoryWeekSnapshot.Day, week: Week, proxy: ChartProxy, plot: CGRect) -> CGRect? {
         guard let band = proxy.positionRange(forX: dayKey(day)),
-              let baseline = proxy.position(forY: 0),
-              let top = proxy.position(forY: week.count(for: day)) else { return nil }
+              let baseline = proxy.position(forY: 0.0),
+              let top = proxy.position(forY: Double(week.count(for: day))) else { return nil }
         // Keep each native tooltip's bounds aligned with the reduced bars.
         let groupWidth = (band.upperBound - band.lowerBound) * barGroupSpan
         let width = groupWidth / 2

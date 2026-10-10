@@ -374,15 +374,7 @@ struct CollectionListingItem<Artwork: View>: View {
         }
         .onChange(of: mode) { _, _ in showsTooltip = false }
         .popover(isPresented: $showsTooltip, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).foregroundStyle(.white)
-                if let subtitle {
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .padding(12)
-            .frame(maxWidth: 260, alignment: .leading)
-            .preferredColorScheme(.dark)
+            CollectionHoverDetails(title: title, subtitle: subtitle)
         }
     }
 
@@ -423,5 +415,23 @@ struct AlbumTitleLabel: View {
         }
         .font(font)
         .fontWeight(weight)
+    }
+}
+
+/// Shared content for compact-grid collection and history chart hover popovers.
+struct CollectionHoverDetails: View {
+    let title: String
+    var subtitle: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).foregroundStyle(.white)
+            if let subtitle {
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: 260, alignment: .leading)
+        .preferredColorScheme(.dark)
     }
 }

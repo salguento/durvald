@@ -33,7 +33,8 @@ struct HistoryView: View {
 
     private var overviewKey: LibraryListingKey {
         let calendar = Calendar.current
-        return LibraryListingKey(storeID: ObjectIdentifier(store), payloadRevision: store.historyRepository.revision,
+        return LibraryListingKey(storeID: ObjectIdentifier(store), releasesRevision: store.releasesRevision,
+                                 payloadRevision: store.historyRepository.revision,
                                  scope: "history.overview",
                                  query: "\(calendar.startOfDay(for: statisticsDate).timeIntervalSince1970):\(calendar.timeZone.identifier):\(calendar.firstWeekday)")
     }
@@ -47,8 +48,11 @@ struct HistoryView: View {
                 tracksPage
             case .general:
                 ScrollView {
-                    HistoryOverviewHeader(snapshot: overview.value)
-                        .frame(maxWidth: .infinity, alignment: .top)
+                    VStack(spacing: 0) {
+                        HistoryOverviewHeader(snapshot: overview.value)
+                        HistoryRankingSection(snapshot: overview.value.rankings)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
                 .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
                 .overlay {
@@ -89,8 +93,10 @@ struct HistoryView: View {
         .task(id: overviewKey) {
             let now = Date()
             let calendar = Calendar.current
-            await overview.prepare(key: overviewKey, payload: store.historyRepository.entries) { entries in
-                HistoryWeekSnapshot.build(entries: entries, now: now, calendar: calendar)
+            let payload = (store.historyRepository.entries, store.historyRepository.tracksByID, store.releases)
+            await overview.prepare(key: overviewKey, payload: payload) { payload in
+                HistoryWeekSnapshot.build(entries: payload.0, now: now, calendar: calendar,
+                                          tracksByID: payload.1, releases: payload.2)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in

@@ -74,4 +74,87 @@ final class HistoryWeekSnapshotTests: XCTestCase {
         XCTAssertEqual(decline.percentageChange, -75)
         XCTAssertEqual(decline.trendIcon, "arrow.down")
     }
+
+    func testRankingsCountDistinctEntitiesAndAggregateListensAcrossTracks() {
+        var first = Fixtures.track
+        first.id = 1
+        first.artistId = 10
+        first.releaseId = 100
+        first.title = "Primeira"
+        first.artist = "Artista A"
+        first.release = "Álbum A"
+        var second = first
+        second.id = 2
+        second.title = "Segunda"
+        var third = first
+        third.id = 3
+        third.artistId = 20
+        third.releaseId = 200
+        third.artist = "Artista B"
+        let history = [1, 1, 2, 3].enumerated().map {
+            PlaybackHistoryItem(id: Int64($0.offset), trackId: Int64($0.element),
+                playedAt: "2026-10-05T12:00:00Z", durationSeconds: 10)
+        } + [PlaybackHistoryItem(id: 99, trackId: 1, playedAt: "2026-09-28T12:00:00Z", durationSeconds: 10)]
+        let result = HistoryWeekSnapshot.build(entries: history, now: date("2026-10-10T12:00:00Z"),
+            calendar: calendar(), tracksByID: [1: first, 2: second, 3: third]).rankings
+        XCTAssertEqual(result[.artists].distinctCount, 2)
+        XCTAssertEqual(result[.albums].distinctCount, 2)
+        XCTAssertEqual(result[.tracks].distinctCount, 3)
+        XCTAssertEqual(result[.artists].top.first?.listens, 3)
+        XCTAssertEqual(result[.albums].top.first?.listens, 3)
+        XCTAssertEqual(result[.tracks].top.first?.listens, 2)
+        XCTAssertEqual(result[.tracks].top.first?.releaseID, 100,
+                       "A track name must open its album, not use the track ID as an album ID")
+        XCTAssertEqual(result[.albums].top.first?.releaseID, 100)
+        XCTAssertEqual(result[.artists].top.first?.artistID, 10)
+        XCTAssertEqual(result[.artists].percentageChange, 100)
+        XCTAssertEqual(result[.tracks].percentageChange, 200)
+    }
+
+    func testRankingFallbacksKeepUnknownTracksWithoutInventingArtistsOrAlbums() {
+        var track = Fixtures.track
+        track.id = 1
+        track.title = "  "
+        track.artist = ""
+        track.release = ""
+        track.artistId = 10
+        track.releaseId = 100
+        let history = [1, 999, 999].enumerated().map {
+            PlaybackHistoryItem(id: Int64($0.offset), trackId: Int64($0.element),
+                playedAt: "2026-10-05T12:00:00Z", durationSeconds: 10)
+        }
+        let result = HistoryWeekSnapshot.build(entries: history, now: date("2026-10-10T12:00:00Z"),
+            calendar: calendar(), tracksByID: [1: track]).rankings
+        XCTAssertEqual(result.unresolvedListens, 2)
+        XCTAssertEqual(result[.tracks].top.first?.title, "Música #999")
+        XCTAssertEqual(result[.tracks].top.first?.listens, 2)
+        XCTAssertNil(result[.tracks].top.first?.releaseID,
+                     "Missing track metadata must not invent a navigation destination")
+        XCTAssertEqual(result[.artists].distinctCount, 1)
+        XCTAssertEqual(result[.artists].top.first?.title, "Artista desconhecido")
+        XCTAssertEqual(result[.albums].top.first?.title, "Álbum desconhecido")
+        XCTAssertNil(result[.artists].percentageChange)
+    }
+
+    func testRankingTopFiveUsesStableTieBreaksAndDoesNotCollapseEqualNames() {
+        var accumulator = HistoryRankingSnapshot.Accumulator(tracks: [:], releases: [:])
+        for id: Int64 in [6, 5, 4, 3, 2, 1] {
+            accumulator.record(trackID: id, isCurrent: true)
+        }
+        let unknown = accumulator.snapshot()[.tracks]
+        XCTAssertEqual(unknown.distinctCount, 6)
+        XCTAssertEqual(unknown.top.map(\.id), [1, 2, 3, 4, 5])
+        var first = Fixtures.track
+        first.id = 1
+        first.artistId = 10
+        var second = first
+        second.id = 2
+        second.artistId = 20
+        accumulator = HistoryRankingSnapshot.Accumulator(tracks: [1: first, 2: second], releases: [:])
+        accumulator.record(trackID: 2, isCurrent: true)
+        accumulator.record(trackID: 1, isCurrent: true)
+        XCTAssertEqual(accumulator.snapshot()[.artists].distinctCount, 2)
+        XCTAssertEqual(accumulator.snapshot()[.artists].top.map(\.id), [10, 20])
+    }
+
 }
