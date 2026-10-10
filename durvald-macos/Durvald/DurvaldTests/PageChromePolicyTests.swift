@@ -5,14 +5,13 @@ import XCTest
 
 @MainActor
 final class PageChromePolicyTests: XCTestCase {
-    func testSupplementaryHistoryHeaderKeepsOneVisibleBackdropWithEitherQueueState() {
+    func testHistoryAccessoryUsesNativeToolbarWithEitherQueueState() {
         for queue in [false, true] {
             let policy = PageChromePolicy(kind: .standard, queuePresented: queue,
                                           hasSupplementaryHeader: true)
-            XCTAssertTrue(policy.usesPageBackdrop)
-            XCTAssertTrue(policy.backdropVisible)
-            XCTAssertEqual(policy.toolbarVisibility, .hidden,
-                           "The automatic toolbar must not add another material above the fixed history header")
+            XCTAssertFalse(policy.usesPageBackdrop)
+            XCTAssertEqual(policy.toolbarVisibility, .automatic,
+                           "History must use the native toolbar surface with its accessory")
         }
     }
 
@@ -174,5 +173,31 @@ final class PageChromePolicyTests: XCTestCase {
             XCTAssertEqual(material.width, width, accuracy: 0.01)
             XCTAssertNil(background.hitTest(.zero))
         }
+    }
+
+    func testHistoryAccessoryFollowsContentColumnAndDetachesOnLeavingPage() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
+                              styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let content = try XCTUnwrap(window.contentView)
+        let anchor = HistoryToolbarAccessoryAnchor(height: 46, content: AnyView(Text("Picker")))
+        anchor.frame = NSRect(x: 220, y: 0, width: 380, height: 200)
+        content.addSubview(anchor)
+        XCTAssertEqual(window.titlebarAccessoryViewControllers.count, 1)
+        XCTAssertTrue(window.titlebarAccessoryViewControllers.first === anchor.accessory)
+        for width: CGFloat in [380, 220] {
+            anchor.frame.size.width = width
+            anchor.accessory.view.layoutSubtreeIfNeeded()
+            anchor.updatePlacement()
+            let controls = anchor.host.convert(anchor.host.bounds, to: nil)
+            let page = anchor.convert(anchor.bounds, to: nil)
+            XCTAssertEqual(controls.minX, page.minX, accuracy: 0.01)
+            XCTAssertEqual(controls.width, width, accuracy: 0.01)
+            XCTAssertEqual(controls.height, 46, accuracy: 0.01)
+        }
+        anchor.removeFromSuperview()
+        XCTAssertTrue(window.titlebarAccessoryViewControllers.isEmpty,
+                      "The picker must not remain in the toolbar after leaving history")
     }
 }

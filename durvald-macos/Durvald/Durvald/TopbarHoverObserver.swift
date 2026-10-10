@@ -1,17 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Shared titlebar surface for the toolbar and its supplementary headers.
-struct LibraryHeaderBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let effect = NSVisualEffectView()
-        effect.configureLibraryHeaderMaterial()
-        return effect
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
-}
-
 extension NSVisualEffectView {
     func configureLibraryHeaderMaterial() {
         material = .titlebar

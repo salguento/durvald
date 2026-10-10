@@ -254,7 +254,7 @@ struct ContentView: View {
                 }
             }
             .overlay {
-                if pageChrome.usesPageBackdrop {
+                if pageChrome.usesPageBackdrop && !pageChrome.hasSupplementaryHeader {
                     PageTopbarBackground(isVisible: pageChrome.backdropVisible)
                         .ignoresSafeArea(.container, edges: .top)
                         .allowsHitTesting(false)

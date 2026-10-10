@@ -43,8 +43,10 @@ struct HistoryView: View {
             }
         }
         .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-        .safeAreaInset(edge: .top, spacing: 0) {
-            HistoryTabPicker(selection: $selectedTab)
+        .background {
+            HistoryToolbarAccessory(height: 46) {
+                HistoryTabPicker(selection: $selectedTab)
+            }
         }
         .preservesLibraryScrollPosition()
         .task(id: RefreshRequest(coreID: store.core.map(ObjectIdentifier.init),
@@ -136,11 +138,6 @@ private struct HistoryTabPicker: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .center)
-        .background {
-            LibraryHeaderBackground()
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history.tabs")
     }

@@ -12,7 +12,7 @@ struct PageChromePolicy {
     static func isScrolled(offset: CGFloat) -> Bool { offset > 1 }
 
     var observesHover: Bool { kind == .artist || queuePresented }
-    var usesPageBackdrop: Bool { kind == .standard && (queuePresented || hasSupplementaryHeader) }
+    var usesPageBackdrop: Bool { kind == .standard && queuePresented && !hasSupplementaryHeader }
     var backdropVisible: Bool { hasSupplementaryHeader || scrolled || hovered }
     var hidesTopScrollEdge: Bool { !backdropVisible }
     var visibleSafeAreaEdges: Edge.Set { kind == .artist ? [.top, .bottom] : [] }
