@@ -5,6 +5,7 @@
 //  Created by Humberto Salguento on 21/08/26.
 //
 
+import AppKit
 import SwiftUI
 
 struct HistoryView: View {
@@ -13,6 +14,8 @@ struct HistoryView: View {
     @AppStorage("history.newestFirst") private var newestFirst = true
     @State private var search = SearchPresentation<HistoryListingSnapshot>()
     @State private var selectedTab: HistoryTab = .general
+    @State private var overview = PreparedLibraryListing(HistoryWeekSnapshot())
+    @State private var statisticsDate = Date()
     private var snapshot: HistoryListingSnapshot { search.value ?? HistoryListingSnapshot() }
     private var searchPending: Bool { store.historyRepository.isLoading || search.isPending }
     var onSummaryChange: (String) -> Void = { _ in }
@@ -28,27 +31,41 @@ struct HistoryView: View {
                           query: query, newestFirst: newestFirst)
     }
 
+    private var overviewKey: LibraryListingKey {
+        let calendar = Calendar.current
+        return LibraryListingKey(storeID: ObjectIdentifier(store), payloadRevision: store.historyRepository.revision,
+                                 scope: "history.overview",
+                                 query: "\(calendar.startOfDay(for: statisticsDate).timeIntervalSince1970):\(calendar.timeZone.identifier):\(calendar.firstWeekday)")
+    }
+
     var body: some View {
-        let tracks = snapshot.tracksByID
-        List(snapshot.items, id: \.id) { item in
-            HistoryTrackRow(item: item, loadedTrack: tracks[item.trackId])
-                .accessibilityIdentifier("history.entry.\(item.id)")
-        }
-        .scrollContentBackground(.hidden)
-        .overlay {
-            if searchPending && !query.isEmpty {
-                ProgressView("Pesquisando…")
-            } else if !query.isEmpty && snapshot.items.isEmpty && !search.isPending {
-                ContentUnavailableView("Nenhuma reprodução encontrada", systemImage: "magnifyingglass")
+        // A concrete container keeps the titlebar accessory attached while the
+        // conditional page changes. Group forwards its background to each page.
+        ZStack {
+            switch selectedTab {
+            case .tracks:
+                tracksPage
+            case .general:
+                ScrollView {
+                    HistoryOverviewHeader(snapshot: overview.value)
+                        .frame(maxWidth: .infinity, alignment: .top)
+                }
+                .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+                .overlay {
+                    if (store.historyRepository.isLoading || overview.isPreparing) && overview.value.days.isEmpty {
+                        ProgressView("Carregando histórico…")
+                    }
+                }
+            case .artists, .albums:
+                Color.clear
             }
         }
-        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             HistoryToolbarAccessory(height: 46) {
                 HistoryTabPicker(selection: $selectedTab)
             }
         }
-        .preservesLibraryScrollPosition()
         .task(id: RefreshRequest(coreID: store.core.map(ObjectIdentifier.init),
                                  catalogRevision: store.libraryCatalogRevision, tracksRevision: store.tracksRevision)) {
             await store.refreshHistory()
@@ -69,11 +86,42 @@ struct HistoryView: View {
             guard published else { return }
             onSummaryChange(snapshot.summary)
         }
+        .task(id: overviewKey) {
+            let now = Date()
+            let calendar = Calendar.current
+            await overview.prepare(key: overviewKey, payload: store.historyRepository.entries) { entries in
+                HistoryWeekSnapshot.build(entries: entries, now: now, calendar: calendar)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+            statisticsDate = Date()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            statisticsDate = Date()
+        }
         .onChange(of: searchPending) { _, loading in
             if loading && !query.isEmpty { onSummaryChange("Pesquisando…") }
             else { onSummaryChange(snapshot.summary) }
         }
         .onDisappear { search.cancel() }
+    }
+
+    private var tracksPage: some View {
+        let tracks = snapshot.tracksByID
+        return List(snapshot.items, id: \.id) { item in
+            HistoryTrackRow(item: item, loadedTrack: tracks[item.trackId])
+                .accessibilityIdentifier("history.entry.\(item.id)")
+        }
+        .scrollContentBackground(.hidden)
+        .overlay {
+            if searchPending && !query.isEmpty {
+                ProgressView("Pesquisando…")
+            } else if !query.isEmpty && snapshot.items.isEmpty && !search.isPending {
+                ContentUnavailableView("Nenhuma reprodução encontrada", systemImage: "magnifyingglass")
+            }
+        }
+        .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        .preservesLibraryScrollPosition()
     }
 
 }
@@ -101,7 +149,7 @@ private enum HistoryTab: String, CaseIterable, Identifiable {
 }
 
 /// Mail-style categories: separate capsules and an expanded selected label.
-/// Selection is visual only until the history scopes are implemented.
+/// Each selection chooses its page without replacing the native toolbar accessory.
 private struct HistoryTabPicker: View {
     @Binding var selection: HistoryTab
 
@@ -109,7 +157,7 @@ private struct HistoryTabPicker: View {
         HStack(spacing: 8) {
             ForEach(HistoryTab.allCases) { tab in
                 Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { selection = tab }
+                    selection = tab
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: tab.icon)
@@ -138,6 +186,7 @@ private struct HistoryTabPicker: View {
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .center)
+        .animation(.easeInOut(duration: 0.18), value: selection)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history.tabs")
     }

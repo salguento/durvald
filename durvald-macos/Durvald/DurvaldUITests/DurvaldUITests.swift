@@ -865,6 +865,32 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testHistoryTabsKeepWindowAndToolbarGeometry() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture"]
+        app.launch()
+        let history = app.buttons["sidebar.history"]
+        if !history.isHittable { app.buttons["navigation.sidebar"].click() }
+        XCTAssertTrue(history.waitForExistence(timeout: 3))
+        history.click()
+        XCTAssertTrue(app.buttons["history.tab.general"].waitForExistence(timeout: 3))
+        let window = app.windows.firstMatch
+        let originalWindow = window.frame
+        let originalToolbar = app.toolbars.firstMatch.frame
+        let originalPicker = app.buttons["history.tab.general"].frame
+        for tab in ["artists", "albums", "tracks", "general", "tracks", "artists", "general"] {
+            let button = app.buttons["history.tab.\(tab)"]
+            button.click()
+            XCTAssertTrue(button.isSelected)
+            XCTAssertEqual(window.frame.width, originalWindow.width, accuracy: 1)
+            XCTAssertEqual(window.frame.height, originalWindow.height, accuracy: 1)
+            XCTAssertEqual(app.toolbars.firstMatch.frame.height, originalToolbar.height, accuracy: 1)
+            XCTAssertEqual(button.frame.minY, originalPicker.minY, accuracy: 1)
+            XCTAssertEqual(button.frame.height, originalPicker.height, accuracy: 1)
+        }
+    }
+
+    @MainActor
     func testHistoryToolbarSearchFiltersOlderEntriesAndUpdatesSummary() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture"]
@@ -873,6 +899,7 @@ final class DurvaldUITests: XCTestCase {
         if !historyTab.isHittable { app.buttons["navigation.sidebar"].click() }
         XCTAssertTrue(historyTab.waitForExistence(timeout: 3))
         historyTab.click()
+        app.buttons["history.tab.tracks"].click()
         let search = app.textFields["history.search.field"]
         if !search.exists { app.buttons["history.search.expand"].click() }
         XCTAssertTrue(search.waitForExistence(timeout: 3))

@@ -41,6 +41,9 @@ final class HistoryToolbarAccessoryAnchor: NSView {
         host = NSHostingView(rootView: content)
         pane = HistoryToolbarAccessoryPane(frame: NSRect(x: 0, y: 0, width: 1, height: height))
         super.init(frame: .zero)
+        // The window owns the accessory size. The picker must not publish
+        // SwiftUI min/ideal/max constraints into the titlebar's native layout.
+        host.sizingOptions = []
         pane.addSubview(host)
         pane.onLayout = { [weak self] in self?.updatePlacement() }
         accessory.layoutAttribute = .bottom

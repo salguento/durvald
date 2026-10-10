@@ -200,4 +200,33 @@ final class PageChromePolicyTests: XCTestCase {
         XCTAssertTrue(window.titlebarAccessoryViewControllers.isEmpty,
                       "The picker must not remain in the toolbar after leaving history")
     }
+
+    func testHistoryPickerContentUpdatesDoNotResizeWindowOrAccessory() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
+                              styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let content = try XCTUnwrap(window.contentView)
+        let anchor = HistoryToolbarAccessoryAnchor(height: 46, content: AnyView(Text("Geral")))
+        anchor.frame = NSRect(x: 220, y: 0, width: 380, height: 200)
+        content.addSubview(anchor)
+        let originalFrame = window.frame
+        let originalMinimum = window.contentMinSize
+        for title in ["Artistas", "Álbuns", "Faixas", "Geral"] {
+            anchor.host.rootView = AnyView(Text(title)
+                .padding(8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity))
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            anchor.accessory.view.layoutSubtreeIfNeeded()
+            anchor.updatePlacement()
+            XCTAssertTrue(anchor.host.sizingOptions.isEmpty,
+                          "The picker must not contribute sizing constraints to the titlebar")
+            XCTAssertEqual(window.frame, originalFrame)
+            XCTAssertEqual(window.contentMinSize, originalMinimum)
+            XCTAssertEqual(anchor.accessory.view.frame.height, 46, accuracy: 0.01)
+            XCTAssertEqual(anchor.host.frame.height, 46, accuracy: 0.01)
+            XCTAssertEqual(window.titlebarAccessoryViewControllers.count, 1)
+            XCTAssertTrue(window.titlebarAccessoryViewControllers.first === anchor.accessory)
+        }
+    }
 }
