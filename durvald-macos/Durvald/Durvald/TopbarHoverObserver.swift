@@ -1,6 +1,25 @@
 import AppKit
 import SwiftUI
 
+/// Shared titlebar surface for the toolbar and its supplementary headers.
+struct LibraryHeaderBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let effect = NSVisualEffectView()
+        effect.configureLibraryHeaderMaterial()
+        return effect
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+extension NSVisualEffectView {
+    func configureLibraryHeaderMaterial() {
+        material = .titlebar
+        blendingMode = .withinWindow
+        state = .followsWindowActiveState
+    }
+}
+
 /// A native header material constrained to the page's portion of the titlebar.
 /// Its placement comes from the window, independent of scroll-view discovery.
 struct PageTopbarBackground: NSViewRepresentable {
@@ -21,9 +40,7 @@ struct PageTopbarBackground: NSViewRepresentable {
         override init(frame: NSRect) {
             super.init(frame: frame)
             clipsToBounds = true
-            effect.material = .headerView
-            effect.blendingMode = .withinWindow
-            effect.state = .followsWindowActiveState
+            effect.configureLibraryHeaderMaterial()
             addSubview(effect)
         }
 

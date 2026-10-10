@@ -7,12 +7,13 @@ struct PageChromePolicy {
     let queuePresented: Bool
     var scrolled = false
     var hovered = false
+    var hasSupplementaryHeader = false
 
     static func isScrolled(offset: CGFloat) -> Bool { offset > 1 }
 
     var observesHover: Bool { kind == .artist || queuePresented }
-    var usesPageBackdrop: Bool { kind == .standard && queuePresented }
-    var backdropVisible: Bool { scrolled || hovered }
+    var usesPageBackdrop: Bool { kind == .standard && (queuePresented || hasSupplementaryHeader) }
+    var backdropVisible: Bool { hasSupplementaryHeader || scrolled || hovered }
     var hidesTopScrollEdge: Bool { !backdropVisible }
     var visibleSafeAreaEdges: Edge.Set { kind == .artist ? [.top, .bottom] : [] }
     // Preserve both panel safe areas so the artist header can reflect beneath them.

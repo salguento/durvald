@@ -254,7 +254,7 @@ struct ContentView: View {
                 }
             }
             .overlay {
-                if pageChrome.usesPageBackdrop && shell.navigationHistory.current != .songs {
+                if pageChrome.usesPageBackdrop {
                     PageTopbarBackground(isVisible: pageChrome.backdropVisible)
                         .ignoresSafeArea(.container, edges: .top)
                         .allowsHitTesting(false)
@@ -671,14 +671,11 @@ struct ContentView: View {
     private var pageChrome: PageChromePolicy {
         PageChromePolicy(kind: isArtistDetail ? .artist : .standard,
                          queuePresented: shell.isQueuePresented,
-                         scrolled: isContentScrolled, hovered: isContentTopbarHovered)
+                         scrolled: isContentScrolled, hovered: isContentTopbarHovered,
+                         hasSupplementaryHeader: shell.navigationHistory.current == .history)
     }
 
     private var contentToolbarBackgroundVisibility: Visibility {
-        if shell.navigationHistory.current == .songs {
-            // The table owns one continuous backdrop for toolbar and column titles.
-            return .hidden
-        }
         return isArtistDetail ? artistToolbarBackground : pageChrome.toolbarVisibility
     }
 

@@ -12,6 +12,7 @@ struct HistoryView: View {
     @Binding var searchText: String
     @AppStorage("history.newestFirst") private var newestFirst = true
     @State private var search = SearchPresentation<HistoryListingSnapshot>()
+    @State private var selectedTab: HistoryTab = .general
     private var snapshot: HistoryListingSnapshot { search.value ?? HistoryListingSnapshot() }
     private var searchPending: Bool { store.historyRepository.isLoading || search.isPending }
     var onSummaryChange: (String) -> Void = { _ in }
@@ -33,6 +34,7 @@ struct HistoryView: View {
             HistoryTrackRow(item: item, loadedTrack: tracks[item.trackId])
                 .accessibilityIdentifier("history.entry.\(item.id)")
         }
+        .scrollContentBackground(.hidden)
         .overlay {
             if searchPending && !query.isEmpty {
                 ProgressView("Pesquisando…")
@@ -41,6 +43,9 @@ struct HistoryView: View {
             }
         }
         .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HistoryTabPicker(selection: $selectedTab)
+        }
         .preservesLibraryScrollPosition()
         .task(id: RefreshRequest(coreID: store.core.map(ObjectIdentifier.init),
                                  catalogRevision: store.libraryCatalogRevision, tracksRevision: store.tracksRevision)) {
@@ -69,6 +74,76 @@ struct HistoryView: View {
         .onDisappear { search.cancel() }
     }
 
+}
+
+private enum HistoryTab: String, CaseIterable, Identifiable {
+    case general, artists, albums, tracks
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .general: "Geral"
+        case .artists: "Artistas"
+        case .albums: "Álbuns"
+        case .tracks: "Faixas"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .general: "clock.fill"
+        case .artists: "mic.fill"
+        case .albums: "square.stack.fill"
+        case .tracks: "music.note"
+        }
+    }
+}
+
+/// Mail-style categories: separate capsules and an expanded selected label.
+/// Selection is visual only until the history scopes are implemented.
+private struct HistoryTabPicker: View {
+    @Binding var selection: HistoryTab
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(HistoryTab.allCases) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { selection = tab }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: tab.icon)
+                        if selection == tab {
+                            Text(tab.title)
+                                .fontWeight(.semibold)
+                                .lineLimit(1)
+                        }
+                    }
+                    .font(.system(size: 14))
+                    .foregroundStyle(selection == tab ? Color.black : Color.secondary)
+                    .padding(.horizontal, selection == tab ? 14 : 0)
+                    .frame(width: selection == tab ? nil : 52)
+                    .frame(height: 30)
+                    .background(selection == tab ? Color.white.opacity(0.94) : Color.primary.opacity(0.08),
+                                in: .capsule)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(tab.title)
+                .accessibilityLabel(tab.title)
+                .accessibilityAddTraits(selection == tab ? .isSelected : [])
+                .accessibilityIdentifier("history.tab.\(tab.rawValue)")
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .background {
+            LibraryHeaderBackground()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("history.tabs")
+    }
 }
 
 struct HistoryToolbarOptionsMenu: View {

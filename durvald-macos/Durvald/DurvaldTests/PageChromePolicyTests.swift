@@ -5,6 +5,17 @@ import XCTest
 
 @MainActor
 final class PageChromePolicyTests: XCTestCase {
+    func testSupplementaryHistoryHeaderKeepsOneVisibleBackdropWithEitherQueueState() {
+        for queue in [false, true] {
+            let policy = PageChromePolicy(kind: .standard, queuePresented: queue,
+                                          hasSupplementaryHeader: true)
+            XCTAssertTrue(policy.usesPageBackdrop)
+            XCTAssertTrue(policy.backdropVisible)
+            XCTAssertEqual(policy.toolbarVisibility, .hidden,
+                           "The automatic toolbar must not add another material above the fixed history header")
+        }
+    }
+
     func testStandardPageUsesAutomaticMaterialUnlessQueueNeedsLocalBackdrop() {
         for queue in [false, true] {
             for scrolled in [false, true] {

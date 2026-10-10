@@ -100,13 +100,10 @@ struct MusicLibraryTableView: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
-    func makeNSView(context: Context) -> NSVisualEffectView {
+    func makeNSView(context: Context) -> NSView {
         let background = MusicLibraryBackgroundView()
         background.wantsLayer = true
         background.layer?.masksToBounds = true
-        background.material = .contentBackground
-        background.blendingMode = .withinWindow
-        background.state = .followsWindowActiveState
 
         let table = MusicLibraryNativeTableView()
         table.focusRingType = .none
@@ -193,7 +190,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
         return background
     }
 
-    func updateNSView(_ background: NSVisualEffectView, context: Context) {
+    func updateNSView(_ background: NSView, context: Context) {
         context.coordinator.parent = self
         guard context.coordinator.updatePresentation(background) else { return }
         context.coordinator.applyLayout()
@@ -201,12 +198,12 @@ struct MusicLibraryTableView: NSViewRepresentable {
         context.coordinator.restoreScrollPositionIfNeeded()
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSVisualEffectView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
         guard let width = proposal.width, let height = proposal.height else { return nil }
         return CGSize(width: width, height: height)
     }
 
-    static func dismantleNSView(_ background: NSVisualEffectView, coordinator: Coordinator) {
+    static func dismantleNSView(_ background: NSView, coordinator: Coordinator) {
         NotificationCenter.default.removeObserver(coordinator)
         (background as? MusicLibraryBackgroundView)?.onGeometryReady = nil
         coordinator.scrollView?.documentView = nil
@@ -254,7 +251,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
         }
 
         /// Hiding preserves the native hierarchy without updating offscreen rows.
-        func updatePresentation(_ background: NSVisualEffectView) -> Bool {
+        func updatePresentation(_ background: NSView) -> Bool {
             background.isHidden = !parent.isPresented
             guard parent.isPresented else {
                 if let responder = background.window?.firstResponder as? NSView,
@@ -894,7 +891,7 @@ private final class MusicLibraryHeaderView: NSTableHeaderView {
             // AppKit owns the column's drag image, tracking and feedback.
             super.draw(dirtyRect)
         } else {
-            // Keep the shared toolbar/header material visible at rest.
+            // Keep the native column-header material visible at rest.
             guard let tableView else { return }
             for (index, column) in tableView.tableColumns.enumerated() where !column.isHidden {
                 let rect = headerRect(ofColumn: index)
@@ -908,6 +905,16 @@ private final class MusicLibraryHeaderView: NSTableHeaderView {
                                width: bounds.width, height: pixel)
         NSColor.separatorColor.setFill()
         separator.intersection(dirtyRect).fill()
+        if let tableView,
+           let lastVisibleColumn = tableView.tableColumns.lastIndex(where: { !$0.isHidden }) {
+            for (index, column) in tableView.tableColumns.enumerated()
+                where !column.isHidden && index != lastVisibleColumn {
+                let rect = headerRect(ofColumn: index)
+                let divider = NSRect(x: rect.maxX - pixel, y: bounds.minY,
+                                     width: pixel, height: bounds.height)
+                divider.intersection(dirtyRect).fill()
+            }
+        }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -921,18 +928,14 @@ private final class MusicLibraryHeaderView: NSTableHeaderView {
     }
 }
 
-/// A single standard material above the scrolling document, underneath both
-/// the toolbar and native table header. Insets and horizontal header scrolling
-/// remain owned by NSScrollView.
+/// Native glass for the column titles only. The window toolbar uses the same
+/// presentation as the other library pages, without an extra layer beneath it.
 private final class MusicLibraryScrollView: NSScrollView {
     private let headerBackdrop = MusicLibraryHeaderBackdrop()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        headerBackdrop.material = .headerView
-        headerBackdrop.blendingMode = .withinWindow
-        headerBackdrop.state = .followsWindowActiveState
-        headerBackdrop.setAccessibilityIdentifier("library.unifiedHeaderBackground")
+        headerBackdrop.setAccessibilityIdentifier("library.columnHeaderBackground")
         addSubview(headerBackdrop, positioned: .above, relativeTo: contentView)
     }
 
@@ -948,16 +951,25 @@ private final class MusicLibraryScrollView: NSScrollView {
         // the header again on column changes or window/sidebar resizing.
         addSubview(headerBackdrop, positioned: .below, relativeTo: headerClip)
         let rect = convert(header.bounds, from: header)
-        headerBackdrop.frame = NSRect(
-            x: bounds.minX,
-            y: isFlipped ? bounds.minY : rect.minY,
-            width: bounds.width,
-            height: max(0, isFlipped ? rect.maxY - bounds.minY : bounds.maxY - rect.minY)
-        )
+        headerBackdrop.frame = NSRect(x: bounds.minX, y: rect.minY,
+                                     width: bounds.width, height: rect.height)
     }
 }
 
-private final class MusicLibraryHeaderBackdrop: NSVisualEffectView {
+private final class MusicLibraryHeaderBackdrop: NSGlassEffectView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        style = .regular
+        cornerRadius = 0
+        tintColor = nil
+        // The native table header remains a sibling above the glass so AppKit
+        // keeps ownership of column dragging and horizontal scrolling.
+        contentView = NSView()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
@@ -1145,7 +1157,7 @@ private final class MusicLibraryTitleCell: NSTableCellView {
 
 /// Wait for AppKit's normal layout/window attachment rather than forcing a
 /// second layout pass just to restore a scroll position.
-private final class MusicLibraryBackgroundView: NSVisualEffectView {
+private final class MusicLibraryBackgroundView: NSView {
     var onGeometryReady: (() -> Void)?
 
     override func layout() {
