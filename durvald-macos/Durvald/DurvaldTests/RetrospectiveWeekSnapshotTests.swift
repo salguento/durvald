@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import Durvald
 
-final class HistoryWeekSnapshotTests: XCTestCase {
+final class RetrospectiveWeekSnapshotTests: XCTestCase {
     private func calendar(zone: String = "UTC", firstWeekday: Int = 2) -> Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: zone)!
@@ -21,7 +21,7 @@ final class HistoryWeekSnapshotTests: XCTestCase {
     }
 
     func testCalendarWeekCountsRepeatedListensAndExcludesOutsideDates() {
-        let result = HistoryWeekSnapshot.build(entries: entries([
+        let result = RetrospectiveWeekSnapshot.build(entries: entries([
             "2026-10-05T00:00:00Z", "2026-10-05T01:00:00.000Z", "2026-10-10T10:00:00Z",
             "2026-09-28T00:00:00Z", "2026-10-04T23:59:59Z",
             "2026-09-27T23:59:59Z", "2026-10-10T12:00:01Z", "invalid"
@@ -38,7 +38,7 @@ final class HistoryWeekSnapshotTests: XCTestCase {
 
     func testFirstWeekdayAndTimeZoneDetermineWeekBoundaries() {
         let calendar = calendar(zone: "America/Sao_Paulo", firstWeekday: 1)
-        let result = HistoryWeekSnapshot.build(entries: entries([
+        let result = RetrospectiveWeekSnapshot.build(entries: entries([
             "2026-10-04T02:59:59Z", "2026-10-04T03:00:00Z"
         ]), now: date("2026-10-10T12:00:00Z"), calendar: calendar)
         XCTAssertEqual(result.days.first?.date, date("2026-10-04T03:00:00Z"))
@@ -51,26 +51,26 @@ final class HistoryWeekSnapshotTests: XCTestCase {
     }
 
     func testDSTAndYearChangesKeepSevenCalendarDays() {
-        let result = HistoryWeekSnapshot.build(entries: entries([
+        let result = RetrospectiveWeekSnapshot.build(entries: entries([
             "2026-11-01T05:30:00Z", "2026-11-01T06:30:00Z", "2026-11-02T05:00:00Z"
         ]), now: date("2026-11-08T18:00:00Z"), calendar: calendar(zone: "America/New_York"))
         XCTAssertEqual(result.days.count, 7)
         XCTAssertEqual(result.days[0].current, 1)
         XCTAssertEqual(result.days[6].previous, 2)
-        let newYear = HistoryWeekSnapshot.build(entries: entries(["2025-12-29T00:00:00Z"]),
+        let newYear = RetrospectiveWeekSnapshot.build(entries: entries(["2025-12-29T00:00:00Z"]),
             now: date("2026-01-01T12:00:00Z"), calendar: calendar())
         XCTAssertEqual(newYear.currentTotal, 1)
         XCTAssertEqual(newYear.days.first?.date, date("2025-12-29T00:00:00Z"))
     }
 
     func testZeroBaselineDoesNotInventPercentageAndDeclineKeepsDirection() {
-        let empty = HistoryWeekSnapshot()
+        let empty = RetrospectiveWeekSnapshot()
         XCTAssertEqual(empty.percentageChange, 0)
         XCTAssertEqual(empty.trendIcon, "minus")
-        let newListens = HistoryWeekSnapshot(currentTotal: 3, previousTotal: 0)
+        let newListens = RetrospectiveWeekSnapshot(currentTotal: 3, previousTotal: 0)
         XCTAssertNil(newListens.percentageChange)
         XCTAssertEqual(newListens.trendIcon, "arrow.up")
-        let decline = HistoryWeekSnapshot(currentTotal: 1, previousTotal: 4)
+        let decline = RetrospectiveWeekSnapshot(currentTotal: 1, previousTotal: 4)
         XCTAssertEqual(decline.percentageChange, -75)
         XCTAssertEqual(decline.trendIcon, "arrow.down")
     }
@@ -95,7 +95,7 @@ final class HistoryWeekSnapshotTests: XCTestCase {
             PlaybackHistoryItem(id: Int64($0.offset), trackId: Int64($0.element),
                 playedAt: "2026-10-05T12:00:00Z", durationSeconds: 10)
         } + [PlaybackHistoryItem(id: 99, trackId: 1, playedAt: "2026-09-28T12:00:00Z", durationSeconds: 10)]
-        let result = HistoryWeekSnapshot.build(entries: history, now: date("2026-10-10T12:00:00Z"),
+        let result = RetrospectiveWeekSnapshot.build(entries: history, now: date("2026-10-10T12:00:00Z"),
             calendar: calendar(), tracksByID: [1: first, 2: second, 3: third]).rankings
         XCTAssertEqual(result[.artists].distinctCount, 2)
         XCTAssertEqual(result[.albums].distinctCount, 2)
@@ -123,7 +123,7 @@ final class HistoryWeekSnapshotTests: XCTestCase {
             PlaybackHistoryItem(id: Int64($0.offset), trackId: Int64($0.element),
                 playedAt: "2026-10-05T12:00:00Z", durationSeconds: 10)
         }
-        let result = HistoryWeekSnapshot.build(entries: history, now: date("2026-10-10T12:00:00Z"),
+        let result = RetrospectiveWeekSnapshot.build(entries: history, now: date("2026-10-10T12:00:00Z"),
             calendar: calendar(), tracksByID: [1: track]).rankings
         XCTAssertEqual(result.unresolvedListens, 2)
         XCTAssertEqual(result[.tracks].top.first?.title, "Música #999")
@@ -136,21 +136,21 @@ final class HistoryWeekSnapshotTests: XCTestCase {
         XCTAssertNil(result[.artists].percentageChange)
     }
 
-    func testRankingTopFiveUsesStableTieBreaksAndDoesNotCollapseEqualNames() {
-        var accumulator = HistoryRankingSnapshot.Accumulator(tracks: [:], releases: [:])
+    func testRankingUsesStableTieBreaksAndDoesNotCollapseEqualNames() {
+        var accumulator = RetrospectiveRankingSnapshot.Accumulator(tracks: [:], releases: [:])
         for id: Int64 in [6, 5, 4, 3, 2, 1] {
             accumulator.record(trackID: id, isCurrent: true)
         }
         let unknown = accumulator.snapshot()[.tracks]
         XCTAssertEqual(unknown.distinctCount, 6)
-        XCTAssertEqual(unknown.top.map(\.id), [1, 2, 3, 4, 5])
+        XCTAssertEqual(unknown.top.map(\.id), [1, 2, 3, 4, 5, 6])
         var first = Fixtures.track
         first.id = 1
         first.artistId = 10
         var second = first
         second.id = 2
         second.artistId = 20
-        accumulator = HistoryRankingSnapshot.Accumulator(tracks: [1: first, 2: second], releases: [:])
+        accumulator = RetrospectiveRankingSnapshot.Accumulator(tracks: [1: first, 2: second], releases: [:])
         accumulator.record(trackID: 2, isCurrent: true)
         accumulator.record(trackID: 1, isCurrent: true)
         XCTAssertEqual(accumulator.snapshot()[.artists].distinctCount, 2)

@@ -3,7 +3,7 @@ import Foundation
 /// Contexts preserve the existing information density of each surface.
 enum DurationFormatter {
     enum Context {
-        case track, library, history, albumSummary, albumHeader
+        case track, library, retrospective, albumSummary, albumHeader
     }
 
     static func text(_ duration: Double?, context: Context = .track, unknown: String? = nil,
@@ -21,7 +21,7 @@ enum DurationFormatter {
         switch context {
         case .track:
             return "\(seconds / 60):\(padded(seconds % 60))"
-        case .library, .history:
+        case .library, .retrospective:
             return hours > 0
                 ? "\(hours):\(padded(minutes)):\(padded(seconds % 60))"
                 : "\(minutes):\(padded(seconds % 60))"

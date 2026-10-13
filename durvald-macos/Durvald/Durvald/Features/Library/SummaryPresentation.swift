@@ -50,8 +50,8 @@ enum SummaryPresentation {
         return "\(queryPrefix(query))\(localText), \(indexedText)"
     }
 
-    static func history(playCount: Int, songCount: Int, durationSeconds: UInt64, query: String) -> String {
-        let duration = DurationFormatter.text(seconds: durationSeconds, context: .history)
+    static func retrospective(playCount: Int, songCount: Int, durationSeconds: UInt64, query: String) -> String {
+        let duration = DurationFormatter.text(seconds: durationSeconds, context: .retrospective)
         return "\(queryPrefix(query))\(playCount.formatted()) \(playCount == 1 ? "reprodução" : "reproduções"), \(songCount.formatted()) \(songCount == 1 ? "música" : "músicas"), \(duration) de reprodução"
     }
 

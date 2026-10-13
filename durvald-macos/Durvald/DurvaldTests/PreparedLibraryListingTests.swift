@@ -156,18 +156,18 @@ final class PreparedLibraryListingTests: XCTestCase {
         XCTAssertTrue(artist.albums.isEmpty)
     }
 
-    func testHistorySnapshotKeepsSearchOlderEntriesAndBothDirections() {
+    func testRetrospectiveSnapshotKeepsSearchOlderEntriesAndBothDirections() {
         let entries = [PlaybackHistoryItem(id: 2, trackId: 1, playedAt: "", durationSeconds: 180),
                        PlaybackHistoryItem(id: 1, trackId: 99, playedAt: "", durationSeconds: 60)]
         let tracks = [Int64(1): Fixtures.track]
-        let descending = HistoryListingSnapshot.build(entries: entries, tracks: tracks, key: .init())
+        let descending = RetrospectiveListingSnapshot.build(entries: entries, tracks: tracks, key: .init())
         XCTAssertEqual(descending.items.map(\.id), [2, 1])
         XCTAssertTrue(descending.summary.contains("2 reproduções, 2 músicas, 4:00"))
-        let ascending = HistoryListingSnapshot.build(entries: entries, tracks: tracks, key: .init(newestFirst: false))
+        let ascending = RetrospectiveListingSnapshot.build(entries: entries, tracks: tracks, key: .init(newestFirst: false))
         XCTAssertEqual(ascending.items.map(\.id), [1, 2])
-        let missing = HistoryListingSnapshot.build(entries: entries, tracks: tracks, key: .init(query: "Música #99"))
+        let missing = RetrospectiveListingSnapshot.build(entries: entries, tracks: tracks, key: .init(query: "Música #99"))
         XCTAssertEqual(missing.items.map(\.id), [1])
-        let title = HistoryListingSnapshot.build(entries: entries, tracks: tracks, key: .init(query: "FAIXA"))
+        let title = RetrospectiveListingSnapshot.build(entries: entries, tracks: tracks, key: .init(query: "FAIXA"))
         XCTAssertEqual(title.items.map(\.id), [2])
     }
 }

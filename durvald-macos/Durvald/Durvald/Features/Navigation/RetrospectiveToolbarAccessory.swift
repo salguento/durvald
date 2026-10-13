@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Lets the window extend its own toolbar surface below the toolbar controls.
-struct HistoryToolbarAccessory<Content: View>: NSViewRepresentable {
+struct RetrospectiveToolbarAccessory<Content: View>: NSViewRepresentable {
     let content: Content
     let height: CGFloat
 
@@ -11,16 +11,16 @@ struct HistoryToolbarAccessory<Content: View>: NSViewRepresentable {
         self.content = content()
     }
 
-    func makeNSView(context: Context) -> HistoryToolbarAccessoryAnchor {
-        HistoryToolbarAccessoryAnchor(height: height, content: hostedContent(context.environment))
+    func makeNSView(context: Context) -> RetrospectiveToolbarAccessoryAnchor {
+        RetrospectiveToolbarAccessoryAnchor(height: height, content: hostedContent(context.environment))
     }
 
-    func updateNSView(_ view: HistoryToolbarAccessoryAnchor, context: Context) {
+    func updateNSView(_ view: RetrospectiveToolbarAccessoryAnchor, context: Context) {
         view.host.rootView = hostedContent(context.environment)
         view.updatePlacement()
     }
 
-    static func dismantleNSView(_ view: HistoryToolbarAccessoryAnchor, coordinator: ()) {
+    static func dismantleNSView(_ view: RetrospectiveToolbarAccessoryAnchor, coordinator: ()) {
         view.detach()
         view.host.rootView = AnyView(EmptyView())
     }
@@ -31,15 +31,15 @@ struct HistoryToolbarAccessory<Content: View>: NSViewRepresentable {
 }
 
 @MainActor
-final class HistoryToolbarAccessoryAnchor: NSView {
+final class RetrospectiveToolbarAccessoryAnchor: NSView {
     let accessory = NSTitlebarAccessoryViewController()
     let host: NSHostingView<AnyView>
     private weak var attachedWindow: NSWindow?
-    private let pane: HistoryToolbarAccessoryPane
+    private let pane: RetrospectiveToolbarAccessoryPane
 
     init(height: CGFloat, content: AnyView) {
         host = NSHostingView(rootView: content)
-        pane = HistoryToolbarAccessoryPane(frame: NSRect(x: 0, y: 0, width: 1, height: height))
+        pane = RetrospectiveToolbarAccessoryPane(frame: NSRect(x: 0, y: 0, width: 1, height: height))
         super.init(frame: .zero)
         // The window owns the accessory size. The picker must not publish
         // SwiftUI min/ideal/max constraints into the titlebar's native layout.
@@ -92,7 +92,7 @@ final class HistoryToolbarAccessoryAnchor: NSView {
 }
 
 @MainActor
-private final class HistoryToolbarAccessoryPane: NSView {
+private final class RetrospectiveToolbarAccessoryPane: NSView {
     var onLayout: (() -> Void)?
 
     override func layout() {

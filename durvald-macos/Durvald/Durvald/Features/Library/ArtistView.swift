@@ -1307,7 +1307,7 @@ struct ArtistView: View {
         let width = viewport.visibleWidth
         let sideInsets = viewport.sideInsets
         let highlightArtworkSize: CGFloat = 160
-        let popularTrackRowHeight = highlightArtworkSize / 3
+        let popularTrackRowHeight = PopularTrackRowMetrics.height
         let latestReleaseTitleFont = Font.system(
             size: (NSFont.preferredFont(forTextStyle: .subheadline).pointSize + 1) * 1.25
         )
@@ -1412,7 +1412,7 @@ struct ArtistView: View {
                             .foregroundStyle(.secondary)
                     }
 
-                    LazyHStack(alignment: .top, spacing: 24) {
+                    LazyHStack(alignment: .top, spacing: PopularTrackRowMetrics.columnSpacing) {
                         switch ranking {
                         case let .lastFm(externalRanking):
                             let visibleRanking = externalRanking.count >= 12

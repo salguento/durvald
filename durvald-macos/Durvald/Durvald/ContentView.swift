@@ -32,8 +32,8 @@ struct ContentView: View {
     @State private var albumsSummary = "Carregando…"
     @State private var artistSearchText = ""
     @State private var artistsSummary = "Carregando…"
-    @State private var historySearchText = ""
-    @State private var historySummary = "Carregando…"
+    @State private var retrospectiveSearchText = ""
+    @State private var retrospectiveSummary = "Carregando…"
     @State private var artistToolbarBackground: Visibility = .hidden
     @State private var isContentScrolled = false
     @State private var isContentTopbarHovered = false
@@ -342,7 +342,7 @@ struct ContentView: View {
     private var hasLibrarySearch: Bool {
         if isArtistDetail { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
-        return destination == .albums || destination == .songs || destination == .artists || destination == .history
+        return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective
     }
 
     private var isArtistDetail: Bool {
@@ -354,7 +354,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
-        case .history: historySummary
+        case .retrospective: retrospectiveSummary
         default: albumsSummary
         }
     }
@@ -363,7 +363,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: $musicSearchText
         case .artists: $artistSearchText
-        case .history: $historySearchText
+        case .retrospective: $retrospectiveSearchText
         default: $albumSearchText
         }
     }
@@ -372,7 +372,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: "Pesquisar músicas"
         case .artists: "Pesquisar artistas"
-        case .history: "Pesquisar no histórico"
+        case .retrospective: "Pesquisar na retrospectiva"
         default: "Pesquisar álbuns"
         }
     }
@@ -381,7 +381,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: "library.search"
         case .artists: "artists.search"
-        case .history: "history.search"
+        case .retrospective: "retrospective.search"
         default: "albums.search"
         }
     }
@@ -499,8 +499,8 @@ struct ContentView: View {
                     MusicLibraryViewOptionsMenu(onShowViewOptions: {
                         openWindow(id: "music-view-options")
                     })
-                } else if shell.navigationHistory.current == .history {
-                    HistoryToolbarOptionsMenu()
+                } else if shell.navigationHistory.current == .retrospective {
+                    RetrospectiveToolbarOptionsMenu()
                 } else {
                     collectionOptions(for: shell.navigationHistory.current == .artists ? .artists : .albums)
                 }
@@ -672,7 +672,7 @@ struct ContentView: View {
         PageChromePolicy(kind: isArtistDetail ? .artist : .standard,
                          queuePresented: shell.isQueuePresented,
                          scrolled: isContentScrolled, hovered: isContentTopbarHovered,
-                         hasSupplementaryHeader: shell.navigationHistory.current == .history)
+                         hasSupplementaryHeader: shell.navigationHistory.current == .retrospective)
     }
 
     private var contentToolbarBackgroundVisibility: Visibility {
@@ -777,9 +777,9 @@ struct ContentView: View {
             }
         case .playlists:
             PlaylistsView(onSelectPlaylist: showPlaylist)
-        case .history:
-            HistoryView(searchText: $historySearchText) { summary in
-                historySummary = summary
+        case .retrospective:
+            RetrospectiveView(searchText: $retrospectiveSearchText) { summary in
+                retrospectiveSummary = summary
             }
         }
     }

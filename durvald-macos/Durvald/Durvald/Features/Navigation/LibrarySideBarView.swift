@@ -153,9 +153,9 @@ struct LibrarySidebarView: View {
                     )
 
                     SidebarNavigationButton(
-                        item: .history,
+                        item: .retrospective,
                         selection: $destination,
-                        accessibilityIdentifier: "sidebar.history"
+                        accessibilityIdentifier: "sidebar.retrospective"
                     )
 
                     navigationSectionHeader("Biblioteca")

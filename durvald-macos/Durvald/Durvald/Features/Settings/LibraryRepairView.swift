@@ -94,7 +94,7 @@ struct LibraryRepairView: View {
             Button("Mesclar registros", role: .destructive) { Task { await merge(request) } }
             Button("Cancelar", role: .cancel) { pendingMerge = nil }
         } message: { request in
-            Text("\(request.description)\n\nPlaylists, histórico, favoritos, contadores e a maior nota serão preservados. O arquivo não será apagado.")
+            Text("\(request.description)\n\nPlaylists, retrospectiva, favoritos, contadores e a maior nota serão preservados. O arquivo não será apagado.")
         }
     }
 

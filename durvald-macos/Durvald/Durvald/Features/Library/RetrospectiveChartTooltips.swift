@@ -1,36 +1,36 @@
 import AppKit
 import SwiftUI
 
-struct HistoryChartTooltipRegion: Equatable {
+struct RetrospectiveChartTooltipRegion: Equatable {
     let frame: CGRect
     let text: String
 }
 
 /// Native tracking keeps each bar's hover independent inside the chart's scroll view.
-struct HistoryChartTooltips: NSViewRepresentable {
-    let regions: [HistoryChartTooltipRegion]
+struct RetrospectiveChartTooltips: NSViewRepresentable {
+    let regions: [RetrospectiveChartTooltipRegion]
 
-    func makeNSView(context: Context) -> HistoryChartTooltipView {
-        HistoryChartTooltipView(frame: .zero)
+    func makeNSView(context: Context) -> RetrospectiveChartTooltipView {
+        RetrospectiveChartTooltipView(frame: .zero)
     }
 
-    func updateNSView(_ view: HistoryChartTooltipView, context: Context) {
+    func updateNSView(_ view: RetrospectiveChartTooltipView, context: Context) {
         view.setRegions(regions)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: HistoryChartTooltipView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: RetrospectiveChartTooltipView, context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
     }
 
-    static func dismantleNSView(_ view: HistoryChartTooltipView, coordinator: ()) {
+    static func dismantleNSView(_ view: RetrospectiveChartTooltipView, coordinator: ()) {
         view.setRegions([])
     }
 }
 
 @MainActor
-final class HistoryChartTooltipView: NSView {
-    private(set) var regions: [HistoryChartTooltipRegion] = []
-    private(set) var tooltipViews: [HistoryChartBarHoverView] = []
+final class RetrospectiveChartTooltipView: NSView {
+    private(set) var regions: [RetrospectiveChartTooltipRegion] = []
+    private(set) var tooltipViews: [RetrospectiveChartBarHoverView] = []
 
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -46,7 +46,7 @@ final class HistoryChartTooltipView: NSView {
         nextResponder?.mouseDown(with: event)
     }
 
-    func setRegions(_ newRegions: [HistoryChartTooltipRegion]) {
+    func setRegions(_ newRegions: [RetrospectiveChartTooltipRegion]) {
         guard regions != newRegions else { return }
         regions = newRegions
         registerTooltips()
@@ -73,7 +73,7 @@ final class HistoryChartTooltipView: NSView {
         for region in regions {
             let rect = region.frame.intersection(bounds)
             guard !rect.isNull, !rect.isEmpty else { continue }
-            let bar = HistoryChartBarHoverView(frame: rect, text: region.text)
+            let bar = RetrospectiveChartBarHoverView(frame: rect, text: region.text)
             // Keep the tracking area restricted to this individual bar.
             bar.clipsToBounds = true
             addSubview(bar)
@@ -83,7 +83,7 @@ final class HistoryChartTooltipView: NSView {
 }
 
 @MainActor
-final class HistoryChartBarHoverView: NSView {
+final class RetrospectiveChartBarHoverView: NSView {
     let hoverText: String
     private(set) var isHovering = false
     private(set) var popover: NSPopover?

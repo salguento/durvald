@@ -4,20 +4,20 @@ import XCTest
 @testable import Durvald
 
 @MainActor
-final class HistoryChartTooltipTests: XCTestCase {
+final class RetrospectiveChartTooltipTests: XCTestCase {
     func testRenderedChartCreatesTooltipRegionsForBothBarsOfEveryDay() throws {
         let days = (0..<7).map {
-            HistoryWeekSnapshot.Day(date: Date(timeIntervalSince1970: 1_791_158_400 + Double($0) * 86_400),
+            RetrospectiveWeekSnapshot.Day(date: Date(timeIntervalSince1970: 1_791_158_400 + Double($0) * 86_400),
                                     current: $0 + 1, previous: 7 - $0)
         }
-        let snapshot = HistoryWeekSnapshot(days: days, currentTotal: 28, previousTotal: 28)
+        let snapshot = RetrospectiveWeekSnapshot(days: days, currentTotal: 28, previousTotal: 28)
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 900, height: 320),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
         let host = NSHostingView(rootView: ScrollView {
             VStack(spacing: 0) {
-                HistoryOverviewHeader(snapshot: snapshot)
+                RetrospectiveOverviewHeader(snapshot: snapshot)
                 Color.clear.frame(height: 500)
             }
             .frame(maxWidth: .infinity, alignment: .top)
@@ -27,8 +27,8 @@ final class HistoryChartTooltipTests: XCTestCase {
             host.layoutSubtreeIfNeeded()
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
-        func tooltipViews(in view: NSView) -> [HistoryChartTooltipView] {
-            let own = (view as? HistoryChartTooltipView).map { [$0] } ?? []
+        func tooltipViews(in view: NSView) -> [RetrospectiveChartTooltipView] {
+            let own = (view as? RetrospectiveChartTooltipView).map { [$0] } ?? []
             return own + view.subviews.flatMap { tooltipViews(in: $0) }
         }
         let tooltip = try XCTUnwrap(tooltipViews(in: host).first(where: { !$0.tooltipViews.isEmpty }))
@@ -54,7 +54,7 @@ final class HistoryChartTooltipTests: XCTestCase {
     }
 
     func testIndividualBarsRegisterDistinctPopoverValues() {
-        let view = HistoryChartTooltipView(frame: CGRect(x: 0, y: 0, width: 200, height: 100))
+        let view = RetrospectiveChartTooltipView(frame: CGRect(x: 0, y: 0, width: 200, height: 100))
         view.setRegions([
             .init(frame: CGRect(x: 20, y: 40, width: 20, height: 60), text: "Segunda-feira · Esta semana\n3 músicas"),
             .init(frame: CGRect(x: 40, y: 20, width: 20, height: 80), text: "Segunda-feira · Semana passada\n4 músicas")
@@ -76,7 +76,7 @@ final class HistoryChartTooltipTests: XCTestCase {
         let window = KeyHoverTestWindow(contentRect: CGRect(x: 0, y: 0, width: 200, height: 150),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let bar = HistoryChartBarHoverView(frame: CGRect(x: 40, y: 20, width: 30, height: 80),
+        let bar = RetrospectiveChartBarHoverView(frame: CGRect(x: 40, y: 20, width: 30, height: 80),
                                           text: "Segunda-feira · Esta semana\n3 músicas")
         bar.clipsToBounds = true
         window.contentView?.addSubview(bar)
@@ -94,7 +94,7 @@ final class HistoryChartTooltipTests: XCTestCase {
     }
 
     func testLeavingBarCancelsPendingPopover() async throws {
-        let bar = HistoryChartBarHoverView(frame: CGRect(x: 0, y: 0, width: 20, height: 80),
+        let bar = RetrospectiveChartBarHoverView(frame: CGRect(x: 0, y: 0, width: 20, height: 80),
                                           text: "Segunda-feira · Esta semana\n3 músicas")
         bar.mouseEntered(with: NSEvent())
         XCTAssertTrue(bar.isHovering)
@@ -105,7 +105,7 @@ final class HistoryChartTooltipTests: XCTestCase {
     }
 
     func testChangingDataAndResizingReplacesRegionsAndLeavingChartClearsThem() {
-        let view = HistoryChartTooltipView(frame: CGRect(x: 0, y: 0, width: 200, height: 100))
+        let view = RetrospectiveChartTooltipView(frame: CGRect(x: 0, y: 0, width: 200, height: 100))
         view.setRegions([.init(frame: CGRect(x: 100, y: 20, width: 20, height: 80), text: "3 músicas")])
         XCTAssertEqual(view.tooltipViews.map(\.hoverText), ["3 músicas"])
         view.setRegions([.init(frame: CGRect(x: 100, y: 30, width: 20, height: 70), text: "7 músicas")])

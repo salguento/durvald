@@ -6,7 +6,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
     case albums
     case artists
     case playlists
-    case history
+    case retrospective
     case search
 
     var id: Self { self }
@@ -16,7 +16,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
         .albums,
         .artists,
         .playlists,
-        .history,
+        .retrospective,
     ]
 
     var title: String {
@@ -26,7 +26,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
         case .albums: "Álbuns"
         case .artists: "Artistas"
         case .playlists: "Playlists"
-        case .history: "Histórico"
+        case .retrospective: "Retrospectiva"
         case .search: "Pesquisa"
         }
     }
@@ -38,7 +38,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
         case .albums: "square.stack"
         case .artists: "music.mic"
         case .playlists: "music.note.list"
-        case .history: "clock.arrow.circlepath"
+        case .retrospective: "clock.arrow.circlepath"
         case .search: "magnifyingglass"
         }
     }

@@ -102,7 +102,7 @@ struct ArtistListingSnapshot {
     }
 }
 
-struct HistoryListingSnapshot {
+struct RetrospectiveListingSnapshot {
     var items: [PlaybackHistoryItem] = []
     var tracksByID: [Int64: Track] = [:]
     var summary = ""
@@ -117,7 +117,7 @@ struct HistoryListingSnapshot {
         }
         let duration = DurationFormatter.totalSeconds(filtered.lazy.map(\.durationSeconds))
         let songs = Set(filtered.map(\.trackId)).count
-        let summary = SummaryPresentation.history(playCount: filtered.count, songCount: songs,
+        let summary = SummaryPresentation.retrospective(playCount: filtered.count, songCount: songs,
                                                   durationSeconds: duration, query: key.query)
         return Self(items: filtered.sorted { key.newestFirst ? $0.id > $1.id : $0.id < $1.id }, tracksByID: tracks, summary: summary)
     }

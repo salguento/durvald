@@ -8,6 +8,11 @@ enum LibraryTypography {
     static let summaryDetail = Font.caption
 }
 
+enum PopularTrackRowMetrics {
+    static let height: CGFloat = 160 / 3
+    static let columnSpacing: CGFloat = 24
+}
+
 enum LibrarySummaryMetrics {
     static let spacing: CGFloat = 1
     static let maximumWidth: CGFloat = 480

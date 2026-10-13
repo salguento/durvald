@@ -162,8 +162,6 @@ struct AlbumsView: View {
 }
 
 struct AlbumCard: View {
-    @Environment(DurvaldCoreStore.self) private var store
-
     let release: Release
     let onSelectAlbum: (Release) -> Void
 
@@ -176,11 +174,6 @@ struct AlbumCard: View {
     var titleLineLimit: Int = 1
 
     @State private var isHovered = false
-    @FocusState private var isPlayFocused: Bool
-
-    private var showsPlay: Bool {
-        isHovered || isPlayFocused
-    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -216,33 +209,8 @@ struct AlbumCard: View {
             .accessibilityLabel("Abrir \(release.title), de \(release.artist)")
             .accessibilityIdentifier("album.\(release.id)")
 
-            ZStack(alignment: .bottomTrailing) {
-                Color.clear
-                    .allowsHitTesting(false)
-
-                Button {
-                    Task {
-                        await store.playRelease(releaseID: release.id)
-                    }
-                } label: {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(AlbumPlayButtonStyle())
-                .focused($isPlayFocused)
-                .opacity(showsPlay ? 1 : 0)
-                .allowsHitTesting(showsPlay)
-                .padding(8)
-                .accessibilityLabel("Reproduzir o álbum \(release.title)")
-                .accessibilityIdentifier("album.\(release.id).play")
-                .help("Reproduzir álbum")
-            }
-            .frame(
-                width: artworkSize,
-                height: artworkSize
-            )
-            .animation(.easeInOut(duration: 0.12), value: showsPlay)
+            AlbumArtworkPlayOverlay(releaseID: release.id, title: release.title,
+                                    artworkSize: artworkSize, isHovered: isHovered)
         }
         .frame(width: artworkSize, alignment: .leading)
         .contentShape(Rectangle())
@@ -252,6 +220,40 @@ struct AlbumCard: View {
                 isHovered = hovering
             }
         }
+    }
+}
+
+/// Shared hover and keyboard-focus playback control for album artwork.
+struct AlbumArtworkPlayOverlay: View {
+    @Environment(DurvaldCoreStore.self) private var store
+    let releaseID: Int64
+    let title: String
+    let artworkSize: CGFloat
+    let isHovered: Bool
+    @FocusState private var isPlayFocused: Bool
+    private var showsPlay: Bool { isHovered || isPlayFocused }
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Color.clear.allowsHitTesting(false)
+            Button {
+                Task { await store.playRelease(releaseID: releaseID) }
+            } label: {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 30, height: 30)
+            }
+            .buttonStyle(AlbumPlayButtonStyle())
+            .focused($isPlayFocused)
+            .opacity(showsPlay ? 1 : 0)
+            .allowsHitTesting(showsPlay)
+            .padding(8)
+            .accessibilityLabel("Reproduzir o álbum \(title)")
+            .accessibilityIdentifier("album.\(releaseID).play")
+            .help("Reproduzir álbum")
+        }
+        .frame(width: artworkSize, height: artworkSize)
+        .animation(.easeInOut(duration: 0.12), value: showsPlay)
     }
 }
 

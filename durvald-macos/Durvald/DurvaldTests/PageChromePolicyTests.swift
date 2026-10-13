@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class PageChromePolicyTests: XCTestCase {
-    func testHistoryAccessoryUsesNativeToolbarWithEitherQueueState() {
+    func testRetrospectiveAccessoryUsesNativeToolbarWithEitherQueueState() {
         for queue in [false, true] {
             let policy = PageChromePolicy(kind: .standard, queuePresented: queue,
                                           hasSupplementaryHeader: true)
@@ -175,13 +175,13 @@ final class PageChromePolicyTests: XCTestCase {
         }
     }
 
-    func testHistoryAccessoryFollowsContentColumnAndDetachesOnLeavingPage() throws {
+    func testRetrospectiveAccessoryFollowsContentColumnAndDetachesOnLeavingPage() throws {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
                               styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
         let content = try XCTUnwrap(window.contentView)
-        let anchor = HistoryToolbarAccessoryAnchor(height: 46, content: AnyView(Text("Picker")))
+        let anchor = RetrospectiveToolbarAccessoryAnchor(height: 46, content: AnyView(Text("Picker")))
         anchor.frame = NSRect(x: 220, y: 0, width: 380, height: 200)
         content.addSubview(anchor)
         XCTAssertEqual(window.titlebarAccessoryViewControllers.count, 1)
@@ -201,13 +201,13 @@ final class PageChromePolicyTests: XCTestCase {
                       "The picker must not remain in the toolbar after leaving history")
     }
 
-    func testHistoryPickerContentUpdatesDoNotResizeWindowOrAccessory() throws {
+    func testRetrospectivePickerContentUpdatesDoNotResizeWindowOrAccessory() throws {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
                               styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
         let content = try XCTUnwrap(window.contentView)
-        let anchor = HistoryToolbarAccessoryAnchor(height: 46, content: AnyView(Text("Geral")))
+        let anchor = RetrospectiveToolbarAccessoryAnchor(height: 46, content: AnyView(Text("Geral")))
         anchor.frame = NSRect(x: 220, y: 0, width: 380, height: 200)
         content.addSubview(anchor)
         let originalFrame = window.frame

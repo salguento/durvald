@@ -71,7 +71,7 @@ enum PlayerNavigationFixture {
             artists: [sameNameArtist, artist, albumArtist],
             history: scrollable ? tracks.enumerated().map { index, track in
                 PlaybackHistoryItem(id: Int64(index + 1), trackId: track.id,
-                                    playedAt: "2026-10-04T03:00:00.000Z", durationSeconds: 180)
+                                    playedAt: Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: true).timeZone(separator: .omitted)), durationSeconds: 180)
             } : []
         )
     }

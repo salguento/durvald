@@ -16,7 +16,7 @@ struct SearchTiming {
     static let global = Self(debounce: .milliseconds(200), loadingDelay: .milliseconds(200))
     static let music = Self(debounce: .milliseconds(80), loadingDelay: .milliseconds(250))
     static let suggestions = global
-    static let history = Self(debounce: .milliseconds(80), loadingDelay: .zero)
+    static let retrospective = Self(debounce: .milliseconds(80), loadingDelay: .zero)
 }
 
 /// Owns debounce, committed results and publication. Backends remain domain-specific.

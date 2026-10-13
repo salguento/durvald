@@ -54,7 +54,7 @@ final class DurvaldUITests: XCTestCase {
             "sidebar.albums",
             "sidebar.artists",
             "sidebar.playlists",
-            "sidebar.history",
+            "sidebar.retrospective",
         ]
 
         for identifier in sectionIdentifiers {
@@ -550,7 +550,7 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertEqual(restoredFirstTrack.frame.minY, initialTrackFrame.minY, accuracy: 2)
         capture("Songs returned to top")
 
-        let sidebarFrame = app.buttons["sidebar.history"].frame
+        let sidebarFrame = app.buttons["sidebar.retrospective"].frame
         app.links["player.artist"].click()
         let artistPage = app.descendants(matching: .any)["artist.detail.7"]
         XCTAssertTrue(artistPage.waitForExistence(timeout: 3))
@@ -594,14 +594,14 @@ final class DurvaldUITests: XCTestCase {
         app.buttons["player.queue"].click()
         artistPage.scroll(byDeltaX: 0, deltaY: -420)
         capture("Artist detail scrolled")
-        XCTAssertEqual(app.buttons["sidebar.history"].frame.minY, sidebarFrame.minY, accuracy: 1)
+        XCTAssertEqual(app.buttons["sidebar.retrospective"].frame.minY, sidebarFrame.minY, accuracy: 1)
 
-        app.buttons["sidebar.history"].click()
+        app.buttons["sidebar.retrospective"].click()
         XCTAssertTrue(app.staticTexts["Faixa de teste 1 — Biblioteca para rolagem"].waitForExistence(timeout: 3))
-        capture("History at top")
+        capture("Retrospective at top")
         app.outlines.firstMatch.scroll(byDeltaX: 0, deltaY: -420)
-        capture("History scrolled")
-        XCTAssertEqual(app.buttons["sidebar.history"].frame.minY, sidebarFrame.minY, accuracy: 1)
+        capture("Retrospective scrolled")
+        XCTAssertEqual(app.buttons["sidebar.retrospective"].frame.minY, sidebarFrame.minY, accuracy: 1)
     }
 
     private func textHighlight(in rect: CGRect, window: CGRect, bitmap: NSBitmapImageRep) throws -> Double {
@@ -865,21 +865,27 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
-    func testHistoryTabsKeepWindowAndToolbarGeometry() {
+    func testRetrospectiveTabsKeepWindowAndToolbarGeometry() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture"]
         app.launch()
-        let history = app.buttons["sidebar.history"]
-        if !history.isHittable { app.buttons["navigation.sidebar"].click() }
-        XCTAssertTrue(history.waitForExistence(timeout: 3))
-        history.click()
-        XCTAssertTrue(app.buttons["history.tab.general"].waitForExistence(timeout: 3))
+        let retrospective = app.buttons["sidebar.retrospective"]
+        if !retrospective.isHittable { app.buttons["navigation.sidebar"].click() }
+        XCTAssertTrue(retrospective.waitForExistence(timeout: 3))
+        retrospective.click()
+        let options = app.descendants(matching: .any)["retrospective.viewOptions"]
+        options.click()
+        app.menuItems["Mensal"].click()
+        let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "retrospective.date."))
+        XCTAssertTrue(tabs.firstMatch.waitForExistence(timeout: 3))
         let window = app.windows.firstMatch
         let originalWindow = window.frame
         let originalToolbar = app.toolbars.firstMatch.frame
-        let originalPicker = app.buttons["history.tab.general"].frame
-        for tab in ["artists", "albums", "tracks", "general", "tracks", "artists", "general"] {
-            let button = app.buttons["history.tab.\(tab)"]
+        let visible = tabs.allElementsBoundByIndex.filter { $0.isHittable }
+        XCTAssertGreaterThan(visible.count, 1)
+        guard let first = visible.first else { return }
+        let originalPicker = first.frame
+        for button in visible.prefix(3) {
             button.click()
             XCTAssertTrue(button.isSelected)
             XCTAssertEqual(window.frame.width, originalWindow.width, accuracy: 1)
@@ -891,32 +897,62 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
-    func testHistoryToolbarSearchFiltersOlderEntriesAndUpdatesSummary() {
+    func testRetrospectivePeriodMenuRestoresSelectionAfterRelaunch() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture"]
         app.launch()
-        let historyTab = app.buttons["sidebar.history"]
-        if !historyTab.isHittable { app.buttons["navigation.sidebar"].click() }
-        XCTAssertTrue(historyTab.waitForExistence(timeout: 3))
-        historyTab.click()
-        app.buttons["history.tab.tracks"].click()
-        let search = app.textFields["history.search.field"]
-        if !search.exists { app.buttons["history.search.expand"].click() }
+        func openRetrospective() {
+            let button = app.buttons["sidebar.retrospective"]
+            if !button.isHittable { app.buttons["navigation.sidebar"].click() }
+            XCTAssertTrue(button.waitForExistence(timeout: 3))
+            button.click()
+        }
+        func select(_ title: String) {
+            let options = app.descendants(matching: .any)["retrospective.viewOptions"]
+            XCTAssertTrue(options.waitForExistence(timeout: 3))
+            options.click()
+            for label in ["Diário", "Semanal", "Mensal", "Anual"] {
+                XCTAssertTrue(app.menuItems[label].exists)
+            }
+            app.menuItems[title].click()
+        }
+        openRetrospective()
+        for title in ["Diário", "Semanal", "Anual", "Mensal"] {
+            select(title)
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND value == %@", "retrospective.overview.header", title)).firstMatch.waitForExistence(timeout: 5))
+        }
+        app.terminate()
+        app.launch()
+        openRetrospective()
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND value == %@", "retrospective.overview.header", "Mensal")).firstMatch.waitForExistence(timeout: 5))
+        select("Semanal")
+    }
+
+    func testRetrospectiveToolbarSearchFiltersOlderEntriesAndUpdatesSummary() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture"]
+        app.launch()
+        let retrospectiveTab = app.buttons["sidebar.retrospective"]
+        if !retrospectiveTab.isHittable { app.buttons["navigation.sidebar"].click() }
+        XCTAssertTrue(retrospectiveTab.waitForExistence(timeout: 3))
+        retrospectiveTab.click()
+        let search = app.textFields["retrospective.search.field"]
+        if !search.exists { app.buttons["retrospective.search.expand"].click() }
         XCTAssertTrue(search.waitForExistence(timeout: 3))
         search.click()
         search.typeText("Faixa de teste 240")
-        XCTAssertTrue(app.descendants(matching: .any)["history.entry.240"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.descendants(matching: .any)["history.entry.1"].exists)
-        let summary = app.descendants(matching: .any)["history.summary"]
+        XCTAssertTrue(app.descendants(matching: .any)["retrospective.entry.240"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["retrospective.entry.1"].exists)
+        let summary = app.descendants(matching: .any)["retrospective.summary"]
         // Compact focused search intentionally hides the metadata. Check it
         // after leaving the field, following the shared toolbar behavior.
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(summary.waitForExistence(timeout: 3))
         XCTAssertTrue((summary.value as? String ?? "").contains("1 reprodução"))
-        let options = app.descendants(matching: .any)["history.viewOptions"]
+        let options = app.descendants(matching: .any)["retrospective.viewOptions"]
         XCTAssertGreaterThanOrEqual(options.frame.width, 30)
         let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        attachment.name = "History shared toolbar with filtered metadata"
+        attachment.name = "Retrospective shared toolbar with filtered metadata"
         attachment.lifetime = .keepAlways
         add(attachment)
     }
@@ -933,7 +969,7 @@ final class DurvaldUITests: XCTestCase {
             ("songs", "library", "library.viewOptions"),
             ("albums", "albums", "albums.listingMode"),
             ("artists", "artists", "artists.listingMode"),
-            ("history", "history", "history.viewOptions"),
+            ("retrospective", "retrospective", "retrospective.viewOptions"),
         ] {
             let windowMenu = app.menuBars.menuBarItems["Window"]
             windowMenu.click()
@@ -1007,7 +1043,7 @@ final class DurvaldUITests: XCTestCase {
             ("songs", "library", "library.viewOptions"),
             ("albums", "albums", "albums.listingMode"),
             ("artists", "artists", "artists.listingMode"),
-            ("history", "history", "history.viewOptions"),
+            ("retrospective", "retrospective", "retrospective.viewOptions"),
         ]
         for (destination, search, optionsID) in destinations {
             app.buttons["sidebar.\(destination)"].click()
