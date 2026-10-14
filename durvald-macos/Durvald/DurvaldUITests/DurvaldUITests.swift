@@ -795,6 +795,31 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testGlobalSearchCanBeClickedWithQueueOpenAfterLosingFocus() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        app.typeKey("k", modifierFlags: .command)
+        let field = app.textFields["search.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.typeText("__pesquisa_clique__")
+
+        app.buttons["player.queue"].click()
+        for _ in 0..<2 {
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.7)).click()
+            XCTAssertEqual(field.value(forKey: "hasKeyboardFocus") as? Bool, false)
+            // A coordinate click exercises native hit testing, without requesting focus.
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+            XCTAssertEqual(field.value(forKey: "hasKeyboardFocus") as? Bool, true)
+            app.typeKey("a", modifierFlags: .command)
+            app.typeText("__pesquisa_com_fila__")
+            XCTAssertEqual(field.value as? String, "__pesquisa_com_fila__")
+        }
+    }
+
+    @MainActor
     func testSearchPageAutofocusesToolbarField() {
         let app = XCUIApplication()
         app.launchArguments.append("--ui-testing")
@@ -817,10 +842,14 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertEqual(searchField.value as? String, longQuery)
         XCTAssertEqual(searchField.frame.height, initialFieldFrame.height, accuracy: 1)
         XCTAssertEqual(searchField.frame.width, initialFieldFrame.width, accuracy: 1)
-        XCTAssertTrue(
-            app.staticTexts["Nenhum resultado"]
-                .waitForExistence(timeout: 3)
-        )
+        for message in [
+            "Nenhum artista encontrado para esta pesquisa.",
+            "Nenhum álbum encontrado para esta pesquisa.",
+            "Nenhuma faixa encontrada para esta pesquisa.",
+            "Nenhuma playlist encontrada para esta pesquisa."
+        ] {
+            XCTAssertTrue(app.staticTexts[message].waitForExistence(timeout: 3))
+        }
 
         let clearButton = app.buttons["search.clear"]
         XCTAssertTrue(clearButton.waitForExistence(timeout: 3))

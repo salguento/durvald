@@ -25,7 +25,7 @@ final class PageChromePolicyTests: XCTestCase {
                     XCTAssertEqual(policy.usesPageBackdrop, queue)
                     XCTAssertEqual(policy.observesHover, queue)
                     XCTAssertEqual(policy.backdropVisible, scrolled || hovered)
-                    XCTAssertEqual(policy.globalSearchOffset, queue ? -150 : 0)
+                    XCTAssertEqual(policy.queueReservation, queue ? 300 : 0)
                 }
             }
         }

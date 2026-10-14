@@ -308,7 +308,9 @@ struct ContentView: View {
                 .frame(minWidth: 180, idealWidth: 260, maxWidth: 300,
                        minHeight: ToolbarControlMetrics.size, maxHeight: ToolbarControlMetrics.size)
                 .animation(.easeOut(duration: 0.15), value: appearsActive)
-                .offset(x: pageChrome.globalSearchOffset)
+                // Reserve the queue inside the native toolbar item's bounds so
+                // AppKit hit testing follows the field's visible position.
+                .padding(.trailing, pageChrome.queueReservation)
             }
             .sharedBackgroundVisibility(.hidden)
         }

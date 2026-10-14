@@ -28,7 +28,6 @@ struct PageChromePolicy {
     }
 
     var queueReservation: CGFloat { queuePresented ? Self.queueWidth : 0 }
-    var globalSearchOffset: CGFloat { -queueReservation / 2 }
     static let queueWidth: CGFloat = 300
     static let queueToggleWidth: CGFloat = 38
 }
