@@ -19,6 +19,7 @@ private struct SearchFieldChrome<Editor: View>: View {
     let accessory: SearchFieldAccessory
     let identifier: String
     let action: () -> Void
+    var isLoading = false
     @ViewBuilder let editor: () -> Editor
 
     var body: some View {
@@ -29,7 +30,13 @@ private struct SearchFieldChrome<Editor: View>: View {
                 .foregroundStyle(.secondary)
                 .frame(width: style == .sidebar ? 20 : style == .picker ? 14 : nil)
             editor()
-            if accessory != .none, accessory != .clear || !text.isEmpty {
+            if isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 14, height: 14)
+                    .accessibilityLabel("Pesquisando")
+                    .accessibilityIdentifier("\(identifier).loading")
+            } else if accessory != .none, accessory != .clear || !text.isEmpty {
                 Button(action: action) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -76,15 +83,17 @@ struct ToolbarSearchField: View {
     var accessory: SearchFieldAccessory = .clear
     var focusColor = Color(nsColor: .keyboardFocusIndicatorColor)
     var onActivate: (() -> Void)? = nil
+    var isLoading = false
+    var onSubmit: (() -> Void)? = nil
 
     var body: some View {
         SearchFieldChrome(text: $text, style: .toolbar, accessory: accessory,
-                          identifier: identifier, action: performClear) {
+                          identifier: identifier, action: performClear, isLoading: isLoading) {
             ToolbarSearchTextField(
                 text: $text, isFocused: $isFocused, isPresented: true,
                 focusRequest: focusRequest, placeholder: "",
                 accessibilityLabel: accessibilityLabel ?? placeholder,
-                accessibilityIdentifier: "\(identifier).field"
+                accessibilityIdentifier: "\(identifier).field", onSubmit: onSubmit
             )
             .frame(maxWidth: .infinity)
             .overlay(alignment: .leading) {

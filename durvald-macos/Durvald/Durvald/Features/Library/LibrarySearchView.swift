@@ -5,13 +5,13 @@ struct LibrarySearchView: View {
     @Environment(\.trackMenuNavigation) private var navigation
 
     @Binding var searchText: String
-    @State private var search = SearchPresentation<SearchResults>()
+    @Bindable var search = SearchPresentation<SearchResults>()
     private var committedQuery: String { search.committedQuery }
     private var searchResults: SearchResults? { search.value }
-    private var isSearching: Bool { search.isSearching }
+    var submissionRevision: UInt64 = 0
     private var request: SearchRequest {
         .init(query: normalizedSearchText, storeID: ObjectIdentifier(store), coreID: store.core.map(ObjectIdentifier.init),
-              metadataRevision: store.metadataRevision, scope: "global")
+              metadataRevision: store.metadataRevision, sourceRevision: submissionRevision, scope: "global")
     }
 
     var body: some View {
@@ -23,15 +23,12 @@ struct LibrarySearchView: View {
                         systemImage: "magnifyingglass",
                         description: Text("Encontre músicas, álbuns, artistas e playlists.")
                     )
-                } else if isSearching && (searchResults?.isEmpty ?? true) {
-                    ProgressView("Pesquisando…")
-                        .controlSize(.small)
                 }
             }
         .accessibilityIdentifier("search.page")
         .task(id: request) {
             let current = request
-            await search.run(current, timing: .global, isCurrent: { request == current }) {
+            await search.run(current, timing: SearchTiming(debounce: .zero, loadingDelay: .zero), isCurrent: { request == current }) {
                 await store.searchLibrary(query: $0)
             }
         }

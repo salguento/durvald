@@ -43,6 +43,21 @@ final class SearchFieldTests: XCTestCase {
             doCommandBy: #selector(NSResponder.insertNewline(_:))))
     }
 
+    func testEnterSubmitsWithoutDroppingFocusOrChangingTheQuery() {
+        let state = SearchTestState()
+        state.text = "marina"
+        state.focused = true
+        var submissions = 0
+        var parent = native(state)
+        parent.onSubmit = { submissions += 1 }
+        let coordinator = parent.makeCoordinator()
+        XCTAssertTrue(coordinator.control(NSTextField(), textView: NSTextView(),
+                                          doCommandBy: #selector(NSResponder.insertNewline(_:))))
+        XCTAssertEqual(submissions, 1)
+        XCTAssertTrue(state.focused)
+        XCTAssertEqual(state.text, "marina")
+    }
+
     func testNativeEditingUpdatesBindingAndFocus() {
         let state = SearchTestState()
         let coordinator = native(state).makeCoordinator()

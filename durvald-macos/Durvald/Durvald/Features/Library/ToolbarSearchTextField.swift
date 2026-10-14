@@ -11,6 +11,7 @@ struct ToolbarSearchTextField: NSViewRepresentable {
     var placeholder = "Biblioteca"
     var accessibilityLabel = "Pesquisar na biblioteca"
     var accessibilityIdentifier = "search.field"
+    var onSubmit: (() -> Void)? = nil
 
     private var attributedPlaceholder: NSAttributedString {
         NSAttributedString(
@@ -266,6 +267,10 @@ struct ToolbarSearchTextField: NSViewRepresentable {
             textView: NSTextView,
             doCommandBy commandSelector: Selector
         ) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)), let onSubmit = parent.onSubmit {
+                onSubmit()
+                return true
+            }
             guard commandSelector == #selector(NSResponder.cancelOperation(_:)) else {
                 return false
             }

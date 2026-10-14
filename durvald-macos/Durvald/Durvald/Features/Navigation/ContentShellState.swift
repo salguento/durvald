@@ -82,6 +82,8 @@ struct ContentShellState {
     var navigationHistory = LibraryNavigationHistory()
     var sidebarSection: SidebarSection = .navigation
     var searchText = ""
+    var submittedSearchText = ""
+    var searchSubmissionRevision: UInt64 = 0
     var searchFocusRequest = 0
     var isSearchFocused = false
     var isQueuePresented = false
@@ -99,6 +101,11 @@ struct ContentShellState {
 
     mutating func toggleQueue() {
         isQueuePresented.toggle()
+    }
+
+    mutating func submitSearch() {
+        submittedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchSubmissionRevision &+= 1
     }
 
     mutating func requestSearchFocus() {

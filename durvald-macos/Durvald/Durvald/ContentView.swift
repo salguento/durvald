@@ -47,6 +47,8 @@ struct ContentView: View {
     @State private var isLibrarySearchExpanded = false
     @State private var musicLibrarySummary = MusicLibrarySummary(tracks: [], kind: .all)
     @State private var shell = ContentShellState()
+    @State private var globalSearch = SearchPresentation<SearchResults>()
+    @State private var searchPreview = SearchPresentation<SearchResults>()
     @State private var windowLayout = WindowSplitLayoutCoordinator()
     @State private var playlistCreation = PlaylistCreationCoordinator()
     // Scroll geometry can change on every rendered frame. Keeping these values
@@ -283,6 +285,12 @@ struct ContentView: View {
             // macOS owns the backdrop and its transition as content scrolls
             // behind the controls, including when the side panels resize.
             .toolbar { contentToolbar }
+            .onChange(of: shell.searchText) { _, query in
+                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    shell.submittedSearchText = ""
+                    globalSearch.reset()
+                }
+            }
             .onChange(of: shell.navigationHistory.currentRoute) { _, _ in
                 isLibrarySearchExpanded = false
                 if isArtistDetail {
@@ -299,11 +307,11 @@ struct ContentView: View {
 
         if shell.navigationHistory.current == .search {
             ToolbarItem(id: "global-search", placement: .principal) {
-                ToolbarSearchField(
+                GlobalSearchField(
                     text: $shell.searchText, isFocused: $shell.isSearchFocused,
-                    focusRequest: $shell.searchFocusRequest, placeholder: "Biblioteca",
-                    identifier: "search", accessibilityLabel: "Pesquisar na biblioteca",
-                    accessory: .reservedClear, focusColor: .accentColor
+                    focusRequest: $shell.searchFocusRequest, search: searchPreview,
+                    isExecutingSearch: globalSearch.isPending, onSubmit: { shell.submitSearch() },
+                    navigation: TrackMenuNavigation(artist: showArtist, album: showAlbum, playlist: showPlaylist)
                 )
                 .frame(minWidth: 180, idealWidth: 260, maxWidth: 300,
                        minHeight: ToolbarControlMetrics.size, maxHeight: ToolbarControlMetrics.size)
@@ -761,7 +769,8 @@ struct ContentView: View {
     private func sectionContent(_ destination: LibraryDestination) -> some View {
         switch destination {
         case .search:
-            LibrarySearchView(searchText: $shell.searchText)
+            LibrarySearchView(searchText: $shell.submittedSearchText, search: globalSearch,
+                              submissionRevision: shell.searchSubmissionRevision)
         case .home:
             HomeView { destination in
                 shell.navigationHistory.navigate(to: destination)

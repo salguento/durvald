@@ -795,6 +795,28 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testSearchWaitsForEnterAndHasNoPreviewForMissingResults() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        XCTAssertTrue(app.buttons["player.queue"].waitForExistence(timeout: 3))
+        app.buttons["player.queue"].click()
+        app.typeKey("k", modifierFlags: .command)
+        let field = app.textFields["search.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.typeText("__previa_pesquisa_inexistente__")
+        XCTAssertFalse(app.descendants(matching: .any)["search.section.artists"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["search.preview"].waitForExistence(timeout: 2))
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(app.staticTexts["Nenhum artista encontrado para esta pesquisa."].waitForExistence(timeout: 5))
+        XCTAssertEqual(field.value(forKey: "hasKeyboardFocus") as? Bool, true)
+        app.typeKey("a", modifierFlags: .command)
+        app.typeText("__outra_pesquisa__")
+        XCTAssertTrue(app.staticTexts["Nenhum artista encontrado para esta pesquisa."].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["search.preview"].exists)
+    }
+
+    @MainActor
     func testGlobalSearchCanBeClickedWithQueueOpenAfterLosingFocus() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
@@ -842,6 +864,7 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertEqual(searchField.value as? String, longQuery)
         XCTAssertEqual(searchField.frame.height, initialFieldFrame.height, accuracy: 1)
         XCTAssertEqual(searchField.frame.width, initialFieldFrame.width, accuracy: 1)
+        app.typeKey(.return, modifierFlags: [])
         for message in [
             "Nenhum artista encontrado para esta pesquisa.",
             "Nenhum álbum encontrado para esta pesquisa.",
