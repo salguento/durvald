@@ -814,7 +814,10 @@ private struct LibraryToolbarHost<Content: View>: NSViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: LibraryToolbarHostingView<Content>, context: Context) -> CGSize? {
         let proposedWidth = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? preferredWidth
-        return CGSize(width: max(minimumWidth, proposedWidth), height: 36)
+        // AppKit can offer the entire detail column while measuring a navigation
+        // item. Keep room for the trailing queue toggle instead of accepting that
+        // offer and pushing the search into the toolbar's overflow menu.
+        return CGSize(width: max(minimumWidth, min(preferredWidth, proposedWidth)), height: 36)
     }
 }
 

@@ -1010,6 +1010,55 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testArtistToolbarWorksWhenOpenedDirectlyAndPanelsToggle() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        app.links["player.artist"].rightClick()
+        app.menuItems["Abrir artista"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["artist.detail.7"].waitForExistence(timeout: 3))
+
+        let queueToggle = app.buttons["player.queue"]
+        let options = app.descendants(matching: .any)["artist.options"]
+        for queueOpen in [false, true] {
+            if queueOpen {
+                queueToggle.click()
+                XCTAssertTrue(app.descendants(matching: .any)["queue.sidebar"].waitForExistence(timeout: 3))
+            }
+            var sidebarClosed = false
+            for closeSidebar in [false, true, false] {
+                if closeSidebar != sidebarClosed {
+                    app.buttons["navigation.sidebar"].click()
+                    sidebarClosed = closeSidebar
+                    let visible = NSPredicate(format: "exists == %@", NSNumber(value: !closeSidebar))
+                    expectation(for: visible, evaluatedWith: app.buttons["sidebar.songs"])
+                    waitForExpectations(timeout: 3)
+                }
+                XCTAssertTrue(options.waitForExistence(timeout: 3))
+                XCTAssertTrue(options.isHittable)
+                XCTAssertTrue(queueToggle.isHittable)
+                XCTAssertLessThan(window.frame.maxX - queueToggle.frame.maxX, 80)
+                let expand = app.buttons["artist.tracks.search.expand"]
+                if expand.exists { expand.click() }
+                let field = app.textFields["artist.tracks.search.field"]
+                XCTAssertTrue(field.waitForExistence(timeout: 3))
+                XCTAssertTrue(field.isHittable)
+                field.click()
+                field.typeText("teste")
+                XCTAssertEqual(field.value as? String, "teste")
+                XCTAssertTrue(NSPredicate(format: "hasKeyboardFocus == true").evaluate(with: field))
+                XCTAssertTrue(queueToggle.isHittable)
+                app.typeKey("a", modifierFlags: .command)
+                app.typeKey(.delete, modifierFlags: [])
+                app.typeKey(.escape, modifierFlags: [])
+            }
+            if queueOpen { queueToggle.click() }
+        }
+    }
+
+    @MainActor
     func testLibraryToolbarKeepsSizeAndSearchFocusAcrossNativeWindowResizes() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
