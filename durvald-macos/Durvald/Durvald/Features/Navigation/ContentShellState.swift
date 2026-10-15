@@ -104,18 +104,20 @@ struct ContentShellState {
     }
 
     mutating func submitSearch() {
-        submittedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return }
+        submittedSearchText = query
         searchSubmissionRevision &+= 1
+        navigationHistory.navigate(to: .search)
     }
 
     mutating func requestSearchFocus() {
+        navigationHistory.navigate(to: .home)
         searchFocusRequest &+= 1
     }
 
     mutating func handleDestinationChange(_ destination: LibraryDestination) {
-        if destination == .search {
-            requestSearchFocus()
-        } else {
+        if destination != .home && destination != .search {
             isSearchFocused = false
         }
     }

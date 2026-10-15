@@ -27,7 +27,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
         case .artists: "Artistas"
         case .playlists: "Playlists"
         case .retrospective: "Retrospectiva"
-        case .search: "Pesquisa"
+        case .search: "Resultados da pesquisa"
         }
     }
 

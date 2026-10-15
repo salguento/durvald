@@ -141,12 +141,6 @@ struct LibrarySidebarView: View {
             ScrollView {
                 LazyVStack(spacing: 2) {
                     SidebarNavigationButton(
-                        item: .search,
-                        selection: $destination,
-                        accessibilityIdentifier: "sidebar.search.open"
-                    )
-
-                    SidebarNavigationButton(
                         item: .home,
                         selection: $destination,
                         accessibilityIdentifier: "sidebar.home"

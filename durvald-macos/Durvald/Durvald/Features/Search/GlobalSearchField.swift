@@ -1,9 +1,39 @@
 import AppKit
 import SwiftUI
 
+/// Persist only submitted terms, newest first, independently of preview requests.
+enum RecentSearchHistory {
+    static let storageKey = "search.recentQueries"
+    static let limit = 10
+
+    static func terms(in json: String) -> [String] {
+        guard let data = json.data(using: .utf8),
+              let values = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return normalized(values)
+    }
+
+    static func record(_ term: String, in json: String) -> String {
+        let term = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return json }
+        let values = normalized([term] + terms(in: json))
+        guard let data = try? JSONEncoder().encode(values) else { return json }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func normalized(_ terms: [String]) -> [String] {
+        var seen = Set<String>()
+        return Array(terms.compactMap { term -> String? in
+            let term = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = term.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard !term.isEmpty, seen.insert(key).inserted else { return nil }
+            return term
+        }.prefix(limit))
+    }
+}
+
 struct SearchPreviewItem: Identifiable {
     enum Destination {
-        case query(String), artist(Artist), album(Release), track(Track), playlist(Playlist)
+        case recentQuery(String), query(String), artist(Artist), album(Release), track(Track), playlist(Playlist)
     }
     let id: String
     let title: String
@@ -52,18 +82,29 @@ struct GlobalSearchField: View {
     @Binding var focusRequest: Int
     @Bindable var search: SearchPresentation<SearchResults>
     var isExecutingSearch = false
+    var recentQueries: [String] = []
     let onSubmit: () -> Void
     let navigation: TrackMenuNavigation
     @State private var dismissedQuery: String?
     @State private var selectedIndex: Int?
+    @State private var showsRecentSearches = false
+    @State private var selectionFocusRequest: Int?
 
     private var query: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var isShowingHistory: Bool {
+        (query.isEmpty || showsRecentSearches) && !recentQueries.isEmpty
+    }
     private var items: [SearchPreviewItem] {
+        if isShowingHistory {
+            return recentQueries.map {
+                SearchPreviewItem(id: "recent:\($0)", title: $0, subtitle: nil, destination: .recentQuery($0))
+            }
+        }
         guard search.committedQuery == query, let results = search.value else { return [] }
         return SearchPreviewItem.build(query: query, results: results)
     }
     private var isPresented: Bool {
-        isFocused && !query.isEmpty && !items.isEmpty && !search.isPending && dismissedQuery != query
+        isFocused && !items.isEmpty && (isShowingHistory || !search.isPending) && dismissedQuery != query
     }
 
     private var request: SearchRequest {
@@ -74,7 +115,7 @@ struct GlobalSearchField: View {
     private var previewHeight: CGFloat {
         let rows = items.reduce(CGFloat(12)) { $0 + ($1.subtitle == nil ? 34 : 66) }
         let dividers = zip(items, items.dropFirst()).filter { $0.subtitle != nil || $1.subtitle != nil }.count
-        return rows + CGFloat(dividers)
+        return rows + CGFloat(dividers) + (isShowingHistory ? 28 : 0)
     }
 
     var body: some View {
@@ -96,11 +137,22 @@ struct GlobalSearchField: View {
                 }
             }
             .onDisappear { search.cancel() }
-            .onChange(of: text) { _, _ in selectedIndex = nil }
+            .onChange(of: text) { _, _ in
+                selectedIndex = nil
+                showsRecentSearches = query.isEmpty
+            }
             .onChange(of: search.revision) { _, _ in selectedIndex = nil }
-            .onChange(of: focusRequest) { _, _ in dismissedQuery = nil }
+            .onChange(of: focusRequest) { _, request in
+                if request == selectionFocusRequest {
+                    selectionFocusRequest = nil
+                    return
+                }
+                dismissedQuery = nil
+                showsRecentSearches = true
+                selectedIndex = nil
+            }
             .onChange(of: isFocused) { _, focused in
-                if focused { dismissedQuery = nil }
+                if focused { dismissedQuery = nil; showsRecentSearches = true }
                 else { selectedIndex = nil }
             }
     }
@@ -109,6 +161,14 @@ struct GlobalSearchField: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
+                    if isShowingHistory {
+                        Text("Pesquisas recentes")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 14)
+                            .frame(height: 28)
+                    }
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         Button { select(item) } label: {
                             HStack(spacing: 12) {
@@ -155,6 +215,8 @@ struct GlobalSearchField: View {
     @ViewBuilder
     private func previewArtwork(_ item: SearchPreviewItem) -> some View {
         switch item.destination {
+        case .recentQuery:
+            Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary).frame(width: 20)
         case .query:
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary).frame(width: 20)
         case .artist(let artist):
@@ -172,8 +234,13 @@ struct GlobalSearchField: View {
 
     private func select(_ item: SearchPreviewItem) {
         switch item.destination {
+        case .recentQuery(let term):
+            replaceQuery(term)
+            dismissedQuery = term
+            selectedIndex = nil
+            onSubmit()
         case .query(let term):
-            text = term
+            replaceQuery(term)
             dismissedQuery = term
             selectedIndex = nil
         case .artist(let artist): dismiss(); navigation.artist(artist)
@@ -183,6 +250,15 @@ struct GlobalSearchField: View {
             dismiss()
             Task { await TrackRowPlayback.track(track.id).perform(using: store) }
         }
+    }
+
+    private func replaceQuery(_ term: String) {
+        text = term
+        showsRecentSearches = false
+        // An explicit edit also updates AppKit's active field editor. Keep
+        // this request from reopening history immediately after a selection.
+        focusRequest &+= 1
+        selectionFocusRequest = focusRequest
     }
 
     private func submit() {
@@ -200,8 +276,9 @@ struct GlobalSearchField: View {
             return true
         case 36, 76:
             if let index = selectedIndex, items.indices.contains(index) {
-                select(items[index])
-                if case .query = items[index].destination { onSubmit() }
+                let item = items[index]
+                select(item)
+                if case .query = item.destination { onSubmit() }
             } else { submit() }
             return true
         default: return false

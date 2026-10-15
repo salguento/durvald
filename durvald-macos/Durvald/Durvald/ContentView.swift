@@ -28,6 +28,7 @@ struct ContentView: View {
     @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
     @AppStorage("albums.minimumRating") private var albumMinimumRating = 0
 
+    @AppStorage(RecentSearchHistory.storageKey) private var recentSearchesJSON = "[]"
     @State private var playlistsSearchText = ""
     @State private var playlistsSummary = "Carregando…"
     @State private var playlistsToolbarState = PlaylistsToolbarState()
@@ -155,7 +156,7 @@ struct ContentView: View {
             }
         }
         .focusedSceneValue(\.openLibrarySearch) {
-            destinationBinding.wrappedValue = .search
+            requestSearchFocus()
         }
         .onChange(of: shell.navigationHistory.current, initial: true) { _, destination in
             shell.handleDestinationChange(destination)
@@ -291,12 +292,6 @@ struct ContentView: View {
             .onChange(of: fullDetailColumnWidth) { _, _ in
                 toolbarAvailableWidth = nil
             }
-            .onChange(of: shell.searchText) { _, query in
-                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    shell.submittedSearchText = ""
-                    globalSearch.reset()
-                }
-            }
             .onChange(of: shell.navigationHistory.currentRoute) { _, _ in
                 isLibrarySearchExpanded = false
                 if isAlbumDetail {
@@ -378,6 +373,9 @@ struct ContentView: View {
 
     private var librarySummaryText: String {
         switch shell.navigationHistory.current {
+        case .search:
+            SummaryPresentation.search(results: globalSearch.value, query: shell.submittedSearchText,
+                isPending: globalSearch.isPending || globalSearch.committedQuery != shell.submittedSearchText)
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
         case .playlists: playlistsSummary
@@ -438,7 +436,7 @@ struct ContentView: View {
                                        summaryLeadingPadding: Layout.librarySummaryLeadingPadding)
         let toggleReservation = Layout.queueToggleWidth + ToolbarControlMetrics.spacing
         let panelReservation = layout.panelReservation
-        let hasSearch = shell.navigationHistory.current == .search
+        let hasSearch = shell.navigationHistory.current == .home || shell.navigationHistory.current == .search
         // The panel reservation is drawing space, not a native minimum width.
         // Counting it as a minimum can push navigation into toolbar overflow,
         // which inserts an extra trailing button and moves the queue toggle.
@@ -470,16 +468,32 @@ struct ContentView: View {
                                                   prefersCompact: controls.compact)
                                 .padding(.trailing, panelReservation)
                         } else if hasSearch {
+                            let showsSummary = shell.navigationHistory.current == .search
+                            let availableWidth = max(0, geometry.size.width - panelReservation)
+                            let summaryReservation: CGFloat = showsSummary
+                                ? 120 + ToolbarControlMetrics.spacing + Layout.librarySummaryLeadingPadding : 0
+                            let searchWidth = min(300, max(36, availableWidth - summaryReservation))
+                            if showsSummary {
+                                libraryToolbarSummary
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .frame(width: max(0, availableWidth - searchWidth - 8 - Layout.librarySummaryLeadingPadding),
+                                           alignment: .leading)
+                                    .clipped()
+                                    .padding(.leading, Layout.librarySummaryLeadingPadding)
+                                    .frame(width: geometry.size.width, alignment: .leading)
+                            }
                             GlobalSearchField(
                                 text: $shell.searchText, isFocused: $shell.isSearchFocused,
                                 focusRequest: $shell.searchFocusRequest, search: searchPreview,
                                 isExecutingSearch: globalSearch.isPending,
-                                onSubmit: { shell.submitSearch() },
+                                recentQueries: RecentSearchHistory.terms(in: recentSearchesJSON),
+                                onSubmit: submitGlobalSearch,
                                 navigation: TrackMenuNavigation(artist: showArtist, album: showAlbum,
                                                                playlist: showPlaylist)
                             )
-                            .frame(width: min(300, max(36, geometry.size.width - panelReservation)),
-                                   height: ToolbarControlMetrics.size)
+                            .frame(width: searchWidth, height: ToolbarControlMetrics.size)
                             .padding(.trailing, panelReservation)
                         }
                     }
@@ -736,9 +750,6 @@ struct ContentView: View {
             get: { shell.navigationHistory.current },
             set: { destination in
                 guard let destination else { return }
-                if destination == .search && shell.navigationHistory.current == .search {
-                    requestSearchFocus()
-                }
                 shell.navigationHistory.navigate(to: destination)
             }
         )
@@ -774,6 +785,12 @@ struct ContentView: View {
                 if isContentScrolled != scrolled { isContentScrolled = scrolled }
             }
         )
+    }
+
+    private func submitGlobalSearch() {
+        guard !shell.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        recentSearchesJSON = RecentSearchHistory.record(shell.searchText, in: recentSearchesJSON)
+        shell.submitSearch()
     }
 
     private func requestSearchFocus() {

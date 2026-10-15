@@ -2,6 +2,29 @@ import XCTest
 @testable import Durvald
 
 final class SearchSubmissionTests: XCTestCase {
+    func testShortcutOpensHomeAndRequestsFocusWithoutExecutingSearch() {
+        var state = ContentShellState()
+        state.navigationHistory.navigate(to: .albums)
+        state.requestSearchFocus()
+        XCTAssertEqual(state.navigationHistory.currentRoute, .section(.home))
+        XCTAssertEqual(state.searchFocusRequest, 1)
+        XCTAssertEqual(state.searchSubmissionRevision, 0)
+        state.requestSearchFocus()
+        XCTAssertEqual(state.searchFocusRequest, 2)
+    }
+
+    func testOnlyNonemptySubmissionOpensDedicatedResults() {
+        var state = ContentShellState()
+        state.searchText = "  "
+        state.submitSearch()
+        XCTAssertEqual(state.navigationHistory.currentRoute, .section(.home))
+        XCTAssertEqual(state.searchSubmissionRevision, 0)
+        state.searchText = "  Marina  "
+        state.submitSearch()
+        XCTAssertEqual(state.navigationHistory.currentRoute, .section(.search))
+        XCTAssertEqual(state.submittedSearchText, "Marina")
+    }
+
     func testTypingDoesNotChangeTheExecutedQuery() {
         var state = ContentShellState()
         state.searchText = "marina"

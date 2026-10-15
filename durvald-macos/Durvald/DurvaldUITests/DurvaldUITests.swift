@@ -758,7 +758,7 @@ final class DurvaldUITests: XCTestCase {
 
         let sectionPicker = app.descendants(matching: .any)["sidebar.sectionPicker"]
         XCTAssertTrue(sectionPicker.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["sidebar.search.open"].exists)
+        XCTAssertFalse(app.buttons["sidebar.search.open"].exists)
         XCTAssertTrue(app.buttons["navigation.back"].exists)
         XCTAssertTrue(app.buttons["navigation.forward"].exists)
     }
@@ -803,11 +803,11 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertFalse(forward.isEnabled)
         app.typeKey(.rightArrow, modifierFlags: .command)
         XCTAssertTrue(home.exists)
-        XCTAssertFalse(field.exists)
+        XCTAssertTrue(field.exists)
     }
 
     @MainActor
-    func testCommandKOpensSearchAndRefocusesWithSidebarHidden() {
+    func testCommandKOpensHomeAndRefocusesWithSidebarHidden() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
         app.launch()
@@ -834,6 +834,90 @@ final class DurvaldUITests: XCTestCase {
         app.typeKey("a", modifierFlags: .command)
         app.typeText("digitavel")
         XCTAssertEqual(field.value as? String, "digitavel")
+    }
+
+    @MainActor
+    func testHomeSearchHistoryOpensResultsOnClickAndPersistsAcrossLaunches() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let home = app.descendants(matching: .any)["home.page"]
+        let results = app.descendants(matching: .any)["search.page"]
+        let term = "__historico_home__"
+        let recentID = "search.preview.recent:\(term)"
+        app.typeKey("k", modifierFlags: .command)
+        let field = app.textFields["search.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        XCTAssertTrue(home.exists)
+        app.typeKey("a", modifierFlags: .command)
+        field.typeText(term)
+        XCTAssertTrue(home.exists)
+        XCTAssertFalse(results.exists)
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(results.waitForExistence(timeout: 5))
+        XCTAssertFalse(home.exists)
+        let summary = app.descendants(matching: .any)["search.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 3))
+        let navigation = app.descendants(matching: .any)["navigation.history"]
+        XCTAssertEqual(summary.frame.minX - navigation.frame.maxX, 12, accuracy: 1)
+        expectation(for: NSPredicate(format: "value CONTAINS %@", "0 artistas, 0 álbuns, 0 músicas, 0 playlists"),
+                    evaluatedWith: summary)
+        waitForExpectations(timeout: 3)
+        let resultsCapture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        resultsCapture.name = "Dedicated search results toolbar metadata"
+        resultsCapture.lifetime = .keepAlways
+        add(resultsCapture)
+
+        app.typeKey("k", modifierFlags: .command)
+        XCTAssertTrue(home.waitForExistence(timeout: 3))
+        XCTAssertFalse(summary.exists)
+        let recent = app.buttons[recentID]
+        XCTAssertTrue(recent.waitForExistence(timeout: 3))
+        recent.click()
+        XCTAssertTrue(results.waitForExistence(timeout: 5))
+        XCTAssertEqual(field.value as? String, term)
+
+        app.terminate()
+        app.launch()
+        app.typeKey("k", modifierFlags: .command)
+        XCTAssertTrue(app.buttons[recentID].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Pesquisas recentes"].exists)
+        let capture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        capture.name = "Home search with recent queries"
+        capture.lifetime = .keepAlways
+        add(capture)
+        app.buttons[recentID].click()
+        XCTAssertTrue(results.waitForExistence(timeout: 5))
+        XCTAssertEqual(field.value as? String, term)
+    }
+
+    @MainActor
+    func testDedicatedResultsToolbarShowsExecutedQueryAndCounts() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        app.typeKey("k", modifierFlags: .command)
+        let field = app.textFields["search.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.typeText("__metadata_resultados__")
+        let summary = app.descendants(matching: .any)["search.summary"]
+        XCTAssertFalse(summary.exists)
+        app.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(summary.waitForExistence(timeout: 3))
+        expectation(for: NSPredicate(format: "value CONTAINS %@", "0 artistas, 0 álbuns, 0 músicas, 0 playlists"),
+                    evaluatedWith: summary)
+        waitForExpectations(timeout: 3)
+        XCTAssertTrue((summary.value as? String)?.contains("__metadata_resultados__") == true)
+        let navigation = app.descendants(matching: .any)["navigation.history"]
+        XCTAssertEqual(summary.frame.minX - navigation.frame.maxX, 12, accuracy: 1)
+        XCTAssertFalse(summary.frame.intersects(field.frame))
+        app.typeKey("a", modifierFlags: .command)
+        field.typeText("outro termo ainda não enviado")
+        XCTAssertTrue((summary.value as? String)?.contains("__metadata_resultados__") == true)
+        let capture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        capture.name = "Dedicated results toolbar with submitted metadata"
+        capture.lifetime = .keepAlways
+        add(capture)
     }
 
     @MainActor
@@ -884,14 +968,13 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
-    func testSearchPageAutofocusesToolbarField() {
+    func testHomeSearchShortcutFocusesToolbarAndEnterOpensResults() {
         let app = XCUIApplication()
-        app.launchArguments.append("--ui-testing")
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
         app.launch()
 
-        let searchButton = app.buttons["sidebar.search.open"]
-        XCTAssertTrue(searchButton.waitForExistence(timeout: 3))
-        searchButton.click()
+        app.typeKey("k", modifierFlags: .command)
+        XCTAssertTrue(app.descendants(matching: .any)["home.page"].waitForExistence(timeout: 3))
 
         let searchField = app.descendants(matching: .any)["search.field"]
         XCTAssertTrue(searchField.waitForExistence(timeout: 3))
@@ -930,7 +1013,7 @@ final class DurvaldUITests: XCTestCase {
 
 
     @MainActor
-    func testAppLaunchesOnHomeAndPlacesItBelowSearch() {
+    func testAppLaunchesOnHomeWithSearchAndNoSearchSidebarEntry() {
         let app = XCUIApplication()
         app.launchArguments.append("--ui-testing")
         app.launch()
@@ -940,9 +1023,9 @@ final class DurvaldUITests: XCTestCase {
         let homeButton = app.buttons["sidebar.home"]
 
         XCTAssertTrue(homePage.waitForExistence(timeout: 3))
-        XCTAssertTrue(searchButton.waitForExistence(timeout: 3))
+        XCTAssertFalse(searchButton.exists)
         XCTAssertTrue(homeButton.waitForExistence(timeout: 3))
-        XCTAssertLessThan(searchButton.frame.minY, homeButton.frame.minY)
+        XCTAssertTrue(app.textFields["search.field"].exists)
     }
 
     @MainActor
@@ -1342,7 +1425,7 @@ final class DurvaldUITests: XCTestCase {
         let optionsIDs = ["songs": "library.viewOptions", "albums": "albums.listingMode",
                           "artists": "artists.listingMode", "playlists": "playlists.listingMode",
                           "retrospective": "retrospective.viewOptions"]
-        let destinations = ["search.open", "home", "retrospective", "artists", "search.open",
+        let destinations = ["home", "home", "retrospective", "artists", "home",
                             "home", "artists", "albums", "songs", "playlists", "retrospective"]
         for queueOpen in [false, true] {
             if queueOpen { toggle.click() }
@@ -1385,7 +1468,7 @@ final class DurvaldUITests: XCTestCase {
             app.menuItems["Fill"].click()
         }
         let toggle = app.buttons["player.queue"]
-        for destination in ["home", "search.open", "songs", "albums", "artists", "playlists", "retrospective"] {
+        for destination in ["home", "home", "songs", "albums", "artists", "playlists", "retrospective"] {
             let tab = app.buttons["sidebar.\(destination)"]
             if !tab.isHittable { app.buttons["navigation.sidebar"].click() }
             XCTAssertTrue(tab.waitForExistence(timeout: 3))
