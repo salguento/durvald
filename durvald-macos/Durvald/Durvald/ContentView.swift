@@ -43,7 +43,7 @@ struct ContentView: View {
     @State private var musicSearchText = ""
     @State private var contentColumnWidth: CGFloat = 0
     @State private var fullDetailColumnWidth: CGFloat = 0
-    @State private var libraryToolbarMeasurements: [String: PageToolbarMeasurement] = [:]
+    @State private var toolbarAvailableWidth: CGFloat?
     @State private var isLibrarySearchExpanded = false
     @State private var musicLibrarySummary = MusicLibrarySummary(tracks: [], kind: .all)
     @State private var shell = ContentShellState()
@@ -57,7 +57,7 @@ struct ContentView: View {
     @State private var pageScrollOffsets = LibraryScrollOffsetStore()
 
     private enum Layout {
-        static let librarySummaryLeadingPadding: CGFloat = 8
+        static let librarySummaryLeadingPadding: CGFloat = 4
         static let panelToggleIconWidth: CGFloat = 20
         static let panelToggleIconHeight: CGFloat = 16
         static let contentViewMinimumWidth: CGFloat = 360
@@ -285,6 +285,12 @@ struct ContentView: View {
             // macOS owns the backdrop and its transition as content scrolls
             // behind the controls, including when the side panels resize.
             .toolbar { contentToolbar }
+            .onChange(of: shell.columnVisibility) { _, _ in
+                toolbarAvailableWidth = nil
+            }
+            .onChange(of: fullDetailColumnWidth) { _, _ in
+                toolbarAvailableWidth = nil
+            }
             .onChange(of: shell.searchText) { _, query in
                 if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     shell.submittedSearchText = ""
@@ -304,50 +310,12 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var contentToolbar: some ToolbarContent {
         navigationToolbar
-
-        if shell.navigationHistory.current == .search {
-            ToolbarItem(id: "global-search", placement: .principal) {
-                GlobalSearchField(
-                    text: $shell.searchText, isFocused: $shell.isSearchFocused,
-                    focusRequest: $shell.searchFocusRequest, search: searchPreview,
-                    isExecutingSearch: globalSearch.isPending, onSubmit: { shell.submitSearch() },
-                    navigation: TrackMenuNavigation(artist: showArtist, album: showAlbum, playlist: showPlaylist)
-                )
-                .frame(width: globalSearchToolbarWidth, height: ToolbarControlMetrics.size)
-                .animation(.easeOut(duration: 0.15), value: appearsActive)
-                // Reserve the queue inside the native toolbar item's bounds so
-                // AppKit hit testing follows the field's visible position.
-                .padding(.trailing, pageChrome.queueReservation)
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
-
-        ToolbarSpacer(.flexible)
-
-        if !hasLibrarySearch,
-           case .section(let destination) = shell.navigationHistory.currentRoute,
-                  destination == .artists || destination == .playlists {
-            ToolbarItem(id: "\(destination.rawValue)-view-options", placement: .automatic) {
-                collectionOptions(for: destination)
-            }
-            .sharedBackgroundVisibility(.hidden)
-            if shell.isQueuePresented {
-                ToolbarItem(id: "queue-toolbar-space", placement: .automatic) {
-                    Color.clear
-                        .frame(width: Layout.queueIdealWidth - Layout.queueToggleWidth - 32, height: 1)
-                        .accessibilityHidden(true)
-                }
-                .sharedBackgroundVisibility(.hidden)
-            }
-        }
-        ToolbarSpacer(.fixed)
-        ToolbarItem(id: "queue-toggle", placement: .automatic) {
-            // A consistent custom view preserves the native 8 pt trailing
-            // margin instead of inheriting native button alignment insets.
-            LibraryToolbarHost(content: queueToggleButton,
-                               minimumWidth: Layout.queueToggleWidth,
-                               preferredWidth: Layout.queueToggleWidth)
-            .frame(width: Layout.queueToggleWidth, height: ToolbarControlMetrics.size)
+        // Keep one native item across navigation. Page-specific controls and the
+        // queue toggle share a canvas, so their spacing cannot drift independently.
+        // Native navigation spacing (8 pt) plus the summary's inset (4 pt)
+        // keeps both text lines exactly 12 pt after the back/forward group.
+        ToolbarItem(id: "page-content-controls", placement: .navigation) {
+            pageContentToolbar
         }
         .sharedBackgroundVisibility(.hidden)
         .visibilityPriority(.high)
@@ -357,12 +325,6 @@ struct ContentView: View {
         if isArtistDetail { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
         return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective
-    }
-
-    private var globalSearchToolbarWidth: CGFloat {
-        let navigationWidth: CGFloat = shell.columnVisibility == .detailOnly ? 280 : 76
-        return min(300, max(36, libraryToolbarDetailWidth - pageChrome.queueReservation
-                            - navigationWidth - Layout.queueToggleWidth - 64))
     }
 
     private var isArtistDetail: Bool {
@@ -406,10 +368,6 @@ struct ContentView: View {
         }
     }
 
-    private var libraryToolbarLayoutKey: String {
-        "\(shell.columnVisibility == .detailOnly)"
-    }
-
     private var libraryToolbarDetailWidth: CGFloat {
         PageViewport.column(visibleWidth: contentColumnWidth,
             measuredFullWidth: fullDetailColumnWidth,
@@ -423,39 +381,68 @@ struct ContentView: View {
         return 120 + 220 + 44 + 8 + Layout.librarySummaryLeadingPadding
     }
 
-    private var libraryContentToolbar: some View {
+    private var pageContentToolbar: some View {
         let detailWidth = libraryToolbarDetailWidth
         let layout = PageToolbarLayout(kind: pageChrome.kind, queuePresented: shell.isQueuePresented,
                                        expandedMinimumWidth: libraryExpandedControlsMinimumWidth,
                                        summaryLeadingPadding: Layout.librarySummaryLeadingPadding)
+        let toggleReservation = Layout.queueToggleWidth + ToolbarControlMetrics.spacing
         let panelReservation = layout.panelReservation
-        let minimumWidth = layout.minimumWidth
-        let preferredWidth = layout.preferredWidth(detailWidth: detailWidth,
-            sidebarVisible: shell.columnVisibility != .detailOnly,
-            measurement: libraryToolbarMeasurements[libraryToolbarLayoutKey])
+        let hasSearch = shell.navigationHistory.current == .search
+        let hasOptions = shell.navigationHistory.currentRoute == .section(.playlists)
+        // The panel reservation is drawing space, not a native minimum width.
+        // Counting it as a minimum can push navigation into toolbar overflow,
+        // which inserts an extra trailing button and moves the queue toggle.
+        let controlsMinimum: CGFloat = hasLibrarySearch ? layout.minimumWidth - panelReservation
+            : (hasSearch || hasOptions ? 36 : 0)
+        let minimumWidth = controlsMinimum + toggleReservation
+        let preferredWidth = max(minimumWidth, toolbarAvailableWidth
+            ?? (layout.preferredWidth(detailWidth: detailWidth,
+                sidebarVisible: shell.columnVisibility != .detailOnly) + toggleReservation))
 
-        let content = GeometryReader { geometry in
-            let controls = layout.controls(assignedWidth: geometry.size.width,
-                                           searchExpanded: isLibrarySearchExpanded)
-            let compact = controls.compact
-            let searchWidth = controls.searchWidth
-            let summaryWidth = controls.summaryWidth
-
-            ZStack(alignment: .trailing) {
-                if !isArtistDetail {
-                    libraryToolbarSummary
-                    .fixedSize(horizontal: false, vertical: true)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(width: summaryWidth, alignment: .leading)
-                    .clipped()
-                    .padding(.leading, Layout.librarySummaryLeadingPadding)
-                    .frame(width: geometry.size.width, alignment: .leading)
+        let content = GeometryReader { toolbarGeometry in
+            HStack(spacing: ToolbarControlMetrics.spacing) {
+                GeometryReader { geometry in
+                    let controls = layout.controls(assignedWidth: geometry.size.width,
+                                                   searchExpanded: isLibrarySearchExpanded)
+                    ZStack(alignment: .trailing) {
+                        if hasLibrarySearch {
+                            if !isArtistDetail {
+                                libraryToolbarSummary
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .frame(width: controls.summaryWidth, alignment: .leading)
+                                    .clipped()
+                                    .padding(.leading, Layout.librarySummaryLeadingPadding)
+                                    .frame(width: geometry.size.width, alignment: .leading)
+                            }
+                            libraryTopbarControls(searchWidth: controls.searchWidth,
+                                                  prefersCompact: controls.compact)
+                                .padding(.trailing, panelReservation)
+                        } else if hasSearch {
+                            GlobalSearchField(
+                                text: $shell.searchText, isFocused: $shell.isSearchFocused,
+                                focusRequest: $shell.searchFocusRequest, search: searchPreview,
+                                isExecutingSearch: globalSearch.isPending,
+                                onSubmit: { shell.submitSearch() },
+                                navigation: TrackMenuNavigation(artist: showArtist, album: showAlbum,
+                                                               playlist: showPlaylist)
+                            )
+                            .frame(width: min(300, max(36, geometry.size.width - panelReservation)),
+                                   height: ToolbarControlMetrics.size)
+                            .padding(.trailing, panelReservation)
+                        } else if hasOptions {
+                            collectionOptions(for: .playlists)
+                                .padding(.trailing, panelReservation)
+                        }
+                    }
+                    .frame(width: geometry.size.width, height: ToolbarControlMetrics.size,
+                           alignment: .trailing)
                 }
-                libraryTopbarControls(searchWidth: searchWidth, prefersCompact: compact)
-                    .padding(.trailing, panelReservation)
+                queueToggleButton
             }
-            .frame(width: geometry.size.width, height: ToolbarControlMetrics.size, alignment: .trailing)
+            .frame(width: toolbarGeometry.size.width, height: ToolbarControlMetrics.size)
         }
         .environment(\.appearsActive, appearsActive)
         .environment(store)
@@ -464,18 +451,10 @@ struct ContentView: View {
             transaction.disablesAnimations = true
         }
 
-        return LibraryToolbarHost(content: content, minimumWidth: minimumWidth, preferredWidth: preferredWidth)
-        .frame(minWidth: minimumWidth, maxWidth: .infinity, minHeight: ToolbarControlMetrics.size, maxHeight: ToolbarControlMetrics.size)
-        .background {
-            LibraryToolbarWidthObserver(
-                trailingReservation: Layout.queueToggleWidth + 24,
-                detailWidth: detailWidth,
-                layoutKey: libraryToolbarLayoutKey,
-                measurements: $libraryToolbarMeasurements
-            )
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
+        return LibraryToolbarHost(content: content, minimumWidth: minimumWidth,
+                                  preferredWidth: preferredWidth)
+        .frame(minWidth: minimumWidth, maxWidth: .infinity,
+               minHeight: ToolbarControlMetrics.size, maxHeight: ToolbarControlMetrics.size)
         .transaction { transaction in
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -570,13 +549,7 @@ struct ContentView: View {
         ToolbarItem(placement: .navigation) {
             backForwardButtons
         }
-        if hasLibrarySearch {
-            // The summary adds leading padding to match the navigation-to-title gap.
-            ToolbarItem(id: "library-content-controls", placement: .navigation) {
-                libraryContentToolbar
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
+
     }
 
     private var queueToggleButton: some View {
@@ -652,6 +625,17 @@ struct ContentView: View {
         }
         .labelStyle(.iconOnly)
         .controlGroupStyle(.navigation)
+        .accessibilityIdentifier("navigation.history")
+        .background {
+            ToolbarNavigationWidthObserver { width in
+                guard abs((toolbarAvailableWidth ?? 0) - width) > 0.5 else { return }
+                var transaction = Transaction(animation: nil)
+                transaction.disablesAnimations = true
+                withTransaction(transaction) { toolbarAvailableWidth = width }
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
     }
 
     private var addPlaylistButton: some View {
@@ -824,10 +808,9 @@ private struct LibraryToolbarHost<Content: View>: NSViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: LibraryToolbarHostingView<Content>, context: Context) -> CGSize? {
         let proposedWidth = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? preferredWidth
-        // AppKit can offer the entire detail column while measuring a navigation
-        // item. Keep room for the trailing queue toggle instead of accepting that
-        // offer and pushing the search into the toolbar's overflow menu.
-        return CGSize(width: max(minimumWidth, min(preferredWidth, proposedWidth)), height: 36)
+        // The shared canvas includes the trailing toggle. Accept the native
+        // allocation so it fills the space immediately after navigation.
+        return CGSize(width: max(minimumWidth, proposedWidth), height: 36)
     }
 }
 
@@ -889,43 +872,28 @@ final class LibraryToolbarHostingView<Content: View>: NSView {
 }
 
 
-private struct LibraryToolbarWidthObserver: NSViewRepresentable {
-    let trailingReservation: CGFloat
-    let detailWidth: CGFloat
-    let layoutKey: String
-    @Binding var measurements: [String: PageToolbarMeasurement]
+// Measure from the independent navigation group, never from the flexible
+// toolbar canvas itself. Its leading gap and the trailing window inset are 8 pt.
+private struct ToolbarNavigationWidthObserver: NSViewRepresentable {
+    let publish: (CGFloat) -> Void
 
-    func makeNSView(context: Context) -> WidthObserverView { WidthObserverView() }
+    func makeNSView(context: Context) -> ObserverView { ObserverView() }
 
-    func updateNSView(_ view: WidthObserverView, context: Context) {
-        view.trailingReservation = trailingReservation
-        view.publish = { width in
-            if let previous = measurements[layoutKey],
-               abs(previous.availableWidth - width) <= 0.5,
-               abs(previous.detailWidth - detailWidth) <= 0.5 { return }
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                measurements[layoutKey] = PageToolbarMeasurement(
-                    availableWidth: width, detailWidth: detailWidth)
-            }
-        }
+    func updateNSView(_ view: ObserverView, context: Context) {
+        view.publish = publish
         view.scheduleMeasurement()
     }
 
-    final class WidthObserverView: NSView {
-        var trailingReservation: CGFloat = 0
+    final class ObserverView: NSView {
         var publish: ((CGFloat) -> Void)?
-        private var isMeasurementScheduled = false
+        private var scheduled = false
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             NotificationCenter.default.removeObserver(self)
             if let window {
-                NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
-                    name: NSWindow.didResizeNotification, object: window)
-                NotificationCenter.default.addObserver(self, selector: #selector(windowResized),
-                    name: NSWindow.didEndLiveResizeNotification, object: window)
+                NotificationCenter.default.addObserver(self, selector: #selector(windowUpdated),
+                    name: NSWindow.didUpdateNotification, object: window)
             }
             scheduleMeasurement()
         }
@@ -935,30 +903,18 @@ private struct LibraryToolbarWidthObserver: NSViewRepresentable {
             scheduleMeasurement()
         }
 
-        @objc private func windowResized() { scheduleMeasurement() }
+        @objc private func windowUpdated() { scheduleMeasurement() }
 
         func scheduleMeasurement() {
-            // Coalesce updates and read geometry after AppKit's layout pass.
-            // This observer never changes constraints or native item priorities.
-            guard !isMeasurementScheduled else { return }
-            isMeasurementScheduled = true
+            guard !scheduled else { return }
+            scheduled = true
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.isMeasurementScheduled = false
-                // During live resize, extrapolate the last settled measurement
-                // from the content column instead of feeding every toolbar
-                // layout pass back into its own preferred-width constraints.
-                guard let window = self.window, !window.inLiveResize, self.bounds.width > 0,
-                      let toolbar = window.toolbar,
-                      let item = toolbar.items.first(where: { item in
-                          guard let view = item.view else { return false }
-                          return self.isDescendant(of: view)
-                      }),
-                      toolbar.visibleItems?.contains(where: { $0 === item }) == true
-                else { return }
-                let contentStart = self.convert(self.bounds, to: nil).minX
-                let availableWidth = max(80, window.frame.width - contentStart - self.trailingReservation)
-                self.publish?(availableWidth)
+                self.scheduled = false
+                guard let window = self.window, !self.isHiddenOrHasHiddenAncestor,
+                      self.bounds.width > 0 else { return }
+                let navigationEnd = self.convert(self.bounds, to: nil).maxX
+                self.publish?(max(0, window.frame.width - navigationEnd - 16))
             }
         }
 

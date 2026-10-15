@@ -118,10 +118,10 @@ final class PageChromePolicyTests: XCTestCase {
         }
     }
 
-    func testNativeMeasurementFollowsResizeWithoutControllingCompactDecision() {
+    func testContentColumnWidthFollowsResizeWithoutControllingCompactDecision() {
         let layout = PageToolbarLayout(kind: .standard, queuePresented: false, expandedMinimumWidth: 400)
-        let measure = PageToolbarMeasurement(availableWidth: 500, detailWidth: 900)
-        XCTAssertEqual(layout.preferredWidth(detailWidth: 1020, sidebarVisible: true, measurement: measure), 620)
+        let initial = layout.preferredWidth(detailWidth: 900, sidebarVisible: true)
+        XCTAssertEqual(layout.preferredWidth(detailWidth: 1020, sidebarVisible: true) - initial, 120)
         XCTAssertTrue(layout.controls(assignedWidth: 300).compact)
         XCTAssertFalse(layout.controls(assignedWidth: 700).compact)
     }
@@ -138,12 +138,12 @@ final class PageChromePolicyTests: XCTestCase {
 
     func testSidebarFallbackAndArtistMinimumReserveTheirDifferentControls() {
         let standard = PageToolbarLayout(kind: .standard, queuePresented: false, expandedMinimumWidth: 400)
-        let shown = standard.preferredWidth(detailWidth: 900, sidebarVisible: true, measurement: nil)
-        let hidden = standard.preferredWidth(detailWidth: 900, sidebarVisible: false, measurement: nil)
+        let shown = standard.preferredWidth(detailWidth: 900, sidebarVisible: true)
+        let hidden = standard.preferredWidth(detailWidth: 900, sidebarVisible: false)
         XCTAssertEqual(shown - hidden, 204)
         let artist = PageToolbarLayout(kind: .artist, queuePresented: true, expandedMinimumWidth: 308)
-        XCTAssertEqual(artist.minimumWidth, 370)
-        XCTAssertEqual(artist.preferredWidth(detailWidth: 100, sidebarVisible: false, measurement: nil), 370)
+        XCTAssertEqual(artist.minimumWidth, 378)
+        XCTAssertEqual(artist.preferredWidth(detailWidth: 100, sidebarVisible: false), 378)
     }
 
     func testNativeMaterialAndHoverShareRegionBeforeAndAfterResize() throws {

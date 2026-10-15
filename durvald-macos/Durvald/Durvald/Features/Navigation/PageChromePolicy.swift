@@ -57,8 +57,8 @@ struct PageViewport: Equatable {
     }
 }
 
-/// Native toolbar measurements and page width are separate from assigned width.
-/// Compactness must use the latter, so resizing does not follow stale estimates.
+/// Preferred width comes from the content column, never from the toolbar
+/// itself. Compactness uses the actual assigned width after native layout.
 struct PageToolbarLayout {
     let kind: PageChromePolicy.Kind
     let queuePresented: Bool
@@ -66,17 +66,14 @@ struct PageToolbarLayout {
     var summaryLeadingPadding: CGFloat = 8
 
     var panelReservation: CGFloat {
-        queuePresented ? PageChromePolicy.queueWidth - PageChromePolicy.queueToggleWidth - 16 : 0
+        queuePresented ? PageChromePolicy.queueWidth - PageChromePolicy.queueToggleWidth - ToolbarControlMetrics.spacing : 0
     }
     var minimumWidth: CGFloat { (kind == .artist ? 124 : 80) + panelReservation }
 
-    func preferredWidth(detailWidth: CGFloat, sidebarVisible: Bool,
-                        measurement: PageToolbarMeasurement?) -> CGFloat {
+    func preferredWidth(detailWidth: CGFloat, sidebarVisible: Bool) -> CGFloat {
         let navigationWidth: CGFloat = sidebarVisible ? 76 : 280
-        let measuredWidth = measurement.map { $0.availableWidth + detailWidth - $0.detailWidth }
-        let hostWidth = max(80, measuredWidth
-            ?? (detailWidth - navigationWidth - PageChromePolicy.queueToggleWidth - 48))
-        return max(minimumWidth, hostWidth)
+        return max(minimumWidth,
+                   detailWidth - navigationWidth - PageChromePolicy.queueToggleWidth - 48)
     }
 
     func controls(assignedWidth: CGFloat, searchExpanded: Bool = false) -> Controls {
@@ -101,9 +98,4 @@ struct PageToolbarBackgroundPreferenceKey: PreferenceKey {
     static func reduce(value: inout Visibility?, nextValue: () -> Visibility?) {
         value = nextValue() ?? value
     }
-}
-
-struct PageToolbarMeasurement {
-    let availableWidth: CGFloat
-    let detailWidth: CGFloat
 }

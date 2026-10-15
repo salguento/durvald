@@ -1016,6 +1016,12 @@ final class DurvaldUITests: XCTestCase {
         app.launch()
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 3))
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        if !app.buttons["sidebar.songs"].exists {
+            app.buttons["navigation.sidebar"].click()
+        }
+        XCTAssertTrue(app.buttons["sidebar.songs"].waitForExistence(timeout: 3))
         app.links["player.artist"].rightClick()
         app.menuItems["Abrir artista"].click()
         XCTAssertTrue(app.descendants(matching: .any)["artist.detail.7"].waitForExistence(timeout: 3))
@@ -1030,6 +1036,7 @@ final class DurvaldUITests: XCTestCase {
             var sidebarClosed = false
             for closeSidebar in [false, true, false] {
                 if closeSidebar != sidebarClosed {
+                    app.activate()
                     app.buttons["navigation.sidebar"].click()
                     sidebarClosed = closeSidebar
                     let visible = NSPredicate(format: "exists == %@", NSNumber(value: !closeSidebar))
@@ -1040,6 +1047,9 @@ final class DurvaldUITests: XCTestCase {
                 XCTAssertTrue(options.isHittable)
                 XCTAssertTrue(queueToggle.isHittable)
                 XCTAssertEqual(window.frame.maxX - queueToggle.frame.maxX, 8, accuracy: 1)
+                let optionsEdge = queueOpen ? app.descendants(matching: .any)["queue.sidebar"].frame.minX
+                    : queueToggle.frame.minX
+                XCTAssertEqual(optionsEdge - options.frame.maxX, 8, accuracy: 1)
                 let expand = app.buttons["artist.tracks.search.expand"]
                 if expand.exists { expand.click() }
                 let field = app.textFields["artist.tracks.search.field"]
@@ -1059,12 +1069,91 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testToolbarSummaryKeepsTwelvePointNavigationGap() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        for (destination, summaryID) in [("songs", "library.summary"), ("albums", "albums.summary"),
+                                         ("artists", "artists.summary"), ("retrospective", "retrospective.summary")] {
+            let tab = app.buttons["sidebar.\(destination)"]
+            if !tab.isHittable { app.buttons["navigation.sidebar"].click() }
+            tab.click()
+            let summary = app.descendants(matching: .any)[summaryID]
+            XCTAssertTrue(summary.waitForExistence(timeout: 3))
+            let toggle = app.buttons["player.queue"]
+            for queueOpen in [false, true] {
+                if queueOpen { toggle.click() }
+                var sidebarClosed = false
+                for closeSidebar in [false, true, false] {
+                    if closeSidebar != sidebarClosed {
+                        app.buttons["navigation.sidebar"].click()
+                        sidebarClosed = closeSidebar
+                    }
+                    let navigation = app.descendants(matching: .any)["navigation.history"]
+                    XCTAssertEqual(summary.frame.minX - navigation.frame.maxX, 12, accuracy: 1,
+                                   "\(destination), queue: \(queueOpen), sidebar closed: \(closeSidebar)")
+                    XCTAssertEqual(window.frame.maxX - toggle.frame.maxX, 8, accuracy: 1, destination)
+                }
+                if queueOpen { toggle.click() }
+            }
+        }
+    }
+
+    @MainActor
+    func testToolbarSpacingStaysStableAcrossPageNavigation() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        let toggle = app.buttons["player.queue"]
+        let optionsIDs = ["songs": "library.viewOptions", "albums": "albums.listingMode",
+                          "artists": "artists.listingMode", "playlists": "playlists.listingMode",
+                          "retrospective": "retrospective.viewOptions"]
+        let destinations = ["search.open", "home", "retrospective", "artists", "search.open",
+                            "home", "artists", "albums", "songs", "playlists", "retrospective"]
+        for queueOpen in [false, true] {
+            if queueOpen { toggle.click() }
+            for destination in destinations {
+                let tab = app.buttons["sidebar.\(destination)"]
+                if !tab.isHittable { app.buttons["navigation.sidebar"].click() }
+                XCTAssertTrue(tab.waitForExistence(timeout: 3))
+                tab.click()
+                XCTAssertTrue(toggle.isHittable)
+                if abs(window.frame.maxX - toggle.frame.maxX - 8) > 1 {
+                    let attachment = XCTAttachment(screenshot: window.screenshot())
+                    attachment.name = "Toolbar spacing after \(destination)"
+                    attachment.lifetime = .keepAlways
+                    add(attachment)
+                }
+                XCTAssertEqual(window.frame.maxX - toggle.frame.maxX, 8, accuracy: 1, destination)
+                if let identifier = optionsIDs[destination] {
+                    let options = app.descendants(matching: .any)[identifier]
+                    XCTAssertTrue(options.waitForExistence(timeout: 3))
+                    XCTAssertTrue(options.isHittable)
+                    let edge = queueOpen ? app.descendants(matching: .any)["queue.sidebar"].frame.minX
+                        : toggle.frame.minX
+                    XCTAssertEqual(edge - options.frame.maxX, 8, accuracy: 1,
+                                   "\(destination), queue open: \(queueOpen)")
+                }
+            }
+            if queueOpen { toggle.click() }
+        }
+    }
+
+    @MainActor
     func testQueueToggleKeepsEightPointTrailingInsetAcrossPages() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
         app.launch()
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 3))
+        if window.frame.width < 700 {
+            app.menuBars.menuBarItems["Window"].click()
+            app.menuItems["Fill"].click()
+        }
         let toggle = app.buttons["player.queue"]
         for destination in ["home", "search.open", "songs", "albums", "artists", "playlists", "retrospective"] {
             let tab = app.buttons["sidebar.\(destination)"]
