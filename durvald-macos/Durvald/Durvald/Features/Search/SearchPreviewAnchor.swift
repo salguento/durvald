@@ -107,22 +107,23 @@ struct SearchPreviewAnchor<Content: View>: NSViewRepresentable {
             guard monitor == nil else { return }
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) {
                 [weak self] event in
-                MainActor.assumeIsolated {
+                let consumesEvent = MainActor.assumeIsolated {
                     guard let self, self.panel.isVisible, let anchor = self.anchor,
-                          let window = anchor.window else { return event }
+                          let window = anchor.window else { return false }
                     if event.type == .keyDown, event.window === window,
                        event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-                       self.parent.onKey(event.keyCode) { return nil }
+                       self.parent.onKey(event.keyCode) { return true }
                     if event.type == .leftMouseDown || event.type == .rightMouseDown {
-                        if event.window === self.panel { return event }
+                        if event.window === self.panel { return false }
                         let field = anchor.convert(anchor.bounds, to: nil)
                         if event.window !== window || !field.contains(event.locationInWindow) {
                             self.parent.onDismiss()
                             self.hide()
                         }
                     }
-                    return event
+                    return false
                 }
+                return consumesEvent ? nil : event
             }
         }
 

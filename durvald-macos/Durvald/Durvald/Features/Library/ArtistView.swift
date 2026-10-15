@@ -1495,13 +1495,7 @@ struct ArtistView: View {
 
     private var artistPlayButton: some View {
         Button { playArtist(.play) } label: {
-            Image(systemName: "play.fill")
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundStyle(.black.opacity(0.85))
-                .offset(x: 2)
-                .frame(width: headerPlaySize, height: headerPlaySize)
-                .background(.white, in: .circle)
-                .contentShape(.circle)
+            CollectionHeaderPlayLabel(size: headerPlaySize)
         }
         .buttonStyle(.plain)
         .disabled(!canPlayArtist)
@@ -1514,7 +1508,7 @@ struct ArtistView: View {
         Button { playArtist(.shuffle) } label: {
             Image(systemName: "shuffle")
         }
-        .buttonStyle(ArtistHeaderActionButtonStyle(size: headerActionSize))
+        .buttonStyle(CollectionHeaderActionButtonStyle(size: headerActionSize))
         .disabled(!canPlayArtist)
         .help("Reproduzir aleatoriamente")
         .accessibilityLabel("Reproduzir aleatoriamente")
@@ -1560,7 +1554,7 @@ struct ArtistView: View {
             }
             .foregroundStyle(isFollowing ? Color.accentColor : .white.opacity(0.85))
         }
-        .buttonStyle(ArtistHeaderActionButtonStyle(size: headerActionSize))
+        .buttonStyle(CollectionHeaderActionButtonStyle(size: headerActionSize))
         .help(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
         .accessibilityLabel(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
         .accessibilityValue(isFollowing ? "Seguindo" : "Não seguindo")
@@ -1577,7 +1571,7 @@ struct ArtistView: View {
         } label: {
             Image(systemName: "info")
         }
-        .buttonStyle(ArtistHeaderActionButtonStyle(size: headerActionSize))
+        .buttonStyle(CollectionHeaderActionButtonStyle(size: headerActionSize))
         .disabled(identity == nil)
         .help("Ver informações e conexões de metadados")
         .accessibilityLabel("Ver informações de \(artist.name)")
@@ -1591,7 +1585,7 @@ struct ArtistView: View {
             Image(systemName: "star.fill")
                 .foregroundStyle(isFavorite ? Color.accentColor : .white.opacity(0.45))
         }
-        .buttonStyle(ArtistHeaderActionButtonStyle(size: headerActionSize))
+        .buttonStyle(CollectionHeaderActionButtonStyle(size: headerActionSize))
         .help(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
         .accessibilityLabel(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
         .accessibilityValue(isFavorite ? "Favorito" : "Não favorito")
@@ -2217,21 +2211,4 @@ struct ArtistDetailToolbarControls: View {
         }
     }
 
-}
-
-private struct ArtistHeaderActionButtonStyle: ButtonStyle {
-    @Environment(\.isEnabled) private var isEnabled
-    let size: CGFloat
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 18, weight: .medium))
-            .foregroundStyle(.white.opacity(0.85))
-            .frame(width: size, height: size)
-            .contentShape(.circle)
-            .background(.black.opacity(0.3), in: .circle)
-            .glassEffect(.regular.tint(.black.opacity(0.2)).interactive(), in: .circle)
-            .overlay { Circle().strokeBorder(.white.opacity(0.08), lineWidth: 1) }
-            .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.65 : 1)
-    }
 }

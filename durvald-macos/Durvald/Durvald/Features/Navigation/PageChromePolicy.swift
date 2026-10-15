@@ -61,6 +61,7 @@ struct PageViewport: Equatable {
 /// itself. Compactness uses the actual assigned width after native layout.
 struct PageToolbarLayout {
     let kind: PageChromePolicy.Kind
+    var additionalMenuCount: Int = 0
     let queuePresented: Bool
     let expandedMinimumWidth: CGFloat
     var summaryLeadingPadding: CGFloat = 8
@@ -68,7 +69,7 @@ struct PageToolbarLayout {
     var panelReservation: CGFloat {
         queuePresented ? PageChromePolicy.queueWidth - PageChromePolicy.queueToggleWidth - ToolbarControlMetrics.spacing : 0
     }
-    var minimumWidth: CGFloat { (kind == .artist ? 124 : 80) + panelReservation }
+    var minimumWidth: CGFloat { (kind == .artist ? 124 : 80) + CGFloat(additionalMenuCount) * 44 + panelReservation }
 
     func preferredWidth(detailWidth: CGFloat, sidebarVisible: Bool) -> CGFloat {
         let navigationWidth: CGFloat = sidebarVisible ? 76 : 280
@@ -79,7 +80,7 @@ struct PageToolbarLayout {
     func controls(assignedWidth: CGFloat, searchExpanded: Bool = false) -> Controls {
         let available = assignedWidth - panelReservation
         let compact = available < expandedMinimumWidth
-        let menuWidth: CGFloat = kind == .artist ? 88 : 44
+        let menuWidth: CGFloat = (kind == .artist ? 88 : 44) + CGFloat(additionalMenuCount) * 44
         let searchWidth = min(220, max(36, available - menuWidth))
         let controlsWidth = (compact && !searchExpanded ? 36 : searchWidth) + menuWidth
         return Controls(compact: compact, searchWidth: searchWidth,

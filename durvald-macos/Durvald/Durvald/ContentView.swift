@@ -38,6 +38,8 @@ struct ContentView: View {
     @State private var isContentScrolled = false
     @State private var isContentTopbarHovered = false
     @State private var artistToolbarState = ArtistToolbarState()
+    @State private var playlistToolbarState = PlaylistToolbarState()
+    @State private var albumToolbarState = AlbumToolbarState()
     @State private var musicEntryID: Int?
     @State private var musicPresentation = MusicLibraryPresentation()
     @State private var musicSearchText = ""
@@ -143,12 +145,7 @@ struct ContentView: View {
             shell.adaptToWidth(width, compactThreshold: Layout.compactNavigationWidth)
         }
         .environment(playlistCreation)
-        .environment(\.trackMenuNavigation, TrackMenuNavigation(artist: showArtist, album: showAlbum, playlist: showPlaylist,
-            deletedPlaylist: { id in
-                if case .playlist(let playlist) = shell.navigationHistory.currentRoute, playlist.id == id {
-                    shell.navigationHistory.navigate(to: .playlists)
-                }
-            }))
+        .environment(\.trackMenuNavigation, trackMenuNavigation)
         .onAppear {
             trackInfo.presentWindow = {
                 openWindow(id: "track-info")
@@ -299,6 +296,17 @@ struct ContentView: View {
             }
             .onChange(of: shell.navigationHistory.currentRoute) { _, _ in
                 isLibrarySearchExpanded = false
+                if isAlbumDetail {
+                    albumToolbarState.searchText = ""
+                    albumToolbarState.order = .album
+                    albumToolbarState.minimumTrackRating = 0
+                }
+                if isPlaylistDetail {
+                    playlistToolbarState.searchText = ""
+                    playlistToolbarState.order = .playlist
+                    playlistToolbarState.isEditingSmartPlaylist = false
+                    playlistToolbarState.exportRelativePaths = nil
+                }
                 if isArtistDetail {
                     artistToolbarState.searchText = ""
                     artistToolbarState.order = .album
@@ -322,9 +330,38 @@ struct ContentView: View {
     }
 
     private var hasLibrarySearch: Bool {
-        if isArtistDetail { return true }
+        if isArtistDetail || isPlaylistDetail || isAlbumDetail { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
         return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective
+    }
+
+    private var trackMenuNavigation: TrackMenuNavigation {
+        TrackMenuNavigation(artist: showArtist, album: showAlbum, playlist: showPlaylist,
+            deletedPlaylist: { id in
+                if case .playlist(let playlist) = shell.navigationHistory.currentRoute, playlist.id == id {
+                    shell.navigationHistory.navigate(to: .playlists)
+                }
+            })
+    }
+
+    private var isAlbumDetail: Bool {
+        if case .album = shell.navigationHistory.currentRoute { return true }
+        return false
+    }
+
+    private var toolbarAlbum: Release? {
+        guard case .album(let album) = shell.navigationHistory.currentRoute else { return nil }
+        return store.loadedRelease(id: album.id) ?? album
+    }
+
+    private var isPlaylistDetail: Bool {
+        if case .playlist = shell.navigationHistory.currentRoute { return true }
+        return false
+    }
+
+    private var toolbarPlaylist: Playlist? {
+        guard case .playlist(let playlist) = shell.navigationHistory.currentRoute else { return nil }
+        return store.playlists.first(where: { $0.id == playlist.id }) ?? playlist
     }
 
     private var isArtistDetail: Bool {
@@ -375,7 +412,7 @@ struct ContentView: View {
     }
 
     private var libraryExpandedControlsMinimumWidth: CGFloat {
-        if isArtistDetail { return 308 }
+        if isArtistDetail || isPlaylistDetail || isAlbumDetail { return 308 }
         // Result counts change while typing; they must not switch the search
         // between compact and expanded presentation.
         return 120 + 220 + 44 + 8 + Layout.librarySummaryLeadingPadding
@@ -383,7 +420,9 @@ struct ContentView: View {
 
     private var pageContentToolbar: some View {
         let detailWidth = libraryToolbarDetailWidth
-        let layout = PageToolbarLayout(kind: pageChrome.kind, queuePresented: shell.isQueuePresented,
+        let layout = PageToolbarLayout(kind: pageChrome.kind,
+                                       additionalMenuCount: isPlaylistDetail || isAlbumDetail ? 1 : 0,
+                                       queuePresented: shell.isQueuePresented,
                                        expandedMinimumWidth: libraryExpandedControlsMinimumWidth,
                                        summaryLeadingPadding: Layout.librarySummaryLeadingPadding)
         let toggleReservation = Layout.queueToggleWidth + ToolbarControlMetrics.spacing
@@ -407,7 +446,7 @@ struct ContentView: View {
                                                    searchExpanded: isLibrarySearchExpanded)
                     ZStack(alignment: .trailing) {
                         if hasLibrarySearch {
-                            if !isArtistDetail {
+                            if !isArtistDetail && !isPlaylistDetail && !isAlbumDetail {
                                 libraryToolbarSummary
                                     .fixedSize(horizontal: false, vertical: true)
                                     .lineLimit(1)
@@ -446,6 +485,8 @@ struct ContentView: View {
         }
         .environment(\.appearsActive, appearsActive)
         .environment(store)
+        .environment(playlistCreation)
+        .environment(\.trackMenuNavigation, trackMenuNavigation)
         .transaction { transaction in
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -481,6 +522,20 @@ struct ContentView: View {
                 state: artistToolbarState,
                 searchWidth: searchWidth,
                 prefersCompact: prefersCompact,
+                isSearchExpanded: $isLibrarySearchExpanded
+            )
+            .fixedSize()
+        } else if let album = toolbarAlbum {
+            AlbumDetailToolbarControls(
+                album: album, state: albumToolbarState,
+                searchWidth: searchWidth, prefersCompact: prefersCompact,
+                isSearchExpanded: $isLibrarySearchExpanded
+            )
+            .fixedSize()
+        } else if let playlist = toolbarPlaylist {
+            PlaylistDetailToolbarControls(
+                playlist: playlist, state: playlistToolbarState,
+                searchWidth: searchWidth, prefersCompact: prefersCompact,
                 isSearchExpanded: $isLibrarySearchExpanded
             )
             .fixedSize()
@@ -735,7 +790,7 @@ struct ContentView: View {
     private var detail: some View {
         switch shell.navigationHistory.currentRoute {
         case .album(let album):
-            AlbumView(album: album, onSelectArtist: showArtist)
+            AlbumView(album: album, toolbarState: albumToolbarState, onSelectArtist: showArtist)
                 .id(album.id)
         case .externalAlbum(let release, let artist):
             AlbumView(externalRelease: release, artist: artist, onSelectArtist: showArtist)
@@ -752,7 +807,7 @@ struct ContentView: View {
             )
                 .id(artist.id)
         case .playlist(let playlist):
-            PlaylistView(playlist: playlist)
+            PlaylistView(playlist: playlist, toolbarState: playlistToolbarState)
                 .id(playlist.id)
         case .section(let destination):
             sectionContent(destination)

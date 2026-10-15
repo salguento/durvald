@@ -136,6 +136,20 @@ final class PageChromePolicyTests: XCTestCase {
         XCTAssertEqual(collapsed.summaryWidth - expanded.summaryWidth, 220 - 36)
     }
 
+    func testPlaylistToolbarReservesBothMenusWithEitherQueueState() {
+        for queue in [false, true] {
+            let layout = PageToolbarLayout(kind: .standard, additionalMenuCount: 1,
+                                           queuePresented: queue, expandedMinimumWidth: 308)
+            XCTAssertEqual(layout.minimumWidth - layout.panelReservation, 124)
+            let full = layout.controls(assignedWidth: 308 + layout.panelReservation)
+            XCTAssertFalse(full.compact)
+            XCTAssertEqual(full.searchWidth, 220)
+            let compact = layout.controls(assignedWidth: 124 + layout.panelReservation)
+            XCTAssertTrue(compact.compact)
+            XCTAssertEqual(compact.searchWidth, 36)
+        }
+    }
+
     func testSidebarFallbackAndArtistMinimumReserveTheirDifferentControls() {
         let standard = PageToolbarLayout(kind: .standard, queuePresented: false, expandedMinimumWidth: 400)
         let shown = standard.preferredWidth(detailWidth: 900, sidebarVisible: true)

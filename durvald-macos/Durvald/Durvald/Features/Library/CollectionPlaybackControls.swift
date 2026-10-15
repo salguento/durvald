@@ -160,3 +160,35 @@ struct CollectionPlaybackControls: View {
         .accessibilityIdentifier("collection.\(title.lowercased())")
     }
 }
+
+/// Shared circular actions for collection headers; size scales the symbols too.
+struct CollectionHeaderPlayLabel: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image(systemName: "play.fill")
+            .font(.system(size: size * 28 / 72, weight: .semibold))
+            .foregroundStyle(.black.opacity(0.85))
+            .offset(x: size / 36)
+            .frame(width: size, height: size)
+            .background(.white, in: .circle)
+            .contentShape(.circle)
+    }
+}
+
+struct CollectionHeaderActionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    let size: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: size * 0.375, weight: .medium))
+            .foregroundStyle(.white.opacity(0.85))
+            .frame(width: size, height: size)
+            .contentShape(.circle)
+            .background(.black.opacity(0.3), in: .circle)
+            .glassEffect(.regular.tint(.black.opacity(0.2)).interactive(), in: .circle)
+            .overlay { Circle().strokeBorder(.white.opacity(0.08), lineWidth: 1) }
+            .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.65 : 1)
+    }
+}

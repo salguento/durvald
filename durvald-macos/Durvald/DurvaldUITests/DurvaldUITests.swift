@@ -1010,6 +1010,68 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testAlbumUsesSharedTopbarAndCircularHeaderActions() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        app.links["player.trackTitle"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["album.detail.42"].waitForExistence(timeout: 3))
+
+        let artwork = app.descendants(matching: .any)["album.header.artwork"].firstMatch
+        let play = app.buttons["collection.play"]
+        let shuffle = app.buttons["collection.shuffle"]
+        let favorite = app.buttons["collection.favorite"]
+        XCTAssertTrue(play.waitForExistence(timeout: 3))
+        XCTAssertEqual(play.frame.width, 60, accuracy: 1)
+        for button in [shuffle, favorite] {
+            XCTAssertEqual(button.frame.width, 40, accuracy: 1)
+            XCTAssertEqual(button.frame.height, 40, accuracy: 1)
+            XCTAssertEqual(button.frame.midY, play.frame.midY, accuracy: 1)
+        }
+        XCTAssertTrue(artwork.exists)
+        XCTAssertGreaterThan(play.frame.minX, artwork.frame.maxX)
+        XCTAssertEqual(shuffle.frame.minX - play.frame.maxX, 16, accuracy: 1)
+        XCTAssertEqual(favorite.frame.minX - shuffle.frame.maxX, 16, accuracy: 1)
+
+        let toggle = app.buttons["player.queue"]
+        let organize = app.descendants(matching: .any)["album.tracks.organize"].firstMatch
+        let options = app.descendants(matching: .any)["album.options"].firstMatch
+        for queueOpen in [false, true] {
+            if queueOpen { toggle.click() }
+            XCTAssertTrue(organize.waitForExistence(timeout: 3))
+            XCTAssertTrue(options.isHittable)
+            XCTAssertEqual(window.frame.maxX - toggle.frame.maxX, 8, accuracy: 1)
+            let edge = queueOpen ? app.descendants(matching: .any)["queue.sidebar"].frame.minX : toggle.frame.minX
+            XCTAssertEqual(edge - organize.frame.maxX, 8, accuracy: 1)
+            XCTAssertEqual(organize.frame.minX - options.frame.maxX, 8, accuracy: 1)
+            let expand = app.buttons["album.tracks.search.expand"]
+            if expand.exists { expand.click() }
+            let field = app.textFields["album.tracks.search.field"]
+            XCTAssertTrue(field.waitForExistence(timeout: 3))
+            field.click()
+            field.typeText("sem correspondencia")
+            XCTAssertEqual(field.value as? String, "sem correspondencia")
+            XCTAssertFalse(app.staticTexts["album.track.100.number"].exists)
+            app.typeKey("a", modifierFlags: .command)
+            app.typeKey(.delete, modifierFlags: [])
+            XCTAssertTrue(app.staticTexts["album.track.100.number"].waitForExistence(timeout: 3))
+            app.typeKey(.escape, modifierFlags: [])
+        }
+        toggle.click()
+        organize.click()
+        XCTAssertTrue(app.menuItems["Título"].waitForExistence(timeout: 3))
+        app.menuItems["Título"].click()
+        let capture = XCTAttachment(screenshot: window.screenshot())
+        capture.name = "Album shared topbar and circular header actions"
+        capture.lifetime = .keepAlways
+        add(capture)
+    }
+
+    @MainActor
     func testArtistHeaderActionsMatchReferenceAndKeepToggleStateSeparate() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]

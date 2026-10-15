@@ -1,6 +1,32 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@Observable
+final class PlaylistToolbarState {
+    var searchText = ""
+    var order: PlaylistTrackOrder = .playlist
+    var isEditingSmartPlaylist = false
+    var exportRelativePaths: Bool?
+}
+
+enum PlaylistTrackOrder: String, CaseIterable, Identifiable {
+    case playlist
+    case title
+    case artist
+    case duration
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .playlist: "Ordem da playlist"
+        case .title: "Título"
+        case .artist: "Artista"
+        case .duration: "Duração"
+        }
+    }
+}
+
 struct PlaylistView: View {
     private struct TrackDropTarget: Equatable {
         let hoveredPosition: Int
@@ -60,24 +86,6 @@ struct PlaylistView: View {
         }
     }
 
-    private enum TrackOrder: String, CaseIterable, Identifiable {
-        case playlist
-        case title
-        case artist
-        case duration
-
-        var id: Self { self }
-
-        var title: String {
-            switch self {
-            case .playlist: "Ordem da playlist"
-            case .title: "Título"
-            case .artist: "Artista"
-            case .duration: "Duração"
-            }
-        }
-    }
-
     private struct TrackEntry: Identifiable {
         let position: Int
         let track: Track
@@ -93,17 +101,14 @@ struct PlaylistView: View {
     @State private var tracks: [Track] = []
     @State private var isLoading = true
     @State private var selectedTrackPosition: Int?
-    @State private var trackSearchText = ""
-    @State private var trackOrder: TrackOrder = .playlist
+    @Bindable var toolbarState = PlaylistToolbarState()
     @State private var draggedTrackPosition: Int?
     @State private var trackDropTarget: TrackDropTarget?
     @State private var isCompletingTrackDrop = false
     @State private var isPersistingTrackOrder = false
     @State private var isExporting = false
     @State private var exportMessage: String?
-    @State private var isEditingSmartPlaylist = false
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
-    @FocusState private var isTrackSearchFocused: Bool
 
     private let artworkSize: CGFloat = 268
 
@@ -148,7 +153,12 @@ struct PlaylistView: View {
             guard store.metadataRevision > 0 else { return }
             tracks = await store.tracks(forPlaylistID: playlist.id)
         }
-        .sheet(isPresented: $isEditingSmartPlaylist) {
+        .onChange(of: toolbarState.exportRelativePaths) { _, relativePaths in
+            guard let relativePaths else { return }
+            toolbarState.exportRelativePaths = nil
+            export(relativePaths: relativePaths)
+        }
+        .sheet(isPresented: $toolbarState.isEditingSmartPlaylist) {
             SmartPlaylistSheet(playlist: currentPlaylist) { name, description, definition in
                 guard await store.updateSmartPlaylist(
                     id: currentPlaylist.id, name: name,
@@ -172,7 +182,7 @@ struct PlaylistView: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     Button {
-                        if currentPlaylist.isSmart { isEditingSmartPlaylist = true }
+                        if currentPlaylist.isSmart { toolbarState.isEditingSmartPlaylist = true }
                         else { playlistCreation.requestEdit(currentPlaylist) }
                     } label: {
                         Text(currentPlaylist.name)
@@ -193,88 +203,16 @@ struct PlaylistView: View {
                             .multilineTextAlignment(.leading)
                     }
 
-                    Text("\(currentPlaylist.trackCount) músicas")
+                    Text(playlistMetadataText)
                         .font(.subheadline)
                         .foregroundStyle(.tertiary)
+
+                    Spacer(minLength: 20)
+
+                    playlistPlaybackControls
+                        .padding(.bottom, 24)
                 }
                 .frame(maxWidth: .infinity, minHeight: artworkSize, alignment: .topLeading)
-            }
-
-            HStack(spacing: 10) {
-                CollectionPlaybackControls(
-                    isEnabled: !isLoading && !tracks.isEmpty,
-                    presentation: .groupedCompactShuffle,
-                    controlHeight: 36,
-                    isFavorite: currentPlaylist.isFavorite,
-                    onToggleFavorite: {
-                        store.setPlaylistFavorite(
-                            playlistID: playlist.id,
-                            favorite: !currentPlaylist.isFavorite
-                        )
-                    },
-                    collection: .playlist(playlist.id)
-                )
-
-                Spacer(minLength: 24)
-
-                Menu {
-                    Button(currentPlaylist.isSmart ? "Editar regras" : "Editar playlist", systemImage: "pencil") {
-                        if currentPlaylist.isSmart { isEditingSmartPlaylist = true }
-                        else { playlistCreation.requestEdit(currentPlaylist) }
-                    }
-                    Button(currentPlaylist.isFavorite ? "Desfavoritar playlist" : "Favoritar playlist",
-                           systemImage: currentPlaylist.isFavorite ? "star.slash" : "star") {
-                        store.setPlaylistFavorite(
-                            playlistID: playlist.id,
-                            favorite: !currentPlaylist.isFavorite
-                        )
-                    }
-                    Divider()
-                    Button("Exportar M3U8 — caminhos relativos", systemImage: "square.and.arrow.up") {
-                        export(relativePaths: true)
-                    }
-                    Button("Exportar M3U8 — caminhos absolutos", systemImage: "square.and.arrow.up") {
-                        export(relativePaths: false)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 36, height: 36)
-                }
-                .menuIndicator(.hidden)
-                .buttonStyle(.plain)
-                .background(Color.primary.opacity(0.08), in: .circle)
-                .help("Opções")
-                .accessibilityLabel("Opções")
-                .accessibilityIdentifier("playlist.options")
-                .playlistOptionsMenu(playlist: currentPlaylist)
-
-                InlineSearchField(
-                    text: $trackSearchText, focus: $isTrackSearchFocused,
-                    identifier: "playlist.tracks.search",
-                    containerIdentifier: "playlist.tracks.search",
-                    onExit: {
-                        trackSearchText = ""
-                        isTrackSearchFocused = false
-                    }
-                )
-                .frame(width: 147, height: 36)
-
-                Menu {
-                    Picker("Organizar", selection: $trackOrder) {
-                        ForEach(TrackOrder.allCases) { order in
-                            Text(order.title).tag(order)
-                        }
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .frame(width: 36, height: 36)
-                }
-                .menuIndicator(.hidden)
-                .buttonStyle(.plain)
-                .background(Color.primary.opacity(0.08), in: .capsule)
-                .help("Organizar ou filtrar faixas")
-                .accessibilityLabel("Organizar ou filtrar faixas")
-                .accessibilityIdentifier("playlist.tracks.organize")
             }
         }
         .alert("Exportação de playlist", isPresented: Binding(
@@ -285,6 +223,57 @@ struct PlaylistView: View {
         } message: {
             Text(exportMessage ?? "")
         }
+    }
+
+    private var playlistMetadataText: String {
+        let count = currentPlaylist.trackCount
+        let trackLabel = count == 1 ? "1 música" : "\(count) músicas"
+        guard !isLoading else { return trackLabel }
+        let totalSeconds = DurationFormatter.totalSeconds(tracks.map(\.durationSeconds))
+        let duration = DurationFormatter.text(seconds: UInt64(totalSeconds), context: .albumHeader)
+        return [trackLabel, duration].joined(separator: " • ")
+    }
+
+    private var playlistPlaybackControls: some View {
+        HStack(spacing: 16) {
+            Button { playPlaylist(.play) } label: {
+                CollectionHeaderPlayLabel(size: 60)
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoading || tracks.isEmpty)
+            .help("Reproduzir")
+            .accessibilityLabel("Reproduzir")
+            .accessibilityIdentifier("collection.play")
+
+            Button { playPlaylist(.shuffle) } label: {
+                Image(systemName: "shuffle")
+            }
+            .buttonStyle(CollectionHeaderActionButtonStyle(size: 40))
+            .disabled(isLoading || tracks.isEmpty)
+            .help("Reproduzir aleatoriamente")
+            .accessibilityLabel("Reproduzir aleatoriamente")
+            .accessibilityIdentifier("collection.shuffle")
+
+            Button {
+                store.setPlaylistFavorite(playlistID: playlist.id, favorite: !currentPlaylist.isFavorite)
+            } label: {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(currentPlaylist.isFavorite ? Color.accentColor : .white.opacity(0.45))
+            }
+            .buttonStyle(CollectionHeaderActionButtonStyle(size: 40))
+            .help(currentPlaylist.isFavorite ? "Desfavoritar playlist" : "Favoritar playlist")
+            .accessibilityLabel(currentPlaylist.isFavorite ? "Desfavoritar playlist" : "Favoritar playlist")
+            .accessibilityValue(currentPlaylist.isFavorite ? "Favorito" : "Não favorito")
+            .accessibilityAddTraits(currentPlaylist.isFavorite ? .isSelected : [])
+            .accessibilityIdentifier("collection.favorite")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("playlist.header.actions")
+    }
+
+    private func playPlaylist(_ action: PlaybackCollection.Action) {
+        guard !isLoading, !tracks.isEmpty else { return }
+        Task { await PlaybackCollection.playlist(playlist.id).perform(action, using: store) }
     }
 
     private func export(relativePaths: Bool) {
@@ -319,7 +308,7 @@ struct PlaylistView: View {
             )
             .frame(maxWidth: .infinity)
         } else if visibleTracks.isEmpty {
-            ContentUnavailableView.search(text: trackSearchText)
+            ContentUnavailableView.search(text: toolbarState.searchText)
                 .frame(maxWidth: .infinity)
         } else {
             LazyVStack(spacing: 1) {
@@ -331,8 +320,8 @@ struct PlaylistView: View {
     }
 
     private var isReorderMode: Bool {
-        trackOrder == .playlist
-            && trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        toolbarState.order == .playlist
+            && toolbarState.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var canReorderTracks: Bool {
@@ -469,7 +458,7 @@ struct PlaylistView: View {
     }
 
     private var visibleTracks: [TrackEntry] {
-        let query = trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = toolbarState.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         var entries = tracks.enumerated().map {
             TrackEntry(position: $0.offset + 1, track: $0.element)
         }
@@ -482,7 +471,7 @@ struct PlaylistView: View {
             }
         }
 
-        switch trackOrder {
+        switch toolbarState.order {
         case .playlist:
             break
         case .title:
@@ -586,5 +575,57 @@ struct PlaylistView: View {
         let matchingPositions = tracks.indices.filter { tracks[$0].id == activeTrackID }
         guard matchingPositions.count == 1, let index = matchingPositions.first else { return nil }
         return index + 1
+    }
+}
+
+struct PlaylistDetailToolbarControls: View {
+    @Environment(DurvaldCoreStore.self) private var store
+    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
+    let playlist: Playlist
+    @Bindable var state: PlaylistToolbarState
+    let searchWidth: CGFloat
+    let prefersCompact: Bool
+    @Binding var isSearchExpanded: Bool
+
+    var body: some View {
+        HStack(spacing: ToolbarControlMetrics.spacing) {
+            LibraryToolbarSearchField(
+                searchText: $state.searchText,
+                placeholder: "Pesquisar faixas",
+                identifier: "playlist.tracks.search",
+                prefersCompact: prefersCompact,
+                expandedWidth: searchWidth,
+                isExpanded: $isSearchExpanded
+            )
+
+            ToolbarOptionsButton(title: "Opções", systemImage: "ellipsis") {
+                Button(playlist.isSmart ? "Editar regras" : "Editar playlist", systemImage: "pencil") {
+                    if playlist.isSmart { state.isEditingSmartPlaylist = true }
+                    else { playlistCreation.requestEdit(playlist) }
+                }
+                Button(playlist.isFavorite ? "Desfavoritar playlist" : "Favoritar playlist",
+                       systemImage: playlist.isFavorite ? "star.slash" : "star") {
+                    store.setPlaylistFavorite(playlistID: playlist.id, favorite: !playlist.isFavorite)
+                }
+                Divider()
+                Button("Exportar M3U8 — caminhos relativos", systemImage: "square.and.arrow.up") {
+                    state.exportRelativePaths = true
+                }
+                Button("Exportar M3U8 — caminhos absolutos", systemImage: "square.and.arrow.up") {
+                    state.exportRelativePaths = false
+                }
+            }
+            .accessibilityIdentifier("playlist.options")
+            .playlistOptionsMenu(playlist: playlist)
+
+            ToolbarOptionsButton(title: "Organizar ou filtrar faixas") {
+                Picker("Organizar", selection: $state.order) {
+                    ForEach(PlaylistTrackOrder.allCases) { order in
+                        Text(order.title).tag(order)
+                    }
+                }
+            }
+            .accessibilityIdentifier("playlist.tracks.organize")
+        }
     }
 }

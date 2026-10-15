@@ -1,26 +1,33 @@
 import SwiftUI
 
-struct AlbumView: View {
-    private enum TrackOrder: String, CaseIterable, Identifiable {
-        case album
-        case title
-        case artist
-        case duration
-        case rating
+@Observable
+final class AlbumToolbarState {
+    var searchText = ""
+    var order: AlbumTrackOrder = .album
+    var minimumTrackRating: UInt8 = 0
+}
 
-        var id: Self { self }
+enum AlbumTrackOrder: String, CaseIterable, Identifiable {
+    case album
+    case title
+    case artist
+    case duration
+    case rating
 
-        var title: String {
-            switch self {
-            case .album: "Ordem do álbum"
-            case .title: "Título"
-            case .artist: "Artista"
-            case .duration: "Duração"
-            case .rating: "Avaliação"
-            }
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .album: "Ordem do álbum"
+        case .title: "Título"
+        case .artist: "Artista"
+        case .duration: "Duração"
+        case .rating: "Avaliação"
         }
     }
+}
 
+struct AlbumView: View {
     @Environment(DurvaldCoreStore.self) private var store
 
     private let album: Release?
@@ -32,16 +39,18 @@ struct AlbumView: View {
     @State private var externalDetails: ExternalReleaseDetails?
     @State private var refreshedAlbum: Release?
     @State private var isLoading = true
-    @State private var trackSearchText = ""
-    @State private var trackOrder: TrackOrder = .album
-    @State private var minimumTrackRating: UInt8 = 0
+    @Bindable var toolbarState: AlbumToolbarState
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
-    @FocusState private var isTrackSearchFocused: Bool
 
     private let artworkSize: CGFloat = 268
 
-    init(album: Release, onSelectArtist: @escaping (Artist) -> Void) {
+    init(
+        album: Release,
+        toolbarState: AlbumToolbarState = AlbumToolbarState(),
+        onSelectArtist: @escaping (Artist) -> Void
+    ) {
         self.album = album
+        self.toolbarState = toolbarState
         externalRelease = nil
         externalArtist = nil
         self.onSelectArtist = onSelectArtist
@@ -53,6 +62,7 @@ struct AlbumView: View {
         onSelectArtist: @escaping (Artist) -> Void
     ) {
         album = nil
+        toolbarState = AlbumToolbarState()
         self.externalRelease = externalRelease
         externalArtist = artist
         self.onSelectArtist = onSelectArtist
@@ -140,6 +150,9 @@ struct AlbumView: View {
                     size: artworkSize
                 )
                 .albumContextMenu(album: currentAlbum)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Capa de \(title)")
+                .accessibilityIdentifier("album.header.artwork")
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -189,13 +202,17 @@ struct AlbumView: View {
                             .foregroundStyle(.secondary)
                             .padding(.top, 4)
                     }
+
+                    if let album, let currentAlbum {
+                        Spacer(minLength: 20)
+                        localAlbumControls(album: album, currentAlbum: currentAlbum)
+                            .padding(.bottom, 24)
+                    }
                 }
                 .frame(maxWidth: .infinity, minHeight: artworkSize, alignment: .topLeading)
             }
 
-            if let album, let currentAlbum {
-                localAlbumControls(album: album, currentAlbum: currentAlbum)
-            } else if let externalRelease,
+            if let externalRelease,
                       let source = URL(
                         string: externalDetails?.attribution.sourceUrl
                             ?? externalRelease.attribution.sourceUrl
@@ -207,108 +224,45 @@ struct AlbumView: View {
     }
 
     private func localAlbumControls(album: Release, currentAlbum: Release) -> some View {
-        HStack(spacing: 10) {
-                CollectionPlaybackControls(
-                    isEnabled: !isLoading && !tracks.isEmpty,
-                    presentation: .groupedCompactShuffle,
-                    controlHeight: 36,
-                    isFavorite: currentAlbum.isFavorite,
-                    onToggleFavorite: {
-                        store.setReleaseFavorite(
-                            releaseID: album.id,
-                            favorite: !currentAlbum.isFavorite
-                        )
-                    },
-                    collection: .release(album.id)
-                )
+        HStack(spacing: 16) {
+            Button { playAlbum(.play, album: album) } label: {
+                CollectionHeaderPlayLabel(size: 60)
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoading || tracks.isEmpty)
+            .help("Reproduzir")
+            .accessibilityLabel("Reproduzir")
+            .accessibilityIdentifier("collection.play")
 
-                Spacer(minLength: 24)
+            Button { playAlbum(.shuffle, album: album) } label: {
+                Image(systemName: "shuffle")
+            }
+            .buttonStyle(CollectionHeaderActionButtonStyle(size: 40))
+            .disabled(isLoading || tracks.isEmpty)
+            .help("Reproduzir aleatoriamente")
+            .accessibilityLabel("Reproduzir aleatoriamente")
+            .accessibilityIdentifier("collection.shuffle")
 
-                Menu {
-                    Button(currentAlbum.isFavorite ? "Desfavoritar álbum" : "Favoritar álbum",
-                           systemImage: currentAlbum.isFavorite ? "star.slash" : "star") {
-                        store.setReleaseFavorite(
-                            releaseID: album.id,
-                            favorite: !currentAlbum.isFavorite
-                        )
-                    }
-                    Button("Abrir artista", systemImage: "person") {
-                        guard let artist = store.loadedArtist(id: album.artistId) else {
-                            return
-                        }
-                        onSelectArtist(artist)
-                    }
-                    if ratingsEnabled {
-                        Divider()
-                        ratingMenu(releaseID: album.id, rating: currentAlbum.rating)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .frame(width: 36, height: 36)
-                }
-                .menuIndicator(.hidden)
-                .buttonStyle(.plain)
-                .background(Color.primary.opacity(0.08), in: .circle)
-                .help("Opções")
-                .accessibilityLabel("Opções")
-                .accessibilityIdentifier("album.options")
-                .albumOptionsMenu(album: currentAlbum)
-
-                InlineSearchField(
-                    text: $trackSearchText, focus: $isTrackSearchFocused,
-                    identifier: "album.tracks.search",
-                    containerIdentifier: "album.tracks.search",
-                    onExit: {
-                        trackSearchText = ""
-                        isTrackSearchFocused = false
-                    }
-                )
-                .frame(width: 147, height: 36)
-
-                Menu {
-                    Picker("Organizar", selection: $trackOrder) {
-                        ForEach(TrackOrder.allCases.filter { ratingsEnabled || $0 != .rating }) { order in
-                            Text(order.title).tag(order)
-                        }
-                    }
-                    if ratingsEnabled {
-                        Picker("Nota mínima", selection: $minimumTrackRating) {
-                            Text("Todas").tag(UInt8(0))
-                            ForEach(1...5, id: \.self) { value in
-                                Text("\(value)+ estrelas").tag(UInt8(value))
-                            }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal.decrease")
-                        .frame(width: 36, height: 36)
-                }
-                .menuIndicator(.hidden)
-                .buttonStyle(.plain)
-                .background(Color.primary.opacity(0.08), in: .capsule)
-                .help("Organizar ou filtrar faixas")
-                .accessibilityLabel("Organizar ou filtrar faixas")
-                .accessibilityIdentifier("album.tracks.organize")
+            Button {
+                store.setReleaseFavorite(releaseID: album.id, favorite: !currentAlbum.isFavorite)
+            } label: {
+                Image(systemName: "star.fill")
+                    .foregroundStyle(currentAlbum.isFavorite ? Color.accentColor : .white.opacity(0.45))
+            }
+            .buttonStyle(CollectionHeaderActionButtonStyle(size: 40))
+            .help(currentAlbum.isFavorite ? "Desfavoritar álbum" : "Favoritar álbum")
+            .accessibilityLabel(currentAlbum.isFavorite ? "Desfavoritar álbum" : "Favoritar álbum")
+            .accessibilityValue(currentAlbum.isFavorite ? "Favorito" : "Não favorito")
+            .accessibilityAddTraits(currentAlbum.isFavorite ? .isSelected : [])
+            .accessibilityIdentifier("collection.favorite")
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("album.header.actions")
     }
 
-    private func ratingMenu(releaseID: Int64, rating: UInt8?) -> some View {
-        Menu("Avaliação") {
-            Button("Sem avaliação") {
-                Task { await store.setReleaseRating(releaseID: releaseID, rating: nil, fallbackRelease: currentAlbum) }
-            }
-            Divider()
-            ForEach(1...5, id: \.self) { value in
-                Button {
-                    Task { await store.setReleaseRating(releaseID: releaseID, rating: UInt8(value), fallbackRelease: currentAlbum) }
-                } label: {
-                    Label(
-                        "\(value) de 5",
-                        systemImage: rating == UInt8(value) ? "checkmark" : "star"
-                    )
-                }
-            }
-        }
+    private func playAlbum(_ action: PlaybackCollection.Action, album: Release) {
+        guard !isLoading, !tracks.isEmpty else { return }
+        Task { await PlaybackCollection.release(album.id).perform(action, using: store) }
     }
 
     private var selectedArtist: Artist? {
@@ -484,7 +438,7 @@ struct AlbumView: View {
             )
             .frame(maxWidth: .infinity)
         } else if visibleTracks.isEmpty {
-            ContentUnavailableView.search(text: trackSearchText)
+            ContentUnavailableView.search(text: toolbarState.searchText)
                 .frame(maxWidth: .infinity)
         } else {
             VStack(spacing: 0) {
@@ -500,7 +454,7 @@ struct AlbumView: View {
     }
 
     private var visibleTracks: [Track] {
-        let query = trackSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = toolbarState.searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         var visibleTracks = tracks
 
         if !query.isEmpty {
@@ -509,11 +463,11 @@ struct AlbumView: View {
                     || $0.artist.localizedStandardContains(query)
             }
         }
-        if ratingsEnabled, minimumTrackRating > 0 {
-            visibleTracks = visibleTracks.filter { ($0.rating ?? 0) >= minimumTrackRating }
+        if ratingsEnabled, toolbarState.minimumTrackRating > 0 {
+            visibleTracks = visibleTracks.filter { ($0.rating ?? 0) >= toolbarState.minimumTrackRating }
         }
 
-        switch trackOrder {
+        switch toolbarState.order {
         case .album:
             break
         case .title:
@@ -620,5 +574,87 @@ struct AlbumView: View {
         }
 
         return "\(track.discNumber).\(track.trackNumber)"
+    }
+}
+
+struct AlbumDetailToolbarControls: View {
+    @Environment(DurvaldCoreStore.self) private var store
+    @Environment(\.trackMenuNavigation) private var navigation
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
+    let album: Release
+    @Bindable var state: AlbumToolbarState
+    let searchWidth: CGFloat
+    let prefersCompact: Bool
+    @Binding var isSearchExpanded: Bool
+
+    var body: some View {
+        HStack(spacing: ToolbarControlMetrics.spacing) {
+            LibraryToolbarSearchField(
+                searchText: $state.searchText,
+                placeholder: "Pesquisar faixas",
+                identifier: "album.tracks.search",
+                prefersCompact: prefersCompact,
+                expandedWidth: searchWidth,
+                isExpanded: $isSearchExpanded
+            )
+
+            ToolbarOptionsButton(title: "Opções", systemImage: "ellipsis") {
+                Button(album.isFavorite ? "Desfavoritar álbum" : "Favoritar álbum",
+                       systemImage: album.isFavorite ? "star.slash" : "star") {
+                    store.setReleaseFavorite(
+                        releaseID: album.id,
+                        favorite: !album.isFavorite
+                    )
+                }
+                Button("Abrir artista", systemImage: "person") {
+                    guard let artist = store.loadedArtist(id: album.artistId) else {
+                        return
+                    }
+                    navigation.artist(artist)
+                }
+                if ratingsEnabled {
+                    Divider()
+                    ratingMenu(releaseID: album.id, rating: album.rating)
+                }
+            }
+            .accessibilityIdentifier("album.options")
+            .albumOptionsMenu(album: album)
+
+            ToolbarOptionsButton(title: "Organizar ou filtrar faixas") {
+                Picker("Organizar", selection: $state.order) {
+                    ForEach(AlbumTrackOrder.allCases.filter { ratingsEnabled || $0 != .rating }) { order in
+                        Text(order.title).tag(order)
+                    }
+                }
+                if ratingsEnabled {
+                    Picker("Nota mínima", selection: $state.minimumTrackRating) {
+                        Text("Todas").tag(UInt8(0))
+                        ForEach(1...5, id: \.self) { value in
+                            Text("\(value)+ estrelas").tag(UInt8(value))
+                        }
+                    }
+                }
+            }
+            .accessibilityIdentifier("album.tracks.organize")
+        }
+    }
+
+    private func ratingMenu(releaseID: Int64, rating: UInt8?) -> some View {
+        Menu("Avaliação") {
+            Button("Sem avaliação") {
+                Task { await store.setReleaseRating(releaseID: releaseID, rating: nil, fallbackRelease: album) }
+            }
+            Divider()
+            ForEach(1...5, id: \.self) { value in
+                Button {
+                    Task { await store.setReleaseRating(releaseID: releaseID, rating: UInt8(value), fallbackRelease: album) }
+                } label: {
+                    Label(
+                        "\(value) de 5",
+                        systemImage: rating == UInt8(value) ? "checkmark" : "star"
+                    )
+                }
+            }
+        }
     }
 }
