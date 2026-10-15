@@ -103,7 +103,7 @@ struct ContentView: View {
                 if shell.columnVisibility != .detailOnly {
                     ToolbarSpacer(.flexible)
                     ToolbarItem(placement: .automatic) {
-                        sidebarToolbarButtons
+                        sidebarToggleButton
                     }
                 }
             }
@@ -501,7 +501,7 @@ struct ContentView: View {
 
         return LibraryToolbarHost(content: content, minimumWidth: minimumWidth,
                                   preferredWidth: preferredWidth)
-        .frame(minWidth: minimumWidth, maxWidth: .infinity,
+        .frame(minWidth: minimumWidth, maxWidth: preferredWidth,
                minHeight: ToolbarControlMetrics.size, maxHeight: ToolbarControlMetrics.size)
         .transaction { transaction in
             transaction.animation = nil
@@ -607,8 +607,14 @@ struct ContentView: View {
     private var navigationToolbar: some ToolbarContent {
         if shell.columnVisibility == .detailOnly {
             ToolbarItem(placement: .navigation) {
-                sidebarToolbarButtons
+                sidebarToggleButton
             }
+            ToolbarSpacer(.fixed, placement: .navigation)
+
+            ToolbarItem(id: "navigation-home", placement: .navigation) {
+                homeToolbarButton
+            }
+            .sharedBackgroundVisibility(.hidden)
         }
 
         ToolbarSpacer(.fixed, placement: .navigation)
@@ -623,32 +629,46 @@ struct ContentView: View {
         Button {
             toggleQueue()
         } label: {
-            Image(systemName: "sidebar.trailing")
-                .resizable()
-                .scaledToFit()
-                .frame(width: Layout.panelToggleIconWidth, height: Layout.panelToggleIconHeight)
-                .foregroundStyle(appearsActive ? Color.primary : Color.secondary)
-                .frame(width: Layout.queueToggleWidth, height: 36)
-                .contentShape(Capsule())
+            Label {
+                Text(queueToggleTitle)
+            } icon: {
+                Image(systemName: "sidebar.trailing")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: Layout.panelToggleIconWidth, height: Layout.panelToggleIconHeight)
+            }
+            .labelStyle(.iconOnly)
+            .foregroundStyle(appearsActive ? Color.primary : Color.secondary)
+            .frame(width: Layout.queueToggleWidth, height: 36)
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .frame(width: Layout.queueToggleWidth, height: 36)
         .glassEffect(.regular.interactive(), in: .capsule)
-        .help(shell.isQueuePresented ? "Ocultar fila" : "Mostrar fila")
+        .help(queueToggleTitle)
         .accessibilityHint("Mostra ou oculta a fila lateral de reprodução")
-        .accessibilityLabel(shell.isQueuePresented ? "Ocultar fila" : "Mostrar fila")
+        .accessibilityLabel(queueToggleTitle)
         .accessibilityIdentifier("player.queue")
         .keyboardShortcut(AppKeyboardShortcuts.toggleQueue)
+    }
+
+    private var queueToggleTitle: String {
+        shell.isQueuePresented ? "Ocultar fila" : "Mostrar fila"
     }
 
     private var sidebarToggleButton: some View {
         Button {
             toggleSidebar()
         } label: {
-            Image(systemName: "sidebar.leading")
-                .resizable()
-                .scaledToFit()
-                .frame(width: Layout.panelToggleIconWidth, height: Layout.panelToggleIconHeight)
+            Label {
+                Text(sidebarToggleTitle)
+            } icon: {
+                Image(systemName: "sidebar.leading")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: Layout.panelToggleIconWidth, height: Layout.panelToggleIconHeight)
+            }
+            .labelStyle(.iconOnly)
         }
         .help(sidebarToggleTitle)
         .accessibilityLabel(sidebarToggleTitle)
@@ -659,15 +679,6 @@ struct ContentView: View {
         shell.columnVisibility == .detailOnly
             ? "Mostrar barra lateral"
             : "Ocultar barra lateral"
-    }
-
-    private var sidebarToolbarButtons: some View {
-        ControlGroup {
-            sidebarToggleButton
-            addPlaylistButton
-        }
-        .labelStyle(.iconOnly)
-        .controlGroupStyle(.navigation)
     }
 
     private var backForwardButtons: some View {
@@ -705,16 +716,19 @@ struct ContentView: View {
         }
     }
 
-    private var addPlaylistButton: some View {
+    private var homeToolbarButton: some View {
         Button {
-            playlistCreation.request(for: nil)
+            shell.navigationHistory.navigate(to: .home)
         } label: {
-            Label("Adicionar", systemImage: "plus")
+            Label("Início", systemImage: "house")
         }
         .labelStyle(.iconOnly)
-        .help("Adicionar")
-        .accessibilityLabel("Adicionar playlist")
-        .accessibilityIdentifier("library.addMenu")
+        .buttonStyle(.plain)
+        .frame(width: ToolbarControlMetrics.size, height: ToolbarControlMetrics.size)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .help("Ir para o início")
+        .accessibilityLabel("Início")
+        .accessibilityIdentifier("navigation.home")
     }
 
     private var destinationBinding: Binding<LibraryDestination?> {
@@ -877,10 +891,8 @@ private struct LibraryToolbarHost<Content: View>: NSViewRepresentable {
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, nsView: LibraryToolbarHostingView<Content>, context: Context) -> CGSize? {
-        let proposedWidth = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? preferredWidth
-        // The shared canvas includes the trailing toggle. Accept the native
-        // allocation so it fills the space immediately after navigation.
-        return CGSize(width: max(minimumWidth, proposedWidth), height: 36)
+        CGSize(width: PageToolbarLayout.fittingWidth(proposal.width, minimum: minimumWidth,
+                                                    preferred: preferredWidth), height: 36)
     }
 }
 

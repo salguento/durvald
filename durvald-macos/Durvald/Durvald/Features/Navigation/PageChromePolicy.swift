@@ -66,6 +66,13 @@ struct PageToolbarLayout {
     let expandedMinimumWidth: CGFloat
     var summaryLeadingPadding: CGFloat = 8
 
+    /// A native toolbar proposal can include the entire window. Never claim
+    /// space reserved for navigation, or AppKit may overflow every item.
+    static func fittingWidth(_ proposed: CGFloat?, minimum: CGFloat, preferred: CGFloat) -> CGFloat {
+        let finiteProposal = proposed.flatMap { $0.isFinite ? $0 : nil } ?? preferred
+        return max(minimum, min(finiteProposal, preferred))
+    }
+
     var panelReservation: CGFloat {
         queuePresented ? PageChromePolicy.queueWidth - PageChromePolicy.queueToggleWidth - ToolbarControlMetrics.spacing : 0
     }

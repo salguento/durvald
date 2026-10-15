@@ -101,6 +101,15 @@ final class PageChromePolicyTests: XCTestCase {
                                            trailingReservation: 0).fullWidth, 600)
     }
 
+    func testToolbarDoesNotClaimTheWholeWindowProposalAndOverflowNavigation() {
+        XCTAssertEqual(PageToolbarLayout.fittingWidth(1400, minimum: 46, preferred: 1120), 1120)
+        XCTAssertEqual(PageToolbarLayout.fittingWidth(600, minimum: 46, preferred: 1120), 600)
+        XCTAssertEqual(PageToolbarLayout.fittingWidth(0, minimum: 124, preferred: 900), 124)
+        for proposal: CGFloat? in [nil, .infinity, .nan] {
+            XCTAssertEqual(PageToolbarLayout.fittingWidth(proposal, minimum: 46, preferred: 1120), 1120)
+        }
+    }
+
     func testCompactnessUsesAssignedWidthAfterQueueReservation() {
         for kind in [PageChromePolicy.Kind.standard, .artist] {
             for queue in [false, true] {

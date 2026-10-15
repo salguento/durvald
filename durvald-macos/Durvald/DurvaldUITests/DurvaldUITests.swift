@@ -7,39 +7,81 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
-    func testTemporaryToolbarAppearanceReference() {
+    func testSidebarToolbarShowsHomeOnlyWhenCollapsedAndPreservesHistory() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
         app.launch()
-
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 3))
-        let sidebarButton = app.buttons["navigation.sidebar"]
-        XCTAssertTrue(sidebarButton.waitForExistence(timeout: 3))
-        let addButtons = app.buttons.matching(identifier: "library.addMenu")
-        XCTAssertTrue(addButtons.firstMatch.waitForExistence(timeout: 3))
-        guard let openAddButton = addButtons.allElementsBoundByIndex.first(where: \.isHittable) else {
-            XCTFail("O botão de adicionar visível não foi encontrado")
-            return
-        }
-        XCTAssertTrue(openAddButton.isHittable)
-        let openAttachment = XCTAttachment(screenshot: window.screenshot())
-        openAttachment.name = "Toolbar sidebar open reference"
-        openAttachment.lifetime = .keepAlways
-        add(openAttachment)
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        let sidebar = app.buttons["navigation.sidebar"]
+        let home = app.buttons["navigation.home"]
+        if !app.buttons["sidebar.songs"].isHittable { sidebar.click() }
+        XCTAssertTrue(sidebar.isHittable)
+        XCTAssertFalse(home.exists)
+        XCTAssertFalse(app.buttons["library.addMenu"].exists)
+        app.buttons["sidebar.songs"].click()
+        sidebar.click()
+        XCTAssertTrue(home.waitForExistence(timeout: 3))
+        XCTAssertTrue(home.isHittable)
+        XCTAssertFalse(app.buttons["sidebar.songs"].exists)
+        let history = app.descendants(matching: .any)["navigation.history"]
+        XCTAssertLessThanOrEqual(sidebar.frame.maxX, home.frame.minX)
+        XCTAssertLessThan(home.frame.maxX, history.frame.minX)
+        XCTAssertEqual(window.frame.maxX - app.buttons["player.queue"].frame.maxX, 8, accuracy: 1)
 
-        sidebarButton.click()
-        XCTAssertTrue(sidebarButton.waitForExistence(timeout: 3))
-        guard let closedAddButton = addButtons.allElementsBoundByIndex.first(where: \.isHittable) else {
-            XCTFail("O botão de adicionar visível não foi encontrado")
-            return
-        }
-        XCTAssertTrue(closedAddButton.isHittable)
+        home.click()
+        XCTAssertTrue(app.descendants(matching: .any)["home.page"].waitForExistence(timeout: 3))
+        XCTAssertTrue(home.exists)
+        app.buttons["navigation.back"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["library.summary"].waitForExistence(timeout: 3))
+        app.buttons["navigation.forward"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["home.page"].waitForExistence(timeout: 3))
+        let capture = XCTAttachment(screenshot: window.screenshot())
+        capture.name = "Collapsed sidebar with home navigation"
+        capture.lifetime = .keepAlways
+        add(capture)
 
-        let closedAttachment = XCTAttachment(screenshot: window.screenshot())
-        closedAttachment.name = "Toolbar sidebar closed reference"
-        closedAttachment.lifetime = .keepAlways
-        add(closedAttachment)
+        sidebar.click()
+        XCTAssertTrue(app.buttons["sidebar.songs"].waitForExistence(timeout: 3))
+        XCTAssertFalse(home.exists)
+        XCTAssertFalse(app.buttons["library.addMenu"].exists)
+    }
+
+    @MainActor
+    func testToolbarNavigationStaysVisibleAfterResizingWithSidebarCollapsed() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        if app.buttons["sidebar.songs"].exists { app.buttons["navigation.sidebar"].click() }
+        for _ in 0..<2 {
+            app.menuBars.menuBarItems["Window"].click()
+            app.menuItems["Move & Resize"].click()
+            app.menuItems["Left"].click()
+            app.activate()
+            app.typeKey(.escape, modifierFlags: [])
+            app.menuBars.menuBarItems["Window"].click()
+            app.menuItems["Fill"].click()
+            for identifier in ["navigation.sidebar", "navigation.home", "player.queue"] {
+                let button = app.buttons[identifier]
+                XCTAssertTrue(button.waitForExistence(timeout: 3))
+                XCTAssertTrue(button.isHittable, "\(identifier) must stay out of overflow when space is available")
+                XCTAssertTrue(window.frame.contains(button.frame))
+            }
+            let history = app.descendants(matching: .any)["navigation.history"]
+            XCTAssertTrue(history.exists)
+            XCTAssertGreaterThan(history.frame.width, 50)
+            XCTAssertTrue(window.frame.contains(history.frame))
+            XCTAssertEqual(window.frame.maxX - app.buttons["player.queue"].frame.maxX, 8, accuracy: 1)
+            XCTAssertEqual(app.buttons["navigation.sidebar"].label, "Mostrar barra lateral")
+            XCTAssertEqual(app.buttons["player.queue"].label, "Mostrar fila")
+            app.buttons["player.queue"].click()
+            XCTAssertEqual(app.buttons["player.queue"].label, "Ocultar fila")
+            app.buttons["player.queue"].click()
+        }
     }
 
     @MainActor
