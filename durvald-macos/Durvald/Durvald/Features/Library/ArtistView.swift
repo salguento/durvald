@@ -152,8 +152,8 @@ struct ArtistView: View {
     @State private var artworkAverageColor: NSColor?
     @ScaledMetric(relativeTo: .largeTitle) private var artistNameFontSize =
         NSFont.preferredFont(forTextStyle: .largeTitle).pointSize * 1.275 * 1.35
-    private let headerControlHeight: CGFloat = 36
-    private let headerIconControlWidth: CGFloat = 38
+    private let headerActionSize: CGFloat = 48
+    private let headerPlaySize: CGFloat = 72
 
     private var artistRequest: ArtistPresentation.Request {
         .init(artistID: artist.id, coreID: store.core.map(ObjectIdentifier.init), language: enrichmentLanguage)
@@ -228,27 +228,19 @@ struct ArtistView: View {
                         .backgroundExtensionEffect()
                         .overlay {
                             GeometryReader { header in
-                                let titleY = header.size.height * 2 / 3 + 32
-                                let controlsY = (titleY + header.size.height) / 2
-                                ZStack(alignment: .topLeading) {
+                                VStack(spacing: 20) {
                                     Text(artist.name)
                                         .font(.system(size: artistNameFontSize, weight: .bold))
                                         .multilineTextAlignment(.center)
                                         .foregroundStyle(.white)
                                         .accessibilityAddTraits(.isHeader)
-                                        .frame(maxWidth: max(1, visible.size.width - 48))
-                                        .position(
-                                            x: visible.size.width / 2,
-                                            y: titleY
-                                        )
 
-                                    collectionControls
-                                        .frame(width: max(1, visible.size.width - 48))
-                                        .position(
-                                            x: visible.size.width / 2,
-                                            y: controlsY
-                                        )
+                                    collectionControls(availableWidth: max(1, visible.size.width - 48))
                                 }
+                                .frame(width: max(1, visible.size.width - 48))
+                                .padding(.bottom, max(24, header.size.height * 0.06))
+                                .frame(width: visible.size.width, height: header.size.height,
+                                       alignment: .bottom)
                             }
                         }
                         .padding(.trailing, sideInsets.trailing)
@@ -1480,22 +1472,53 @@ struct ArtistView: View {
         .scrollClipDisabled()
     }
 
-    private var collectionControls: some View {
-        HStack(spacing: 10) {
-            artistPlaybackControls
-            artistRelationshipControls
-            Spacer(minLength: 0)
+    private func collectionControls(availableWidth: CGFloat) -> some View {
+        // Reference proportions: four 48 pt actions around a 72 pt play button.
+        let spacing = min(24, max(8, (availableWidth - headerActionSize * 4 - headerPlaySize) / 4))
+        return HStack(spacing: spacing) {
+            artistFollowButton
+            artistInformationButton
+            artistPlayButton
+            artistShuffleButton
+            artistFavoriteButton
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("artist.header.actions")
     }
 
-    private var artistPlaybackControls: some View {
-        CollectionPlaybackControls(
-            isEnabled: !isLoading && !tracks.isEmpty,
-            presentation: .prominentPlay,
-            controlHeight: headerControlHeight,
-            collection: .tracks(tracks),
-            iconControlWidth: headerIconControlWidth
-        )
+    private var canPlayArtist: Bool { !isLoading && !tracks.isEmpty }
+
+    private func playArtist(_ action: PlaybackCollection.Action) {
+        guard canPlayArtist else { return }
+        Task { await PlaybackCollection.tracks(tracks).perform(action, using: store) }
+    }
+
+    private var artistPlayButton: some View {
+        Button { playArtist(.play) } label: {
+            Image(systemName: "play.fill")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(.black.opacity(0.85))
+                .offset(x: 2)
+                .frame(width: headerPlaySize, height: headerPlaySize)
+                .background(.white, in: .circle)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canPlayArtist)
+        .help("Reproduzir")
+        .accessibilityLabel("Reproduzir")
+        .accessibilityIdentifier("collection.play")
+    }
+
+    private var artistShuffleButton: some View {
+        Button { playArtist(.shuffle) } label: {
+            Image(systemName: "shuffle")
+        }
+        .buttonStyle(ArtistHeaderActionButtonStyle(size: headerActionSize))
+        .disabled(!canPlayArtist)
+        .help("Reproduzir aleatoriamente")
+        .accessibilityLabel("Reproduzir aleatoriamente")
+        .accessibilityIdentifier("collection.shuffle")
     }
 
     private var isFollowing: Bool {
@@ -1517,70 +1540,63 @@ struct ArtistView: View {
         return ids.sorted().joined(separator: ",")
     }
 
-    private var artistRelationshipControls: some View {
-        HStack(spacing: 10) {
-            Button {
-                followedArtistIDs = togglingArtist(in: followedArtistIDs)
-            } label: {
-                Group {
-                    if isFollowing {
-                        Image(systemName: "person.fill")
-                            .overlay(alignment: .bottomTrailing) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .symbolRenderingMode(.palette)
-                                    .foregroundStyle(.background, Color.accentColor)
-                                    .offset(x: 5, y: 2)
-                            }
-                    } else {
-                        Image(systemName: "person.badge.plus")
-                    }
+    private var artistFollowButton: some View {
+        Button {
+            followedArtistIDs = togglingArtist(in: followedArtistIDs)
+        } label: {
+            Group {
+                if isFollowing {
+                    Image(systemName: "person.fill")
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 9, weight: .bold))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.black, Color.accentColor)
+                                .offset(x: 5, y: 2)
+                        }
+                } else {
+                    Image(systemName: "person.badge.plus")
                 }
-                .frame(width: headerIconControlWidth, height: headerControlHeight)
-                .contentShape(.capsule)
             }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .help(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
-            .accessibilityLabel(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
-            .accessibilityValue(isFollowing ? "Seguindo" : "Não seguindo")
-            .accessibilityIdentifier("artist.follow")
-
-            Button {
-                favoriteArtistIDs = togglingArtist(in: favoriteArtistIDs)
-            } label: {
-                Image(systemName: isFavorite ? "star.fill" : "star")
-                    .foregroundStyle(isFavorite ? Color.accentColor : .secondary)
-                    .frame(width: headerIconControlWidth, height: headerControlHeight)
-                    .contentShape(.capsule)
-            }
-            .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
-            .help(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
-            .accessibilityLabel(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
-            .accessibilityValue(isFavorite ? "Favorito" : "Não favorito")
-            .accessibilityIdentifier("artist.favorite")
-
-            if identity != nil {
-                Button {
-                    let window = NSApp.keyWindow ?? NSApp.mainWindow
-                    let windowHeight = window?.contentView?.bounds.height ?? 628
-                    identitySheetHeight = max(1, windowHeight - 64 - 64)
-                    isIdentityPopoverPresented = true
-                } label: {
-                    Image(systemName: "info.circle")
-                        .frame(width: headerIconControlWidth, height: headerControlHeight)
-                        .contentShape(.capsule)
-                }
-                .buttonStyle(.plain)
-                .glassEffect(.regular.interactive(), in: .capsule)
-                .help("Ver informações e conexões de metadados")
-                .accessibilityLabel("Ver informações de \(artist.name)")
-                .accessibilityIdentifier("artist.identity.badge")
-            }
+            .foregroundStyle(isFollowing ? Color.accentColor : .white.opacity(0.85))
         }
-        .font(.body.weight(.medium))
-        .tint(Color(nsColor: .controlAccentColor).opacity(appearsActive ? 1 : 0.63))
+        .buttonStyle(ArtistHeaderActionButtonStyle(size: headerActionSize))
+        .help(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
+        .accessibilityLabel(isFollowing ? "Deixar de seguir artista" : "Seguir artista")
+        .accessibilityValue(isFollowing ? "Seguindo" : "Não seguindo")
+        .accessibilityAddTraits(isFollowing ? .isSelected : [])
+        .accessibilityIdentifier("artist.follow")
+    }
+
+    private var artistInformationButton: some View {
+        Button {
+            let window = NSApp.keyWindow ?? NSApp.mainWindow
+            let windowHeight = window?.contentView?.bounds.height ?? 628
+            identitySheetHeight = max(1, windowHeight - 64 - 64)
+            isIdentityPopoverPresented = true
+        } label: {
+            Image(systemName: "info")
+        }
+        .buttonStyle(ArtistHeaderActionButtonStyle(size: headerActionSize))
+        .disabled(identity == nil)
+        .help("Ver informações e conexões de metadados")
+        .accessibilityLabel("Ver informações de \(artist.name)")
+        .accessibilityIdentifier("artist.identity.badge")
+    }
+
+    private var artistFavoriteButton: some View {
+        Button {
+            favoriteArtistIDs = togglingArtist(in: favoriteArtistIDs)
+        } label: {
+            Image(systemName: "star.fill")
+                .foregroundStyle(isFavorite ? Color.accentColor : .white.opacity(0.45))
+        }
+        .buttonStyle(ArtistHeaderActionButtonStyle(size: headerActionSize))
+        .help(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
+        .accessibilityLabel(isFavorite ? "Desfavoritar artista" : "Favoritar artista")
+        .accessibilityValue(isFavorite ? "Favorito" : "Não favorito")
+        .accessibilityAddTraits(isFavorite ? .isSelected : [])
+        .accessibilityIdentifier("artist.favorite")
     }
 
     private var visibleTracks: [Track] {
@@ -2201,4 +2217,21 @@ struct ArtistDetailToolbarControls: View {
         }
     }
 
+}
+
+private struct ArtistHeaderActionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    let size: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 18, weight: .medium))
+            .foregroundStyle(.white.opacity(0.85))
+            .frame(width: size, height: size)
+            .contentShape(.circle)
+            .background(.black.opacity(0.3), in: .circle)
+            .glassEffect(.regular.tint(.black.opacity(0.2)).interactive(), in: .circle)
+            .overlay { Circle().strokeBorder(.white.opacity(0.08), lineWidth: 1) }
+            .opacity(!isEnabled ? 0.4 : configuration.isPressed ? 0.65 : 1)
+    }
 }

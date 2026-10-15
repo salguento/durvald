@@ -1010,6 +1010,59 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testArtistHeaderActionsMatchReferenceAndKeepToggleStateSeparate() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        app.links["player.artist"].rightClick()
+        app.menuItems["Abrir artista"].click()
+
+        let ids = ["artist.follow", "artist.identity.badge", "collection.play",
+                   "collection.shuffle", "artist.favorite"]
+        let buttons = ids.map { app.buttons[$0] }
+        for (index, button) in buttons.enumerated() {
+            XCTAssertTrue(button.waitForExistence(timeout: 3), ids[index])
+            let size: CGFloat = index == 2 ? 72 : 48
+            XCTAssertEqual(button.frame.width, size, accuracy: 1, ids[index])
+            XCTAssertEqual(button.frame.height, size, accuracy: 1, ids[index])
+            XCTAssertEqual(button.frame.midY, buttons[2].frame.midY, accuracy: 1, ids[index])
+            if index > 0 { XCTAssertGreaterThan(button.frame.minX, buttons[index - 1].frame.maxX) }
+        }
+        let screenshot = XCTAttachment(screenshot: window.screenshot())
+        screenshot.name = "Artist centered circular header actions"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        for (id, inactive, active) in [("artist.follow", "Não seguindo", "Seguindo"),
+                                       ("artist.favorite", "Não favorito", "Favorito")] {
+            let button = app.buttons[id]
+            let initial = button.value as? String
+            XCTAssertTrue(initial == inactive || initial == active)
+            button.click()
+            expectation(for: NSPredicate(format: "value == %@", initial == inactive ? active : inactive),
+                        evaluatedWith: button)
+            waitForExpectations(timeout: 3)
+            button.click()
+            expectation(for: NSPredicate(format: "value == %@", initial ?? inactive), evaluatedWith: button)
+            waitForExpectations(timeout: 3)
+        }
+
+        let play = app.buttons["collection.play"]
+        let shuffle = app.buttons["collection.shuffle"]
+        // The navigation fixture has no audio core. These controls still keep
+        // momentary presentation; only follow and favorite retain selection.
+        shuffle.click()
+        XCTAssertFalse(shuffle.isSelected)
+        play.click()
+        XCTAssertFalse(play.isSelected)
+        XCTAssertEqual(play.label, "Reproduzir")
+    }
+
+    @MainActor
     func testArtistToolbarWorksWhenOpenedDirectlyAndPanelsToggle() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
