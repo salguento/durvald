@@ -1039,7 +1039,7 @@ final class DurvaldUITests: XCTestCase {
                 XCTAssertTrue(options.waitForExistence(timeout: 3))
                 XCTAssertTrue(options.isHittable)
                 XCTAssertTrue(queueToggle.isHittable)
-                XCTAssertLessThan(window.frame.maxX - queueToggle.frame.maxX, 80)
+                XCTAssertEqual(window.frame.maxX - queueToggle.frame.maxX, 8, accuracy: 1)
                 let expand = app.buttons["artist.tracks.search.expand"]
                 if expand.exists { expand.click() }
                 let field = app.textFields["artist.tracks.search.field"]
@@ -1055,6 +1055,29 @@ final class DurvaldUITests: XCTestCase {
                 app.typeKey(.escape, modifierFlags: [])
             }
             if queueOpen { queueToggle.click() }
+        }
+    }
+
+    @MainActor
+    func testQueueToggleKeepsEightPointTrailingInsetAcrossPages() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        let toggle = app.buttons["player.queue"]
+        for destination in ["home", "search.open", "songs", "albums", "artists", "playlists", "retrospective"] {
+            let tab = app.buttons["sidebar.\(destination)"]
+            if !tab.isHittable { app.buttons["navigation.sidebar"].click() }
+            XCTAssertTrue(tab.waitForExistence(timeout: 3))
+            tab.click()
+            for queueOpen in [false, true] {
+                if queueOpen { toggle.click() }
+                XCTAssertTrue(toggle.isHittable)
+                let inset = window.frame.maxX - toggle.frame.maxX
+                XCTAssertEqual(inset, 8, accuracy: 1, "\(destination), queue open: \(queueOpen)")
+                if queueOpen { toggle.click() }
+            }
         }
     }
 

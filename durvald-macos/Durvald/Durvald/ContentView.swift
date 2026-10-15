@@ -313,8 +313,7 @@ struct ContentView: View {
                     isExecutingSearch: globalSearch.isPending, onSubmit: { shell.submitSearch() },
                     navigation: TrackMenuNavigation(artist: showArtist, album: showAlbum, playlist: showPlaylist)
                 )
-                .frame(minWidth: 180, idealWidth: 260, maxWidth: 300,
-                       minHeight: ToolbarControlMetrics.size, maxHeight: ToolbarControlMetrics.size)
+                .frame(width: globalSearchToolbarWidth, height: ToolbarControlMetrics.size)
                 .animation(.easeOut(duration: 0.15), value: appearsActive)
                 // Reserve the queue inside the native toolbar item's bounds so
                 // AppKit hit testing follows the field's visible position.
@@ -343,7 +342,12 @@ struct ContentView: View {
         }
         ToolbarSpacer(.fixed)
         ToolbarItem(id: "queue-toggle", placement: .automatic) {
-            queueToggleButton
+            // A consistent custom view preserves the native 8 pt trailing
+            // margin instead of inheriting native button alignment insets.
+            LibraryToolbarHost(content: queueToggleButton,
+                               minimumWidth: Layout.queueToggleWidth,
+                               preferredWidth: Layout.queueToggleWidth)
+            .frame(width: Layout.queueToggleWidth, height: ToolbarControlMetrics.size)
         }
         .sharedBackgroundVisibility(.hidden)
         .visibilityPriority(.high)
@@ -353,6 +357,12 @@ struct ContentView: View {
         if isArtistDetail { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
         return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective
+    }
+
+    private var globalSearchToolbarWidth: CGFloat {
+        let navigationWidth: CGFloat = shell.columnVisibility == .detailOnly ? 280 : 76
+        return min(300, max(36, libraryToolbarDetailWidth - pageChrome.queueReservation
+                            - navigationWidth - Layout.queueToggleWidth - 64))
     }
 
     private var isArtistDetail: Bool {
