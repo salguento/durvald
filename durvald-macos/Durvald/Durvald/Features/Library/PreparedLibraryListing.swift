@@ -82,6 +82,23 @@ struct AlbumListingSnapshot {
     }
 }
 
+struct PlaylistListingSnapshot {
+    var items: [Playlist] = []
+    var summary = ""
+
+    static func build(playlists: [Playlist], tracksByPlaylist: [Int64: [Track]],
+                      releases: [Release], key: LibraryListingKey) -> Self {
+        let filtered = playlists.filter {
+            key.query.isEmpty || $0.name.localizedStandardContains(key.query)
+                || $0.description.localizedStandardContains(key.query)
+        }
+        return Self(items: CollectionListingSorter.playlists(filtered, order: key.order,
+                                                             tracksByPlaylist: tracksByPlaylist, releases: releases),
+                    summary: SummaryPresentation.playlists(count: filtered.count,
+                        trackCount: filtered.reduce(0) { $0 + $1.trackCount }, query: key.query))
+    }
+}
+
 struct ArtistListingSnapshot {
     var items: [Artist] = []
     var fallbackArtwork: [Int64: String] = [:]

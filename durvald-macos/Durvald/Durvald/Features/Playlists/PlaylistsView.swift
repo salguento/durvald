@@ -1,7 +1,16 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@Observable
+final class PlaylistsToolbarState {
+    var isChoosingImport = false
+    var isImporting = false
+    var isShowingSmartPlaylist = false
+}
+
 struct PlaylistsView: View {
+    @Binding var searchText: String
+    @Bindable var toolbarState: PlaylistsToolbarState
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(DurvaldCoreStore.self) private var store
     @AppStorage("playlists.listingMode") private var listingMode: CollectionListingMode = .standard
@@ -9,17 +18,15 @@ struct PlaylistsView: View {
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     @State private var tracksByPlaylist: [Int64: [Track]] = [:]
     @State private var orderingRevision: UInt64 = 0
-    @State private var presentation = PreparedLibraryListing<[Playlist]>([])
-    @State private var isChoosingImport = false
-    @State private var isImporting = false
+    @State private var presentation = PreparedLibraryListing(PlaylistListingSnapshot())
     @State private var importReport: PlaylistImportReport?
     @State private var importError: String?
-    @State private var isShowingSmartPlaylist = false
     let onSelectPlaylist: (Playlist) -> Void
+    var onSummaryChange: (String) -> Void = { _ in }
 
     var body: some View {
         CollectionListingLayout(mode: listingMode) { size in
-            ForEach(presentation.value, id: \.id) { playlist in
+            ForEach(presentation.value.items, id: \.id) { playlist in
                 CollectionListingItem(title: playlist.name, mode: listingMode, artworkSize: size, action: { onSelectPlaylist(playlist) }) {
                     PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: size)
                 }
@@ -32,30 +39,19 @@ struct PlaylistsView: View {
         .onDrop(of: [LibraryTrackDrag.type], isTargeted: nil) { providers in
             LibraryTrackDrag.accept(providers) { playlistCreation.requestTracks($0) }
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            HStack {
-                Button("Nova smart playlist", systemImage: "wand.and.stars") {
-                    isShowingSmartPlaylist = true
-                }
-                Button("Importar M3U8…", systemImage: "square.and.arrow.down") {
-                    isChoosingImport = true
-                }
-                .disabled(isImporting)
-                if isImporting { ProgressView().controlSize(.small) }
-                Spacer()
+        .overlay {
+            if !normalizedSearchText.isEmpty && presentation.value.items.isEmpty && !presentation.isPreparing {
+                ContentUnavailableView("Nenhuma playlist encontrada", systemImage: "magnifyingglass")
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 10)
-            .background(.bar)
         }
         .fileImporter(
-            isPresented: $isChoosingImport,
+            isPresented: $toolbarState.isChoosingImport,
             allowedContentTypes: [PlaylistTransferService.m3u8Type],
             allowsMultipleSelection: false,
             onCompletion: importPlaylist
         )
         .sheet(item: $importReport) { PlaylistImportReportSheet(report: $0) }
-        .sheet(isPresented: $isShowingSmartPlaylist) {
+        .sheet(isPresented: $toolbarState.isShowingSmartPlaylist) {
             SmartPlaylistSheet { name, description, definition in
                 await store.createSmartPlaylist(
                     named: name, description: description, definition: definition
@@ -79,8 +75,11 @@ struct PlaylistsView: View {
             let tracks = tracksByPlaylist
             let releases = store.releases
             await presentation.prepare(key: key, payload: (playlists, tracks, releases)) { payload in
-                CollectionListingSorter.playlists(payload.0, order: key.order, tracksByPlaylist: payload.1, releases: payload.2)
+                PlaylistListingSnapshot.build(playlists: payload.0, tracksByPlaylist: payload.1,
+                                              releases: payload.2, key: key)
             }
+            guard !Task.isCancelled else { return }
+            onSummaryChange(presentation.value.summary)
         }
     }
 
@@ -89,18 +88,22 @@ struct PlaylistsView: View {
             if case .failure(let error) = result { importError = error.localizedDescription }
             return
         }
-        isImporting = true
+        toolbarState.isImporting = true
         Task {
-            defer { isImporting = false }
+            defer { toolbarState.isImporting = false }
             do { importReport = try await store.importM3U8(from: url) }
             catch { importError = error.localizedDescription }
         }
     }
 
+    private var normalizedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var preparationKey: LibraryListingKey {
         LibraryListingKey(storeID: ObjectIdentifier(store), catalogRevision: store.libraryCatalogRevision,
                           releasesRevision: store.releasesRevision, playlistsRevision: store.playlistsRevision,
-                          orderingRevision: orderingRevision,
+                          orderingRevision: orderingRevision, query: normalizedSearchText,
                           order: ratingsEnabled || listingOrder != .rating ? listingOrder : .recent,
                           ratingsEnabled: ratingsEnabled)
     }
@@ -122,5 +125,33 @@ struct PlaylistsView: View {
         guard !Task.isCancelled else { return }
         tracksByPlaylist = loaded
         orderingRevision &+= 1
+    }
+}
+
+struct PlaylistsCreationMenu: View {
+    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
+    @Bindable var state: PlaylistsToolbarState
+
+    var body: some View {
+        ToolbarOptionsButton(title: "Adicionar playlist", systemImage: "plus") {
+            Button("Nova playlist", systemImage: "plus") {
+                playlistCreation.request(for: nil)
+            }
+            Button("Nova playlist inteligente", systemImage: "wand.and.stars") {
+                state.isShowingSmartPlaylist = true
+            }
+            Button("Importar playlist", systemImage: "square.and.arrow.down") {
+                state.isChoosingImport = true
+            }
+            .disabled(state.isImporting)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if state.isImporting {
+                ProgressView().controlSize(.mini)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("Importando playlist")
+            }
+        }
+        .accessibilityIdentifier("playlists.add")
     }
 }

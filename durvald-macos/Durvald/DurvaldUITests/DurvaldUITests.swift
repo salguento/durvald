@@ -1010,6 +1010,78 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testPlaylistsTopbarShowsSummarySearchAndCreationMenu() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        if !app.buttons["sidebar.playlists"].isHittable { app.buttons["navigation.sidebar"].click() }
+        app.buttons["sidebar.playlists"].click()
+        let summary = app.descendants(matching: .any)["playlists.summary"].firstMatch
+        XCTAssertTrue(summary.waitForExistence(timeout: 3))
+        let navigation = app.descendants(matching: .any)["navigation.history"]
+        XCTAssertEqual(summary.frame.minX - navigation.frame.maxX, 12, accuracy: 1)
+        expectation(for: NSPredicate(format: "value CONTAINS %@", "0 playlists, 0 músicas"), evaluatedWith: summary)
+        waitForExpectations(timeout: 3)
+        XCTAssertFalse(app.buttons["Nova smart playlist"].exists)
+        XCTAssertFalse(app.buttons["Importar playlist"].exists)
+
+        let addMenu = app.descendants(matching: .any)["playlists.add"].firstMatch
+        let options = app.descendants(matching: .any)["playlists.listingMode"].firstMatch
+        let toggle = app.buttons["player.queue"]
+        for queueOpen in [false, true] {
+            if queueOpen { toggle.click() }
+            let expand = app.buttons["playlists.search.expand"]
+            if expand.exists { expand.click() }
+            let field = app.textFields["playlists.search.field"]
+            XCTAssertTrue(field.waitForExistence(timeout: 3))
+            XCTAssertTrue(addMenu.isHittable)
+            XCTAssertLessThan(addMenu.frame.maxX, field.frame.minX)
+            XCTAssertEqual(window.frame.maxX - toggle.frame.maxX, 8, accuracy: 1)
+            let edge = queueOpen ? app.descendants(matching: .any)["queue.sidebar"].frame.minX : toggle.frame.minX
+            XCTAssertEqual(edge - options.frame.maxX, 8, accuracy: 1)
+            field.click()
+            field.typeText("teste")
+            XCTAssertEqual(field.value as? String, "teste")
+            XCTAssertTrue(app.staticTexts["Nenhuma playlist encontrada"].waitForExistence(timeout: 3))
+            expectation(for: NSPredicate(format: "value CONTAINS %@", "Resultados para “teste” • 0 playlists, 0 músicas"),
+                        evaluatedWith: summary)
+            waitForExpectations(timeout: 3)
+            app.typeKey("a", modifierFlags: .command)
+            app.typeKey(.delete, modifierFlags: [])
+            app.typeKey(.escape, modifierFlags: [])
+        }
+        toggle.click()
+        for action in ["Nova playlist", "Nova playlist inteligente", "Importar playlist"] {
+            addMenu.click()
+            for title in ["Nova playlist", "Nova playlist inteligente", "Importar playlist"] {
+                XCTAssertTrue(app.menuItems[title].waitForExistence(timeout: 3))
+            }
+            app.menuItems[action].click()
+            if action == "Nova playlist" {
+                XCTAssertTrue(app.textFields["playlist.new.title"].waitForExistence(timeout: 3))
+                app.buttons["Cancelar"].click()
+            } else if action == "Nova playlist inteligente" {
+                XCTAssertTrue(app.buttons["Adicionar regra"].waitForExistence(timeout: 3))
+                app.buttons["Cancelar"].click()
+            } else {
+                let panel = app.sheets["open-panel"]
+                XCTAssertTrue(panel.waitForExistence(timeout: 3))
+                let cancel = app.buttons["CancelButton"]
+                XCTAssertTrue(cancel.waitForExistence(timeout: 3))
+                cancel.click()
+            }
+        }
+        let capture = XCTAttachment(screenshot: window.screenshot())
+        capture.name = "Playlists shared topbar"
+        capture.lifetime = .keepAlways
+        add(capture)
+    }
+
+    @MainActor
     func testAlbumUsesSharedTopbarAndCircularHeaderActions() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
@@ -1191,7 +1263,8 @@ final class DurvaldUITests: XCTestCase {
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 3))
         for (destination, summaryID) in [("songs", "library.summary"), ("albums", "albums.summary"),
-                                         ("artists", "artists.summary"), ("retrospective", "retrospective.summary")] {
+                                         ("artists", "artists.summary"), ("retrospective", "retrospective.summary"),
+                                         ("playlists", "playlists.summary")] {
             let tab = app.buttons["sidebar.\(destination)"]
             if !tab.isHittable { app.buttons["navigation.sidebar"].click() }
             tab.click()

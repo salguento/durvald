@@ -44,6 +44,12 @@ enum SummaryPresentation {
         return "\(queryPrefix(query))\(count.formatted()) \(count == 1 ? "item" : "itens"), \(duration), \(size)"
     }
 
+    static func playlists(count: Int, trackCount: UInt64, query: String) -> String {
+        let playlists = "\(count.formatted()) \(count == 1 ? "playlist" : "playlists")"
+        let tracks = "\(trackCount.formatted()) \(trackCount == 1 ? "música" : "músicas")"
+        return "\(queryPrefix(query))\(playlists), \(tracks)"
+    }
+
     static func artists(localCount: Int, indexedCount: Int, query: String) -> String {
         let localText = "\(localCount.formatted()) \(localCount == 1 ? "artista local" : "artistas locais")"
         let indexedText = "\(indexedCount.formatted()) \(indexedCount == 1 ? "artista indexado" : "artistas indexados")"

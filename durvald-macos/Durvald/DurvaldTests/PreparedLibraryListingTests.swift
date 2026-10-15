@@ -93,6 +93,34 @@ final class PreparedLibraryListingTests: XCTestCase {
         XCTAssertEqual(disabled.items.map(\.id), [2, 1])
     }
 
+    func testPlaylistSearchFiltersNamesAndDescriptionsAndSummarizesOnlyResults() {
+        let first = Playlist(id: 1, name: "Férias", description: "Viagem de verão", artworkId: nil,
+                             isFavorite: false, suggestLess: false, trackCount: 3, createdAt: "2024",
+                             updatedAt: "2024", isSmart: false, smartDefinition: nil)
+        var second = first
+        second.id = 2
+        second.name = "Alpha"
+        second.description = "Relaxar"
+        second.trackCount = 1
+        let all = PlaylistListingSnapshot.build(playlists: [first, second], tracksByPlaylist: [:],
+                                                releases: [], key: .init(order: .alphabetical))
+        XCTAssertEqual(all.items.map(\.id), [2, 1])
+        XCTAssertEqual(all.summary, "2 playlists, 4 músicas")
+        for query in ["FERIAS", "VERÃO"] {
+            let result = PlaylistListingSnapshot.build(playlists: [first, second], tracksByPlaylist: [:],
+                                                       releases: [], key: .init(query: query))
+            XCTAssertEqual(result.items.map(\.id), [1])
+            XCTAssertEqual(result.summary, "Resultados para “\(query)” • 1 playlist, 3 músicas")
+        }
+        let single = PlaylistListingSnapshot.build(playlists: [second], tracksByPlaylist: [:],
+                                                   releases: [], key: .init())
+        XCTAssertEqual(single.summary, "1 playlist, 1 música")
+        let empty = PlaylistListingSnapshot.build(playlists: [first, second], tracksByPlaylist: [:],
+                                                  releases: [], key: .init(query: "sem resultado"))
+        XCTAssertTrue(empty.items.isEmpty)
+        XCTAssertEqual(empty.summary, "Resultados para “sem resultado” • 0 playlists, 0 músicas")
+    }
+
     func testArtistRanksUseAllReleasesAndPreserveMissingValueFallbacks() {
         let artists = [Artist(id: 1, name: "Alpha"), Artist(id: 2, name: "Zulu"), Artist(id: 3, name: "Empty")]
         var first = Fixtures.release

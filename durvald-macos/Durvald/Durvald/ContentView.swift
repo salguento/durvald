@@ -28,6 +28,9 @@ struct ContentView: View {
     @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
     @AppStorage("albums.minimumRating") private var albumMinimumRating = 0
 
+    @State private var playlistsSearchText = ""
+    @State private var playlistsSummary = "Carregando…"
+    @State private var playlistsToolbarState = PlaylistsToolbarState()
     @State private var albumSearchText = ""
     @State private var albumsSummary = "Carregando…"
     @State private var artistSearchText = ""
@@ -329,10 +332,14 @@ struct ContentView: View {
         .visibilityPriority(.high)
     }
 
+    private var isPlaylistsListing: Bool {
+        shell.navigationHistory.currentRoute == .section(.playlists)
+    }
+
     private var hasLibrarySearch: Bool {
         if isArtistDetail || isPlaylistDetail || isAlbumDetail { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
-        return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective
+        return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective || destination == .playlists
     }
 
     private var trackMenuNavigation: TrackMenuNavigation {
@@ -373,6 +380,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
+        case .playlists: playlistsSummary
         case .retrospective: retrospectiveSummary
         default: albumsSummary
         }
@@ -382,6 +390,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: $musicSearchText
         case .artists: $artistSearchText
+        case .playlists: $playlistsSearchText
         case .retrospective: $retrospectiveSearchText
         default: $albumSearchText
         }
@@ -391,6 +400,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: "Pesquisar músicas"
         case .artists: "Pesquisar artistas"
+        case .playlists: "Pesquisar playlists"
         case .retrospective: "Pesquisar na retrospectiva"
         default: "Pesquisar álbuns"
         }
@@ -400,6 +410,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .songs: "library.search"
         case .artists: "artists.search"
+        case .playlists: "playlists.search"
         case .retrospective: "retrospective.search"
         default: "albums.search"
         }
@@ -415,25 +426,24 @@ struct ContentView: View {
         if isArtistDetail || isPlaylistDetail || isAlbumDetail { return 308 }
         // Result counts change while typing; they must not switch the search
         // between compact and expanded presentation.
-        return 120 + 220 + 44 + 8 + Layout.librarySummaryLeadingPadding
+        return 120 + 220 + 44 + (isPlaylistsListing ? 44 : 0) + 8 + Layout.librarySummaryLeadingPadding
     }
 
     private var pageContentToolbar: some View {
         let detailWidth = libraryToolbarDetailWidth
         let layout = PageToolbarLayout(kind: pageChrome.kind,
-                                       additionalMenuCount: isPlaylistDetail || isAlbumDetail ? 1 : 0,
+                                       additionalMenuCount: isPlaylistDetail || isAlbumDetail || isPlaylistsListing ? 1 : 0,
                                        queuePresented: shell.isQueuePresented,
                                        expandedMinimumWidth: libraryExpandedControlsMinimumWidth,
                                        summaryLeadingPadding: Layout.librarySummaryLeadingPadding)
         let toggleReservation = Layout.queueToggleWidth + ToolbarControlMetrics.spacing
         let panelReservation = layout.panelReservation
         let hasSearch = shell.navigationHistory.current == .search
-        let hasOptions = shell.navigationHistory.currentRoute == .section(.playlists)
         // The panel reservation is drawing space, not a native minimum width.
         // Counting it as a minimum can push navigation into toolbar overflow,
         // which inserts an extra trailing button and moves the queue toggle.
         let controlsMinimum: CGFloat = hasLibrarySearch ? layout.minimumWidth - panelReservation
-            : (hasSearch || hasOptions ? 36 : 0)
+            : (hasSearch ? 36 : 0)
         let minimumWidth = controlsMinimum + toggleReservation
         let preferredWidth = max(minimumWidth, toolbarAvailableWidth
             ?? (layout.preferredWidth(detailWidth: detailWidth,
@@ -471,9 +481,6 @@ struct ContentView: View {
                             .frame(width: min(300, max(36, geometry.size.width - panelReservation)),
                                    height: ToolbarControlMetrics.size)
                             .padding(.trailing, panelReservation)
-                        } else if hasOptions {
-                            collectionOptions(for: .playlists)
-                                .padding(.trailing, panelReservation)
                         }
                     }
                     .frame(width: geometry.size.width, height: ToolbarControlMetrics.size,
@@ -541,6 +548,9 @@ struct ContentView: View {
             .fixedSize()
         } else {
             HStack(spacing: ToolbarControlMetrics.spacing) {
+                if isPlaylistsListing {
+                    PlaylistsCreationMenu(state: playlistsToolbarState)
+                }
                 LibraryToolbarSearchField(
                     searchText: librarySearchText,
                     placeholder: librarySearchPlaceholder,
@@ -555,6 +565,8 @@ struct ContentView: View {
                     })
                 } else if shell.navigationHistory.current == .retrospective {
                     RetrospectiveToolbarOptionsMenu()
+                } else if isPlaylistsListing {
+                    collectionOptions(for: .playlists)
                 } else {
                     collectionOptions(for: shell.navigationHistory.current == .artists ? .artists : .albums)
                 }
@@ -836,7 +848,10 @@ struct ContentView: View {
                 artistsSummary = summary
             }
         case .playlists:
-            PlaylistsView(onSelectPlaylist: showPlaylist)
+            PlaylistsView(searchText: $playlistsSearchText, toolbarState: playlistsToolbarState,
+                          onSelectPlaylist: showPlaylist) { summary in
+                playlistsSummary = summary
+            }
         case .retrospective:
             RetrospectiveView(searchText: $retrospectiveSearchText) { summary in
                 retrospectiveSummary = summary
