@@ -15,7 +15,8 @@ struct RetrospectiveView: View {
     @AppStorage(RetrospectivePeriod.storageKey) private var period = RetrospectivePeriod.defaultValue
     @State private var search = SearchPresentation<RetrospectiveListingSnapshot>()
     @State private var selectedDate: Date?
-    @State private var dateTabs = PreparedLibraryListing([RetrospectiveDateTab]())
+    @State private var selectedScope: Date?
+    @State private var dateTabs = PreparedLibraryListing(RetrospectiveDateNavigation())
     @State private var overview = PreparedLibraryListing(RetrospectiveWeekSnapshot())
     @State private var statisticsDate = Date()
     private var snapshot: RetrospectiveListingSnapshot { search.value ?? RetrospectiveListingSnapshot() }
@@ -34,7 +35,7 @@ struct RetrospectiveView: View {
     }
 
     private var visibleTabs: [RetrospectiveDateTab] {
-        dateTabs.completedKey?.scope == period.rawValue ? dateTabs.value : []
+        dateTabs.completedKey == tabsKey ? dateTabs.value.tabs : []
     }
     private var selectedTab: RetrospectiveDateTab? {
         RetrospectiveDateTab.selection(in: visibleTabs, preferredDate: selectedDate, now: statisticsDate)
@@ -42,7 +43,7 @@ struct RetrospectiveView: View {
     private var selectedInterval: DateInterval? { selectedTab?.interval }
     private var tabsKey: LibraryListingKey {
         LibraryListingKey(storeID: ObjectIdentifier(store), payloadRevision: store.historyRepository.revision,
-                          scope: period.rawValue, query: calendarKey)
+                          scope: period.rawValue, query: "\(calendarKey):\(selectedScope?.timeIntervalSince1970 ?? 0)")
     }
     private var calendarKey: String {
         let calendar = Calendar.current
@@ -98,7 +99,31 @@ struct RetrospectiveView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             RetrospectiveToolbarAccessory(height: 46) {
-                RetrospectiveTabPicker(tabs: visibleTabs, selection: selectedTab?.id) { selectedDate = $0 }
+                HStack(spacing: 0) {
+                    RetrospectiveTabPicker(tabs: visibleTabs, selection: selectedTab?.id) { selectedDate = $0 }
+                        .frame(minWidth: 0)
+                    if period != .yearly, let scope = dateTabs.value.selectedScope,
+                       dateTabs.completedKey?.scope == period.rawValue {
+                        Divider()
+                            .frame(width: 1, height: 30)
+                            .overlay(Color.primary.opacity(0.3))
+                            .accessibilityHidden(true)
+                        Picker(period == .monthly ? "Ano" : "Mês", selection: Binding(
+                            get: { scope },
+                            set: { selectedScope = $0; selectedDate = nil }
+                        )) {
+                            ForEach(dateTabs.value.scopes) { scope in
+                                Text(scope.title).tag(scope.id)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .fixedSize()
+                        .accessibilityLabel(period == .monthly ? "Ano da retrospectiva" : "Mês da retrospectiva")
+                        .accessibilityIdentifier("retrospective.dateScope")
+                        .padding(.horizontal, 8)
+                    }
+                }
             }
         }
         .task(id: RefreshRequest(coreID: store.core.map(ObjectIdentifier.init),
@@ -109,11 +134,13 @@ struct RetrospectiveView: View {
             let selectedPeriod = period
             let now = statisticsDate
             let calendar = Calendar.current
+            let preferredScope = selectedScope
             await dateTabs.prepare(key: tabsKey, payload: store.historyRepository.entries) { entries in
-                RetrospectiveDateTab.build(period: selectedPeriod, now: now, calendar: calendar, entries: entries)
+                RetrospectiveDateNavigation.build(period: selectedPeriod, now: now, calendar: calendar,
+                                                   entries: entries, preferredScope: preferredScope)
             }
         }
-        .onChange(of: period) { _, _ in selectedDate = nil }
+        .onChange(of: period) { _, _ in selectedDate = nil; selectedScope = nil }
         .task(id: preparationKey) {
             let key = preparationKey
             let entries = store.historyRepository.entries
@@ -188,8 +215,7 @@ private struct RetrospectiveTabPicker: View {
                         .id(tab.id)
                     }
                 }
-                .padding(.leading, 20)
-                .padding(.trailing, 24)
+                .padding(.horizontal, 8)
             }
             .scrollIndicators(.hidden)
             .onChange(of: selection, initial: true) { _, date in
@@ -249,8 +275,8 @@ private struct RetrospectiveTrackRow: View {
     }
 
     private var playbackDate: String {
-        let format = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
-        guard let date = try? format.parse(item.playedAt) else { return item.playedAt }
-        return date.formatted(date: .abbreviated, time: .shortened)
+        guard let date = RetrospectivePeriod.playbackDate(item.playedAt) else { return item.playedAt }
+        return date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened)
+            .locale(Locale(identifier: "pt_BR")))
     }
 }

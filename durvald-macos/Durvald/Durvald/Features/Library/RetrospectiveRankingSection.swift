@@ -19,7 +19,7 @@ struct RetrospectiveRankingSection: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, 40)
+        .padding(.horizontal, 24)
         .padding(.bottom, 32)
         .accessibilityIdentifier("retrospective.overview.rankings")
     }
@@ -58,11 +58,11 @@ struct RetrospectiveRankingSection: View {
                     }
                 }
                 .scrollIndicators(.hidden)
-                .contentMargins(.leading, 40 + sideInsets.leading, for: .scrollContent)
-                .contentMargins(.trailing, 40 + sideInsets.trailing, for: .scrollContent)
+                .contentMargins(.leading, 24 + sideInsets.leading, for: .scrollContent)
+                .contentMargins(.trailing, 24 + sideInsets.trailing, for: .scrollContent)
                 .frame(width: viewport.expandedWidth, alignment: .leading)
-                .padding(.leading, -40 - sideInsets.leading)
-                .padding(.trailing, -40 - sideInsets.trailing)
+                .padding(.leading, -24 - sideInsets.leading)
+                .padding(.trailing, -24 - sideInsets.trailing)
                 .scrollClipDisabled()
             }
         }

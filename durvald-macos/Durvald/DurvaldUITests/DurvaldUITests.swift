@@ -1097,6 +1097,58 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testRetrospectiveCalendarSelectorFiltersHistoricalMonthsAndYears() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture",
+                                "--retrospective-date-fixture"]
+        app.launch()
+        let retrospective = app.buttons["sidebar.retrospective"]
+        if !retrospective.isHittable { app.buttons["navigation.sidebar"].click() }
+        XCTAssertTrue(retrospective.waitForExistence(timeout: 3))
+        retrospective.click()
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        let options = app.descendants(matching: .any)["retrospective.viewOptions"]
+        let selector = app.popUpButtons["retrospective.dateScope"]
+        let tabs = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "retrospective.date."))
+        for period in ["Diário", "Semanal", "Mensal"] {
+            options.click()
+            app.menuItems[period].click()
+            XCTAssertTrue(selector.waitForExistence(timeout: 3))
+            selector.click()
+            let choice = period == "Mensal" ? "2024" : "Fevereiro de 2024"
+            XCTAssertTrue(app.menuItems[choice].waitForExistence(timeout: 3))
+            XCTAssertFalse(app.menuItems["2023"].exists)
+            XCTAssertFalse(app.menuItems["Janeiro de 2024"].exists)
+            app.menuItems[choice].click()
+            XCTAssertTrue(tabs.firstMatch.waitForExistence(timeout: 3))
+            if period == "Diário" {
+                XCTAssertEqual(tabs.firstMatch.label, "29")
+                XCTAssertEqual(tabs.count, 29)
+            } else if period == "Semanal" {
+                XCTAssertTrue(tabs.firstMatch.label.hasPrefix("25 - 02") || tabs.firstMatch.label.hasPrefix("26 - 03"))
+            } else {
+                tabs.matching(NSPredicate(format: "label == %@", "Fevereiro")).firstMatch.click()
+            }
+            let summary = app.descendants(matching: .any)["retrospective.summary"]
+            XCTAssertTrue(summary.waitForExistence(timeout: 3))
+            XCTAssertTrue((summary.value as? String ?? "").contains("1 reprodução"))
+            let frame = selector.frame
+            let scroll = app.scrollViews.containing(.button, identifier: tabs.firstMatch.identifier).firstMatch
+            scroll.swipeLeft()
+            XCTAssertEqual(selector.frame.minX, frame.minX, accuracy: 1)
+            XCTAssertEqual(selector.frame.width, frame.width, accuracy: 1)
+            let attachment = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+            attachment.name = "Retrospective calendar selector — \(period)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        options.click()
+        app.menuItems["Anual"].click()
+        XCTAssertFalse(selector.waitForExistence(timeout: 1))
+    }
+
+    @MainActor
     func testRetrospectiveTabsKeepWindowAndToolbarGeometry() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture"]

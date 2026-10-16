@@ -57,6 +57,16 @@ enum PlayerNavigationFixture {
                 isPlaying: livePlayback, isPaused: !livePlayback, queue: scrollable ? tracks.enumerated().map { QueueItem(trackId: $0.element.id, position: UInt64($0.offset)) } : [], queuePosition: 0,
                 shuffleEnabled: false, repeatMode: .none
             )
+        var history = scrollable ? tracks.enumerated().map { index, track in
+            PlaybackHistoryItem(id: Int64(index + 1), trackId: track.id,
+                                playedAt: Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: true).timeZone(separator: .omitted)), durationSeconds: 180)
+        } : []
+        if ProcessInfo.processInfo.arguments.contains("--retrospective-date-fixture") {
+            history += [
+                PlaybackHistoryItem(id: 10_001, trackId: tracks[0].id, playedAt: "2024-02-29T12:00:00Z", durationSeconds: 180),
+                PlaybackHistoryItem(id: 10_002, trackId: tracks[0].id, playedAt: "2025-12-15T12:00:00Z", durationSeconds: 180)
+            ]
+        }
         return DurvaldCoreStore(
             core: livePlayback ? PlaybackClockFixtureCore(
                 snapshot: snapshot,
@@ -69,10 +79,7 @@ enum PlayerNavigationFixture {
             // Same-name records come first to catch accidental matching by text.
             releases: releases,
             artists: [sameNameArtist, artist, albumArtist],
-            history: scrollable ? tracks.enumerated().map { index, track in
-                PlaybackHistoryItem(id: Int64(index + 1), trackId: track.id,
-                                    playedAt: Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: true).timeZone(separator: .omitted)), durationSeconds: 180)
-            } : []
+            history: history
         )
     }
 }

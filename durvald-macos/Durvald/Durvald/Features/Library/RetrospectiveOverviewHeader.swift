@@ -18,7 +18,7 @@ struct RetrospectiveOverviewHeader: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, minHeight: 180, alignment: .leading)
-        .padding(.horizontal, 40)
+        .padding(.horizontal, 24)
         .padding(.vertical, 48)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(snapshot.listeningSentence)
