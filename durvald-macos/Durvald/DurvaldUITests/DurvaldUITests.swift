@@ -18,6 +18,7 @@ final class DurvaldUITests: XCTestCase {
         let sidebar = app.buttons["navigation.sidebar"]
         let home = app.buttons["navigation.home"]
         if !app.buttons["sidebar.songs"].isHittable { sidebar.click() }
+        XCTAssertTrue(app.buttons["sidebar.songs"].waitForExistence(timeout: 3))
         XCTAssertTrue(sidebar.isHittable)
         XCTAssertFalse(home.exists)
         XCTAssertFalse(app.buttons["library.addMenu"].exists)
@@ -31,7 +32,8 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertLessThan(home.frame.maxX, history.frame.minX)
         XCTAssertEqual(window.frame.maxX - app.buttons["player.queue"].frame.maxX, 8, accuracy: 1)
 
-        home.click()
+        // Click inside the glass circle, outside the house icon.
+        home.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5)).click()
         XCTAssertTrue(app.descendants(matching: .any)["home.page"].waitForExistence(timeout: 3))
         XCTAssertTrue(home.exists)
         app.buttons["navigation.back"].click()

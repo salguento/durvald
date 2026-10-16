@@ -739,10 +739,11 @@ struct ContentView: View {
             shell.navigationHistory.navigate(to: .home)
         } label: {
             Label("Início", systemImage: "house")
+                .labelStyle(.iconOnly)
+                .frame(width: ToolbarControlMetrics.size, height: ToolbarControlMetrics.size)
+                .contentShape(Circle())
         }
-        .labelStyle(.iconOnly)
         .buttonStyle(.plain)
-        .frame(width: ToolbarControlMetrics.size, height: ToolbarControlMetrics.size)
         .glassEffect(.regular.interactive(), in: .circle)
         .help("Ir para o início")
         .accessibilityLabel("Início")
