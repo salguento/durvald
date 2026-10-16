@@ -324,7 +324,6 @@ struct ContentView: View {
             pageContentToolbar
         }
         .sharedBackgroundVisibility(.hidden)
-        .visibilityPriority(.high)
     }
 
     private var isPlaylistsListing: Bool {
@@ -623,19 +622,24 @@ struct ContentView: View {
             ToolbarItem(placement: .navigation) {
                 sidebarToggleButton
             }
+            .visibilityPriority(.high)
             ToolbarSpacer(.fixed, placement: .navigation)
 
             ToolbarItem(id: "navigation-home", placement: .navigation) {
                 homeToolbarButton
             }
             .sharedBackgroundVisibility(.hidden)
+            .visibilityPriority(.high)
         }
 
         ToolbarSpacer(.fixed, placement: .navigation)
 
-        ToolbarItem(placement: .navigation) {
+        // Keep navigation ahead of the flexible page canvas when AppKit
+        // resolves toolbar widths, including before its first measurement.
+        ToolbarItem(id: "navigation-history", placement: .navigation) {
             backForwardButtons
         }
+        .visibilityPriority(.high)
 
     }
 

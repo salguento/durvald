@@ -50,6 +50,34 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testToolbarHistoryStaysVisibleWithSidebarAndSpaceAvailable() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 3))
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        if !app.buttons["sidebar.songs"].isHittable {
+            app.buttons["navigation.sidebar"].click()
+        }
+
+        let back = app.buttons["navigation.back"]
+        let forward = app.buttons["navigation.forward"]
+        for destination in ["songs", "home", "albums", "home"] {
+            app.buttons["sidebar.\(destination)"].click()
+            for button in [back, forward, app.buttons["player.queue"]] {
+                XCTAssertTrue(button.isHittable, "\(button.identifier) must stay out of overflow on \(destination)")
+                XCTAssertTrue(window.frame.contains(button.frame))
+            }
+        }
+        back.click()
+        XCTAssertTrue(app.descendants(matching: .any)["albums.summary"].waitForExistence(timeout: 3))
+        forward.click()
+        XCTAssertTrue(app.descendants(matching: .any)["home.page"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
     func testToolbarNavigationStaysVisibleAfterResizingWithSidebarCollapsed() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
