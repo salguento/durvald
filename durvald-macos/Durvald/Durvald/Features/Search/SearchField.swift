@@ -85,6 +85,7 @@ struct ToolbarSearchField: View {
     var onActivate: (() -> Void)? = nil
     var isLoading = false
     var onSubmit: (() -> Void)? = nil
+    var clearsOnEscape = false
 
     var body: some View {
         SearchFieldChrome(text: $text, style: .toolbar, accessory: accessory,
@@ -93,7 +94,8 @@ struct ToolbarSearchField: View {
                 text: $text, isFocused: $isFocused, isPresented: true,
                 focusRequest: focusRequest, placeholder: "",
                 accessibilityLabel: accessibilityLabel ?? placeholder,
-                accessibilityIdentifier: "\(identifier).field", onSubmit: onSubmit
+                accessibilityIdentifier: "\(identifier).field", onSubmit: onSubmit,
+                clearsOnEscape: clearsOnEscape
             )
             .frame(maxWidth: .infinity)
             .overlay(alignment: .leading) {

@@ -12,6 +12,7 @@ struct ToolbarSearchTextField: NSViewRepresentable {
     var accessibilityLabel = "Pesquisar na biblioteca"
     var accessibilityIdentifier = "search.field"
     var onSubmit: (() -> Void)? = nil
+    var clearsOnEscape = false
 
     private var attributedPlaceholder: NSAttributedString {
         NSAttributedString(
@@ -273,6 +274,15 @@ struct ToolbarSearchTextField: NSViewRepresentable {
             }
             guard commandSelector == #selector(NSResponder.cancelOperation(_:)) else {
                 return false
+            }
+
+            if parent.clearsOnEscape, !textView.string.isEmpty {
+                textView.string = ""
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
+                (control as? NSTextField)?.stringValue = ""
+                parent.text = ""
+                parent.isFocused = true
+                return true
             }
 
             control.window?.makeFirstResponder(nil)

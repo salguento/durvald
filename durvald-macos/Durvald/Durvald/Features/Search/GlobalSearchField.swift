@@ -123,7 +123,8 @@ struct GlobalSearchField: View {
                            placeholder: "Biblioteca", identifier: "search",
                            accessibilityLabel: "Pesquisar na biblioteca",
                            accessory: .reservedClear, focusColor: .accentColor,
-                           isLoading: search.isPending || isExecutingSearch, onSubmit: submit)
+                           isLoading: search.isPending || isExecutingSearch, onSubmit: submit,
+                           clearsOnEscape: true)
             .background {
                 SearchPreviewAnchor(isPresented: isPresented, contentHeight: previewHeight,
                                     onDismiss: dismiss, onKey: handleKey) {
@@ -268,7 +269,8 @@ struct GlobalSearchField: View {
 
     private func handleKey(_ key: UInt16) -> Bool {
         switch key {
-        case 53: dismiss(); return true
+        // Let the native editor clear first and resign focus only when empty.
+        case 53: return false
         case 125, 126:
             guard !items.isEmpty else { return true }
             let first = key == 125 ? 0 : items.count - 1

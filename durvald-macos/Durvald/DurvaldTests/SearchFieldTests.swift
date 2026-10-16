@@ -43,6 +43,31 @@ final class SearchFieldTests: XCTestCase {
             doCommandBy: #selector(NSResponder.insertNewline(_:))))
     }
 
+    func testGlobalSearchEscapeClearsThenDropsFocusOnSecondPress() throws {
+        let state = SearchTestState()
+        state.text = "marina"
+        state.focused = true
+        var parent = native(state)
+        parent.clearsOnEscape = true
+        let coordinator = parent.makeCoordinator()
+        let field = NSTextField(string: state.text)
+        let window = window(content: field)
+        defer { window.contentView = nil }
+        XCTAssertTrue(window.makeFirstResponder(field))
+        let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+        let escape = #selector(NSResponder.cancelOperation(_:))
+        XCTAssertTrue(coordinator.control(field, textView: editor, doCommandBy: escape))
+        XCTAssertEqual(state.text, "")
+        XCTAssertEqual(field.stringValue, "")
+        XCTAssertEqual(editor.string, "")
+        XCTAssertTrue(state.focused)
+        XCTAssertTrue(window.firstResponder === editor)
+        // No SwiftUI render or delayed focus request is needed between presses.
+        XCTAssertTrue(coordinator.control(field, textView: editor, doCommandBy: escape))
+        XCTAssertFalse(state.focused)
+        XCTAssertFalse(window.firstResponder === editor)
+    }
+
     func testEnterSubmitsWithoutDroppingFocusOrChangingTheQuery() {
         let state = SearchTestState()
         state.text = "marina"
