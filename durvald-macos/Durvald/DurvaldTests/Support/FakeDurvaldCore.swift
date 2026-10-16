@@ -8,7 +8,12 @@ final class FakeDurvaldCore: DurvaldCore {
     var historyRevisionHandler: (() async throws -> UInt64)?
     var historyHandler: (() async throws -> [PlaybackHistoryItem])?
     var tracksByIDsHandler: (([Int64]) async throws -> [Track])?
+    var replayPreviewHandler: ((ReplayRequest) async throws -> ReplayPreview)?
+    var saveReplayHandler: ((ReplayRequest, String, String, ReplaySaveMode, Bool, String?) async throws -> Playlist)?
+    var updateReplayHandler: ((ReplayRequest, ReplaySaveMode, Bool) async throws -> Playlist)?
     var playlistResult: Playlist?
+    var createSmartPlaylistHandler: ((String, String, SmartPlaylistDefinition) async throws -> Playlist)?
+    var playlistsHandler: (() async throws -> [Playlist])?
     var snapshot: PlaybackSnapshot
     var trackInfoResult: TrackInfo?
     var releaseTrackResults: [Track] = []
@@ -160,6 +165,29 @@ final class FakeDurvaldCore: DurvaldCore {
     override func createPlaylist(name: String, description: String, artworkBase64: String?) async throws -> Playlist {
         guard let playlistResult else { throw NSError(domain: "FakeDurvaldCore.createPlaylist", code: 1) }
         return playlistResult
+    }
+
+    override func replayPreview(request: ReplayRequest) async throws -> ReplayPreview {
+        guard let replayPreviewHandler else { throw NSError(domain: "FakeDurvaldCore.replayPreview", code: 1) }
+        return try await replayPreviewHandler(request)
+    }
+    override func saveReplay(request: ReplayRequest, name: String, description: String, mode: ReplaySaveMode,
+                             closeAutomatically: Bool, artworkBase64: String?) async throws -> Playlist {
+        guard let saveReplayHandler else { throw NSError(domain: "FakeDurvaldCore.saveReplay", code: 1) }
+        return try await saveReplayHandler(request, name, description, mode, closeAutomatically, artworkBase64)
+    }
+    override func updateReplay(request: ReplayRequest, mode: ReplaySaveMode, closeAutomatically: Bool) async throws -> Playlist {
+        guard let updateReplayHandler else { throw NSError(domain: "FakeDurvaldCore.updateReplay", code: 1) }
+        return try await updateReplayHandler(request, mode, closeAutomatically)
+    }
+
+    override func createSmartPlaylist(name: String, description: String, definition: SmartPlaylistDefinition) async throws -> Playlist {
+        guard let createSmartPlaylistHandler else { throw NSError(domain: "FakeDurvaldCore.createSmartPlaylist", code: 1) }
+        return try await createSmartPlaylistHandler(name, description, definition)
+    }
+
+    override func playlists() async throws -> [Playlist] {
+        try await playlistsHandler?() ?? []
     }
 
     override func playlist(playlistId: Int64) async throws -> Playlist {

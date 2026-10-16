@@ -857,12 +857,22 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws
 
+    /**
+     * Read-only Replay availability, ordered preview and saved identity.
+     */
+    func replayPreview(request: ReplayRequest) async throws  -> ReplayPreview
+
     func resolveArtistCandidates(artistId: Int64) async throws  -> ArtistIdentityCandidates
 
     /**
      * Resumes playback.
      */
     func resume() async throws
+
+    /**
+     * Save or return the existing Replay for this exact calendar period.
+     */
+    func saveReplay(request: ReplayRequest, name: String, description: String, mode: ReplaySaveMode, closeAutomatically: Bool, artworkBase64: String?) async throws  -> Playlist
 
     /**
      * Saves the current session state.
@@ -1025,6 +1035,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Updates a playlist's name, description, and optional artwork.
      */
     func updatePlaylist(playlistId: Int64, name: String, description: String, artworkBase64: String?) async throws
+
+    func updateReplay(request: ReplayRequest, mode: ReplaySaveMode, closeAutomatically: Bool) async throws  -> Playlist
 
     /**
      * Updates application settings.
@@ -2321,6 +2333,26 @@ open func removeTrackFromPlaylist(playlistId: Int64, trackId: Int64, position: U
         )
 }
 
+    /**
+     * Read-only Replay availability, ordered preview and saved identity.
+     */
+open func replayPreview(request: ReplayRequest)async throws  -> ReplayPreview {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_replay_preview(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeReplayRequest.lower(request)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeReplayPreview.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func resolveArtistCandidates(artistId: Int64)async throws  -> ArtistIdentityCandidates {
     return
         try  await uniffiRustCallAsync(
@@ -2354,6 +2386,26 @@ open func resume()async throws  {
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Save or return the existing Replay for this exact calendar period.
+     */
+open func saveReplay(request: ReplayRequest, name: String, description: String, mode: ReplaySaveMode, closeAutomatically: Bool, artworkBase64: String?)async throws  -> Playlist {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_save_replay(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeReplayRequest.lower(request),FfiConverterString.lower(name),FfiConverterString.lower(description),FfiConverterTypeReplaySaveMode.lower(mode),FfiConverterBool.lower(closeAutomatically),FfiConverterOptionString.lower(artworkBase64)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaylist.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -3018,6 +3070,23 @@ open func updatePlaylist(playlistId: Int64, name: String, description: String, a
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func updateReplay(request: ReplayRequest, mode: ReplaySaveMode, closeAutomatically: Bool)async throws  -> Playlist {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_update_replay(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeReplayRequest.lower(request),FfiConverterTypeReplaySaveMode.lower(mode),FfiConverterBool.lower(closeAutomatically)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaylist.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -7211,6 +7280,187 @@ public func FfiConverterTypeRemoteArtistSelection_lower(_ value: RemoteArtistSel
 
 
 /**
+ * A read-only preview never creates a library playlist.
+ */
+public struct ReplayPreview {
+    public var request: ReplayRequest
+    public var tracks: [Track]
+    public var eligibleCount: UInt32
+    public var minimum: UInt32
+    public var standard: UInt32
+    public var maximum: UInt32
+    public var available: Bool
+    public var isCurrent: Bool
+    public var savedPlaylist: Playlist?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(request: ReplayRequest, tracks: [Track], eligibleCount: UInt32, minimum: UInt32, standard: UInt32, maximum: UInt32, available: Bool, isCurrent: Bool, savedPlaylist: Playlist?) {
+        self.request = request
+        self.tracks = tracks
+        self.eligibleCount = eligibleCount
+        self.minimum = minimum
+        self.standard = standard
+        self.maximum = maximum
+        self.available = available
+        self.isCurrent = isCurrent
+        self.savedPlaylist = savedPlaylist
+    }
+}
+
+
+
+extension ReplayPreview: Equatable, Hashable {
+    public static func ==(lhs: ReplayPreview, rhs: ReplayPreview) -> Bool {
+        if lhs.request != rhs.request {
+            return false
+        }
+        if lhs.tracks != rhs.tracks {
+            return false
+        }
+        if lhs.eligibleCount != rhs.eligibleCount {
+            return false
+        }
+        if lhs.minimum != rhs.minimum {
+            return false
+        }
+        if lhs.standard != rhs.standard {
+            return false
+        }
+        if lhs.maximum != rhs.maximum {
+            return false
+        }
+        if lhs.available != rhs.available {
+            return false
+        }
+        if lhs.isCurrent != rhs.isCurrent {
+            return false
+        }
+        if lhs.savedPlaylist != rhs.savedPlaylist {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(request)
+        hasher.combine(tracks)
+        hasher.combine(eligibleCount)
+        hasher.combine(minimum)
+        hasher.combine(standard)
+        hasher.combine(maximum)
+        hasher.combine(available)
+        hasher.combine(isCurrent)
+        hasher.combine(savedPlaylist)
+    }
+}
+
+
+public struct FfiConverterTypeReplayPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReplayPreview {
+        return
+            try ReplayPreview(
+                request: FfiConverterTypeReplayRequest.read(from: &buf),
+                tracks: FfiConverterSequenceTypeTrack.read(from: &buf),
+                eligibleCount: FfiConverterUInt32.read(from: &buf),
+                minimum: FfiConverterUInt32.read(from: &buf),
+                standard: FfiConverterUInt32.read(from: &buf),
+                maximum: FfiConverterUInt32.read(from: &buf),
+                available: FfiConverterBool.read(from: &buf),
+                isCurrent: FfiConverterBool.read(from: &buf),
+                savedPlaylist: FfiConverterOptionTypePlaylist.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ReplayPreview, into buf: inout [UInt8]) {
+        FfiConverterTypeReplayRequest.write(value.request, into: &buf)
+        FfiConverterSequenceTypeTrack.write(value.tracks, into: &buf)
+        FfiConverterUInt32.write(value.eligibleCount, into: &buf)
+        FfiConverterUInt32.write(value.minimum, into: &buf)
+        FfiConverterUInt32.write(value.standard, into: &buf)
+        FfiConverterUInt32.write(value.maximum, into: &buf)
+        FfiConverterBool.write(value.available, into: &buf)
+        FfiConverterBool.write(value.isCurrent, into: &buf)
+        FfiConverterOptionTypePlaylist.write(value.savedPlaylist, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeReplayPreview_lift(_ buf: RustBuffer) throws -> ReplayPreview {
+    return try FfiConverterTypeReplayPreview.lift(buf)
+}
+
+public func FfiConverterTypeReplayPreview_lower(_ value: ReplayPreview) -> RustBuffer {
+    return FfiConverterTypeReplayPreview.lower(value)
+}
+
+
+public struct ReplayRequest {
+    public var period: ReplayPeriod
+    public var startAt: Int64
+    public var endAt: Int64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(period: ReplayPeriod, startAt: Int64, endAt: Int64) {
+        self.period = period
+        self.startAt = startAt
+        self.endAt = endAt
+    }
+}
+
+
+
+extension ReplayRequest: Equatable, Hashable {
+    public static func ==(lhs: ReplayRequest, rhs: ReplayRequest) -> Bool {
+        if lhs.period != rhs.period {
+            return false
+        }
+        if lhs.startAt != rhs.startAt {
+            return false
+        }
+        if lhs.endAt != rhs.endAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(period)
+        hasher.combine(startAt)
+        hasher.combine(endAt)
+    }
+}
+
+
+public struct FfiConverterTypeReplayRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReplayRequest {
+        return
+            try ReplayRequest(
+                period: FfiConverterTypeReplayPeriod.read(from: &buf),
+                startAt: FfiConverterInt64.read(from: &buf),
+                endAt: FfiConverterInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ReplayRequest, into buf: inout [UInt8]) {
+        FfiConverterTypeReplayPeriod.write(value.period, into: &buf)
+        FfiConverterInt64.write(value.startAt, into: &buf)
+        FfiConverterInt64.write(value.endAt, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeReplayRequest_lift(_ buf: RustBuffer) throws -> ReplayRequest {
+    return try FfiConverterTypeReplayRequest.lift(buf)
+}
+
+public func FfiConverterTypeReplayRequest_lower(_ value: ReplayRequest) -> RustBuffer {
+    return FfiConverterTypeReplayRequest.lower(value)
+}
+
+
+/**
  * Library scan progress
  */
 public struct ScanProgress {
@@ -9423,6 +9673,133 @@ extension RepeatMode: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * Calendar boundaries are supplied by the client in its local time zone.
+ */
+
+public enum ReplayPeriod {
+
+    case daily
+    case weekly
+    case monthly
+    case yearly
+}
+
+
+public struct FfiConverterTypeReplayPeriod: FfiConverterRustBuffer {
+    typealias SwiftType = ReplayPeriod
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReplayPeriod {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .daily
+
+        case 2: return .weekly
+
+        case 3: return .monthly
+
+        case 4: return .yearly
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ReplayPeriod, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .daily:
+            writeInt(&buf, Int32(1))
+
+
+        case .weekly:
+            writeInt(&buf, Int32(2))
+
+
+        case .monthly:
+            writeInt(&buf, Int32(3))
+
+
+        case .yearly:
+            writeInt(&buf, Int32(4))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeReplayPeriod_lift(_ buf: RustBuffer) throws -> ReplayPeriod {
+    return try FfiConverterTypeReplayPeriod.lift(buf)
+}
+
+public func FfiConverterTypeReplayPeriod_lower(_ value: ReplayPeriod) -> RustBuffer {
+    return FfiConverterTypeReplayPeriod.lower(value)
+}
+
+
+
+extension ReplayPeriod: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum ReplaySaveMode {
+
+    case live
+    case snapshot
+}
+
+
+public struct FfiConverterTypeReplaySaveMode: FfiConverterRustBuffer {
+    typealias SwiftType = ReplaySaveMode
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReplaySaveMode {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .live
+
+        case 2: return .snapshot
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ReplaySaveMode, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .live:
+            writeInt(&buf, Int32(1))
+
+
+        case .snapshot:
+            writeInt(&buf, Int32(2))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeReplaySaveMode_lift(_ buf: RustBuffer) throws -> ReplaySaveMode {
+    return try FfiConverterTypeReplaySaveMode.lift(buf)
+}
+
+public func FfiConverterTypeReplaySaveMode_lower(_ value: ReplaySaveMode) -> RustBuffer {
+    return FfiConverterTypeReplaySaveMode.lower(value)
+}
+
+
+
+extension ReplaySaveMode: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * Library scan phase
  */
 
@@ -9739,6 +10116,27 @@ fileprivate struct FfiConverterOptionTypeExternalReleaseArtwork: FfiConverterRus
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeExternalReleaseArtwork.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+fileprivate struct FfiConverterOptionTypePlaylist: FfiConverterRustBuffer {
+    typealias SwiftType = Playlist?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePlaylist.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePlaylist.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -10422,7 +10820,9 @@ fileprivate func uniffiRustCallAsync<F, T>(
         pollResult = await withUnsafeContinuation {
             pollFunc(
                 rustFuture,
-                uniffiFutureContinuationCallback,
+                { handle, pollResult in
+                    uniffiFutureContinuationCallback(handle: handle, pollResult: pollResult)
+                },
                 uniffiContinuationHandleMap.insert(obj: $0)
             )
         }
@@ -10668,10 +11068,16 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_remove_track_from_playlist() != 13917) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_replay_preview() != 42912) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_resolve_artist_candidates() != 28873) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_resume() != 18016) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_save_replay() != 21158) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_save_session() != 12984) {
@@ -10774,6 +11180,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_update_playlist() != 8366) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_update_replay() != 47712) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_update_settings() != 48218) {

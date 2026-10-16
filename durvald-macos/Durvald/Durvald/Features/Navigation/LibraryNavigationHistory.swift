@@ -4,13 +4,14 @@ enum LibraryRoute: Equatable {
     case externalAlbum(ExternalReleaseGroup, Artist)
     case artist(Artist)
     case playlist(Playlist)
+    case retrospectivePlaylist(RetrospectivePlaylistDraft)
 
     var destination: LibraryDestination {
         switch self {
         case .section(let destination): destination
         case .album, .externalAlbum: .albums
         case .artist: .artists
-        case .playlist: .playlists
+        case .playlist, .retrospectivePlaylist: .playlists
         }
     }
 }
@@ -64,6 +65,12 @@ struct LibraryNavigationHistory {
 
     mutating func replaceCurrent(with route: LibraryRoute) {
         entries[currentIndex].route = route
+    }
+
+    mutating func replace(_ original: LibraryRoute, with route: LibraryRoute) {
+        for index in entries.indices where entries[index].route == original {
+            entries[index].route = route
+        }
     }
 
     mutating func goBack() {

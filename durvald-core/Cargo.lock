@@ -878,6 +878,7 @@ dependencies = [
  "lofty",
  "md-5",
  "once_cell",
+ "png",
  "r2d2",
  "r2d2_sqlite",
  "reqwest",

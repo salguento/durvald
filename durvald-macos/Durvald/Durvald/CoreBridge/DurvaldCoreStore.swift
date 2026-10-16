@@ -6,6 +6,13 @@ import Observation
 @MainActor
 @Observable
 final class DurvaldCoreStore {
+    #if DEBUG
+    @ObservationIgnored var replayPreviewFixture: ((ReplayRequest) -> ReplayPreview)?
+    #endif
+    @ObservationIgnored private var retrospectiveHistoryRevision: UInt64?
+    @ObservationIgnored private var isRefreshingRetrospectivePlaylists = false
+    private var savedRetrospectivePlaylistIDs: [String: Int64] = [:]
+    @ObservationIgnored private var retrospectivePlaylistSaves: [String: Task<Playlist?, Never>] = [:]
 
     // Observation tracks only the properties each view reads. The playback clock
     // must not invalidate library lists, the sidebar or every artwork cell.
@@ -62,7 +69,11 @@ final class DurvaldCoreStore {
     }
     private(set) var playlistsRevision: UInt64 = 0
     private(set) var playlists: [Playlist] = [] {
-        didSet { playlistsRevision &+= 1 }
+        didSet {
+            let ids = Set(playlists.map(\.id))
+            savedRetrospectivePlaylistIDs = savedRetrospectivePlaylistIDs.filter { ids.contains($0.value) }
+            playlistsRevision &+= 1
+        }
     }
     private(set) var history: [PlaybackHistoryItem] = []
     @ObservationIgnored let historyRepository = PlaybackHistoryRepository()
@@ -270,6 +281,7 @@ final class DurvaldCoreStore {
                     if !self.isChangingTrack, !self.isMovingQueue, !self.isSeeking {
                         self.publishPlayback(snapshot, revision: revision)
                         if self.historyRepository.hasRequestedHistory { self.scheduleHistoryRefresh() }
+                        await self.refreshRetrospectivePlaylistsIfNeeded()
                     }
                 }
 
@@ -469,9 +481,95 @@ final class DurvaldCoreStore {
                 description: description.trimmingCharacters(in: .whitespacesAndNewlines),
                 definition: definition
             )
-            playlists.append(playlist)
+            if let index = playlists.firstIndex(where: { $0.id == playlist.id }) {
+                playlists[index] = playlist
+            } else {
+                playlists.append(playlist)
+            }
             return playlist
         } catch { errorMessage = String(describing: error); return nil }
+    }
+
+    /// The core is authoritative; this is only a navigation cache of its replies.
+    func loadReplayPreview(_ draft: RetrospectivePlaylistDraft) async -> ReplayPreview? {
+        #if DEBUG
+        if let fixture = replayPreviewFixture { return fixture(draft.request) }
+        #endif
+        guard let core else { return nil }
+        do {
+            let preview = try await core.replayPreview(request: draft.request)
+            guard !Task.isCancelled else { return nil }
+            if let saved = preview.savedPlaylist {
+                if let index = playlists.firstIndex(where: { $0.id == saved.id }) {
+                    if playlists[index] != saved { playlists[index] = saved }
+                } else { playlists.append(saved) }
+                savedRetrospectivePlaylistIDs[draft.identity] = saved.id
+            } else { savedRetrospectivePlaylistIDs[draft.identity] = nil }
+            return preview
+        } catch {
+            if !Task.isCancelled { errorMessage = error.localizedDescription }
+            return nil
+        }
+    }
+
+    func reloadPlaylists() async throws {
+        guard let core else { return }
+        playlists = try await core.playlists()
+    }
+
+    func savedRetrospectivePlaylist(for draft: RetrospectivePlaylistDraft) -> Playlist? {
+        guard let id = savedRetrospectivePlaylistIDs[draft.identity] else { return nil }
+        return playlists.first { $0.id == id }
+    }
+
+    func saveRetrospectivePlaylist(_ draft: RetrospectivePlaylistDraft,
+                                   live: Bool, closeAutomatically: Bool, artworkBase64: String? = nil) async -> Playlist? {
+        if let pending = retrospectivePlaylistSaves[draft.identity] { return await pending.value }
+        guard let core else { return nil }
+        let task = Task { @MainActor () -> Playlist? in
+            do {
+                let saved = try await core.saveReplay(request: draft.request, name: draft.title,
+                    description: "As músicas da sua retrospectiva, equilibrando reproduções e tempo ouvido.",
+                    mode: live ? .live : .snapshot, closeAutomatically: closeAutomatically, artworkBase64: artworkBase64)
+                if let index = playlists.firstIndex(where: { $0.id == saved.id }) { playlists[index] = saved }
+                else { playlists.append(saved) }
+                savedRetrospectivePlaylistIDs[draft.identity] = saved.id
+                return saved
+            } catch { errorMessage = error.localizedDescription; return nil }
+        }
+        retrospectivePlaylistSaves[draft.identity] = task
+        defer { retrospectivePlaylistSaves[draft.identity] = nil }
+        return await task.value
+    }
+
+    func updateReplay(_ draft: RetrospectivePlaylistDraft, live: Bool, closeAutomatically: Bool) async -> Bool {
+        guard let core else { return false }
+        do {
+            let saved = try await core.updateReplay(request: draft.request, mode: live ? .live : .snapshot,
+                                                    closeAutomatically: closeAutomatically)
+            if let index = playlists.firstIndex(where: { $0.id == saved.id }) { playlists[index] = saved }
+            savedRetrospectivePlaylistIDs[draft.identity] = saved.id
+            return true
+        } catch { errorMessage = error.localizedDescription; return false }
+    }
+
+    func refreshRetrospectivePlaylistsIfNeeded() async {
+        guard let core, !isRefreshingRetrospectivePlaylists else { return }
+        let configs = playlists.compactMap(RetrospectivePlaylistConfiguration.read)
+        guard !configs.isEmpty else { return }
+        if !historyRepository.hasRequestedHistory { scheduleHistoryRefresh() }
+        let expired = configs.contains { $0.closeAutomatically && Double($0.endAt) <= Date().timeIntervalSince1970 }
+        guard expired || retrospectiveHistoryRevision != historyRepository.revision else { return }
+        isRefreshingRetrospectivePlaylists = true
+        defer { isRefreshingRetrospectivePlaylists = false }
+        let revision = historyRepository.revision
+        let playlistRevision = playlistsRevision
+        do {
+            let updated = try await core.playlists()
+            guard playlistsRevision == playlistRevision else { return }
+            if playlists != updated { playlists = updated }
+            retrospectiveHistoryRevision = revision
+        } catch { errorMessage = String(describing: error) }
     }
 
     func updateSmartPlaylist(

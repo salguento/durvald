@@ -153,19 +153,40 @@ struct PlaylistView: View {
             guard store.metadataRevision > 0 else { return }
             tracks = await store.tracks(forPlaylistID: playlist.id)
         }
+        .task(id: store.historyRepository.revision) {
+            guard RetrospectivePlaylistConfiguration.read(currentPlaylist) != nil else { return }
+            await store.refreshHistory()
+            await store.refreshRetrospectivePlaylistsIfNeeded()
+            tracks = await store.tracks(forPlaylistID: playlist.id)
+        }
+        .task(id: currentPlaylist.isSmart) {
+            guard !currentPlaylist.isSmart else { return }
+            tracks = await store.tracks(forPlaylistID: playlist.id)
+        }
         .onChange(of: toolbarState.exportRelativePaths) { _, relativePaths in
             guard let relativePaths else { return }
             toolbarState.exportRelativePaths = nil
             export(relativePaths: relativePaths)
         }
         .sheet(isPresented: $toolbarState.isEditingSmartPlaylist) {
-            SmartPlaylistSheet(playlist: currentPlaylist) { name, description, definition in
-                guard await store.updateSmartPlaylist(
-                    id: currentPlaylist.id, name: name,
-                    description: description, definition: definition
-                ) != nil else { return false }
-                tracks = await store.tracks(forPlaylistID: currentPlaylist.id)
-                return true
+            if let config = RetrospectivePlaylistConfiguration.read(currentPlaylist),
+               let period = RetrospectivePeriod(rawValue: config.period) {
+                RetrospectivePlaylistSettingsSheet(playlist: currentPlaylist, config: config, period: period) { live, automatically in
+                    let draft = RetrospectivePlaylistDraft(period: period, interval: DateInterval(
+                        start: Date(timeIntervalSince1970: Double(config.startAt)), end: Date(timeIntervalSince1970: Double(config.endAt))))
+                    guard await store.updateReplay(draft, live: live, closeAutomatically: automatically) else { return false }
+                    tracks = await store.tracks(forPlaylistID: currentPlaylist.id)
+                    return true
+                }
+            } else {
+                SmartPlaylistSheet(playlist: currentPlaylist) { name, description, definition in
+                    guard await store.updateSmartPlaylist(
+                        id: currentPlaylist.id, name: name,
+                        description: description, definition: definition
+                    ) != nil else { return false }
+                    tracks = await store.tracks(forPlaylistID: currentPlaylist.id)
+                    return true
+                }
             }
         }
     }
@@ -206,6 +227,15 @@ struct PlaylistView: View {
                     Text(playlistMetadataText)
                         .font(.subheadline)
                         .foregroundStyle(.tertiary)
+
+                    if let config = RetrospectivePlaylistConfiguration.read(currentPlaylist) {
+                        Label("Mantida atualizada", systemImage: "arrow.trianglehead.2.clockwise")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        if config.closeAutomatically {
+                            Text("A seleção será fixada ao encerrar o período.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
 
                     Spacer(minLength: 20)
 

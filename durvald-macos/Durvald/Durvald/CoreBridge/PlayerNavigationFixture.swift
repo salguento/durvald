@@ -67,7 +67,7 @@ enum PlayerNavigationFixture {
                 PlaybackHistoryItem(id: 10_002, trackId: tracks[0].id, playedAt: "2025-12-15T12:00:00Z", durationSeconds: 180)
             ]
         }
-        return DurvaldCoreStore(
+        let store = DurvaldCoreStore(
             core: livePlayback ? PlaybackClockFixtureCore(
                 snapshot: snapshot,
                 tracks: tracks,
@@ -81,6 +81,15 @@ enum PlayerNavigationFixture {
             artists: [sameNameArtist, artist, albumArtist],
             history: history
         )
+        let exampleTracks = Array(tracks.prefix(10))
+        store.replayPreviewFixture = { request in
+            let now = Int64(Date().timeIntervalSince1970)
+            let current = request.startAt <= now && now < request.endAt
+            return ReplayPreview(request: request, tracks: current && scrollable ? exampleTracks : [],
+                eligibleCount: current && scrollable ? 10 : 1, minimum: 5, standard: 10, maximum: 25,
+                available: current && scrollable, isCurrent: current, savedPlaylist: nil)
+        }
+        return store
     }
 }
 

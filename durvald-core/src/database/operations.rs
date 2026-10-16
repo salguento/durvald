@@ -338,6 +338,21 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
         (),
     )?;
 
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS retrospective_playlist_origins (
+            playlist_id INTEGER PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE,
+            period TEXT NOT NULL,
+            start_at INTEGER NOT NULL,
+            end_at INTEGER NOT NULL,
+            UNIQUE(period, start_at, end_at)
+        );
+        CREATE TABLE IF NOT EXISTS retrospective_playlist_migrations (version INTEGER PRIMARY KEY);
+        CREATE TRIGGER IF NOT EXISTS delete_retrospective_playlist_origin
+        AFTER DELETE ON playlists BEGIN
+            DELETE FROM retrospective_playlist_origins WHERE playlist_id=OLD.id;
+        END;",
+    )?;
+
     conn.execute(
         "CREATE TABLE IF NOT EXISTS songs (
             song_id   INTEGER PRIMARY KEY,
@@ -1686,6 +1701,9 @@ const SMART_SORT_FIELDS: &[&str] = &[
 pub(crate) fn validate_smart_playlist_definition(
     definition: &crate::api::SmartPlaylistDefinition,
 ) -> Result<(), String> {
+    if super::retrospective_playlists::config(definition)?.is_some() {
+        return Ok(());
+    }
     if definition.rules.is_empty() {
         return Err("A smart playlist must contain at least one rule".into());
     }
@@ -1779,9 +1797,57 @@ pub fn create_smart_playlist(
     definition: &crate::api::SmartPlaylistDefinition,
 ) -> DatabaseResult<Playlist> {
     validate_smart_playlist_definition(definition).map_err(DatabaseError::Custom)?;
-    let tx = conn.unchecked_transaction()?;
-    let playlist = create_playlist(&tx, name, String::new(), description)?;
-    persist_smart_definition(&tx, playlist.id, definition)?;
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    let retrospective =
+        super::retrospective_playlists::config(definition).map_err(DatabaseError::Custom)?;
+    if let Some(config) = &retrospective {
+        if let Some(id) = super::retrospective_playlists::saved_playlist_id(&tx, config)? {
+            let saved = get_playlist_by_id(&tx, id)?;
+            tx.commit()?;
+            return Ok(saved);
+        }
+    }
+    let retrospective_tracks = if let Some(config) = &retrospective {
+        let tracks =
+            super::retrospective_playlists::tracks(&tx, definition, Utc::now().timestamp())?;
+        let minimum = super::retrospective_playlists::limits(&config.period)
+            .unwrap()
+            .0;
+        if tracks.len() < minimum {
+            return Err(DatabaseError::Custom(format!(
+                "A retrospectiva precisa de pelo menos {minimum} músicas distintas."
+            )));
+        }
+        Some(tracks)
+    } else {
+        None
+    };
+    let artwork = retrospective
+        .as_ref()
+        .and_then(|config| config.artwork_base64.clone())
+        .unwrap_or_default();
+    let playlist = create_playlist(&tx, name, artwork, description)?;
+    // The cover belongs to the playlist blob, not its repeatedly evaluated rule.
+    let mut persisted = definition.clone();
+    if let Some(config) = &retrospective {
+        let mut config = config.clone();
+        config.artwork_base64 = None;
+        persisted.rules[0].value = serde_json::to_string(&config)
+            .map_err(|error| DatabaseError::Custom(error.to_string()))?;
+    }
+    persist_smart_definition(&tx, playlist.id, &persisted)?;
+    if let Some(config) = retrospective {
+        super::retrospective_playlists::remember_origin(&tx, playlist.id, &config)?;
+        if config.mode == "snapshot"
+            || (config.close_automatically && config.end_at <= Utc::now().timestamp())
+        {
+            super::retrospective_playlists::materialize(
+                &tx,
+                playlist.id,
+                &retrospective_tracks.unwrap(),
+            )?;
+        }
+    }
     tx.commit()?;
     Ok(playlist)
 }
@@ -1801,6 +1867,20 @@ pub fn update_smart_playlist(
     )? > 0;
     if updated {
         persist_smart_definition(&tx, playlist_id, definition)?;
+        if let Some(config) =
+            super::retrospective_playlists::config(definition).map_err(DatabaseError::Custom)?
+        {
+            if config.mode == "snapshot"
+                || (config.close_automatically && config.end_at <= Utc::now().timestamp())
+            {
+                let tracks = super::retrospective_playlists::tracks(
+                    &tx,
+                    definition,
+                    Utc::now().timestamp(),
+                )?;
+                super::retrospective_playlists::materialize(&tx, playlist_id, &tracks)?;
+            }
+        }
     }
     tx.commit()?;
     Ok(updated)
@@ -1859,6 +1939,12 @@ pub fn get_smart_playlist_tracks(
     definition: &crate::api::SmartPlaylistDefinition,
 ) -> DatabaseResult<Vec<SongItem>> {
     validate_smart_playlist_definition(definition).map_err(DatabaseError::Custom)?;
+    if super::retrospective_playlists::config(definition)
+        .map_err(DatabaseError::Custom)?
+        .is_some()
+    {
+        return super::retrospective_playlists::tracks(conn, definition, Utc::now().timestamp());
+    }
     use rusqlite::types::Value;
     let mut clauses = Vec::new();
     let mut values = Vec::<Value>::new();

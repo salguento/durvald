@@ -244,6 +244,46 @@ pub struct SmartPlaylistDefinition {
     pub descending: bool,
 }
 
+/// Calendar boundaries are supplied by the client in its local time zone.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ReplayPeriod {
+    Daily,
+    Weekly,
+    Monthly,
+    Yearly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ReplayRequest {
+    pub period: ReplayPeriod,
+    pub start_at: i64,
+    pub end_at: i64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ReplaySaveMode {
+    Live,
+    Snapshot,
+}
+
+/// A read-only preview never creates a library playlist.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ReplayPreview {
+    pub request: ReplayRequest,
+    pub tracks: Vec<Track>,
+    pub eligible_count: u32,
+    pub minimum: u32,
+    pub standard: u32,
+    pub maximum: u32,
+    pub available: bool,
+    pub is_current: bool,
+    pub saved_playlist: Option<Playlist>,
+}
+
 /// Playlist track entry
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

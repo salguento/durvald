@@ -1097,6 +1097,77 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testRetrospectivePlaylistPreviewStaysUnsavedAndOffersLiveOrSnapshot() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture", "--retrospective-date-fixture"]
+        app.launch()
+        let retrospective = app.buttons["sidebar.retrospective"]
+        if !retrospective.isHittable { app.buttons["navigation.sidebar"].click() }
+        XCTAssertTrue(retrospective.waitForExistence(timeout: 3))
+        retrospective.click()
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        let options = app.descendants(matching: .any)["retrospective.viewOptions"]
+        options.click()
+        app.menuItems["Diário"].click()
+        let banner = app.buttons["retrospective.playlist.banner"]
+        let scroll = app.scrollViews.containing(.any, identifier: "retrospective.overview.header").firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 5))
+        for _ in 0..<20 where !banner.isHittable {
+            let distance = scroll.frame.midY - banner.frame.midY
+            scroll.scroll(byDeltaX: 0, deltaY: max(-300, min(300, distance)))
+        }
+        if !banner.isHittable {
+            let diagnostic = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+            diagnostic.name = "Replay banner scroll diagnostic"
+            diagnostic.lifetime = .keepAlways
+            add(diagnostic)
+        }
+        XCTAssertTrue(banner.isHittable)
+        let playlists = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "sidebar.playlist."))
+        let originalCount = playlists.count
+        let bannerCapture = XCTAttachment(screenshot: banner.screenshot())
+        bannerCapture.name = "Replay generated banner"
+        bannerCapture.lifetime = .keepAlways
+        add(bannerCapture)
+        banner.click()
+        XCTAssertTrue(app.scrollViews["retrospective.playlist.preview"].waitForExistence(timeout: 3))
+        let summary = app.descendants(matching: .any)["retrospective.playlist.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 3))
+        let countReady = XCTNSPredicateExpectation(predicate: NSPredicate(
+            format: "label CONTAINS %@ OR value CONTAINS %@", "10 músicas", "10 músicas"), object: summary)
+        XCTAssertEqual(XCTWaiter.wait(for: [countReady], timeout: 5), .completed)
+        XCTAssertEqual(playlists.count, originalCount)
+        XCTAssertFalse(app.buttons["retrospective.playlist.options"].exists)
+        XCTAssertFalse(app.steppers["retrospective.playlist.size"].exists)
+        let play = app.buttons["retrospective.playlist.play"]
+        let save = app.buttons["retrospective.playlist.save"]
+        XCTAssertGreaterThan(save.frame.minX, play.frame.maxX)
+        XCTAssertEqual(save.frame.midY, play.frame.midY, accuracy: 1)
+        XCTAssertTrue(save.isEnabled)
+        save.click()
+        XCTAssertTrue(app.buttons["Manter atualizada"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Salvar como está"].exists)
+        app.sheets.buttons["Cancelar"].click()
+        XCTAssertEqual(playlists.count, originalCount)
+        let screenshot = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        screenshot.name = "Unsaved retrospective playlist preview"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["navigation.back"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["retrospective.viewOptions"].waitForExistence(timeout: 3))
+        let selector = app.popUpButtons["retrospective.dateScope"]
+        selector.click()
+        app.menuItems["Fevereiro de 2024"].click()
+        let historicalSummary = app.descendants(matching: .any)["retrospective.summary"]
+        let historyReady = XCTNSPredicateExpectation(predicate: NSPredicate(
+            format: "label CONTAINS %@ OR value CONTAINS %@", "1 reprodução", "1 reprodução"), object: historicalSummary)
+        XCTAssertEqual(XCTWaiter.wait(for: [historyReady], timeout: 5), .completed)
+        XCTAssertFalse(banner.exists, "A period below its minimum must not offer a playlist")
+        XCTAssertEqual(playlists.count, originalCount)
+    }
+
+    @MainActor
     func testRetrospectiveCalendarSelectorFiltersHistoricalMonthsAndYears() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture",

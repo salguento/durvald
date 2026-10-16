@@ -857,6 +857,16 @@ struct ContentView: View {
         case .playlist(let playlist):
             PlaylistView(playlist: playlist, toolbarState: playlistToolbarState)
                 .id(playlist.id)
+        case .retrospectivePlaylist(let draft):
+            if let saved = store.savedRetrospectivePlaylist(for: draft) {
+                PlaylistView(playlist: saved, toolbarState: playlistToolbarState)
+                    .id(saved.id)
+            } else {
+                RetrospectivePlaylistView(draft: draft) { playlist in
+                    shell.navigationHistory.replace(.retrospectivePlaylist(draft), with: .playlist(playlist))
+                }
+                .id(draft.identity)
+            }
         case .section(let destination):
             sectionContent(destination)
         }
@@ -889,7 +899,13 @@ struct ContentView: View {
                 playlistsSummary = summary
             }
         case .retrospective:
-            RetrospectiveView(searchText: $retrospectiveSearchText) { summary in
+            RetrospectiveView(searchText: $retrospectiveSearchText, onOpenPlaylist: { draft in
+                if let saved = store.savedRetrospectivePlaylist(for: draft) {
+                    shell.navigationHistory.navigate(to: .playlist(saved))
+                } else {
+                    shell.navigationHistory.navigate(to: .retrospectivePlaylist(draft))
+                }
+            }) { summary in
                 retrospectiveSummary = summary
             }
         }

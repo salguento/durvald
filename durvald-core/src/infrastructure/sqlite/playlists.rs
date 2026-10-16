@@ -35,10 +35,38 @@ impl SqlitePlaylistRepository {
         Self { db_pool }
     }
 
+    pub(crate) async fn replay_preview(
+        &self,
+        request: crate::api::ReplayRequest,
+    ) -> Result<crate::domain::playlist::ReplaySelection, String> {
+        let pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = pool.get().map_err(|error| error.to_string())?;
+            let prepared = crate::database::retrospective_playlists::preview(
+                &conn,
+                &request,
+                chrono::Utc::now().timestamp(),
+            )
+            .map_err(|error| error.to_string())?;
+            Ok(crate::domain::playlist::ReplaySelection {
+                tracks: prepared.tracks.into_iter().map(track_from_row).collect(),
+                eligible_count: prepared.eligible_count,
+                saved_id: prepared.saved_id.map(PlaylistId::from_persisted),
+            })
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    }
+
     pub(crate) async fn all(&self) -> Result<Vec<PlaylistSummary>, String> {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::retrospective_playlists::finalize(
+                &conn,
+                chrono::Utc::now().timestamp(),
+            )
+            .map_err(|error| error.to_string())?;
             crate::database::operations::get_all_playlists_with_track_counts(&conn)
                 .map(|rows| {
                     rows.into_iter()
@@ -83,6 +111,13 @@ impl SqlitePlaylistRepository {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
+            if crate::database::retrospective_playlists::config(&definition)
+                .map_err(|error| error.to_string())?
+                .is_some()
+            {
+                crate::database::retrospective_playlists::migrate_legacy_origins(&conn)
+                    .map_err(|error| error.to_string())?;
+            }
             crate::database::operations::create_smart_playlist(
                 &conn,
                 name,
@@ -347,6 +382,11 @@ impl SqlitePlaylistRepository {
             let conn = db_pool
                 .get()
                 .map_err(|error| PlaylistLookupError::Storage(error.to_string()))?;
+            crate::database::retrospective_playlists::finalize(
+                &conn,
+                chrono::Utc::now().timestamp(),
+            )
+            .map_err(|error| PlaylistLookupError::Storage(error.to_string()))?;
             let playlist_id = playlist_id.get();
             let playlist = crate::database::operations::get_playlist_by_id(&conn, playlist_id)
                 .map_err(|error| {
@@ -391,6 +431,11 @@ impl SqlitePlaylistRepository {
         let db_pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let conn = db_pool.get().map_err(|error| error.to_string())?;
+            crate::database::retrospective_playlists::finalize(
+                &conn,
+                chrono::Utc::now().timestamp(),
+            )
+            .map_err(|error| error.to_string())?;
             let definition = crate::database::operations::get_smart_playlist_definition(
                 &conn,
                 playlist_id.get(),

@@ -26,3 +26,9 @@ pub(crate) struct PlaylistTrackEntry {
     pub(crate) position: u64,
     pub(crate) added_at: String,
 }
+
+pub(crate) struct ReplaySelection {
+    pub tracks: Vec<crate::domain::catalog::CatalogTrack>,
+    pub eligible_count: u32,
+    pub saved_id: Option<PlaylistId>,
+}

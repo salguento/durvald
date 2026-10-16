@@ -18,9 +18,12 @@ struct RetrospectiveView: View {
     @State private var selectedScope: Date?
     @State private var dateTabs = PreparedLibraryListing(RetrospectiveDateNavigation())
     @State private var overview = PreparedLibraryListing(RetrospectiveWeekSnapshot())
+    @State private var playlistPreview: ReplayPreview?
+    @State private var completedPlaylistKey: LibraryListingKey?
     @State private var statisticsDate = Date()
     private var snapshot: RetrospectiveListingSnapshot { search.value ?? RetrospectiveListingSnapshot() }
     private var searchPending: Bool { store.historyRepository.isLoading || search.isPending }
+    var onOpenPlaylist: (RetrospectivePlaylistDraft) -> Void = { _ in }
     var onSummaryChange: (String) -> Void = { _ in }
 
     private struct RefreshRequest: Equatable {
@@ -59,6 +62,18 @@ struct RetrospectiveView: View {
                                  scope: "retrospective.overview", query: periodKey)
     }
 
+    private var playlistKey: LibraryListingKey {
+        LibraryListingKey(storeID: ObjectIdentifier(store), payloadRevision: store.historyRepository.revision,
+                          scope: "retrospective.playlist.eligibility", query: "\(periodKey):\(store.playlistsRevision)")
+    }
+
+    private var availablePlaylistDraft: RetrospectivePlaylistDraft? {
+        guard !store.historyRepository.isLoading, completedPlaylistKey == playlistKey,
+              let interval = selectedInterval else { return nil }
+        let draft = RetrospectivePlaylistDraft(period: period, interval: interval)
+        return playlistPreview?.available == true ? draft : nil
+    }
+
     var body: some View {
         // A concrete container keeps the titlebar accessory attached while the
         // conditional page changes. Group forwards its background to each page.
@@ -71,6 +86,12 @@ struct RetrospectiveView: View {
                         VStack(spacing: 0) {
                             RetrospectiveOverviewHeader(snapshot: overview.value)
                             RetrospectiveRankingSection(snapshot: overview.value.rankings, viewport: viewport)
+                            if let draft = availablePlaylistDraft {
+                                RetrospectivePlaylistBanner(draft: draft, tracks: playlistPreview?.tracks ?? [],
+                                                            onOpen: onOpenPlaylist)
+                                    .padding(.horizontal, 24)
+                                    .padding(.bottom, 32)
+                            }
                             if !snapshot.items.isEmpty {
                                 LazyVStack(alignment: .leading, spacing: 12) {
                                     Text("Reproduções").font(.headline)
@@ -172,6 +193,15 @@ struct RetrospectiveView: View {
                 RetrospectiveWeekSnapshot.build(entries: payload.0, now: now, calendar: calendar,
                                           tracksByID: payload.1, releases: payload.2, period: selectedPeriod, referenceDate: interval?.start)
             }
+        }
+        .task(id: playlistKey) {
+            let key = playlistKey
+            guard let interval = selectedInterval else { return }
+            let draft = RetrospectivePlaylistDraft(period: period, interval: interval)
+            let result = await store.loadReplayPreview(draft)
+            guard !Task.isCancelled else { return }
+            playlistPreview = result
+            completedPlaylistKey = key
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             statisticsDate = Date()

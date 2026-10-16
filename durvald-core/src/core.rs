@@ -413,6 +413,47 @@ impl DurvaldCore {
             .await
     }
 
+    /// Read-only Replay availability, ordered preview and saved identity.
+    pub async fn replay_preview(
+        &self,
+        request: crate::api::ReplayRequest,
+    ) -> CoreResult<crate::api::ReplayPreview> {
+        self.playlist_application.replay_preview(request).await
+    }
+
+    /// Save or return the existing Replay for this exact calendar period.
+    pub async fn save_replay(
+        &self,
+        request: crate::api::ReplayRequest,
+        name: String,
+        description: String,
+        mode: crate::api::ReplaySaveMode,
+        close_automatically: bool,
+        artwork_base64: Option<String>,
+    ) -> CoreResult<Playlist> {
+        self.playlist_application
+            .save_replay(
+                request,
+                name,
+                description,
+                mode,
+                close_automatically,
+                artwork_base64,
+            )
+            .await
+    }
+
+    pub async fn update_replay(
+        &self,
+        request: crate::api::ReplayRequest,
+        mode: crate::api::ReplaySaveMode,
+        close_automatically: bool,
+    ) -> CoreResult<Playlist> {
+        self.playlist_application
+            .update_replay(request, mode, close_automatically)
+            .await
+    }
+
     /// Creates a dynamic playlist whose tracks are evaluated when read.
     pub async fn create_smart_playlist(
         &self,

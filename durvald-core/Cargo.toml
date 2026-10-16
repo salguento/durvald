@@ -41,6 +41,7 @@ symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "o
 lofty = "0.22.4"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 base64 = "0.22.1"
+png = "=0.18.1"
 md-5 = "0.10.6"
 sha2 = "0.10.9"
 

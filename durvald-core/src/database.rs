@@ -4,6 +4,7 @@ pub mod enrichment;
 pub mod migrations;
 pub mod models;
 pub mod operations;
+pub(crate) mod retrospective_playlists;
 
 pub mod identity;
 
