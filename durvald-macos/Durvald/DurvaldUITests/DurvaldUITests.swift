@@ -807,6 +807,30 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testHomeSearchDoesNotAutofocusOnLaunchOrReturnButCommandKFocuses() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let field = app.textFields["search.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        XCTAssertEqual(field.value(forKey: "hasKeyboardFocus") as? Bool, false)
+        XCTAssertFalse(app.descendants(matching: .any)["search.preview"].exists)
+        app.typeKey("k", modifierFlags: .command)
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        waitForExpectations(timeout: 3)
+        if !app.buttons["sidebar.albums"].isHittable { app.buttons["navigation.sidebar"].click() }
+        app.buttons["sidebar.albums"].click()
+        XCTAssertFalse(field.exists)
+        app.buttons["sidebar.home"].click()
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        XCTAssertEqual(field.value(forKey: "hasKeyboardFocus") as? Bool, false)
+        XCTAssertFalse(app.descendants(matching: .any)["search.preview"].exists)
+        app.typeKey("k", modifierFlags: .command)
+        expectation(for: NSPredicate(format: "hasKeyboardFocus == true"), evaluatedWith: field)
+        waitForExpectations(timeout: 3)
+    }
+
+    @MainActor
     func testCommandKOpensHomeAndRefocusesWithSidebarHidden() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
@@ -907,7 +931,8 @@ final class DurvaldUITests: XCTestCase {
         expectation(for: NSPredicate(format: "value CONTAINS %@", "0 artistas, 0 álbuns, 0 músicas, 0 playlists"),
                     evaluatedWith: summary)
         waitForExpectations(timeout: 3)
-        XCTAssertTrue((summary.value as? String)?.contains("__metadata_resultados__") == true)
+        XCTAssertTrue((summary.value as? String)?.contains("__metadata_resultados__") == true,
+                      "Metadata: \(String(describing: summary.value)); field: \(String(describing: field.value))")
         let navigation = app.descendants(matching: .any)["navigation.history"]
         XCTAssertEqual(summary.frame.minX - navigation.frame.maxX, 12, accuracy: 1)
         XCTAssertFalse(summary.frame.intersects(field.frame))

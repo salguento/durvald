@@ -472,7 +472,7 @@ struct ContentView: View {
                             let availableWidth = max(0, geometry.size.width - panelReservation)
                             let summaryReservation: CGFloat = showsSummary
                                 ? 120 + ToolbarControlMetrics.spacing + Layout.librarySummaryLeadingPadding : 0
-                            let searchWidth = min(300, max(36, availableWidth - summaryReservation))
+                            let searchWidth = min(ToolbarControlMetrics.searchWidth, max(36, availableWidth - summaryReservation))
                             if showsSummary {
                                 libraryToolbarSummary
                                     .fixedSize(horizontal: false, vertical: true)

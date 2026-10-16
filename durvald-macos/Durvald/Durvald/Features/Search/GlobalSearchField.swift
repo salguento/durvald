@@ -120,7 +120,7 @@ struct GlobalSearchField: View {
 
     var body: some View {
         ToolbarSearchField(text: $text, isFocused: $isFocused, focusRequest: $focusRequest,
-                           placeholder: "Biblioteca", identifier: "search",
+                           placeholder: "Pesquisar na biblioteca", identifier: "search",
                            accessibilityLabel: "Pesquisar na biblioteca",
                            accessory: .reservedClear, focusColor: .accentColor,
                            isLoading: search.isPending || isExecutingSearch, onSubmit: submit,

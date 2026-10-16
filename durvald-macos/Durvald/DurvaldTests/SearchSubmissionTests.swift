@@ -7,10 +7,25 @@ final class SearchSubmissionTests: XCTestCase {
         state.navigationHistory.navigate(to: .albums)
         state.requestSearchFocus()
         XCTAssertEqual(state.navigationHistory.currentRoute, .section(.home))
-        XCTAssertEqual(state.searchFocusRequest, 1)
+        XCTAssertEqual(state.searchFocusRequest, 0)
         XCTAssertEqual(state.searchSubmissionRevision, 0)
         state.requestSearchFocus()
-        XCTAssertEqual(state.searchFocusRequest, 2)
+        XCTAssertEqual(state.searchFocusRequest, 1)
+    }
+
+    func testLeavingSearchDiscardsTheConsumedFocusRequestBeforeReturningHome() {
+        var state = ContentShellState()
+        XCTAssertEqual(state.searchFocusRequest, -1)
+        state.requestSearchFocus()
+        state.navigationHistory.navigate(to: .albums)
+        state.handleDestinationChange(.albums)
+        XCTAssertEqual(state.searchFocusRequest, -1)
+        state.navigationHistory.navigate(to: .home)
+        state.handleDestinationChange(.home)
+        XCTAssertEqual(state.searchFocusRequest, -1)
+        XCTAssertFalse(state.isSearchFocused)
+        state.requestSearchFocus()
+        XCTAssertEqual(state.searchFocusRequest, 0)
     }
 
     func testOnlyNonemptySubmissionOpensDedicatedResults() {

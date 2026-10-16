@@ -88,7 +88,7 @@ struct PageToolbarLayout {
         let available = assignedWidth - panelReservation
         let compact = available < expandedMinimumWidth
         let menuWidth: CGFloat = (kind == .artist ? 88 : 44) + CGFloat(additionalMenuCount) * 44
-        let searchWidth = min(220, max(36, available - menuWidth))
+        let searchWidth = min(ToolbarControlMetrics.searchWidth, max(36, available - menuWidth))
         let controlsWidth = (compact && !searchExpanded ? 36 : searchWidth) + menuWidth
         return Controls(compact: compact, searchWidth: searchWidth,
             summaryWidth: max(0, available - controlsWidth - 8 - summaryLeadingPadding))

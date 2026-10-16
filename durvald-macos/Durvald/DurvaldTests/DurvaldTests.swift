@@ -816,7 +816,7 @@ final class ContentShellStateTests: XCTestCase {
         state.isSearchFocused = true
 
         state.handleDestinationChange(.search)
-        XCTAssertEqual(state.searchFocusRequest, 0)
+        XCTAssertEqual(state.searchFocusRequest, -1)
         XCTAssertTrue(state.isSearchFocused)
         state.handleDestinationChange(.home)
         XCTAssertTrue(state.isSearchFocused)

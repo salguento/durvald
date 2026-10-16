@@ -2,6 +2,7 @@ import SwiftUI
 
 enum ToolbarControlMetrics {
     static let size: CGFloat = 36
+    static let searchWidth: CGFloat = 220
     static let spacing: CGFloat = 8
 }
 

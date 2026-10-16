@@ -84,7 +84,8 @@ struct ContentShellState {
     var searchText = ""
     var submittedSearchText = ""
     var searchSubmissionRevision: UInt64 = 0
-    var searchFocusRequest = 0
+    // Mounting the Home field must match the native editor's idle token.
+    var searchFocusRequest = -1
     var isSearchFocused = false
     var isQueuePresented = false
     var columnVisibility: NavigationSplitViewVisibility = .all
@@ -118,6 +119,7 @@ struct ContentShellState {
 
     mutating func handleDestinationChange(_ destination: LibraryDestination) {
         if destination != .home && destination != .search {
+            searchFocusRequest = -1
             isSearchFocused = false
         }
     }

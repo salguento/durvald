@@ -44,7 +44,7 @@ struct LibraryToolbarSearchField: View {
     let placeholder: String
     let identifier: String
     var prefersCompact: Bool
-    var expandedWidth: CGFloat = 220
+    var expandedWidth: CGFloat = ToolbarControlMetrics.searchWidth
     @Binding var isExpanded: Bool
     @State private var isFocused = false
     @State private var focusRequest = -1
