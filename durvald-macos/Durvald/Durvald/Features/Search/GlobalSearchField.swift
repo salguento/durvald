@@ -74,6 +74,19 @@ struct SearchPreviewItem: Identifiable {
     }
 }
 
+/// Insets leave the selection clear of the panel edge and row separators.
+private enum SearchPreviewStyle {
+    static let outerInset: CGFloat = 5
+    static let contentInset: CGFloat = 11
+    static let contentSpacing: CGFloat = 8
+    static let artworkSize: CGFloat = 46
+    static let queryHeight: CGFloat = 24
+    static let resultHeight: CGFloat = 52
+    static let resultInset: CGFloat = 5
+    static let sectionGap: CGFloat = 5
+    static let cornerRadius: CGFloat = 12
+}
+
 /// Typing loads suggestions; only an explicit submission updates the results page.
 struct GlobalSearchField: View {
     @Environment(DurvaldCoreStore.self) private var store
@@ -113,9 +126,15 @@ struct GlobalSearchField: View {
     }
 
     private var previewHeight: CGFloat {
-        let rows = items.reduce(CGFloat(12)) { $0 + ($1.subtitle == nil ? 34 : 66) }
-        let dividers = zip(items, items.dropFirst()).filter { $0.subtitle != nil || $1.subtitle != nil }.count
-        return rows + CGFloat(dividers) + (isShowingHistory ? 28 : 0)
+        let rows = items.reduce(2 * SearchPreviewStyle.outerInset) { height, item in
+            height + (item.subtitle == nil ? SearchPreviewStyle.queryHeight
+                : SearchPreviewStyle.resultHeight + 2 * SearchPreviewStyle.resultInset)
+        }
+        let separators = zip(items, items.dropFirst()).reduce(CGFloat.zero) { height, pair in
+            guard pair.0.subtitle != nil || pair.1.subtitle != nil else { return height }
+            return height + 1 + (pair.0.subtitle == nil ? SearchPreviewStyle.sectionGap : 0)
+        }
+        return rows + separators + (isShowingHistory ? 28 : 0)
     }
 
     var body: some View {
@@ -167,67 +186,73 @@ struct GlobalSearchField: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 14)
+                            .padding(.horizontal, SearchPreviewStyle.contentInset)
                             .frame(height: 28)
                     }
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        let isSelected = selectedIndex == index
                         Button { select(item) } label: {
-                            HStack(spacing: 12) {
-                                previewArtwork(item)
+                            HStack(spacing: SearchPreviewStyle.contentSpacing) {
+                                previewArtwork(item, isSelected: isSelected)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.title).font(LibraryTypography.listingTitle)
                                     if let subtitle = item.subtitle {
                                         Text(subtitle).font(LibraryTypography.listingSecondary)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(isSelected ? Color.white : Color.secondary)
                                     }
                                 }
                                 .lineLimit(1)
                                 Spacer(minLength: 0)
                             }
-                            .padding(.horizontal, 14)
-                            .frame(height: item.subtitle == nil ? 34 : 66)
+                            .padding(.horizontal, SearchPreviewStyle.contentInset)
+                            .frame(height: item.subtitle == nil ? SearchPreviewStyle.queryHeight : SearchPreviewStyle.resultHeight)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(.rect)
-                            .background(selectedIndex == index ? Color.accentColor.opacity(0.18) : .clear,
+                            .foregroundStyle(isSelected ? Color.white : Color.primary)
+                            .background(isSelected ? Color.accentColor : .clear,
                                         in: RoundedRectangle(cornerRadius: 8))
+                            .padding(.vertical, item.subtitle == nil ? 0 : SearchPreviewStyle.resultInset)
+                            .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("search.preview.\(item.id)")
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                         .id(item.id)
                         .onHover { hovered in if hovered { selectedIndex = index } }
                         if index < items.count - 1, item.subtitle != nil || items[index + 1].subtitle != nil {
-                            Divider().padding(.horizontal, 14)
+                            Divider()
+                                .padding(.horizontal, SearchPreviewStyle.contentInset)
+                                .padding(.top, item.subtitle == nil ? SearchPreviewStyle.sectionGap : 0)
                         }
                     }
                 }
-                .padding(6)
+                .padding(SearchPreviewStyle.outerInset)
             }
             .onChange(of: selectedIndex) { _, index in
                 if let index, items.indices.contains(index) { proxy.scrollTo(items[index].id) }
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.separator, lineWidth: 0.5) }
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: SearchPreviewStyle.cornerRadius))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("search.preview")
     }
 
     @ViewBuilder
-    private func previewArtwork(_ item: SearchPreviewItem) -> some View {
+    private func previewArtwork(_ item: SearchPreviewItem, isSelected: Bool) -> some View {
         switch item.destination {
         case .recentQuery:
-            Image(systemName: "clock.arrow.circlepath").foregroundStyle(.secondary).frame(width: 20)
+            Image(systemName: "clock.arrow.circlepath")
+                .foregroundStyle(isSelected ? Color.white : Color.secondary).frame(width: 14)
         case .query:
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary).frame(width: 20)
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(isSelected ? Color.white : Color.secondary).frame(width: 14)
         case .artist(let artist):
             ArtistPortraitView(artist: artist,
                                fallbackArtworkID: store.releases.first { $0.artistId == artist.id }?.artworkId,
-                               size: 46)
-        case .album(let album): ArtworkView(artworkID: album.artworkId, size: 46)
-        case .track(let track): ArtworkView(artworkID: track.artworkId, size: 46)
+                               size: SearchPreviewStyle.artworkSize)
+        case .album(let album): ArtworkView(artworkID: album.artworkId, size: SearchPreviewStyle.artworkSize)
+        case .track(let track): ArtworkView(artworkID: track.artworkId, size: SearchPreviewStyle.artworkSize)
         case .playlist(let playlist):
-            PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: 46)
+            PlaylistArtworkThumbnail(playlistID: playlist.id, artworkBase64: playlist.artworkId, size: SearchPreviewStyle.artworkSize)
         }
     }
 
