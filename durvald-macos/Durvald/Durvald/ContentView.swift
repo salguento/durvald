@@ -83,6 +83,7 @@ struct ContentView: View {
             LibrarySidebarView(
                 section: $shell.sidebarSection,
                 destination: destinationBinding,
+                playlistsToolbarState: playlistsToolbarState,
                 selectedPlaylistID: selectedPlaylistID,
                 onSelectAlbum: showAlbum,
                 onSelectArtist: showArtist,
@@ -148,6 +149,7 @@ struct ContentView: View {
         } action: { width in
             shell.adaptToWidth(width, compactThreshold: Layout.compactNavigationWidth)
         }
+        .modifier(PlaylistsCreationPresentation(state: playlistsToolbarState))
         .environment(playlistCreation)
         .environment(\.trackMenuNavigation, trackMenuNavigation)
         .onAppear {
@@ -894,7 +896,7 @@ struct ContentView: View {
                 artistsSummary = summary
             }
         case .playlists:
-            PlaylistsView(searchText: $playlistsSearchText, toolbarState: playlistsToolbarState,
+            PlaylistsView(searchText: $playlistsSearchText,
                           onSelectPlaylist: showPlaylist) { summary in
                 playlistsSummary = summary
             }

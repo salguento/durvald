@@ -1827,4 +1827,36 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertTrue(queue.waitForExistence(timeout: 3))
         XCTAssertEqual(window.frame.width, windowWidthBefore, accuracy: 2)
     }
+    @MainActor
+    func testSidebarPlaylistsContextMenuCreatesAndImportsFromHome() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launch()
+        let sidebar = app.buttons["sidebar.playlists"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5))
+        if !sidebar.isHittable { app.buttons["navigation.sidebar"].click() }
+        let home = app.descendants(matching: .any)["home.page"]
+        XCTAssertTrue(home.exists)
+        let titles = ["Nova playlist", "Nova playlist inteligente", "Importar playlist"]
+        for title in titles {
+            sidebar.rightClick()
+            for option in titles { XCTAssertTrue(app.menuItems[option].waitForExistence(timeout: 3)) }
+            app.menuItems[title].click()
+            if title == "Nova playlist" {
+                XCTAssertTrue(app.textFields["playlist.new.title"].waitForExistence(timeout: 3))
+                app.buttons["Cancelar"].click()
+            } else if title == "Nova playlist inteligente" {
+                XCTAssertTrue(app.buttons["Adicionar regra"].waitForExistence(timeout: 3))
+                app.buttons["Cancelar"].click()
+            } else {
+                XCTAssertTrue(app.sheets["open-panel"].waitForExistence(timeout: 3))
+                app.buttons["CancelButton"].click()
+            }
+            XCTAssertTrue(home.exists, "A context-menu action must preserve the current page")
+        }
+        sidebar.click()
+        XCTAssertTrue(app.descendants(matching: .any)["playlists.summary"].waitForExistence(timeout: 3),
+                      "Normal left click must still navigate to Playlists")
+    }
+
 }

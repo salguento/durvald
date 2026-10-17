@@ -8,6 +8,7 @@ struct LibrarySidebarView: View {
 
     @Binding var section: SidebarSection
     @Binding var destination: LibraryDestination?
+    @Bindable var playlistsToolbarState: PlaylistsToolbarState
     let selectedPlaylistID: Int64?
 
     let onSelectAlbum: (Release) -> Void
@@ -170,6 +171,9 @@ struct LibrarySidebarView: View {
                         accessibilityIdentifier: "sidebar.playlists",
                         allowsSelectionHighlight: selectedPlaylistID == nil
                     )
+                    .contextMenu {
+                        PlaylistsCreationActions(state: playlistsToolbarState)
+                    }
                     .onDrop(of: [LibraryTrackDrag.type], isTargeted: $isDropAreaTargeted) { providers in
                         LibraryTrackDrag.accept(providers) { playlistCreation.requestTracks($0) }
                     }

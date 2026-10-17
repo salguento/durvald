@@ -10,7 +10,6 @@ final class PlaylistsToolbarState {
 
 struct PlaylistsView: View {
     @Binding var searchText: String
-    @Bindable var toolbarState: PlaylistsToolbarState
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(DurvaldCoreStore.self) private var store
     @AppStorage("playlists.listingMode") private var listingMode: CollectionListingMode = .standard
@@ -19,8 +18,6 @@ struct PlaylistsView: View {
     @State private var tracksByPlaylist: [Int64: [Track]] = [:]
     @State private var orderingRevision: UInt64 = 0
     @State private var presentation = PreparedLibraryListing(PlaylistListingSnapshot())
-    @State private var importReport: PlaylistImportReport?
-    @State private var importError: String?
     let onSelectPlaylist: (Playlist) -> Void
     var onSummaryChange: (String) -> Void = { _ in }
 
@@ -44,28 +41,6 @@ struct PlaylistsView: View {
                 ContentUnavailableView("Nenhuma playlist encontrada", systemImage: "magnifyingglass")
             }
         }
-        .fileImporter(
-            isPresented: $toolbarState.isChoosingImport,
-            allowedContentTypes: [PlaylistTransferService.m3u8Type],
-            allowsMultipleSelection: false,
-            onCompletion: importPlaylist
-        )
-        .sheet(item: $importReport) { PlaylistImportReportSheet(report: $0) }
-        .sheet(isPresented: $toolbarState.isShowingSmartPlaylist) {
-            SmartPlaylistSheet { name, description, definition in
-                await store.createSmartPlaylist(
-                    named: name, description: description, definition: definition
-                ) != nil
-            }
-        }
-        .alert("Não foi possível importar", isPresented: Binding(
-            get: { importError != nil },
-            set: { if !$0 { importError = nil } }
-        )) {
-            Button("OK") { importError = nil }
-        } message: {
-            Text(importError ?? "")
-        }
         .task(id: orderingTaskID) {
             await loadOrderingTracksIfNeeded()
         }
@@ -80,19 +55,6 @@ struct PlaylistsView: View {
             }
             guard !Task.isCancelled else { return }
             onSummaryChange(presentation.value.summary)
-        }
-    }
-
-    private func importPlaylist(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result, let url = urls.first else {
-            if case .failure(let error) = result { importError = error.localizedDescription }
-            return
-        }
-        toolbarState.isImporting = true
-        Task {
-            defer { toolbarState.isImporting = false }
-            do { importReport = try await store.importM3U8(from: url) }
-            catch { importError = error.localizedDescription }
         }
     }
 
@@ -129,21 +91,11 @@ struct PlaylistsView: View {
 }
 
 struct PlaylistsCreationMenu: View {
-    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Bindable var state: PlaylistsToolbarState
 
     var body: some View {
         ToolbarOptionsButton(title: "Adicionar playlist", systemImage: "plus") {
-            Button("Nova playlist", systemImage: "plus") {
-                playlistCreation.request(for: nil)
-            }
-            Button("Nova playlist inteligente", systemImage: "wand.and.stars") {
-                state.isShowingSmartPlaylist = true
-            }
-            Button("Importar playlist", systemImage: "square.and.arrow.down") {
-                state.isChoosingImport = true
-            }
-            .disabled(state.isImporting)
+            PlaylistsCreationActions(state: state)
         }
         .overlay(alignment: .bottomTrailing) {
             if state.isImporting {
@@ -154,4 +106,71 @@ struct PlaylistsCreationMenu: View {
         }
         .accessibilityIdentifier("playlists.add")
     }
+}
+
+/// The toolbar and sidebar share the same commands and import availability.
+struct PlaylistsCreationActions: View {
+    @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
+    @Bindable var state: PlaylistsToolbarState
+
+    var body: some View {
+        Button("Nova playlist", systemImage: "plus") {
+            playlistCreation.request(for: nil)
+        }
+        Button("Nova playlist inteligente", systemImage: "wand.and.stars") {
+            state.isShowingSmartPlaylist = true
+        }
+        Button("Importar playlist", systemImage: "square.and.arrow.down") {
+            state.isChoosingImport = true
+        }
+        .disabled(state.isImporting)
+    }
+}
+
+/// Keep presentation attached to the window, so sidebar commands work from any page.
+struct PlaylistsCreationPresentation: ViewModifier {
+    @Environment(DurvaldCoreStore.self) private var store
+    @Bindable var state: PlaylistsToolbarState
+    @State private var importReport: PlaylistImportReport?
+    @State private var importError: String?
+
+    func body(content: Content) -> some View {
+        content
+        .fileImporter(
+            isPresented: $state.isChoosingImport,
+            allowedContentTypes: [PlaylistTransferService.m3u8Type],
+            allowsMultipleSelection: false,
+            onCompletion: importPlaylist
+        )
+        .sheet(item: $importReport) { PlaylistImportReportSheet(report: $0) }
+        .sheet(isPresented: $state.isShowingSmartPlaylist) {
+            SmartPlaylistSheet { name, description, definition in
+                await store.createSmartPlaylist(
+                    named: name, description: description, definition: definition
+                ) != nil
+            }
+        }
+        .alert("Não foi possível importar", isPresented: Binding(
+            get: { importError != nil },
+            set: { if !$0 { importError = nil } }
+        )) {
+            Button("OK") { importError = nil }
+        } message: {
+            Text(importError ?? "")
+        }
+    }
+
+    private func importPlaylist(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else {
+            if case .failure(let error) = result { importError = error.localizedDescription }
+            return
+        }
+        state.isImporting = true
+        Task {
+            defer { state.isImporting = false }
+            do { importReport = try await store.importM3U8(from: url) }
+            catch { importError = error.localizedDescription }
+        }
+    }
+
 }
