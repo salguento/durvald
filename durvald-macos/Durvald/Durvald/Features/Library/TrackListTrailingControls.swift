@@ -1,33 +1,26 @@
 import SwiftUI
 
-struct TrackListTrailingControls<AdditionalControls: View>: View {
+struct TrackListTrailingControls: View {
     @Environment(DurvaldCoreStore.self) private var store
-    @State private var favoriteEdit = PersonalValueEdit(false)
-
+    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
+    @State private var favoriteEdit: PersonalValueEdit<Bool>
     let track: Track
+    let isRowHovered: Bool
     let onPlay: () -> Void
-    let onToggleFavorite: (Bool) async -> Bool
-    @ViewBuilder let additionalControls: () -> AdditionalControls
 
-    init(track: Track, onPlay: @escaping () -> Void,
-         onToggleFavorite: @escaping (Bool) async -> Bool,
-         @ViewBuilder additionalControls: @escaping () -> AdditionalControls) {
+    init(track: Track, isRowHovered: Bool, onPlay: @escaping () -> Void) {
         self.track = track
+        self.isRowHovered = isRowHovered
         self.onPlay = onPlay
-        self.onToggleFavorite = onToggleFavorite
-        self.additionalControls = additionalControls
         _favoriteEdit = State(initialValue: PersonalValueEdit(track.isFavorite))
     }
 
-    private var isFavorite: Bool {
-        favoriteEdit.value
-    }
+    private var isFavorite: Bool { favoriteEdit.value }
+    private var showsFavorite: Bool { isFavorite || isRowHovered }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Button {
-                toggleFavorite()
-            } label: {
+        HStack(spacing: 24) {
+            Button { toggleFavorite() } label: {
                 Image(systemName: isFavorite ? "star.fill" : "star")
                     .foregroundStyle(isFavorite ? Color.accentColor : .secondary)
                     .frame(width: 24, height: 24)
@@ -36,29 +29,38 @@ struct TrackListTrailingControls<AdditionalControls: View>: View {
             .buttonStyle(.plain)
             .help(TrackRowModel.favoriteLabel(isFavorite))
             .accessibilityLabel(TrackRowModel.favoriteLabel(isFavorite))
+            .accessibilityValue(PersonalValueLabels.favoriteValue(isFavorite))
+            .accessibilityIdentifier("collection.track.\(track.id).favorite")
+            .opacity(showsFavorite ? 1 : 0)
+            .allowsHitTesting(showsFavorite)
+            .accessibilityHidden(!showsFavorite)
 
-            Text(durationText)
-                .font(.caption)
+            if ratingsEnabled {
+                RatingControl(rating: track.ratingHalfSteps, isEditable: true, identity: .track(track.id),
+                              showsUnrated: isRowHovered, onCommit: { rating in
+                    await store.setTrackRating(trackID: track.id, rating: rating, fallbackTrack: track)
+                })
+                .accessibilityIdentifier("collection.track.\(track.id).rating")
+            }
+
+            Text(TrackRowModel(track).durationText())
+                .font(.body)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
-                .frame(width: 44, alignment: .trailing)
-
-            additionalControls()
+                .fixedSize()
+                .accessibilityIdentifier("collection.track.\(track.id).duration")
 
             Menu {
                 Button("Reproduzir", systemImage: "play.fill", action: onPlay)
                 Button("Adicionar à fila", systemImage: "text.badge.plus") {
                     Task { await store.addToQueue(trackID: track.id) }
                 }
-                Button(
-                    TrackRowModel.favoriteLabel(isFavorite),
-                    systemImage: isFavorite ? "star.slash" : "star"
-                ) {
+                Button(TrackRowModel.favoriteLabel(isFavorite), systemImage: isFavorite ? "star.slash" : "star") {
                     toggleFavorite()
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.accentColor)
                     .frame(width: 24, height: 24)
                     .contentShape(.rect)
             }
@@ -67,6 +69,7 @@ struct TrackListTrailingControls<AdditionalControls: View>: View {
             .fixedSize()
             .help("Opções da faixa")
             .accessibilityLabel("Opções da faixa")
+            .accessibilityIdentifier("collection.track.\(track.id).options")
             .trackOptionsMenu(track: track, onPlay: onPlay)
         }
         .onChange(of: track.id, initial: true) { _, _ in favoriteEdit.reset(track.isFavorite) }
@@ -77,13 +80,8 @@ struct TrackListTrailingControls<AdditionalControls: View>: View {
         let value = !favoriteEdit.value
         let ticket = favoriteEdit.begin(value)
         Task { @MainActor in
-            let succeeded = await onToggleFavorite(value)
+            let succeeded = await store.setTrackFavorite(trackID: track.id, favorite: value, fallbackTrack: track)
             favoriteEdit.finish(ticket, succeeded: succeeded)
         }
     }
-
-    private var durationText: String {
-        TrackRowModel(track).durationText()
-    }
 }
-

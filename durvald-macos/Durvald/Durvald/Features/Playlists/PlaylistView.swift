@@ -108,7 +108,6 @@ struct PlaylistView: View {
     @State private var isPersistingTrackOrder = false
     @State private var isExporting = false
     @State private var exportMessage: String?
-    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
 
     private let artworkSize: CGFloat = 268
 
@@ -516,76 +515,15 @@ struct PlaylistView: View {
     }
 
     private func trackRow(_ track: Track, position: Int) -> some View {
-        let isActive = activeTrackPosition == position
-        let model = TrackRowModel(track)
-
-        return HStack(spacing: 12) {
-            AlbumTrackPosition(
-                trackID: track.id,
-                number: "\(position)",
-                isActiveOverride: isActive
-            )
-                .offset(x: -6)
-
-            ArtworkView(artworkID: model.artworkID, size: 42)
-
-            TrackRowText(model: model, activeOverride: isActive, inactiveColor: .primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            TrackListTrailingControls(
-                track: track,
-                onPlay: {
-                    Task {
-                        await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store)
-                    }
-                },
-                onToggleFavorite: { isFavorite in
-                    await store.setTrackFavorite(trackID: track.id, favorite: isFavorite, fallbackTrack: track)
-                }
-            ) {
-                if ratingsEnabled {
-                    RatingControl(
-                        rating: model.rating,
-                        isEditable: true,
-                        identity: .track(track.id),
-                        onCommit: { rating in
-                            await store.setTrackRating(trackID: track.id, rating: rating, fallbackTrack: track)
-                        }
-                    )
-                }
-
-                Button {
-                    Task { await store.addToQueue(trackID: track.id) }
-                } label: {
-                    Image(systemName: "plus.circle")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(model.enqueueLabel)
-            }
-        }
-        .padding(.vertical, 8)
-        .padding(.trailing, 16)
-        .playTrackOnDoubleClick {
-            Task {
-                await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store)
-            }
-        }
-        .background {
-            if selectedTrackPosition == position {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(0.10))
-            }
+        CollectionTrackRow(track: track, number: "\(position)", activeOverride: activeTrackPosition == position,
+                           isSelected: selectedTrackPosition == position) {
+            Task { await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store) }
         }
         .simultaneousGesture(
             TapGesture().onEnded {
                 selectedTrackPosition = position
             }
         )
-        .trackContextMenu(track: track) {
-            Task {
-                await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store)
-            }
-        }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(selectedTrackPosition == position ? .isSelected : [])
         .accessibilityIdentifier("playlist.track.\(track.id)")

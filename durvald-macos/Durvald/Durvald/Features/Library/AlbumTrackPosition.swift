@@ -36,6 +36,6 @@ struct AlbumTrackPosition: View {
             }
         }
         .font(.callout)
-        .frame(width: 34, alignment: .trailing)
+        .frame(width: 34, alignment: .center)
     }
 }

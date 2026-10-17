@@ -42,17 +42,19 @@ struct RatingControl: View {
     let rating: UInt8?
     var identity: PersonalEditIdentity? = nil
     var isEditable = false
+    var showsUnrated = true
     var accentForeground: Color = .accentColor
     var onChange: (UInt8?) -> Void = { _ in }
     var onCommit: ((UInt8?) async -> Bool)? = nil
     @State private var edit: PersonalValueEdit<UInt8?>
 
     init(rating: UInt8?, isEditable: Bool = false, accentForeground: Color = .accentColor,
-         identity: PersonalEditIdentity? = nil, onChange: @escaping (UInt8?) -> Void = { _ in },
+         identity: PersonalEditIdentity? = nil, showsUnrated: Bool = true, onChange: @escaping (UInt8?) -> Void = { _ in },
          onCommit: ((UInt8?) async -> Bool)? = nil) {
         self.rating = rating
         self.identity = identity
         self.isEditable = isEditable
+        self.showsUnrated = showsUnrated
         self.accentForeground = accentForeground
         self.onChange = onChange
         self.onCommit = onCommit
@@ -97,6 +99,9 @@ struct RatingControl: View {
             @unknown default: break
             }
         }
+        .opacity(showsUnrated || (edit.value ?? 0) > 0 ? 1 : 0)
+        .allowsHitTesting(showsUnrated || (edit.value ?? 0) > 0)
+        .accessibilityHidden(!showsUnrated && (edit.value ?? 0) == 0)
     }
 
     private func target(_ halfSteps: Int) -> some View {

@@ -255,21 +255,8 @@ struct RetrospectivePlaylistView: View {
     }
 
     private func trackRow(_ track: Track, index: Int) -> some View {
-        HStack(spacing: 12) {
-            Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(width: 32)
-            ArtworkView(artworkID: track.artworkId, size: 42)
-            TrackRowText(model: TrackRowModel(trackID: track.id, title: track.title), subtitle: track.artist)
-            Spacer()
-            Text(DurationFormatter.text(track.durationSeconds))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .onTapGesture(count: 2) {
+        CollectionTrackRow(track: track, number: "\(index + 1)") {
             Task { await store.playTracks(Array(tracks.dropFirst(index)), shuffleEnabled: false) }
-        }
-        .trackContextMenu(track: track) {
-            Task { await TrackRowPlayback.track(track.id).perform(using: store) }
         }
         .accessibilityIdentifier("retrospective.playlist.track.\(track.id)")
     }

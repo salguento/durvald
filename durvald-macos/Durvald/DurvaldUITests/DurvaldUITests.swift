@@ -1140,6 +1140,16 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertEqual(playlists.count, originalCount)
         XCTAssertFalse(app.buttons["retrospective.playlist.options"].exists)
         XCTAssertFalse(app.steppers["retrospective.playlist.size"].exists)
+        let replayRow = app.descendants(matching: .any)["retrospective.playlist.track.100"].firstMatch
+        XCTAssertTrue(replayRow.waitForExistence(timeout: 3))
+        replayRow.hover()
+        let replayRating = replayRow.descendants(matching: .any)["collection.track.100.rating"].firstMatch
+        let replayDuration = replayRow.staticTexts["collection.track.100.duration"]
+        let replayOptions = replayRow.descendants(matching: .any)["collection.track.100.options"].firstMatch
+        XCTAssertTrue(replayRating.waitForExistence(timeout: 3))
+        XCTAssertLessThan(replayRating.frame.maxX, replayDuration.frame.minX)
+        XCTAssertLessThan(replayDuration.frame.maxX, replayOptions.frame.minX)
+        XCTAssertFalse(replayRow.buttons["Adicionar Faixa de teste 1 — Biblioteca para rolagem à fila"].exists)
         let play = app.buttons["retrospective.playlist.play"]
         let save = app.buttons["retrospective.playlist.save"]
         XCTAssertGreaterThan(save.frame.minX, play.frame.maxX)

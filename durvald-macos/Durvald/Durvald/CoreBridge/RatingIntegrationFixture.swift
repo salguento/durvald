@@ -42,10 +42,17 @@ enum RatingIntegrationFixture {
     @MainActor
     static func makeStore(directory: URL) async throws -> DurvaldCoreStore {
         let core = try await openCore(directory: directory)
+        if ProcessInfo.processInfo.arguments.contains("--collection-track-fixture"), try await core.playlists().isEmpty {
+            let playlist = try await core.createPlaylist(name: "Collection row fixture", description: "", artworkBase64: nil)
+            for (index, id) in [Int64(1), 4, 5].enumerated() {
+                _ = try await core.addTrackToPlaylist(playlistId: playlist.id, trackId: id, position: UInt64(index))
+            }
+        }
         let tracks = try await core.tracksPage(pageSize: 100, offset: 0).items
         let releases = try await core.releasesPage(pageSize: 100, offset: 0).items
         let store = DurvaldCoreStore(core: core, tracks: tracks, releases: releases)
         await store.refreshRatingPreferences()
+        try await store.reloadPlaylists()
         return store
     }
 

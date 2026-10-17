@@ -415,12 +415,8 @@ struct AlbumView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
         } else if let externalDetails, !externalDetails.tracks.isEmpty {
             VStack(spacing: 0) {
-                ForEach(Array(externalDetails.tracks.enumerated()), id: \.offset) { index, track in
+                ForEach(Array(externalDetails.tracks.enumerated()), id: \.offset) { _, track in
                     externalTrackRow(track, totalDiscs: externalDetails.totalDiscs)
-
-                    if index < externalDetails.tracks.count - 1 {
-                        Divider()
-                    }
                 }
             }
         } else if externalRelease != nil {
@@ -444,10 +440,6 @@ struct AlbumView: View {
             VStack(spacing: 0) {
                 ForEach(visibleTracks, id: \.id) { track in
                     trackRow(track)
-
-                    if track.id != visibleTracks.last?.id {
-                        Divider()
-                    }
                 }
             }
         }
@@ -484,53 +476,10 @@ struct AlbumView: View {
     }
 
     private func trackRow(_ track: Track) -> some View {
-        let model = TrackRowModel(track)
-        return HStack(spacing: 12) {
-            AlbumTrackPosition(trackID: track.id, number: trackNumber(for: track))
-
-            TrackRowText(model: model, subtitle: track.artist != artistName ? track.artist : "")
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            TrackListTrailingControls(
-                track: track,
-                onPlay: {
-                    guard let album else { return }
-                    Task { await TrackRowPlayback.release(album.id, startingAt: track.id).perform(using: store) }
-                },
-                onToggleFavorite: { isFavorite in
-                    await store.setTrackFavorite(trackID: track.id, favorite: isFavorite, fallbackTrack: track)
-                }
-            ) {
-                if ratingsEnabled {
-                    RatingControl(
-                        rating: model.rating,
-                        isEditable: true,
-                        identity: .track(track.id),
-                        onCommit: { rating in
-                            await store.setTrackRating(trackID: track.id, rating: rating, fallbackTrack: track)
-                        }
-                    )
-                }
-
-                Button {
-                    Task { await store.addToQueue(trackID: track.id) }
-                } label: {
-                    Image(systemName: "plus.circle")
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel(model.enqueueLabel)
-            }
-        }
-        .padding(.vertical, 9)
-        .playTrackOnDoubleClick {
+        CollectionTrackRow(track: track, number: trackNumber(for: track), showsArtwork: false, showsAlbum: false) {
             guard let album else { return }
             Task { await TrackRowPlayback.release(album.id, startingAt: track.id).perform(using: store) }
         }
-        .trackContextMenu(track: track) {
-            guard let album else { return }
-            Task { await TrackRowPlayback.release(album.id, startingAt: track.id).perform(using: store) }
-        }
-        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("album.track.\(track.id)")
     }
 
