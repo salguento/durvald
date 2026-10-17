@@ -91,6 +91,9 @@ struct MusicLibraryView: View {
                 isPresented: isPresented,
                 scrollRestorationID: navigationEntryID,
                 tracksRevision: presentation.displayRevision,
+                ratingGranularity: store.ratingGranularity,
+                ratingEditingEnabled: !store.isChangingRatingScale,
+                ratingRevision: store.ratingScaleRevision,
                 onLayoutChange: { layout in
                     columnLayout = layout
                 },

@@ -67,10 +67,10 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         let revision = model.displayRevision
         await model.prepare(request(), key: key)
         XCTAssertEqual(model.displayRevision, revision)
-        track.rating = 5
+        track.ratingHalfSteps = 5
         await model.prepare(request(), key: .init(tracksRevision: 2))
         XCTAssertEqual(model.displayRevision, revision + 1)
-        XCTAssertEqual(model.displayedTracks.first?.rating, 5)
+        XCTAssertEqual(model.displayedTracks.first?.ratingHalfSteps, 5)
     }
 
     func testStoreRevisionTracksOptimisticChangesAndRollback() async {
@@ -79,13 +79,13 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         let before = store.tracksRevision
         await store.setTrackRating(trackID: Fixtures.track.id, rating: 3)
         XCTAssertGreaterThan(store.tracksRevision, before)
-        XCTAssertEqual(store.tracks.first?.rating, 3)
+        XCTAssertEqual(store.tracks.first?.ratingHalfSteps, 3)
         let request = MusicLibraryPresentation().catalogRequest(for: store)
         fake.trackRatingError = NSError(domain: "test", code: 1)
         let metadataRevision = store.metadataRevision
         let beforeRollback = store.tracksRevision
         await store.setTrackRating(trackID: Fixtures.track.id, rating: 5)
-        XCTAssertEqual(store.tracks.first?.rating, 3)
+        XCTAssertEqual(store.tracks.first?.ratingHalfSteps, 3)
         XCTAssertEqual(store.metadataRevision, metadataRevision + 1, "Rollback invalidates collection snapshots too")
         XCTAssertGreaterThanOrEqual(store.tracksRevision, beforeRollback + 2)
         XCTAssertNotEqual(MusicLibraryPresentation().catalogRequest(for: store), request)
@@ -260,7 +260,7 @@ final class MusicLibraryPerformanceTests: XCTestCase {
         rating.buttons[2].performClick(nil)
         await Task.yield()
         XCTAssertEqual(ratings.count, 1)
-        XCTAssertEqual(ratings[0], 3)
+        XCTAssertEqual(ratings[0], 6)
         XCTAssertTrue(rating.buttons.allSatisfy { !$0.isHidden })
         rating.buttons[2].performClick(nil)
         await Task.yield()

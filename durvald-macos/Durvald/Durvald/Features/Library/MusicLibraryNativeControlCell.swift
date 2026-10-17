@@ -5,6 +5,7 @@ final class MusicLibraryNativeControlCell: NSTableCellView {
     enum Kind { case favorite, rating }
     private static let emptyStar = NSImage(systemSymbolName: "star", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: NSFont.systemFontSize, weight: .regular))
     private static let filledStar = NSImage(systemSymbolName: "star.fill", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: NSFont.systemFontSize, weight: .regular))
+    private static let halfStar = NSImage(systemSymbolName: "star.leadinghalf.filled", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: NSFont.systemFontSize, weight: .regular))
     let kind: Kind
     let buttons: [NSButton]
     private var favoriteEdit = PersonalValueEdit(false)
@@ -13,12 +14,15 @@ final class MusicLibraryNativeControlCell: NSTableCellView {
     private var favorite: Bool { favoriteEdit.value }
     private var rating: UInt8? { ratingEdit.value }
     private var selected = false
+    private var granularity: RatingGranularity = .halfStars
+    private var ratingRevision: UInt64 = 0
+    private var editable = true
     private var onFavoriteChange: (Bool) async -> Bool = { _ in true }
     private var onRatingChange: (UInt8?) async -> Bool = { _ in true }
 
     init(identifier: NSUserInterfaceItemIdentifier, kind: Kind) {
         self.kind = kind
-        buttons = (0..<(kind == .favorite ? 1 : 5)).map { _ in NSButton() }
+        buttons = (0..<(kind == .favorite ? 1 : 5)).map { _ in kind == .favorite ? NSButton() : RatingStarButton() }
         super.init(frame: .zero)
         self.identifier = identifier
         for (index, button) in buttons.enumerated() {
@@ -37,16 +41,20 @@ final class MusicLibraryNativeControlCell: NSTableCellView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func configure(track: Track, selected: Bool,
+                   granularity: RatingGranularity = .halfStars, editable: Bool = true, ratingRevision: UInt64 = 0,
                    onFavoriteChange: @escaping (Bool) async -> Bool,
                    onRatingChange: @escaping (UInt8?) async -> Bool) {
-        if trackID != track.id {
+        if trackID != track.id || self.ratingRevision != ratingRevision {
             favoriteEdit.reset(track.isFavorite)
-            ratingEdit.reset(track.rating)
+            ratingEdit.reset(track.ratingHalfSteps)
             trackID = track.id
         } else {
             favoriteEdit.receive(track.isFavorite)
-            ratingEdit.receive(track.rating)
+            ratingEdit.receive(track.ratingHalfSteps)
         }
+        self.granularity = granularity
+        self.editable = editable
+        self.ratingRevision = ratingRevision
         self.selected = selected
         self.onFavoriteChange = onFavoriteChange
         self.onRatingChange = onRatingChange
@@ -83,15 +91,27 @@ final class MusicLibraryNativeControlCell: NSTableCellView {
     private func refreshButtons() {
         let accent: NSColor = selected ? MusicLibrarySelectionStyle.accentForeground : .controlAccentColor
         for button in buttons {
-            let filled = kind == .favorite ? favorite : button.tag <= Int(rating ?? 0)
-            button.image = filled ? Self.filledStar : Self.emptyStar
+            let filled = kind == .favorite ? favorite : button.tag * 2 - 1 <= Int(rating ?? 0)
+            if kind == .favorite { button.image = filled ? Self.filledStar : Self.emptyStar }
+            else {
+                switch RatingValues.symbol(star: button.tag, rating: rating) {
+                case "star.fill": button.image = Self.filledStar
+                case "star.leadinghalf.filled": button.image = Self.halfStar
+                default: button.image = Self.emptyStar
+                }
+            }
+            if let star = button as? RatingStarButton {
+                star.allowsHalfStars = granularity == .halfStars
+            }
+            button.isEnabled = kind == .favorite || editable
             button.contentTintColor = filled ? accent : .secondaryLabelColor
             button.setAccessibilityLabel(kind == .favorite
                 ? PersonalValueLabels.favorite(favorite) : PersonalValueLabels.star(button.tag))
             button.setAccessibilityValue(kind == .favorite
                 ? PersonalValueLabels.favoriteValue(favorite) : PersonalValueLabels.rating(rating))
-            button.toolTip = kind == .favorite
-                ? PersonalValueLabels.favorite(favorite) : "Avaliação: \(button.tag) de 5"
+            button.toolTip = kind == .favorite ? PersonalValueLabels.favorite(favorite)
+                : "Avaliação: \(button.tag) de 5" + (granularity == .halfStars
+                    ? ". Clique na metade esquerda para meia estrela. No teclado, use as setas esquerda e direita." : "")
         }
         updateHoverVisibility()
     }
@@ -108,7 +128,9 @@ final class MusicLibraryNativeControlCell: NSTableCellView {
                 self?.refreshButtons()
             }
         } else {
-            let value = PersonalValueLabels.ratingAfterClick(UInt8(sender.tag), current: rating)
+            guard editable else { return }
+            let requested = (sender as? RatingStarButton)?.requestedRating ?? UInt8(sender.tag * 2)
+            let value = PersonalValueLabels.ratingAfterClick(requested, current: rating)
             let ticket = ratingEdit.begin(value)
             refreshButtons()
             let commit = onRatingChange
@@ -123,4 +145,25 @@ final class MusicLibraryNativeControlCell: NSTableCellView {
 
 protocol MusicLibraryRowHoverProviding: AnyObject {
     var isHovered: Bool { get }
+}
+
+/// NSButton owns tracking and keyboard activation; only the half-star hit is custom.
+final class RatingStarButton: NSButton {
+    var allowsHalfStars = true
+    private var halfHit = false
+    var requestedRating: UInt8 { UInt8(tag * 2 - (allowsHalfStars && halfHit ? 1 : 0)) }
+
+    override func mouseDown(with event: NSEvent) {
+        halfHit = convert(event.locationInWindow, from: nil).x < bounds.midX
+        super.mouseDown(with: event)
+        halfHit = false
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if allowsHalfStars, event.keyCode == 123 || event.keyCode == 124 {
+            halfHit = event.keyCode == 123
+            performClick(nil)
+            halfHit = false
+        } else { super.keyDown(with: event) }
+    }
 }

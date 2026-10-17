@@ -140,6 +140,6 @@ pub(crate) fn release_from_row(row: Releases) -> CatalogRelease {
         is_favorite: row.is_favorite,
         is_hidden: row.is_hidden,
         suggest_less: row.suggest_less,
-        rating: row.rating,
+        rating_half_steps: row.rating_half_steps,
     }
 }

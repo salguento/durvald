@@ -52,8 +52,8 @@ final class DurvaldCoreStoreTests: XCTestCase {
         XCTAssertEqual(fake.trackRatingChanges.count, 2)
         XCTAssertEqual(fake.trackRatingChanges[0], 4)
         XCTAssertNil(fake.trackRatingChanges[1])
-        XCTAssertNil(store.tracks.first?.rating)
-        XCTAssertNil(store.playback?.currentTrack?.rating)
+        XCTAssertNil(store.tracks.first?.ratingHalfSteps)
+        XCTAssertNil(store.playback?.currentTrack?.ratingHalfSteps)
     }
 
     @MainActor

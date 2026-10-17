@@ -47,7 +47,7 @@ final class CatalogRepositoryTests: XCTestCase {
         _ = try await store.completeCatalogTracks()
         await store.setTrackRating(trackID: 1, rating: 4)
         let updated = try await store.completeCatalogTracks()
-        XCTAssertEqual(updated.first?.rating, 4)
+        XCTAssertEqual(updated.first?.ratingHalfSteps, 4)
         let counts = await probe.offsets()
         XCTAssertEqual(counts.0, [0])
     }

@@ -811,6 +811,10 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func queue() async throws  -> [QueueItem]
 
+    func ratingConversionPreview() async throws  -> RatingConversionPreview
+
+    func ratingPreferences() async throws  -> RatingScalePreferences
+
     /**
      * Explicitly refreshes the requested remote sections. Local reads remain
      * network-free and scanning/playback never call this method implicitly.
@@ -934,9 +938,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func setReleaseHidden(releaseId: Int64, hidden: Bool) async throws
 
     /**
-     * Sets or clears a release rating on the 0–5 scale.
+     * Compatibility API in whole stars. New clients use explicit half steps.
      */
     func setReleaseRating(releaseId: Int64, rating: UInt8?) async throws
+
+    func setReleaseRatingHalfSteps(releaseId: Int64, ratingHalfSteps: UInt8?) async throws
 
     /**
      * Sets whether recommendations should de-emphasize a release.
@@ -969,9 +975,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func setTrackHidden(trackId: Int64, hidden: Bool) async throws
 
     /**
-     * Sets or clears a track rating on the 0–5 scale.
+     * Compatibility API in whole stars. New clients use explicit half steps.
      */
     func setTrackRating(trackId: Int64, rating: UInt8?) async throws
+
+    func setTrackRatingHalfSteps(trackId: Int64, ratingHalfSteps: UInt8?) async throws
 
     /**
      * Sets whether recommendations should de-emphasize a track.
@@ -1035,6 +1043,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Updates a playlist's name, description, and optional artwork.
      */
     func updatePlaylist(playlistId: Int64, name: String, description: String, artworkBase64: String?) async throws
+
+    func updateRatingPreferences(granularity: RatingGranularity, rounding: RatingRounding?) async throws  -> RatingPreferenceChange
 
     func updateReplay(request: ReplayRequest, mode: ReplaySaveMode, closeAutomatically: Bool) async throws  -> Playlist
 
@@ -2152,6 +2162,40 @@ open func queue()async throws  -> [QueueItem] {
         )
 }
 
+open func ratingConversionPreview()async throws  -> RatingConversionPreview {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_rating_conversion_preview(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeRatingConversionPreview.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func ratingPreferences()async throws  -> RatingScalePreferences {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_rating_preferences(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeRatingScalePreferences.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Explicitly refreshes the requested remote sections. Local reads remain
      * network-free and scanning/playback never call this method implicitly.
@@ -2655,7 +2699,7 @@ open func setReleaseHidden(releaseId: Int64, hidden: Bool)async throws  {
 }
 
     /**
-     * Sets or clears a release rating on the 0–5 scale.
+     * Compatibility API in whole stars. New clients use explicit half steps.
      */
 open func setReleaseRating(releaseId: Int64, rating: UInt8?)async throws  {
     return
@@ -2664,6 +2708,23 @@ open func setReleaseRating(releaseId: Int64, rating: UInt8?)async throws  {
                 uniffi_durvald_core_fn_method_durvaldcore_set_release_rating(
                     self.uniffiClonePointer(),
                     FfiConverterInt64.lower(releaseId),FfiConverterOptionUInt8.lower(rating)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func setReleaseRatingHalfSteps(releaseId: Int64, ratingHalfSteps: UInt8?)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_set_release_rating_half_steps(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(releaseId),FfiConverterOptionUInt8.lower(ratingHalfSteps)
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -2796,7 +2857,7 @@ open func setTrackHidden(trackId: Int64, hidden: Bool)async throws  {
 }
 
     /**
-     * Sets or clears a track rating on the 0–5 scale.
+     * Compatibility API in whole stars. New clients use explicit half steps.
      */
 open func setTrackRating(trackId: Int64, rating: UInt8?)async throws  {
     return
@@ -2805,6 +2866,23 @@ open func setTrackRating(trackId: Int64, rating: UInt8?)async throws  {
                 uniffi_durvald_core_fn_method_durvaldcore_set_track_rating(
                     self.uniffiClonePointer(),
                     FfiConverterInt64.lower(trackId),FfiConverterOptionUInt8.lower(rating)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func setTrackRatingHalfSteps(trackId: Int64, ratingHalfSteps: UInt8?)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_set_track_rating_half_steps(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(trackId),FfiConverterOptionUInt8.lower(ratingHalfSteps)
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -3070,6 +3148,23 @@ open func updatePlaylist(playlistId: Int64, name: String, description: String, a
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func updateRatingPreferences(granularity: RatingGranularity, rounding: RatingRounding?)async throws  -> RatingPreferenceChange {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_update_rating_preferences(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeRatingGranularity.lower(granularity),FfiConverterOptionTypeRatingRounding.lower(rounding)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeRatingPreferenceChange.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -6343,19 +6438,25 @@ public struct LibraryRepairTrack {
     public var artist: String
     public var release: String
     public var filePath: String
-    public var rating: UInt8?
+    /**
+     * Exact half-star units: 0...10; None is distinct from rated zero.
+     */
+    public var ratingHalfSteps: UInt8?
     public var isFavorite: Bool
     public var isMissing: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, title: String, artist: String, release: String, filePath: String, rating: UInt8?, isFavorite: Bool, isMissing: Bool) {
+    public init(id: Int64, title: String, artist: String, release: String, filePath: String,
+        /**
+         * Exact half-star units: 0...10; None is distinct from rated zero.
+         */ratingHalfSteps: UInt8?, isFavorite: Bool, isMissing: Bool) {
         self.id = id
         self.title = title
         self.artist = artist
         self.release = release
         self.filePath = filePath
-        self.rating = rating
+        self.ratingHalfSteps = ratingHalfSteps
         self.isFavorite = isFavorite
         self.isMissing = isMissing
     }
@@ -6380,7 +6481,7 @@ extension LibraryRepairTrack: Equatable, Hashable {
         if lhs.filePath != rhs.filePath {
             return false
         }
-        if lhs.rating != rhs.rating {
+        if lhs.ratingHalfSteps != rhs.ratingHalfSteps {
             return false
         }
         if lhs.isFavorite != rhs.isFavorite {
@@ -6398,7 +6499,7 @@ extension LibraryRepairTrack: Equatable, Hashable {
         hasher.combine(artist)
         hasher.combine(release)
         hasher.combine(filePath)
-        hasher.combine(rating)
+        hasher.combine(ratingHalfSteps)
         hasher.combine(isFavorite)
         hasher.combine(isMissing)
     }
@@ -6414,7 +6515,7 @@ public struct FfiConverterTypeLibraryRepairTrack: FfiConverterRustBuffer {
                 artist: FfiConverterString.read(from: &buf),
                 release: FfiConverterString.read(from: &buf),
                 filePath: FfiConverterString.read(from: &buf),
-                rating: FfiConverterOptionUInt8.read(from: &buf),
+                ratingHalfSteps: FfiConverterOptionUInt8.read(from: &buf),
                 isFavorite: FfiConverterBool.read(from: &buf),
                 isMissing: FfiConverterBool.read(from: &buf)
         )
@@ -6426,7 +6527,7 @@ public struct FfiConverterTypeLibraryRepairTrack: FfiConverterRustBuffer {
         FfiConverterString.write(value.artist, into: &buf)
         FfiConverterString.write(value.release, into: &buf)
         FfiConverterString.write(value.filePath, into: &buf)
-        FfiConverterOptionUInt8.write(value.rating, into: &buf)
+        FfiConverterOptionUInt8.write(value.ratingHalfSteps, into: &buf)
         FfiConverterBool.write(value.isFavorite, into: &buf)
         FfiConverterBool.write(value.isMissing, into: &buf)
     }
@@ -6970,6 +7071,185 @@ public func FfiConverterTypeQueueItem_lower(_ value: QueueItem) -> RustBuffer {
 }
 
 
+public struct RatingConversionPreview {
+    public var tracks: UInt64
+    public var releases: UInt64
+    public var missingTracks: UInt64
+    public var archivedReleases: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(tracks: UInt64, releases: UInt64, missingTracks: UInt64, archivedReleases: UInt64) {
+        self.tracks = tracks
+        self.releases = releases
+        self.missingTracks = missingTracks
+        self.archivedReleases = archivedReleases
+    }
+}
+
+
+
+extension RatingConversionPreview: Equatable, Hashable {
+    public static func ==(lhs: RatingConversionPreview, rhs: RatingConversionPreview) -> Bool {
+        if lhs.tracks != rhs.tracks {
+            return false
+        }
+        if lhs.releases != rhs.releases {
+            return false
+        }
+        if lhs.missingTracks != rhs.missingTracks {
+            return false
+        }
+        if lhs.archivedReleases != rhs.archivedReleases {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(tracks)
+        hasher.combine(releases)
+        hasher.combine(missingTracks)
+        hasher.combine(archivedReleases)
+    }
+}
+
+
+public struct FfiConverterTypeRatingConversionPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RatingConversionPreview {
+        return
+            try RatingConversionPreview(
+                tracks: FfiConverterUInt64.read(from: &buf),
+                releases: FfiConverterUInt64.read(from: &buf),
+                missingTracks: FfiConverterUInt64.read(from: &buf),
+                archivedReleases: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RatingConversionPreview, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.tracks, into: &buf)
+        FfiConverterUInt64.write(value.releases, into: &buf)
+        FfiConverterUInt64.write(value.missingTracks, into: &buf)
+        FfiConverterUInt64.write(value.archivedReleases, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeRatingConversionPreview_lift(_ buf: RustBuffer) throws -> RatingConversionPreview {
+    return try FfiConverterTypeRatingConversionPreview.lift(buf)
+}
+
+public func FfiConverterTypeRatingConversionPreview_lower(_ value: RatingConversionPreview) -> RustBuffer {
+    return FfiConverterTypeRatingConversionPreview.lower(value)
+}
+
+
+public struct RatingPreferenceChange {
+    public var preferences: RatingScalePreferences
+    public var converted: RatingConversionPreview
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(preferences: RatingScalePreferences, converted: RatingConversionPreview) {
+        self.preferences = preferences
+        self.converted = converted
+    }
+}
+
+
+
+extension RatingPreferenceChange: Equatable, Hashable {
+    public static func ==(lhs: RatingPreferenceChange, rhs: RatingPreferenceChange) -> Bool {
+        if lhs.preferences != rhs.preferences {
+            return false
+        }
+        if lhs.converted != rhs.converted {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(preferences)
+        hasher.combine(converted)
+    }
+}
+
+
+public struct FfiConverterTypeRatingPreferenceChange: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RatingPreferenceChange {
+        return
+            try RatingPreferenceChange(
+                preferences: FfiConverterTypeRatingScalePreferences.read(from: &buf),
+                converted: FfiConverterTypeRatingConversionPreview.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RatingPreferenceChange, into buf: inout [UInt8]) {
+        FfiConverterTypeRatingScalePreferences.write(value.preferences, into: &buf)
+        FfiConverterTypeRatingConversionPreview.write(value.converted, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeRatingPreferenceChange_lift(_ buf: RustBuffer) throws -> RatingPreferenceChange {
+    return try FfiConverterTypeRatingPreferenceChange.lift(buf)
+}
+
+public func FfiConverterTypeRatingPreferenceChange_lower(_ value: RatingPreferenceChange) -> RustBuffer {
+    return FfiConverterTypeRatingPreferenceChange.lower(value)
+}
+
+
+public struct RatingScalePreferences {
+    public var granularity: RatingGranularity
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(granularity: RatingGranularity) {
+        self.granularity = granularity
+    }
+}
+
+
+
+extension RatingScalePreferences: Equatable, Hashable {
+    public static func ==(lhs: RatingScalePreferences, rhs: RatingScalePreferences) -> Bool {
+        if lhs.granularity != rhs.granularity {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(granularity)
+    }
+}
+
+
+public struct FfiConverterTypeRatingScalePreferences: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RatingScalePreferences {
+        return
+            try RatingScalePreferences(
+                granularity: FfiConverterTypeRatingGranularity.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RatingScalePreferences, into buf: inout [UInt8]) {
+        FfiConverterTypeRatingGranularity.write(value.granularity, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeRatingScalePreferences_lift(_ buf: RustBuffer) throws -> RatingScalePreferences {
+    return try FfiConverterTypeRatingScalePreferences.lift(buf)
+}
+
+public func FfiConverterTypeRatingScalePreferences_lower(_ value: RatingScalePreferences) -> RustBuffer {
+    return FfiConverterTypeRatingScalePreferences.lower(value)
+}
+
+
 /**
  * Release/album DTO
  */
@@ -6989,11 +7269,17 @@ public struct Release {
     public var isFavorite: Bool
     public var isHidden: Bool
     public var suggestLess: Bool
-    public var rating: UInt8?
+    /**
+     * Exact half-star units: 0...10; None is distinct from rated zero.
+     */
+    public var ratingHalfSteps: UInt8?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, title: String, artist: String, artistId: Int64, releaseDate: String?, genres: [String], composers: [String], producers: [String], totalTracks: UInt8, totalDiscs: UInt8, durationSeconds: UInt64, artworkId: String?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool, rating: UInt8?) {
+    public init(id: Int64, title: String, artist: String, artistId: Int64, releaseDate: String?, genres: [String], composers: [String], producers: [String], totalTracks: UInt8, totalDiscs: UInt8, durationSeconds: UInt64, artworkId: String?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool,
+        /**
+         * Exact half-star units: 0...10; None is distinct from rated zero.
+         */ratingHalfSteps: UInt8?) {
         self.id = id
         self.title = title
         self.artist = artist
@@ -7009,7 +7295,7 @@ public struct Release {
         self.isFavorite = isFavorite
         self.isHidden = isHidden
         self.suggestLess = suggestLess
-        self.rating = rating
+        self.ratingHalfSteps = ratingHalfSteps
     }
 }
 
@@ -7062,7 +7348,7 @@ extension Release: Equatable, Hashable {
         if lhs.suggestLess != rhs.suggestLess {
             return false
         }
-        if lhs.rating != rhs.rating {
+        if lhs.ratingHalfSteps != rhs.ratingHalfSteps {
             return false
         }
         return true
@@ -7084,7 +7370,7 @@ extension Release: Equatable, Hashable {
         hasher.combine(isFavorite)
         hasher.combine(isHidden)
         hasher.combine(suggestLess)
-        hasher.combine(rating)
+        hasher.combine(ratingHalfSteps)
     }
 }
 
@@ -7108,7 +7394,7 @@ public struct FfiConverterTypeRelease: FfiConverterRustBuffer {
                 isFavorite: FfiConverterBool.read(from: &buf),
                 isHidden: FfiConverterBool.read(from: &buf),
                 suggestLess: FfiConverterBool.read(from: &buf),
-                rating: FfiConverterOptionUInt8.read(from: &buf)
+                ratingHalfSteps: FfiConverterOptionUInt8.read(from: &buf)
         )
     }
 
@@ -7128,7 +7414,7 @@ public struct FfiConverterTypeRelease: FfiConverterRustBuffer {
         FfiConverterBool.write(value.isFavorite, into: &buf)
         FfiConverterBool.write(value.isHidden, into: &buf)
         FfiConverterBool.write(value.suggestLess, into: &buf)
-        FfiConverterOptionUInt8.write(value.rating, into: &buf)
+        FfiConverterOptionUInt8.write(value.ratingHalfSteps, into: &buf)
     }
 }
 
@@ -8251,14 +8537,20 @@ public struct Track {
     public var bitDepth: UInt8?
     public var playCount: UInt64
     public var lastPlayed: String?
-    public var rating: UInt8?
+    /**
+     * Exact half-star units: 0...10; None is distinct from rated zero.
+     */
+    public var ratingHalfSteps: UInt8?
     public var isFavorite: Bool
     public var isHidden: Bool
     public var suggestLess: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, title: String, artist: String, artistId: Int64, release: String, releaseId: Int64, trackNumber: UInt8, discNumber: UInt8, durationSeconds: Double, filePath: String, artworkId: String?, bitrate: UInt32?, sampleRate: UInt32?, bitDepth: UInt8?, playCount: UInt64, lastPlayed: String?, rating: UInt8?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool) {
+    public init(id: Int64, title: String, artist: String, artistId: Int64, release: String, releaseId: Int64, trackNumber: UInt8, discNumber: UInt8, durationSeconds: Double, filePath: String, artworkId: String?, bitrate: UInt32?, sampleRate: UInt32?, bitDepth: UInt8?, playCount: UInt64, lastPlayed: String?,
+        /**
+         * Exact half-star units: 0...10; None is distinct from rated zero.
+         */ratingHalfSteps: UInt8?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool) {
         self.id = id
         self.title = title
         self.artist = artist
@@ -8275,7 +8567,7 @@ public struct Track {
         self.bitDepth = bitDepth
         self.playCount = playCount
         self.lastPlayed = lastPlayed
-        self.rating = rating
+        self.ratingHalfSteps = ratingHalfSteps
         self.isFavorite = isFavorite
         self.isHidden = isHidden
         self.suggestLess = suggestLess
@@ -8334,7 +8626,7 @@ extension Track: Equatable, Hashable {
         if lhs.lastPlayed != rhs.lastPlayed {
             return false
         }
-        if lhs.rating != rhs.rating {
+        if lhs.ratingHalfSteps != rhs.ratingHalfSteps {
             return false
         }
         if lhs.isFavorite != rhs.isFavorite {
@@ -8366,7 +8658,7 @@ extension Track: Equatable, Hashable {
         hasher.combine(bitDepth)
         hasher.combine(playCount)
         hasher.combine(lastPlayed)
-        hasher.combine(rating)
+        hasher.combine(ratingHalfSteps)
         hasher.combine(isFavorite)
         hasher.combine(isHidden)
         hasher.combine(suggestLess)
@@ -8394,7 +8686,7 @@ public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
                 bitDepth: FfiConverterOptionUInt8.read(from: &buf),
                 playCount: FfiConverterUInt64.read(from: &buf),
                 lastPlayed: FfiConverterOptionString.read(from: &buf),
-                rating: FfiConverterOptionUInt8.read(from: &buf),
+                ratingHalfSteps: FfiConverterOptionUInt8.read(from: &buf),
                 isFavorite: FfiConverterBool.read(from: &buf),
                 isHidden: FfiConverterBool.read(from: &buf),
                 suggestLess: FfiConverterBool.read(from: &buf)
@@ -8418,7 +8710,7 @@ public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
         FfiConverterOptionUInt8.write(value.bitDepth, into: &buf)
         FfiConverterUInt64.write(value.playCount, into: &buf)
         FfiConverterOptionString.write(value.lastPlayed, into: &buf)
-        FfiConverterOptionUInt8.write(value.rating, into: &buf)
+        FfiConverterOptionUInt8.write(value.ratingHalfSteps, into: &buf)
         FfiConverterBool.write(value.isFavorite, into: &buf)
         FfiConverterBool.write(value.isHidden, into: &buf)
         FfiConverterBool.write(value.suggestLess, into: &buf)
@@ -9608,6 +9900,119 @@ extension ExternalArtworkScope: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * Rating granularity is persisted in the core, independently of display settings.
+ */
+
+public enum RatingGranularity {
+
+    case halfStars
+    case wholeStars
+}
+
+
+public struct FfiConverterTypeRatingGranularity: FfiConverterRustBuffer {
+    typealias SwiftType = RatingGranularity
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RatingGranularity {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .halfStars
+
+        case 2: return .wholeStars
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RatingGranularity, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .halfStars:
+            writeInt(&buf, Int32(1))
+
+
+        case .wholeStars:
+            writeInt(&buf, Int32(2))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeRatingGranularity_lift(_ buf: RustBuffer) throws -> RatingGranularity {
+    return try FfiConverterTypeRatingGranularity.lift(buf)
+}
+
+public func FfiConverterTypeRatingGranularity_lower(_ value: RatingGranularity) -> RustBuffer {
+    return FfiConverterTypeRatingGranularity.lower(value)
+}
+
+
+
+extension RatingGranularity: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum RatingRounding {
+
+    case up
+    case down
+}
+
+
+public struct FfiConverterTypeRatingRounding: FfiConverterRustBuffer {
+    typealias SwiftType = RatingRounding
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RatingRounding {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .up
+
+        case 2: return .down
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RatingRounding, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .up:
+            writeInt(&buf, Int32(1))
+
+
+        case .down:
+            writeInt(&buf, Int32(2))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeRatingRounding_lift(_ buf: RustBuffer) throws -> RatingRounding {
+    return try FfiConverterTypeRatingRounding.lift(buf)
+}
+
+public func FfiConverterTypeRatingRounding_lower(_ value: RatingRounding) -> RustBuffer {
+    return FfiConverterTypeRatingRounding.lower(value)
+}
+
+
+
+extension RatingRounding: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * Repeat mode for playback
  */
 
@@ -10263,6 +10668,27 @@ fileprivate struct FfiConverterOptionTypeEnrichmentProvider: FfiConverterRustBuf
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeEnrichmentProvider.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+fileprivate struct FfiConverterOptionTypeRatingRounding: FfiConverterRustBuffer {
+    typealias SwiftType = RatingRounding?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRatingRounding.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRatingRounding.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -11041,6 +11467,12 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_queue() != 43054) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_rating_conversion_preview() != 28105) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_rating_preferences() != 7239) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_refresh_artist() != 43879) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -11119,7 +11551,10 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_release_hidden() != 40461) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_release_rating() != 44119) {
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_release_rating() != 44158) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_release_rating_half_steps() != 23920) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_release_suggest_less() != 7166) {
@@ -11140,7 +11575,10 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_hidden() != 64338) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_rating() != 12497) {
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_rating() != 9125) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_rating_half_steps() != 21325) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_suggest_less() != 3162) {
@@ -11180,6 +11618,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_update_playlist() != 8366) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_update_rating_preferences() != 16983) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_update_replay() != 47712) {

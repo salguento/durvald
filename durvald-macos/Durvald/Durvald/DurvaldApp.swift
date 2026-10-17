@@ -13,8 +13,19 @@ struct DurvaldApp: App {
     @State private var trackInfo = TrackInfoCoordinator()
 
     init() {
+        RatingPreferences.migrateFilterPreferences()
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-testing"), arguments.contains("--ratings-integration-fixture") {
+            let layout = MusicLibraryColumnLayout(order: [.title, .rating],
+                hidden: Set(MusicLibraryColumn.allCases.filter { $0 != .title && $0 != .rating }), widths: [:])
+            let encoded = (try? JSONEncoder().encode(layout)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            UserDefaults.standard.setVolatileDomain([
+                RatingPreferences.enabledKey: true, "library.music.columnLayout": encoded,
+                "library.music.onlyFavorites": false, "library.music.sort": "title",
+                "library.music.groupArtwork": false, "library.music.trackNumberColumnIntroduced": true,
+            ], forName: UserDefaults.argumentDomain)
+        }
         if arguments.contains("--ui-testing"), arguments.contains("--player-navigation-fixture") {
             _coreStore = State(initialValue: PlayerNavigationFixture.makeStore(
                 longMetadata: arguments.contains("--long-player-metadata"),
@@ -36,6 +47,16 @@ struct DurvaldApp: App {
                 .task {
                     guard !ProcessInfo.processInfo.arguments.contains("--ui-testing") else {
                         #if DEBUG
+                        if ProcessInfo.processInfo.arguments.contains("--ratings-integration-fixture"), coreStore.core == nil,
+                           let fixtureID = ProcessInfo.processInfo.environment["DURVALD_RATING_FIXTURE_ID"],
+                           UUID(uuidString: fixtureID) != nil {
+                            // Each sandbox has its own temporary directory. Pass only
+                            // an identifier, never a path outside the app's sandbox.
+                            let directory = FileManager.default.temporaryDirectory
+                                .appendingPathComponent("durvald-rating-ui-" + fixtureID)
+                            do { coreStore = try await RatingIntegrationFixture.makeStore(directory: directory) }
+                            catch { coreStore.errorMessage = "Rating fixture failed: \(error)" }
+                        }
                         if ProcessInfo.processInfo.arguments.contains("--playback-clock-fixture") {
                             coreStore.startPlaybackPolling()
                         }

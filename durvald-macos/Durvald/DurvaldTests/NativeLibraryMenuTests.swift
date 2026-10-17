@@ -66,17 +66,17 @@ final class NativeLibraryMenuTests: XCTestCase {
     }
 
     func testRatingDefinitionCarriesSelectionAndCanBeDisabled() {
-        for rating: UInt8? in [nil, 1, 3, 5] {
+        for rating: UInt8? in [nil, 0, 1, 3, 5, 10] {
             var album = Fixtures.release
-            album.rating = rating
+            album.ratingHalfSteps = rating
             let definitions = LibraryMenuDefinition.build(track: nil, selectedTracks: [], album: album,
                 playlist: nil, ratingsEnabled: true, additionalActions: [])
             let menu = NSMenu()
             NativeLibraryMenuPresenter.populate(menu, items: definitions, target: NSObject(),
                 selector: { _ in NSSelectorFromString("unused:") }, playlistPicker: NSMenu(), containingPlaylists: NSMenu())
             let choices = menu.items.first { $0.title == "Avaliação" }!.submenu!.items.filter { !$0.isSeparatorItem }
-            XCTAssertEqual(choices.map(\.tag), [0, 1, 2, 3, 4, 5])
-            XCTAssertEqual(choices.filter { $0.state == .on }.map(\.tag), [Int(rating ?? 0)])
+            XCTAssertEqual(choices.map(\.tag), [-1] + Array(0...10))
+            XCTAssertEqual(choices.filter { $0.state == .on }.map(\.tag), [rating.map(Int.init) ?? -1])
             let disabled = LibraryMenuDefinition.build(track: nil, selectedTracks: [], album: album,
                 playlist: nil, ratingsEnabled: false, additionalActions: [])
             NativeLibraryMenuPresenter.populate(menu, items: disabled, target: NSObject(),

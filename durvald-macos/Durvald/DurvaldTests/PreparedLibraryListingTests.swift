@@ -78,13 +78,13 @@ final class PreparedLibraryListingTests: XCTestCase {
     func testAlbumFilteringUsesMetadataOverlayAndPreparedSummary() {
         var first = Fixtures.release
         first.title = "Zulu"
-        first.rating = 1
+        first.ratingHalfSteps = 1
         var second = Fixtures.release
         second.id = 2
         second.title = "Alpha"
-        second.rating = 4
+        second.ratingHalfSteps = 4
         var update = first
-        update.rating = 5
+        update.ratingHalfSteps = 5
         let key = LibraryListingKey(query: "ARTISTA", order: .rating, minimumRating: 5)
         let snapshot = AlbumListingSnapshot.build(releases: [first, second], updates: [update], tracks: [Fixtures.track], sizes: [:], key: key, recency: [:])
         XCTAssertEqual(snapshot.items.map(\.id), [1])
@@ -124,11 +124,11 @@ final class PreparedLibraryListingTests: XCTestCase {
     func testArtistRanksUseAllReleasesAndPreserveMissingValueFallbacks() {
         let artists = [Artist(id: 1, name: "Alpha"), Artist(id: 2, name: "Zulu"), Artist(id: 3, name: "Empty")]
         var first = Fixtures.release
-        first.id = 4; first.artistId = 1; first.releaseDate = "2020"; first.rating = 3
+        first.id = 4; first.artistId = 1; first.releaseDate = "2020"; first.ratingHalfSteps = 3
         var later = first
-        later.id = 5; later.releaseDate = "2024"; later.rating = 5
+        later.id = 5; later.releaseDate = "2024"; later.ratingHalfSteps = 5
         var other = first
-        other.id = 99; other.artistId = 2; other.releaseDate = "2023"; other.rating = 4
+        other.id = 99; other.artistId = 2; other.releaseDate = "2023"; other.ratingHalfSteps = 4
         let releases = [first, later, other]
         let expected: [CollectionListingOrder: [Int64]] = [
             .recent: [2, 1, 3], .recentlyAdded: [2, 1, 3], .releaseDate: [1, 2, 3],
@@ -156,11 +156,11 @@ final class PreparedLibraryListingTests: XCTestCase {
             Playlist(id: 3, name: "Empty", description: "", artworkId: nil, isFavorite: false, suggestLess: false, trackCount: 0, createdAt: "2020", updatedAt: "2020", isSmart: false, smartDefinition: nil)
         ]
         var first = Fixtures.track
-        first.artist = "Zulu"; first.rating = 1; first.lastPlayed = "2020"
+        first.artist = "Zulu"; first.ratingHalfSteps = 1; first.lastPlayed = "2020"
         var later = first
-        later.id = 2; later.artist = "Alpha"; later.rating = 5; later.lastPlayed = "2025"; later.releaseId = 2
+        later.id = 2; later.artist = "Alpha"; later.ratingHalfSteps = 5; later.lastPlayed = "2025"; later.releaseId = 2
         var other = first
-        other.id = 3; other.artist = "Beta"; other.rating = 4; other.lastPlayed = "2024"
+        other.id = 3; other.artist = "Beta"; other.ratingHalfSteps = 4; other.lastPlayed = "2024"
         var release = Fixtures.release
         release.releaseDate = "2023"
         var latest = release

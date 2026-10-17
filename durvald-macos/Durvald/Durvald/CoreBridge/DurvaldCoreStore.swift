@@ -83,6 +83,9 @@ final class DurvaldCoreStore {
     private(set) var libraryCatalogRevision: UInt64 = 0
     @ObservationIgnored private let libraryRepository: LibraryRepository
     var errorMessage: String?
+    private(set) var ratingGranularity: RatingGranularity = .halfStars
+    private(set) var isChangingRatingScale = false
+    private(set) var ratingScaleRevision: UInt64 = 0
     private(set) var appSettings: Settings?
     private(set) var audioOutputState: AudioOutputState?
     private(set) var equalizerMetrics: EqualizerMetrics?
@@ -101,6 +104,8 @@ final class DurvaldCoreStore {
             favoriteEdits.removeAll()
             ratingEdits.removeAll()
             releaseRatingEdits.removeAll()
+            ratingGranularity = .halfStars
+            ratingScaleRevision &+= 1
         }
     }
     @ObservationIgnored private var playbackPollingTask: Task<Void, Never>?
@@ -329,6 +334,7 @@ final class DurvaldCoreStore {
             await Task.yield()
             guard let self, self.core === core, !Task.isCancelled else { return }
 
+            await self.refreshRatingPreferences()
             do {
                 self.playlists = try await core.playlists()
                 guard !Task.isCancelled else { return }
@@ -1552,7 +1558,7 @@ final class DurvaldCoreStore {
         }
         if var track = snapshot.currentTrack {
             if let edit = favoriteEdits[track.id], edit.isPending { track.isFavorite = edit.value }
-            if let edit = ratingEdits[track.id], edit.isPending { track.rating = edit.value }
+            if let edit = ratingEdits[track.id], edit.isPending { track.ratingHalfSteps = edit.value }
             snapshot.currentTrack = track
         }
         guard playback != snapshot else { return }
@@ -1631,13 +1637,15 @@ final class DurvaldCoreStore {
 
     @discardableResult
     func setTrackRating(trackID: Int64, rating: UInt8?, fallbackTrack: Track? = nil) async -> Bool {
+        guard !isChangingRatingScale else { return false }
+        let scaleRevision = ratingScaleRevision
         guard let core else {
             errorMessage = "O core ainda está abrindo. Tente novamente em instantes."
             return false
         }
         let baseline = loadedTrack(id: trackID)
             ?? (playback?.currentTrack?.id == trackID ? playback?.currentTrack : nil) ?? fallbackTrack
-        let previous = baseline?.rating
+        let previous = baseline?.ratingHalfSteps
         var edit = ratingEdits[trackID] ?? PersonalValueEdit(previous)
         let ticket = edit.begin(rating)
         ratingEdits[trackID] = edit
@@ -1646,10 +1654,10 @@ final class DurvaldCoreStore {
             guard self.core === core else { return false }
             let succeeded: Bool
             do {
-                try await core.setTrackRating(trackId: trackID, rating: rating)
+                try await core.setTrackRatingHalfSteps(trackId: trackID, ratingHalfSteps: rating)
                 succeeded = true
             } catch { if self.core === core { errorMessage = String(describing: error) }; succeeded = false }
-            guard self.core === core, var latest = ratingEdits[trackID] else { return false }
+            guard self.core === core, scaleRevision == ratingScaleRevision, var latest = ratingEdits[trackID] else { return false }
             latest.finish(ticket, succeeded: succeeded)
             ratingEdits[trackID] = latest.isPending ? latest : nil
             publishRating(latest.value, trackID: trackID)
@@ -1666,10 +1674,94 @@ final class DurvaldCoreStore {
     }
 
     private func publishRating(_ rating: UInt8?, trackID: Int64) {
-        if let index = tracks.firstIndex(where: { $0.id == trackID }), tracks[index].rating != rating {
-            tracks[index].rating = rating
+        if let index = tracks.firstIndex(where: { $0.id == trackID }), tracks[index].ratingHalfSteps != rating {
+            tracks[index].ratingHalfSteps = rating
         }
-        if playback?.currentTrack?.id == trackID { playback?.currentTrack?.rating = rating }
+        if playback?.currentTrack?.id == trackID { playback?.currentTrack?.ratingHalfSteps = rating }
+    }
+
+    func refreshRatingPreferences() async {
+        guard let core, !isChangingRatingScale else { return }
+        let revision = ratingScaleRevision
+        do {
+            let preferences = try await core.ratingPreferences()
+            guard self.core === core, !isChangingRatingScale, revision == ratingScaleRevision else { return }
+            if ratingGranularity != preferences.granularity {
+                ratingGranularity = preferences.granularity
+                ratingScaleRevision &+= 1
+            }
+        } catch { if self.core === core { errorMessage = String(describing: error) } }
+    }
+
+    func previewRatingConversion() async throws -> RatingConversionPreview {
+        guard let core else { throw CocoaError(.coderInvalidValue) }
+        return try await core.ratingConversionPreview()
+    }
+
+    @discardableResult
+    func changeRatingGranularity(_ granularity: RatingGranularity, rounding: RatingRounding?) async -> Bool {
+        guard let core, !isChangingRatingScale else { return false }
+        isChangingRatingScale = true
+        // Block new edits and drain existing writes before invalidating UI tickets.
+        // The core converts the resulting snapshot and preference atomically.
+        defer { isChangingRatingScale = false; ratingScaleRevision &+= 1 }
+        await personalWrites.waitForPendingWrites()
+        guard self.core === core else { return false }
+        ratingScaleRevision &+= 1
+        ratingEdits.removeAll()
+        releaseRatingEdits.removeAll()
+        do {
+            let result = try await core.updateRatingPreferences(granularity: granularity, rounding: rounding)
+            guard self.core === core else { return false }
+            ratingGranularity = result.preferences.granularity
+        } catch {
+            errorMessage = String(describing: error)
+            metadataRevision &+= 1
+            return false
+        }
+        do {
+            async let trackPage = refreshedRatingWindow(count: tracks.count) { size, offset in
+                let page = try await core.tracksPage(pageSize: size, offset: offset)
+                return (page.items, page.nextOffset)
+            }
+            async let releasePage = refreshedRatingWindow(count: releases.count) { size, offset in
+                let page = try await core.releasesPage(pageSize: size, offset: offset)
+                return (page.items, page.nextOffset)
+            }
+            async let refreshedPlayback = core.playback()
+            async let refreshedPlaylists = core.playlists()
+            let result = try await (trackPage, releasePage, refreshedPlayback, refreshedPlaylists)
+            guard self.core === core else { return false }
+            tracks = result.0.0
+            nextTracksOffset = result.0.1
+            hasLoadedAllTracks = nextTracksOffset == nil
+            releases = result.1.0
+            nextReleasesOffset = result.1.1
+            playback = result.2
+            playlists = result.3
+        } catch {
+            errorMessage = "Escala salva; falha ao atualizar as avaliações: \(error)"
+        }
+        metadataRevision &+= 1
+        return true
+    }
+
+    /// The core caps each page. Continue until the previously loaded window is
+    /// restored, keeping its next cursor so subsequent scrolling still works.
+    private func refreshedRatingWindow<Item>(count: Int,
+        fetch: (UInt64, UInt64) async throws -> ([Item], UInt64?)) async throws -> ([Item], UInt64?) {
+        let target = max(Int(Self.libraryPageSize), count)
+        var items: [Item] = []
+        var offset: UInt64 = 0
+        while true {
+            let (page, next) = try await fetch(UInt64(target - items.count), offset)
+            items.append(contentsOf: page)
+            guard let next, items.count < target else { return (items, next) }
+            guard !page.isEmpty, next > offset else {
+                throw CocoaError(.coderInvalidValue)
+            }
+            offset = next
+        }
     }
 
     func refreshAfterMetadataEdit(_ info: TrackInfo) async {
@@ -1715,8 +1807,10 @@ final class DurvaldCoreStore {
 
     @discardableResult
     func setReleaseRating(releaseID: Int64, rating: UInt8?, fallbackRelease: Release? = nil) async -> Bool {
+        guard !isChangingRatingScale else { return false }
+        let scaleRevision = ratingScaleRevision
         guard let core else { errorMessage = "O core ainda está abrindo. Tente novamente em instantes."; return false }
-        let previous = (releases.first { $0.id == releaseID } ?? fallbackRelease)?.rating
+        let previous = (releases.first { $0.id == releaseID } ?? fallbackRelease)?.ratingHalfSteps
         var edit = releaseRatingEdits[releaseID] ?? PersonalValueEdit(previous)
         let ticket = edit.begin(rating)
         releaseRatingEdits[releaseID] = edit
@@ -1724,9 +1818,9 @@ final class DurvaldCoreStore {
         return await personalWrites.perform(key: "release.rating.\(releaseID)") { [self] in
             guard self.core === core else { return false }
             let succeeded: Bool
-            do { try await core.setReleaseRating(releaseId: releaseID, rating: rating); succeeded = true }
+            do { try await core.setReleaseRatingHalfSteps(releaseId: releaseID, ratingHalfSteps: rating); succeeded = true }
             catch { if self.core === core { errorMessage = String(describing: error) }; succeeded = false }
-            guard self.core === core, var latest = releaseRatingEdits[releaseID] else { return false }
+            guard self.core === core, scaleRevision == ratingScaleRevision, var latest = releaseRatingEdits[releaseID] else { return false }
             latest.finish(ticket, succeeded: succeeded)
             releaseRatingEdits[releaseID] = latest.isPending ? latest : nil
             publishReleaseRating(latest.value, releaseID: releaseID)
@@ -1736,8 +1830,8 @@ final class DurvaldCoreStore {
     }
 
     private func publishReleaseRating(_ rating: UInt8?, releaseID: Int64) {
-        if let index = releases.firstIndex(where: { $0.id == releaseID }), releases[index].rating != rating {
-            releases[index].rating = rating
+        if let index = releases.firstIndex(where: { $0.id == releaseID }), releases[index].ratingHalfSteps != rating {
+            releases[index].ratingHalfSteps = rating
         }
     }
 

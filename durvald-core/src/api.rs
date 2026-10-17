@@ -77,10 +77,48 @@ pub struct Track {
     pub bit_depth: Option<u8>,
     pub play_count: u64,
     pub last_played: Option<String>, // ISO 8601
-    pub rating: Option<u8>,
+    /// Exact half-star units: 0...10; None is distinct from rated zero.
+    pub rating_half_steps: Option<u8>,
     pub is_favorite: bool,
     pub is_hidden: bool,
     pub suggest_less: bool,
+}
+
+/// Rating granularity is persisted in the core, independently of display settings.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum RatingGranularity {
+    HalfStars,
+    WholeStars,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum RatingRounding {
+    Up,
+    Down,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RatingScalePreferences {
+    pub granularity: RatingGranularity,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RatingConversionPreview {
+    pub tracks: u64,
+    pub releases: u64,
+    pub missing_tracks: u64,
+    pub archived_releases: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RatingPreferenceChange {
+    pub preferences: RatingScalePreferences,
+    pub converted: RatingConversionPreview,
 }
 
 /// Editable tags for one local audio file.
@@ -116,7 +154,8 @@ pub struct LibraryRepairTrack {
     pub artist: String,
     pub release: String,
     pub file_path: String,
-    pub rating: Option<u8>,
+    /// Exact half-star units: 0...10; None is distinct from rated zero.
+    pub rating_half_steps: Option<u8>,
     pub is_favorite: bool,
     pub is_missing: bool,
 }
@@ -190,7 +229,8 @@ pub struct Release {
     pub is_favorite: bool,
     pub is_hidden: bool,
     pub suggest_less: bool,
-    pub rating: Option<u8>,
+    /// Exact half-star units: 0...10; None is distinct from rated zero.
+    pub rating_half_steps: Option<u8>,
 }
 
 /// One bounded page of releases. `next_offset` is absent on the final page.

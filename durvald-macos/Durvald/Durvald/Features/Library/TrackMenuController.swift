@@ -76,6 +76,8 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         rebuildPlaylistItems()
     }
 
+    private var albumRatingRevision: UInt64?
+
     func configure(album: Release, store: DurvaldCoreStore,
                    playlistCreation: PlaylistCreationCoordinator) {
         cancelPendingLoad()
@@ -84,13 +86,14 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         self.selectedTracks = []
         self.track = nil
         let resolvedAlbum = store.loadedRelease(id: album.id) ?? album
-        if self.album?.id != resolvedAlbum.id {
-            albumRatingEdit.reset(resolvedAlbum.rating)
+        if self.album?.id != resolvedAlbum.id || albumRatingRevision != store.ratingScaleRevision {
+            albumRatingEdit.reset(resolvedAlbum.ratingHalfSteps)
         } else {
-            albumRatingEdit.receive(resolvedAlbum.rating)
+            albumRatingEdit.receive(resolvedAlbum.ratingHalfSteps)
         }
+        albumRatingRevision = store.ratingScaleRevision
         self.album = resolvedAlbum
-        self.album?.rating = albumRatingEdit.value
+        self.album?.ratingHalfSteps = albumRatingEdit.value
         self.store = store
         playlists = store.playlists
         additionalActions = []
@@ -242,7 +245,8 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
 
     private func rebuildRootMenu() {
         let items = LibraryMenuDefinition.build(track: track, selectedTracks: selectedTracks, album: album,
-            playlist: sourcePlaylist, ratingsEnabled: RatingPreferences.isEnabled, additionalActions: additionalActions)
+            playlist: sourcePlaylist, ratingsEnabled: RatingPreferences.isEnabled, ratingGranularity: store?.ratingGranularity ?? .halfStars,
+            ratingEditingEnabled: store?.isChangingRatingScale != true, additionalActions: additionalActions)
         NativeLibraryMenuPresenter.populate(rootMenu, items: items, target: self, selector: selector,
             playlistPicker: playlistMenu, containingPlaylists: containingPlaylistsMenu)
     }
@@ -349,17 +353,19 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
     }
 
     @objc private func setRating(_ sender: NSMenuItem) {
-        let rating = sender.tag == 0 ? nil : UInt8(sender.tag)
+        guard store?.isChangingRatingScale != true else { return }
+        let scaleRevision = store?.ratingScaleRevision
+        let rating = sender.tag < 0 ? nil : UInt8(sender.tag)
         if let album, let store {
             let ticket = albumRatingEdit.begin(rating)
-            self.album?.rating = albumRatingEdit.value
+            self.album?.ratingHalfSteps = albumRatingEdit.value
             rebuildRootMenu()
             Task { @MainActor [weak self] in
                 let succeeded = await store.setReleaseRating(releaseID: album.id, rating: rating,
                                                             fallbackRelease: album)
-                guard let self, self.album?.id == album.id else { return }
+                guard let self, self.album?.id == album.id, store.ratingScaleRevision == scaleRevision else { return }
                 albumRatingEdit.finish(ticket, succeeded: succeeded)
-                self.album?.rating = albumRatingEdit.value
+                self.album?.ratingHalfSteps = albumRatingEdit.value
                 rebuildRootMenu()
             }
             return

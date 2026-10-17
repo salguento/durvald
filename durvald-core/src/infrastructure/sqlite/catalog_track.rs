@@ -118,7 +118,7 @@ pub(crate) fn track_from_row(row: SongItem) -> CatalogTrack {
         bit_depth: row.bit_depth,
         play_count: row.play_count,
         last_played: row.last_played,
-        rating: row.rating,
+        rating_half_steps: row.rating_half_steps,
         is_favorite: row.is_favorite,
         is_hidden: row.is_hidden,
         suggest_less: row.suggest_less,

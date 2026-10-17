@@ -31,7 +31,7 @@ indirect enum LibraryMenuItem {
 
 enum LibraryMenuDefinition {
     static func build(track: Track?, selectedTracks: [Track], album: Release?, playlist: Playlist?,
-                      ratingsEnabled: Bool, additionalActions: [TrackMenuAction]) -> [LibraryMenuItem] {
+                      ratingsEnabled: Bool, ratingGranularity: RatingGranularity = .halfStars, ratingEditingEnabled: Bool = true, additionalActions: [TrackMenuAction]) -> [LibraryMenuItem] {
         if playlist != nil {
             return [.action("Tocar", .playPlaylist), .action("Aleatório", .shufflePlaylist), .separator,
                     .playlistPicker, .action("Tocar de próxima", .playNext), .action("Adicionar à fila", .addToQueue),
@@ -41,7 +41,7 @@ enum LibraryMenuDefinition {
             var items: [LibraryMenuItem] = [.action("Tocar", .playAlbum), .action("Aleatório", .shuffleAlbum), .separator,
                 .playlistPicker, .action("Tocar de próxima", .playNext), .action("Adicionar à fila", .addToQueue),
                 .separator, .action(album.isFavorite ? "Desfavoritar" : "Favoritar", .toggleFavorite)]
-            if ratingsEnabled { items.append(rating(current: album.rating)) }
+            if ratingsEnabled { items.append(rating(current: album.ratingHalfSteps, granularity: ratingGranularity, enabled: ratingEditingEnabled)) }
             items += [.separator, .submenu("Compartilhar", [.action("Copiar título", .copyName)])]
             return items
         }
@@ -49,7 +49,7 @@ enum LibraryMenuDefinition {
         var items: [LibraryMenuItem] = [.playlistPicker, .action("Tocar de próxima", .playNext),
             .action("Adicionar à fila", .addToQueue), .separator,
             .action(favorite ? "Desfavoritar" : "Favoritar", .toggleFavorite)]
-        if ratingsEnabled { items.append(rating(current: track?.rating)) }
+        if ratingsEnabled { items.append(rating(current: track?.ratingHalfSteps, granularity: ratingGranularity, enabled: ratingEditingEnabled)) }
         items += [.separator, navigation(tracks: selectedTracks, artist: true), navigation(tracks: selectedTracks, artist: false),
                   .containingPlaylists, .separator, .action("Info", .showInfo),
                   .submenu("Compartilhar", [.action("Copiar nome", .copyName)])]
@@ -63,12 +63,12 @@ enum LibraryMenuDefinition {
         return items
     }
 
-    private static func rating(current: UInt8?) -> LibraryMenuItem {
-        var items: [LibraryMenuItem] = [.action(LibraryMenuAction(title: "Sem avaliação", command: .setRating,
-                                                                 isSelected: current == nil)), .separator]
-        items += (1...5).map { value in
-            .action(LibraryMenuAction(title: "\(value) de 5", command: .setRating, tag: value,
-                                      isSelected: current == UInt8(value)))
+    private static func rating(current: UInt8?, granularity: RatingGranularity, enabled: Bool) -> LibraryMenuItem {
+        var items: [LibraryMenuItem] = [.action(LibraryMenuAction(title: "Sem avaliação", command: .setRating, tag: -1,
+                                                                 isSelected: current == nil, isEnabled: enabled)), .separator]
+        items += RatingValues.options(granularity).map { value in
+            .action(LibraryMenuAction(title: PersonalValueLabels.rating(UInt8(value)), command: .setRating, tag: value,
+                                      isSelected: current == UInt8(value), isEnabled: enabled))
         }
         return .submenu("Avaliação", items)
     }

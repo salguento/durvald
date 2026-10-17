@@ -36,7 +36,7 @@ fn track(row: &rusqlite::Row<'_>, missing: bool) -> rusqlite::Result<LibraryRepa
         artist: row.get(2)?,
         release: row.get(3)?,
         file_path: row.get(4)?,
-        rating: row.get(5)?,
+        rating_half_steps: row.get(5)?,
         is_favorite: row.get(6)?,
         is_missing: missing,
     })
@@ -44,7 +44,7 @@ fn track(row: &rusqlite::Row<'_>, missing: bool) -> rusqlite::Result<LibraryRepa
 
 pub(crate) fn analyze(conn: &Connection) -> CoreResult<LibraryRepairAnalysis> {
     let live: Vec<LibraryRepairTrack> = conn.prepare(
-        "SELECT song_id,title,artist_name,release_title,file_path,rating,is_favorite FROM songs ORDER BY song_id"
+        "SELECT song_id,title,artist_name,release_title,file_path,rating_half_steps,is_favorite FROM songs ORDER BY song_id"
     ).map_err(storage)?.query_map([], |r| track(r, false)).map_err(storage)?
         .collect::<Result<_, _>>().map_err(storage)?;
     for item in &live {
@@ -65,7 +65,7 @@ pub(crate) fn analyze(conn: &Connection) -> CoreResult<LibraryRepairAnalysis> {
         .cloned()
         .collect();
     let archived: Vec<LibraryRepairTrack> = conn.prepare(
-        "SELECT missing_id,title,artist_name,release_title,file_path,rating,is_favorite FROM missing_tracks ORDER BY missing_id"
+        "SELECT missing_id,title,artist_name,release_title,file_path,rating_half_steps,is_favorite FROM missing_tracks ORDER BY missing_id"
     ).map_err(storage)?.query_map([], |r| track(r, true)).map_err(storage)?
         .collect::<Result<_, _>>().map_err(storage)?;
     broken.extend(archived.clone());
@@ -162,7 +162,7 @@ pub(crate) fn merge(
     }
     if source_is_missing {
         let preferences: Option<(i64,Option<String>,Option<u8>,bool,bool,bool)> = tx.query_row(
-            "SELECT play_count,last_played,rating,is_favorite,is_hidden,suggest_less FROM missing_tracks WHERE missing_id=?1",
+            "SELECT play_count,last_played,rating_half_steps,is_favorite,is_hidden,suggest_less FROM missing_tracks WHERE missing_id=?1",
             [source_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))
         ).optional().map_err(storage)?;
         let Some(p) = preferences else {
@@ -173,7 +173,7 @@ pub(crate) fn merge(
         tx.execute(
             "UPDATE songs SET play_count=play_count+?2,
             last_played=CASE WHEN last_played IS NULL THEN ?3 WHEN ?3 IS NULL THEN last_played ELSE MAX(last_played,?3) END,
-            rating=CASE WHEN rating IS NULL THEN ?4 WHEN ?4 IS NULL THEN rating ELSE MAX(rating,?4) END,is_favorite=is_favorite OR ?5,
+            rating_half_steps=CASE WHEN rating_half_steps IS NULL THEN ?4 WHEN ?4 IS NULL THEN rating_half_steps ELSE MAX(rating_half_steps,?4) END,is_favorite=is_favorite OR ?5,
             is_hidden=is_hidden OR ?6,suggest_less=suggest_less OR ?7 WHERE song_id=?1",
             params![target_id, p.0, p.1, p.2, p.3, p.4, p.5],
         )
@@ -198,10 +198,10 @@ pub(crate) fn merge(
                 WHEN last_played IS NULL THEN (SELECT last_played FROM songs WHERE song_id=?2)
                 WHEN (SELECT last_played FROM songs WHERE song_id=?2) IS NULL THEN last_played
                 ELSE MAX(last_played,(SELECT last_played FROM songs WHERE song_id=?2)) END,
-            rating=CASE
-                WHEN rating IS NULL THEN (SELECT rating FROM songs WHERE song_id=?2)
-                WHEN (SELECT rating FROM songs WHERE song_id=?2) IS NULL THEN rating
-                ELSE MAX(rating,(SELECT rating FROM songs WHERE song_id=?2)) END,
+            rating_half_steps=CASE
+                WHEN rating_half_steps IS NULL THEN (SELECT rating_half_steps FROM songs WHERE song_id=?2)
+                WHEN (SELECT rating_half_steps FROM songs WHERE song_id=?2) IS NULL THEN rating_half_steps
+                ELSE MAX(rating_half_steps,(SELECT rating_half_steps FROM songs WHERE song_id=?2)) END,
             is_favorite=is_favorite OR (SELECT is_favorite FROM songs WHERE song_id=?2),
             is_hidden=is_hidden OR (SELECT is_hidden FROM songs WHERE song_id=?2),
             suggest_less=suggest_less OR (SELECT suggest_less FROM songs WHERE song_id=?2) WHERE song_id=?1",
@@ -236,12 +236,12 @@ mod tests {
         conn
     }
 
-    fn insert_song(conn: &Connection, id: i64, path: &str, rating: Option<u8>) {
+    fn insert_song(conn: &Connection, id: i64, path: &str, rating_half_steps: Option<u8>) {
         conn.execute(
             "INSERT INTO songs(song_id,title,artist_id,artist_name,release_id,release_title,
-                track_number,disc_number,duration,file_path,play_count,rating)
+                track_number,disc_number,duration,file_path,play_count,rating_half_steps)
              VALUES(?1,'Faixa',1,'Artista',1,'Álbum',1,1,180,?2,0,?3)",
-            params![id, path, rating],
+            params![id, path, rating_half_steps],
         )
         .unwrap();
     }
@@ -276,7 +276,7 @@ mod tests {
 
         let values: (i64, String, Option<u8>, bool, bool, bool) = conn
             .query_row(
-                "SELECT play_count,last_played,rating,is_favorite,is_hidden,suggest_less FROM songs WHERE song_id=1",
+                "SELECT play_count,last_played,rating_half_steps,is_favorite,is_hidden,suggest_less FROM songs WHERE song_id=1",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
             )
@@ -310,7 +310,7 @@ mod tests {
         insert_song(&conn, 1, "/music/moved.flac", None);
         conn.execute(
             "INSERT INTO missing_tracks(missing_id,original_song_id,title,artist_name,release_title,
-                track_number,disc_number,duration,file_path,play_count,last_played,rating,
+                track_number,disc_number,duration,file_path,play_count,last_played,rating_half_steps,
                 is_favorite,is_hidden,suggest_less)
              VALUES(7,9,'Faixa','Artista','Álbum',1,1,180,'/old/place.flac',6,NULL,NULL,1,0,0)",
             [],
@@ -332,7 +332,7 @@ mod tests {
 
         let values: (i64, Option<String>, Option<u8>, bool) = conn
             .query_row(
-                "SELECT play_count,last_played,rating,is_favorite FROM songs WHERE song_id=1",
+                "SELECT play_count,last_played,rating_half_steps,is_favorite FROM songs WHERE song_id=1",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )

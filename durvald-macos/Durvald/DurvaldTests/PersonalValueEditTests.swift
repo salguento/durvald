@@ -14,7 +14,7 @@ final class PersonalValueEditTests: XCTestCase {
         XCTAssertNil(edit.value, "Snapshot echoes must not replace a pending click")
         edit.finish(ticket, succeeded: false)
         XCTAssertEqual(edit.value, 3)
-        XCTAssertEqual(PersonalValueLabels.rating(edit.value), "3 de 5")
+        XCTAssertEqual(PersonalValueLabels.rating(edit.value), PersonalValueLabels.rating(3))
     }
 
     func testOutOfOrderAcknowledgementsAndFailuresKeepLatestConfirmedValue() {
@@ -59,16 +59,16 @@ final class PersonalValueEditTests: XCTestCase {
     func testReleaseRatingFailureRestoresAlbumSnapshot() async {
         let core = PersonalEditTestCore()
         var release = Fixtures.release
-        release.rating = 4
+        release.ratingHalfSteps = 4
         let store = DurvaldCoreStore(core: core, releases: [release])
         let succeeded = await store.setReleaseRating(releaseID: release.id, rating: nil)
         XCTAssertFalse(succeeded)
-        XCTAssertEqual(store.releases.first?.rating, 4)
+        XCTAssertEqual(store.releases.first?.ratingHalfSteps, 4)
     }
 
     func testNativeFavoriteAndRatingRestoreAfterFailedCommit() async {
         var track = Fixtures.track
-        track.rating = 3
+        track.ratingHalfSteps = 6
         let favorite = MusicLibraryNativeControlCell(identifier: .init("favorite"), kind: .favorite)
         favorite.configure(track: track, selected: false,
                            onFavoriteChange: { _ in false }, onRatingChange: { _ in false })
@@ -116,26 +116,27 @@ final class PersonalValueEditTests: XCTestCase {
         for firstSucceeded in [false, true] {
             let core = PersonalEditTestCore()
             var track = Fixtures.track
-            track.rating = 1
+            track.ratingHalfSteps = 1
             let store = DurvaldCoreStore(core: core, tracks: [track])
-            let first = Task { await store.setTrackRating(trackID: track.id, rating: 2) }
+            let trackID = track.id
+            let first = Task { await store.setTrackRating(trackID: trackID, rating: 2) }
             await until { core.pending != nil }
-            let second = Task { await store.setTrackRating(trackID: track.id, rating: 5) }
-            await until { store.tracks[0].rating == 5 }
+            let second = Task { await store.setTrackRating(trackID: trackID, rating: 5) }
+            await until { store.tracks[0].ratingHalfSteps == 5 }
             XCTAssertEqual(core.values, [2])
             await store.refreshPlayback()
-            XCTAssertEqual(store.playback?.currentTrack?.rating, 5,
+            XCTAssertEqual(store.playback?.currentTrack?.ratingHalfSteps, 5,
                            "Playback polling must not replace a pending personal edit")
             if firstSucceeded { core.pending?.resume(returning: ()) }
             else { core.pending?.resume(throwing: NSError(domain: "rating", code: 1)) }
             core.pending = nil
             _ = await first.value
             await until { core.values.count == 2 && core.pending != nil }
-            XCTAssertEqual(store.tracks[0].rating, 5, "Older failure preserves newer optimistic edit")
+            XCTAssertEqual(store.tracks[0].ratingHalfSteps, 5, "Older failure preserves newer optimistic edit")
             core.pending?.resume(throwing: NSError(domain: "rating", code: 2))
             core.pending = nil
             _ = await second.value
-            XCTAssertEqual(store.tracks[0].rating, firstSucceeded ? 2 : 1)
+            XCTAssertEqual(store.tracks[0].ratingHalfSteps, firstSucceeded ? 2 : 1)
         }
     }
 
@@ -154,10 +155,10 @@ private final class PersonalEditTestCore: DurvaldCore {
     init() { super.init(noPointer: .init()) }
     required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) { fatalError("No Rust pointer") }
     override func playback() async -> PlaybackSnapshot { Fixtures.playingSnapshot }
-    override func setReleaseRating(releaseId: Int64, rating: UInt8?) async throws {
+    override func setReleaseRatingHalfSteps(releaseId: Int64, ratingHalfSteps rating: UInt8?) async throws {
         throw NSError(domain: "releaseRating", code: 1)
     }
-    override func setTrackRating(trackId: Int64, rating: UInt8?) async throws {
+    override func setTrackRatingHalfSteps(trackId: Int64, ratingHalfSteps rating: UInt8?) async throws {
         values.append(rating)
         try await withCheckedThrowingContinuation { pending = $0 }
     }

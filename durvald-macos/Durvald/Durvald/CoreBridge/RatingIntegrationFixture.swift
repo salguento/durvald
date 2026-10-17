@@ -1,0 +1,76 @@
+#if DEBUG
+import Foundation
+import SQLite3
+
+/// Isolated, real-core fixture shared by hosted integration and UI tests.
+/// It never scans audio, starts playback, or opens the user's library database.
+enum RatingIntegrationFixture {
+    static func config(directory: URL) -> CoreConfig {
+        CoreConfig(databasePath: directory.appendingPathComponent("ratings.db3").path,
+            appSupportDir: directory.path, coversDir: directory.appendingPathComponent("covers").path,
+            keychainService: "com.durvald.tests.ratings.\(directory.lastPathComponent)")
+    }
+
+    static func openCore(directory: URL, count: Int = 7) async throws -> DurvaldCore {
+        let config = config(directory: directory)
+        let core = try await open(config: config)
+        try withDatabase(config.databasePath) { database in
+            var statement: OpaquePointer?
+            defer { sqlite3_finalize(statement) }
+            try check(sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM songs", -1, &statement, nil), database)
+            guard sqlite3_step(statement) == SQLITE_ROW else { throw failure(database) }
+            guard sqlite3_column_int(statement, 0) == 0 else { return }
+            let ratings = ["NULL", "0", "1", "7", "8", "9", "10"]
+            var sql = "BEGIN IMMEDIATE; INSERT INTO artists(artist_id,name) VALUES(1,'Rating fixture');"
+            for id in 1...max(1, count) {
+                let rating = ratings[(id - 1) % ratings.count]
+                sql += """
+                    INSERT INTO releases(release_id,title,artist_id,artist_name,duration,rating_half_steps)
+                    VALUES(\(id),'Rating album \(id)',1,'Rating fixture',180,\(rating));
+                    INSERT INTO songs(song_id,title,artist_id,artist_name,release_id,release_title,
+                        track_number,disc_number,duration,file_path,rating_half_steps)
+                    VALUES(\(id),'Rating track \(String(format: "%03d", id))',1,'Rating fixture',\(id),
+                        'Rating album \(id)',1,1,180,'/rating-fixture/\(id).flac',\(rating));
+                    """
+            }
+            sql += "COMMIT;"
+            try execute(sql, database: database)
+        }
+        return core
+    }
+
+    @MainActor
+    static func makeStore(directory: URL) async throws -> DurvaldCoreStore {
+        let core = try await openCore(directory: directory)
+        let tracks = try await core.tracksPage(pageSize: 100, offset: 0).items
+        let releases = try await core.releasesPage(pageSize: 100, offset: 0).items
+        let store = DurvaldCoreStore(core: core, tracks: tracks, releases: releases)
+        await store.refreshRatingPreferences()
+        return store
+    }
+
+    static func withDatabase<T>(_ path: String, body: (OpaquePointer) throws -> T) throws -> T {
+        var database: OpaquePointer?
+        guard sqlite3_open(path, &database) == SQLITE_OK, let database else {
+            if let database { sqlite3_close(database) }
+            throw NSError(domain: "RatingFixture.SQLite", code: 1)
+        }
+        defer { sqlite3_close(database) }
+        sqlite3_busy_timeout(database, 5_000)
+        return try body(database)
+    }
+
+    static func execute(_ sql: String, database: OpaquePointer) throws {
+        try check(sqlite3_exec(database, sql, nil, nil, nil), database)
+    }
+
+    private static func check(_ code: Int32, _ database: OpaquePointer) throws {
+        guard code == SQLITE_OK else { throw failure(database) }
+    }
+
+    private static func failure(_ database: OpaquePointer) -> NSError {
+        NSError(domain: "RatingFixture.SQLite", code: Int(sqlite3_errcode(database)),
+                userInfo: [NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(database))])
+    }
+}
+#endif

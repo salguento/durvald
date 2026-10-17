@@ -8,7 +8,6 @@ struct SettingsView: View {
     private enum SettingsTab: Hashable {
         case general, audio, equalizer, library, enrichment, lastFM
     }
-    @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -22,8 +21,7 @@ struct SettingsView: View {
                 .disabled(!draft.value.crossFade)
                 Toggle("Normalizar volume", isOn: $draft.value.normalizeVolume)
                 Toggle("Permitir conteúdo explícito", isOn: $draft.value.explicitContent)
-                Toggle("Exibir avaliações", isOn: $ratingsEnabled)
-                    .accessibilityIdentifier("settings.ratings.enabled")
+                RatingScaleSettingsView()
 
                 HStack {
                     Spacer()

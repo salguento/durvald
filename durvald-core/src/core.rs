@@ -604,17 +604,61 @@ impl DurvaldCore {
             .await
     }
 
-    /// Sets or clears a track rating on the 0–5 scale.
+    /// Compatibility API in whole stars. New clients use explicit half steps.
     pub async fn set_track_rating(&self, track_id: i64, rating: Option<u8>) -> CoreResult<()> {
+        let steps = rating
+            .map(crate::domain::rating::RatingHalfSteps::from_whole_stars)
+            .transpose()
+            .map_err(|message| CoreError::InvalidInput {
+                message: message.into(),
+            })?
+            .map(|rating| rating.get());
+        self.set_track_rating_half_steps(track_id, steps).await
+    }
+    /// Compatibility API in whole stars. New clients use explicit half steps.
+    pub async fn set_release_rating(&self, release_id: i64, rating: Option<u8>) -> CoreResult<()> {
+        let steps = rating
+            .map(crate::domain::rating::RatingHalfSteps::from_whole_stars)
+            .transpose()
+            .map_err(|message| CoreError::InvalidInput {
+                message: message.into(),
+            })?
+            .map(|rating| rating.get());
+        self.set_release_rating_half_steps(release_id, steps).await
+    }
+    pub async fn set_track_rating_half_steps(
+        &self,
+        track_id: i64,
+        rating_half_steps: Option<u8>,
+    ) -> CoreResult<()> {
         self.library_application
-            .set_track_rating(track_id_from_api(track_id)?, rating)
+            .set_track_rating(track_id_from_api(track_id)?, rating_half_steps)
             .await
     }
-
-    /// Sets or clears a release rating on the 0–5 scale.
-    pub async fn set_release_rating(&self, release_id: i64, rating: Option<u8>) -> CoreResult<()> {
+    pub async fn set_release_rating_half_steps(
+        &self,
+        release_id: i64,
+        rating_half_steps: Option<u8>,
+    ) -> CoreResult<()> {
         self.library_application
-            .set_release_rating(release_id_from_api(release_id)?, rating)
+            .set_release_rating(release_id_from_api(release_id)?, rating_half_steps)
+            .await
+    }
+    pub async fn rating_preferences(&self) -> CoreResult<crate::api::RatingScalePreferences> {
+        self.library_application.rating_preferences().await
+    }
+    pub async fn rating_conversion_preview(
+        &self,
+    ) -> CoreResult<crate::api::RatingConversionPreview> {
+        self.library_application.rating_conversion_preview().await
+    }
+    pub async fn update_rating_preferences(
+        &self,
+        granularity: crate::api::RatingGranularity,
+        rounding: Option<crate::api::RatingRounding>,
+    ) -> CoreResult<crate::api::RatingPreferenceChange> {
+        self.library_application
+            .update_rating_preferences(granularity, rounding)
             .await
     }
 

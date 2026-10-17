@@ -33,7 +33,7 @@ enum MusicLibrarySort: String, CaseIterable, Identifiable {
             return artistOrder == .orderedSame ? lhs.release.localizedStandardCompare(rhs.release) : artistOrder
         case .favorite: return numeric(lhs.isFavorite ? 1 : 0, rhs.isFavorite ? 1 : 0)
         case .plays: return numeric(lhs.playCount, rhs.playCount)
-        case .rating: return numeric(lhs.rating ?? 0, rhs.rating ?? 0)
+        case .rating: return numeric(lhs.ratingHalfSteps ?? 0, rhs.ratingHalfSteps ?? 0)
         case .duration: return numeric(lhs.durationSeconds, rhs.durationSeconds)
         case .title: return lhs.title.localizedStandardCompare(rhs.title)
         case .cloudDownload, .genre: return lhs.title.localizedStandardCompare(rhs.title)

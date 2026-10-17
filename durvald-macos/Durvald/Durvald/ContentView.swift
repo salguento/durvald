@@ -26,7 +26,7 @@ struct ContentView: View {
     @AppStorage("artists.onlyLocal") private var artistOnlyLocal = true
     @AppStorage("artists.listingOrder") private var artistListingOrder: CollectionListingOrder = .alphabetical
     @AppStorage("playlists.listingOrder") private var playlistListingOrder: CollectionListingOrder = .recent
-    @AppStorage("albums.minimumRating") private var albumMinimumRating = 0
+    @AppStorage("albums.minimumRating.halfSteps") private var albumMinimumRating = 0
 
     @AppStorage(RecentSearchHistory.storageKey) private var recentSearchesJSON = "[]"
     @State private var playlistsSearchText = ""

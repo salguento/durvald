@@ -141,6 +141,11 @@ struct TrackInfoSheet: View {
         .interactiveDismissDisabled(isSaving || editing.isDirty)
         .artworkFileImporter(isPresented: $isChoosingArtwork, state: artworkImport, policy: .trackMetadata)
         .task(id: LoadRequest(trackID: trackID, coreID: store.core.map(ObjectIdentifier.init))) { artworkImport.reset(); await load() }
+        .task(id: store.ratingScaleRevision) {
+            guard store.ratingScaleRevision > 0, !store.isChangingRatingScale,
+                  let refreshed = try? await store.core?.trackInfo(trackId: trackID), info?.track.id == trackID else { return }
+            info?.track.ratingHalfSteps = refreshed.track.ratingHalfSteps
+        }
         .onDisappear { artworkImport.cancel() }
         .onChange(of: artworkImport.errorMessage) { _, message in
             if let message { errorMessage = "Não foi possível abrir a imagem: \(message)" }
@@ -278,7 +283,7 @@ struct TrackInfoSheet: View {
                 field("Disco", \.discNumber, width: 60)
                 if ratingsEnabled {
                     row("Avaliação") {
-                        RatingControl(rating: info.track.rating, isEditable: true,
+                        RatingControl(rating: info.track.ratingHalfSteps, isEditable: true,
                                       accentForeground: accent, identity: .track(trackID), onCommit: updateRating)
                             .accessibilityIdentifier("trackInfo.rating")
                     }

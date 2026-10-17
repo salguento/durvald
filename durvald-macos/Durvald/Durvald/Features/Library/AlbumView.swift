@@ -180,7 +180,7 @@ struct AlbumView: View {
                             .padding(.top, 8)
                         if ratingsEnabled {
                             RatingControl(
-                                rating: currentAlbum.rating,
+                                rating: currentAlbum.ratingHalfSteps,
                                 isEditable: true,
                                 identity: .release(currentAlbum.id),
                                 onCommit: { rating in
@@ -464,7 +464,7 @@ struct AlbumView: View {
             }
         }
         if ratingsEnabled, toolbarState.minimumTrackRating > 0 {
-            visibleTracks = visibleTracks.filter { ($0.rating ?? 0) >= toolbarState.minimumTrackRating }
+            visibleTracks = visibleTracks.filter { ($0.ratingHalfSteps ?? 0) >= toolbarState.minimumTrackRating }
         }
 
         switch toolbarState.order {
@@ -477,7 +477,7 @@ struct AlbumView: View {
         case .duration:
             visibleTracks.sort { $0.durationSeconds < $1.durationSeconds }
         case .rating:
-            visibleTracks.sort { ($0.rating ?? 0) > ($1.rating ?? 0) }
+            visibleTracks.sort { ($0.ratingHalfSteps ?? 0) > ($1.ratingHalfSteps ?? 0) }
         }
 
         return visibleTracks
@@ -614,7 +614,7 @@ struct AlbumDetailToolbarControls: View {
                 }
                 if ratingsEnabled {
                     Divider()
-                    ratingMenu(releaseID: album.id, rating: album.rating)
+                    ratingMenu(releaseID: album.id, rating: album.ratingHalfSteps)
                 }
             }
             .accessibilityIdentifier("album.options")
@@ -629,8 +629,8 @@ struct AlbumDetailToolbarControls: View {
                 if ratingsEnabled {
                     Picker("Nota mínima", selection: $state.minimumTrackRating) {
                         Text("Todas").tag(UInt8(0))
-                        ForEach(1...5, id: \.self) { value in
-                            Text("\(value)+ estrelas").tag(UInt8(value))
+                        ForEach(1...10, id: \.self) { value in
+                            Text("\(RatingValues.number(value))+ estrelas").tag(UInt8(value))
                         }
                     }
                 }
@@ -645,16 +645,17 @@ struct AlbumDetailToolbarControls: View {
                 Task { await store.setReleaseRating(releaseID: releaseID, rating: nil, fallbackRelease: album) }
             }
             Divider()
-            ForEach(1...5, id: \.self) { value in
+            ForEach(RatingValues.options(store.ratingGranularity), id: \.self) { value in
                 Button {
                     Task { await store.setReleaseRating(releaseID: releaseID, rating: UInt8(value), fallbackRelease: album) }
                 } label: {
                     Label(
-                        "\(value) de 5",
+                        PersonalValueLabels.rating(UInt8(value)),
                         systemImage: rating == UInt8(value) ? "checkmark" : "star"
                     )
                 }
             }
         }
+        .disabled(store.isChangingRatingScale)
     }
 }

@@ -58,7 +58,7 @@ enum PersonalValueLabels {
         current == star ? nil : star
     }
     static func rating(_ value: UInt8?) -> String {
-        value.map { "\($0) de 5" } ?? "Sem avaliação"
+        value.map { "\(RatingValues.number(Int($0))) de 5" } ?? "Sem avaliação"
     }
     static func star(_ value: Int) -> String { "\(value) de 5" }
     static func favorite(_ value: Bool) -> String { TrackRowModel.favoriteLabel(value) }
@@ -70,6 +70,11 @@ enum PersonalValueLabels {
 final class PersonalWriteQueue {
     private struct Entry { let id: UUID; let task: Task<Bool, Never> }
     private var entries: [String: Entry] = [:]
+
+    func waitForPendingWrites() async {
+        let pending = entries.values.map(\.task)
+        for task in pending { _ = await task.value }
+    }
 
     func perform(key: String, operation: @escaping @MainActor () async -> Bool) async -> Bool {
         let previous = entries[key]?.task

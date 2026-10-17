@@ -70,7 +70,7 @@ struct AlbumListingSnapshot {
                       key: LibraryListingKey, recency: [Int64: String]) -> Self {
         let updated = Dictionary(updates.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let filtered = releases.map { updated[$0.id] ?? $0 }.filter {
-            (!key.ratingsEnabled || key.minimumRating == 0 || Int($0.rating ?? 0) >= key.minimumRating)
+            (!key.ratingsEnabled || key.minimumRating == 0 || Int($0.ratingHalfSteps ?? 0) >= key.minimumRating)
             && (key.query.isEmpty || $0.title.localizedCaseInsensitiveContains(key.query)
                 || $0.artist.localizedCaseInsensitiveContains(key.query))
         }

@@ -23,7 +23,7 @@ pub(crate) struct CatalogTrack {
     pub(crate) bit_depth: Option<u8>,
     pub(crate) play_count: u64,
     pub(crate) last_played: Option<String>,
-    pub(crate) rating: Option<u8>,
+    pub(crate) rating_half_steps: Option<u8>,
     pub(crate) is_favorite: bool,
     pub(crate) is_hidden: bool,
     pub(crate) suggest_less: bool,
@@ -46,5 +46,5 @@ pub(crate) struct CatalogRelease {
     pub(crate) is_favorite: bool,
     pub(crate) is_hidden: bool,
     pub(crate) suggest_less: bool,
-    pub(crate) rating: Option<u8>,
+    pub(crate) rating_half_steps: Option<u8>,
 }

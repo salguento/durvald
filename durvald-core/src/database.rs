@@ -38,3 +38,5 @@ pub(crate) fn sqlite_busy_extended_code(error: &crate::api::CoreError) -> Option
     let value = message.split("extended_code=").nth(1)?.strip_suffix(')')?;
     value.parse().ok()
 }
+
+pub(crate) mod ratings;

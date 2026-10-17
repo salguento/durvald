@@ -2,6 +2,9 @@ import Foundation
 @testable import Durvald
 
 final class FakeDurvaldCore: DurvaldCore {
+    var ratingPreferencesResult = RatingScalePreferences(granularity: .halfStars)
+    var ratingConversionResult = RatingConversionPreview(tracks: 0, releases: 0, missingTracks: 0, archivedReleases: 0)
+    var changeRatingPreferencesHandler: ((RatingGranularity, RatingRounding?) async throws -> RatingPreferenceChange)?
     var artworkBytesHandler: ((String) async throws -> Data?)?
     var tracksPageHandler: ((UInt64, UInt64) async throws -> TrackPage)?
     var releasesPageHandler: ((UInt64, UInt64) async throws -> ReleasePage)?
@@ -24,6 +27,8 @@ final class FakeDurvaldCore: DurvaldCore {
     var playlistResultsByID: [Int64: [Track]] = [:]
     var playlistTrackResults: [Track] = []
     private(set) var playlistAdditions: [(trackID: Int64, position: UInt64)] = []
+    var trackRatingHandler: ((Int64, UInt8?) async throws -> Void)?
+    var releaseRatingChanges: [UInt8?] = []
     var trackRatingError: Error?
     var favoriteError: Error?
     private(set) var favoriteChanges: [Bool] = []
@@ -50,6 +55,14 @@ final class FakeDurvaldCore: DurvaldCore {
 
     required init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
         fatalError("FakeDurvaldCore não aceita ponteiros do backend Rust")
+    }
+
+    override func ratingPreferences() async throws -> RatingScalePreferences { ratingPreferencesResult }
+    override func ratingConversionPreview() async throws -> RatingConversionPreview { ratingConversionResult }
+    override func updateRatingPreferences(granularity: RatingGranularity, rounding: RatingRounding?) async throws -> RatingPreferenceChange {
+        if let changeRatingPreferencesHandler { return try await changeRatingPreferencesHandler(granularity, rounding) }
+        ratingPreferencesResult = RatingScalePreferences(granularity: granularity)
+        return RatingPreferenceChange(preferences: ratingPreferencesResult, converted: ratingConversionResult)
     }
 
     override func artworkBytes(artworkId: String) async throws -> Data? {
@@ -110,12 +123,17 @@ final class FakeDurvaldCore: DurvaldCore {
         }
     }
 
-    override func setTrackRating(trackId: Int64, rating: UInt8?) async throws {
+    override func setTrackRatingHalfSteps(trackId: Int64, ratingHalfSteps rating: UInt8?) async throws {
+        if let trackRatingHandler { try await trackRatingHandler(trackId, rating) }
         if let trackRatingError { throw trackRatingError }
         trackRatingChanges.append(rating)
         if snapshot.currentTrack?.id == trackId {
-            snapshot.currentTrack?.rating = rating
+            snapshot.currentTrack?.ratingHalfSteps = rating
         }
+    }
+
+    override func setReleaseRatingHalfSteps(releaseId: Int64, ratingHalfSteps: UInt8?) async throws {
+        releaseRatingChanges.append(ratingHalfSteps)
     }
 
     override func pause() async throws {

@@ -588,13 +588,13 @@ impl LibraryApplication {
     pub(crate) async fn set_track_rating(
         &self,
         track_id: TrackId,
-        rating: Option<u8>,
+        rating_half_steps: Option<u8>,
     ) -> CoreResult<()> {
-        validate_rating(rating)?;
-        entity_update_result(
+        validate_rating(rating_half_steps)?;
+        rating_update_result(
             self.persistence
                 .catalog_preferences_repository
-                .set_track_rating(track_id, rating)
+                .set_track_rating(track_id, rating_half_steps)
                 .await,
             "Track",
             track_id.get(),
@@ -604,17 +604,46 @@ impl LibraryApplication {
     pub(crate) async fn set_release_rating(
         &self,
         release_id: ReleaseId,
-        rating: Option<u8>,
+        rating_half_steps: Option<u8>,
     ) -> CoreResult<()> {
-        validate_rating(rating)?;
-        entity_update_result(
+        validate_rating(rating_half_steps)?;
+        rating_update_result(
             self.persistence
                 .catalog_preferences_repository
-                .set_release_rating(release_id, rating)
+                .set_release_rating(release_id, rating_half_steps)
                 .await,
             "Release",
             release_id.get(),
         )
+    }
+    pub(crate) async fn rating_preferences(
+        &self,
+    ) -> CoreResult<crate::api::RatingScalePreferences> {
+        self.persistence
+            .catalog_preferences_repository
+            .rating_preferences()
+            .await
+            .map_err(rating_error)
+    }
+    pub(crate) async fn rating_conversion_preview(
+        &self,
+    ) -> CoreResult<crate::api::RatingConversionPreview> {
+        self.persistence
+            .catalog_preferences_repository
+            .rating_conversion_preview()
+            .await
+            .map_err(rating_error)
+    }
+    pub(crate) async fn update_rating_preferences(
+        &self,
+        granularity: crate::api::RatingGranularity,
+        rounding: Option<crate::api::RatingRounding>,
+    ) -> CoreResult<crate::api::RatingPreferenceChange> {
+        self.persistence
+            .catalog_preferences_repository
+            .update_rating_preferences(granularity, rounding)
+            .await
+            .map_err(rating_error)
     }
 }
 
@@ -642,13 +671,34 @@ fn finish_page<T>(mut items: Vec<T>, page_size: usize, offset: u64) -> (Vec<T>, 
     (items, next_offset)
 }
 
-fn validate_rating(rating: Option<u8>) -> CoreResult<()> {
-    if rating.is_some_and(|value| value > 5) {
-        return Err(CoreError::InvalidInput {
-            message: "Rating must be between 0 and 5".to_string(),
-        });
+fn validate_rating(rating_half_steps: Option<u8>) -> CoreResult<()> {
+    rating_half_steps
+        .map(crate::domain::rating::RatingHalfSteps::new)
+        .transpose()
+        .map(|_| ())
+        .map_err(|message| CoreError::InvalidInput {
+            message: message.into(),
+        })
+}
+fn rating_error(error: crate::domain::rating::RatingError) -> CoreError {
+    match error {
+        crate::domain::rating::RatingError::InvalidInput(message) => {
+            CoreError::InvalidInput { message }
+        }
+        crate::domain::rating::RatingError::Storage(message) => CoreError::Storage { message },
     }
-    Ok(())
+}
+fn rating_update_result(
+    result: Result<bool, crate::domain::rating::RatingError>,
+    entity: &str,
+    id: u64,
+) -> CoreResult<()> {
+    match result.map_err(rating_error)? {
+        true => Ok(()),
+        false => Err(CoreError::NotFound {
+            message: format!("{entity} {id} not found"),
+        }),
+    }
 }
 
 fn storage_error(message: String) -> CoreError {
@@ -736,7 +786,7 @@ pub(crate) fn track_from_catalog(track: crate::domain::catalog::CatalogTrack) ->
         bit_depth: track.bit_depth,
         play_count: track.play_count,
         last_played: track.last_played,
-        rating: track.rating,
+        rating_half_steps: track.rating_half_steps,
         is_favorite: track.is_favorite,
         is_hidden: track.is_hidden,
         suggest_less: track.suggest_less,
@@ -767,6 +817,6 @@ pub(crate) fn release_from_catalog(release: crate::domain::catalog::CatalogRelea
         is_favorite: release.is_favorite,
         is_hidden: release.is_hidden,
         suggest_less: release.suggest_less,
-        rating: release.rating,
+        rating_half_steps: release.rating_half_steps,
     }
 }

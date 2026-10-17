@@ -41,7 +41,7 @@ pub struct Releases {
     pub is_favorite: bool,
     pub is_hidden: bool,
     pub suggest_less: bool,
-    pub rating: Option<u8>,
+    pub rating_half_steps: Option<u8>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -141,7 +141,7 @@ pub struct SongItem {
     pub bit_depth: Option<u8>,
     pub play_count: u64,
     pub last_played: Option<String>,
-    pub rating: Option<u8>,
+    pub rating_half_steps: Option<u8>,
     pub lyrics: Option<String>,
     pub is_favorite: bool,
     pub is_hidden: bool,

@@ -70,7 +70,7 @@ macro_rules! song_columns {
             $table,
             ".last_played, ",
             $table,
-            ".rating, ",
+            ".rating_half_steps, ",
             $table,
             ".lyrics, ",
             $table,
@@ -128,7 +128,7 @@ macro_rules! release_columns {
             $table,
             ".suggest_less, ",
             $table,
-            ".rating, ",
+            ".rating_half_steps, ",
             "COALESCE((SELECT m.genres FROM local_release_metadata m ",
             "WHERE m.release_id = ",
             $table,
@@ -180,7 +180,7 @@ fn song_item_from_row(row: &Row<'_>) -> rusqlite::Result<SongItem> {
         sample_rate: row.get(11)?,
         play_count: row.get(12)?,
         last_played: row.get(13)?,
-        rating: row.get(14)?,
+        rating_half_steps: row.get(14)?,
         lyrics: row.get(15)?,
         is_favorite: row.get(16)?,
         is_hidden: row.get(17)?,
@@ -208,7 +208,7 @@ fn release_from_row(row: &Row<'_>) -> rusqlite::Result<Releases> {
         is_favorite: row.get(11)?,
         is_hidden: row.get(12)?,
         suggest_less: row.get(13)?,
-        rating: row.get(14)?,
+        rating_half_steps: row.get(14)?,
         genres: json_string_list(row, 15)?,
         composers: json_string_list(row, 16)?,
         producers: json_string_list(row, 17)?,
@@ -370,7 +370,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             bit_depth INTEGER,
             play_count INTEGER DEFAULT 0,
             last_played DATETIME,
-            rating INTEGER DEFAULT NULL CHECK (rating IS NULL OR rating BETWEEN 0 AND 5),
+            rating_half_steps INTEGER DEFAULT NULL CHECK (rating_half_steps IS NULL OR (typeof(rating_half_steps)='integer' AND rating_half_steps BETWEEN 0 AND 10)),
             lyrics TEXT,
             is_favorite BOOL DEFAULT FALSE,
             is_hidden BOOL DEFAULT FALSE,
@@ -397,7 +397,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             title TEXT NOT NULL, artist_name TEXT NOT NULL, release_title TEXT NOT NULL,
             track_number INTEGER NOT NULL, disc_number INTEGER NOT NULL,
             duration INTEGER NOT NULL, file_path TEXT NOT NULL UNIQUE,
-            play_count INTEGER NOT NULL, last_played TEXT, rating INTEGER,
+            play_count INTEGER NOT NULL, last_played TEXT, rating_half_steps INTEGER CHECK (rating_half_steps IS NULL OR (typeof(rating_half_steps)='integer' AND rating_half_steps BETWEEN 0 AND 10)),
             is_favorite INTEGER NOT NULL, is_hidden INTEGER NOT NULL, suggest_less INTEGER NOT NULL,
             content_hash TEXT, missing_since DATETIME DEFAULT CURRENT_TIMESTAMP
         );
@@ -503,7 +503,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             is_favorite BOOL DEFAULT FALSE,
             is_hidden BOOL DEFAULT FALSE,
             suggest_less BOOL DEFAULT FALSE,
-            rating INTEGER DEFAULT NULL CHECK (rating IS NULL OR rating BETWEEN 0 AND 5),
+            rating_half_steps INTEGER DEFAULT NULL CHECK (rating_half_steps IS NULL OR (typeof(rating_half_steps)='integer' AND rating_half_steps BETWEEN 0 AND 10)),
             FOREIGN KEY (artist_id) REFERENCES artists(artist_id) ON DELETE CASCADE
         )",
         (),
@@ -554,7 +554,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             description TEXT,
             is_explicit BOOL,
             is_favorite BOOL,
-            rating INTEGER,
+            rating_half_steps INTEGER CHECK (rating_half_steps IS NULL OR (typeof(rating_half_steps)='integer' AND rating_half_steps BETWEEN 0 AND 10)),
             spotify_url TEXT,
             apple_music_url TEXT,
             last_fm_url TEXT,
@@ -633,6 +633,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
         (),
     )?;
 
+    super::ratings::migrate(conn)?;
     ensure_indexes(conn)?;
     ensure_search_indexes(conn)?;
     crate::metadata_edit::create_tables(conn)?;
@@ -1309,22 +1310,22 @@ pub fn set_release_suggest_less(
 pub fn set_track_rating(
     conn: &Connection,
     song_id: u64,
-    rating: Option<u8>,
+    rating_half_steps: Option<u8>,
 ) -> DatabaseResult<bool> {
     Ok(conn.execute(
-        "UPDATE songs SET rating = ?1, updated_at = CURRENT_TIMESTAMP WHERE song_id = ?2",
-        params![rating, song_id],
+        "UPDATE songs SET rating_half_steps = ?1, updated_at = CURRENT_TIMESTAMP WHERE song_id = ?2",
+        params![rating_half_steps, song_id],
     )? > 0)
 }
 
 pub fn set_release_rating(
     conn: &Connection,
     release_id: u64,
-    rating: Option<u8>,
+    rating_half_steps: Option<u8>,
 ) -> DatabaseResult<bool> {
     Ok(conn.execute(
-        "UPDATE releases SET rating = ?1, updated_at = CURRENT_TIMESTAMP WHERE release_id = ?2",
-        params![rating, release_id],
+        "UPDATE releases SET rating_half_steps = ?1, updated_at = CURRENT_TIMESTAMP WHERE release_id = ?2",
+        params![rating_half_steps, release_id],
     )? > 0)
 }
 
@@ -1426,7 +1427,7 @@ pub fn get_songs_by_artist_id(conn: &Connection, artist_id: &str) -> DatabaseRes
                 sample_rate: row.get(11)?,
                 play_count: row.get(12)?,
                 last_played: row.get(13)?,
-                rating: row.get(14)?,
+                rating_half_steps: row.get(14)?,
                 lyrics: row.get(15)?,
                 is_favorite: row.get(16)?,
                 is_hidden: row.get(17)?,
@@ -1471,7 +1472,7 @@ pub fn get_releases_by_artist_id(
                 is_favorite: row.get(11)?,
                 is_hidden: row.get(12)?,
                 suggest_less: row.get(13)?,
-                rating: row.get(14)?,
+                rating_half_steps: row.get(14)?,
                 genres: json_string_list(row, 15)?,
                 composers: json_string_list(row, 16)?,
                 producers: json_string_list(row, 17)?,
@@ -1519,7 +1520,7 @@ pub fn search_library_page(
         "SELECT s.song_id, s.title, s.artwork, s.artist_id, s.artist_name,
                 s.release_id, s.release_title, s.track_number, s.disc_number,
                 s.duration, s.bitrate, s.sample_rate, s.play_count, s.last_played,
-                s.rating, NULL, s.is_favorite, s.is_hidden, s.suggest_less,
+                s.rating_half_steps, NULL, s.is_favorite, s.is_hidden, s.suggest_less,
                 s.file_path, s.created_at, s.updated_at, s.bit_depth
          FROM songs_search
          JOIN songs s ON s.song_id = songs_search.rowid
@@ -1530,7 +1531,7 @@ pub fn search_library_page(
         "SELECT s.song_id, s.title, s.artwork, s.artist_id, s.artist_name,
                 s.release_id, s.release_title, s.track_number, s.disc_number,
                 s.duration, s.bitrate, s.sample_rate, s.play_count, s.last_played,
-                s.rating, NULL, s.is_favorite, s.is_hidden, s.suggest_less,
+                s.rating_half_steps, NULL, s.is_favorite, s.is_hidden, s.suggest_less,
                 s.file_path, s.created_at, s.updated_at, s.bit_depth
          FROM songs s
          WHERE s.title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
@@ -1758,7 +1759,11 @@ pub(crate) fn validate_smart_playlist_definition(
         if !no_value && rule.value.trim().is_empty() {
             return Err("Smart playlist rule value cannot be empty".into());
         }
-        if matches!(rule.field.as_str(), "rating" | "year" | "play_count")
+        if rule.field == "rating" && !no_value {
+            crate::domain::rating::RatingHalfSteps::parse_stars(&rule.value)
+                .map_err(str::to_owned)?;
+        }
+        if matches!(rule.field.as_str(), "year" | "play_count")
             && !no_value
             && rule.value.parse::<i64>().is_err()
         {
@@ -1766,9 +1771,7 @@ pub(crate) fn validate_smart_playlist_definition(
         }
         if !no_value {
             let numeric = rule.value.parse::<i64>().ok();
-            if rule.field == "rating" && numeric.is_some_and(|value| !(0..=5).contains(&value)) {
-                return Err("Rating rules require a value between 0 and 5".into());
-            }
+
             if rule.field == "year" && numeric.is_some_and(|value| !(1..=9999).contains(&value)) {
                 return Err("Year rules require a value between 1 and 9999".into());
             }
@@ -1950,7 +1953,7 @@ pub fn get_smart_playlist_tracks(
     let mut values = Vec::<Value>::new();
     for rule in &definition.rules {
         let expression = match rule.field.as_str() {
-            "rating" => "s.rating",
+            "rating" => "s.rating_half_steps",
             "favorite" => "s.is_favorite",
             "genre" => "json_extract(c.payload,'$.genre')",
             "year" => "json_extract(c.payload,'$.year')",
@@ -1977,7 +1980,12 @@ pub fn get_smart_playlist_tracks(
                     _ => unreachable!(),
                 };
                 let value = match rule.field.as_str() {
-                    "rating" | "year" | "play_count" => Value::Integer(rule.value.parse().unwrap()),
+                    "rating" => Value::Integer(
+                        crate::domain::rating::RatingHalfSteps::parse_stars(&rule.value)
+                            .unwrap()
+                            .get() as i64,
+                    ),
+                    "year" | "play_count" => Value::Integer(rule.value.parse().unwrap()),
                     "favorite" => Value::Integer(i64::from(rule.value == "true")),
                     _ => Value::Text(rule.value.clone()),
                 };
@@ -1996,7 +2004,7 @@ pub fn get_smart_playlist_tracks(
         "title" => "s.title COLLATE NOCASE",
         "artist" => "s.artist_name COLLATE NOCASE",
         "album" => "s.release_title COLLATE NOCASE",
-        "rating" => "s.rating",
+        "rating" => "s.rating_half_steps",
         "play_count" => "s.play_count",
         "last_played" => "s.last_played",
         "date_added" => "s.created_at",
@@ -2043,7 +2051,7 @@ fn song_from_row(row: &Row<'_>) -> rusqlite::Result<SongItem> {
         sample_rate: row.get(11)?,
         play_count: row.get(12)?,
         last_played: row.get(13)?,
-        rating: row.get(14)?,
+        rating_half_steps: row.get(14)?,
         lyrics: row.get(15)?,
         is_favorite: row.get(16)?,
         is_hidden: row.get(17)?,
@@ -2229,7 +2237,7 @@ pub fn get_playlist_tracks(conn: &Connection, playlist_id: u64) -> DatabaseResul
                 sample_rate: row.get(11)?,
                 play_count: row.get(12)?,
                 last_played: row.get(13)?,
-                rating: row.get(14)?,
+                rating_half_steps: row.get(14)?,
                 lyrics: row.get(15)?,
                 is_favorite: row.get(16)?,
                 is_hidden: row.get(17)?,
@@ -3121,9 +3129,9 @@ pub(crate) fn remove_missing_songs_in_folder(
     transaction.execute(
         "INSERT OR IGNORE INTO missing_tracks(
             original_song_id,title,artist_name,release_title,track_number,disc_number,duration,
-            file_path,play_count,last_played,rating,is_favorite,is_hidden,suggest_less,content_hash)
+            file_path,play_count,last_played,rating_half_steps,is_favorite,is_hidden,suggest_less,content_hash)
          SELECT s.song_id,s.title,s.artist_name,s.release_title,s.track_number,s.disc_number,s.duration,
-            s.file_path,s.play_count,s.last_played,s.rating,s.is_favorite,s.is_hidden,s.suggest_less,i.content_hash
+            s.file_path,s.play_count,s.last_played,s.rating_half_steps,s.is_favorite,s.is_hidden,s.suggest_less,i.content_hash
          FROM songs s LEFT JOIN track_file_identity i USING(song_id)
          WHERE substr(s.file_path, 1, length(?1)) = ?1
            AND NOT EXISTS (SELECT 1 FROM scan_discovered_paths d
@@ -3525,8 +3533,8 @@ mod tests {
         let release = get_release_by_id(&conn, "1").unwrap();
         assert_eq!(release.total_tracks, 1);
         assert_eq!(release.duration, 180);
-        assert!(set_track_rating(&conn, 1, Some(6)).is_err());
-        assert!(set_release_rating(&conn, 1, Some(6)).is_err());
+        assert!(set_track_rating(&conn, 1, Some(11)).is_err());
+        assert!(set_release_rating(&conn, 1, Some(11)).is_err());
 
         assert!(record_completed_playback(&conn, 1, 180).unwrap());
         assert!(!record_completed_playback(&conn, 999, 180).unwrap());
@@ -3821,20 +3829,20 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         create_tables(&conn).unwrap();
         crate::metadata_edit::create_tables(&conn).unwrap();
-        for (id, title, rating, favorite, plays, year, genre) in [
+        for (id, title, rating_half_steps, favorite, plays, year, genre) in [
             (1, "First", 5, true, 10, 2024, "Jazz"),
             (2, "Second", 4, true, 30, 2023, "Jazz Fusion"),
             (3, "Third", 5, false, 50, 2024, "Rock"),
         ] {
             conn.execute(
                 "INSERT INTO songs(song_id,title,artist_id,artist_name,release_id,release_title,
-                    track_number,disc_number,duration,file_path,rating,is_favorite,play_count)
+                    track_number,disc_number,duration,file_path,rating_half_steps,is_favorite,play_count)
                  VALUES(?1,?2,1,'Artist',1,'Album',1,1,180,?3,?4,?5,?6)",
                 params![
                     id,
                     title,
                     format!("/music/{id}.flac"),
-                    rating,
+                    rating_half_steps,
                     favorite,
                     plays
                 ],

@@ -153,7 +153,7 @@ final class ArtistLookupSnapshotTests: XCTestCase {
         XCTAssertEqual(store.loadedTrack(id: 1)?.isFavorite, true)
         XCTAssertGreaterThan(store.tracksRevision, revision)
         await store.setTrackRating(trackID: 1, rating: 5)
-        XCTAssertEqual(store.loadedTrack(id: 1)?.rating, 5)
+        XCTAssertEqual(store.loadedTrack(id: 1)?.ratingHalfSteps, 5)
     }
 
     @MainActor

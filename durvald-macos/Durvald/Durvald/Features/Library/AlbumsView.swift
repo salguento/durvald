@@ -55,7 +55,7 @@ struct AlbumsView: View {
     @Binding var searchText: String
     @AppStorage("albums.listingMode") private var listingMode: CollectionListingMode = .standardGrid
     @AppStorage("albums.listingOrder") private var listingOrder: CollectionListingOrder = .recent
-    @AppStorage("albums.minimumRating") private var minimumRating = 0
+    @AppStorage("albums.minimumRating.halfSteps") private var minimumRating = 0
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
     @Environment(DurvaldCoreStore.self) private var store
     @State private var lastPlayedByRelease: [Int64: String] = [:]

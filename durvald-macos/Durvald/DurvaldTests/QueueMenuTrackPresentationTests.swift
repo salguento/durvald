@@ -47,12 +47,12 @@ final class QueueMenuTrackPresentationTests: XCTestCase {
         let queue = [QueueItem(trackId: 1, position: 0)]
         await model.refresh(request: .init(queueRevision: 1), queue: queue, knownTracks: []) { _ in Fixtures.track }
         var current = Fixtures.track
-        current.isFavorite = true; current.rating = 5
+        current.isFavorite = true; current.ratingHalfSteps = 5
         await model.refresh(request: .init(queueRevision: 1, tracksRevision: 1), queue: queue, knownTracks: [current]) { _ in
             XCTFail("Known track must not be fetched"); return nil
         }
         XCTAssertEqual(model.tracksByID[1]?.isFavorite, true)
-        XCTAssertEqual(model.tracksByID[1]?.rating, 5)
+        XCTAssertEqual(model.tracksByID[1]?.ratingHalfSteps, 5)
         await model.refresh(request: .init(queueRevision: 1, catalogRevision: 1, tracksRevision: 1), queue: queue, knownTracks: []) { _ in
             var refreshed = Fixtures.track
             refreshed.title = "Edited"

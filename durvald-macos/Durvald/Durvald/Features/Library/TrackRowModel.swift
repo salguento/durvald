@@ -15,7 +15,7 @@ struct TrackRowModel: Equatable {
     init(_ track: Track) {
         self.init(trackID: track.id, title: track.title, artist: track.artist,
                   album: track.release, artworkID: track.artworkId,
-                  durationSeconds: track.durationSeconds, isFavorite: track.isFavorite, rating: track.rating)
+                  durationSeconds: track.durationSeconds, isFavorite: track.isFavorite, rating: track.ratingHalfSteps)
     }
 
     init(trackID: Int64?, title: String, artist: String = "", album: String = "",

@@ -6,7 +6,7 @@ final class TrackRowModelTests: XCTestCase {
     func testLocalPayloadPreservesMetadataAndPersonalState() {
         var track = Fixtures.track
         track.isFavorite = true
-        track.rating = 4
+        track.ratingHalfSteps = 4
         let model = TrackRowModel(track)
         XCTAssertEqual(model.trackID, track.id)
         XCTAssertEqual(model.title, track.title)
@@ -16,7 +16,7 @@ final class TrackRowModelTests: XCTestCase {
         XCTAssertEqual(model.durationSeconds, track.durationSeconds)
         XCTAssertTrue(model.isFavorite)
         XCTAssertEqual(model.rating, 4)
-        track.rating = nil
+        track.ratingHalfSteps = nil
         XCTAssertNil(TrackRowModel(track).rating)
         XCTAssertEqual(model.rating, 4, "Presentation is a value snapshot")
     }

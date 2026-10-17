@@ -71,7 +71,7 @@ enum CollectionListingSorter {
                     return (lhs.releaseDate ?? "") > (rhs.releaseDate ?? "")
                 }
             case .rating:
-                if lhs.rating != rhs.rating { return (lhs.rating ?? 0) > (rhs.rating ?? 0) }
+                if lhs.ratingHalfSteps != rhs.ratingHalfSteps { return (lhs.ratingHalfSteps ?? 0) > (rhs.ratingHalfSteps ?? 0) }
             }
             return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
         }
@@ -95,7 +95,7 @@ enum CollectionListingSorter {
             if let value = lastPlayedByRelease[release.id] { rank.recent = max(rank.recent ?? "", value) }
             rank.added = max(rank.added ?? release.id, release.id)
             if let value = release.releaseDate { rank.date = max(rank.date ?? "", value) }
-            rank.rating = max(rank.rating, release.rating ?? 0)
+            rank.rating = max(rank.rating, release.ratingHalfSteps ?? 0)
             ranks[release.artistId] = rank
         }
         return artists.sorted { lhs, rhs in
@@ -147,7 +147,7 @@ enum CollectionListingSorter {
                 Rank(recent: order == .recent ? latestPlayback(in: tracks) : nil,
                      artist: order == .artist ? firstArtist(in: tracks) : nil,
                      date: order == .releaseDate ? latestReleaseDate(in: tracks, releaseDates: releaseDates) : nil,
-                     rating: order == .rating ? tracks.compactMap(\.rating).max() ?? 0 : 0)
+                     rating: order == .rating ? tracks.compactMap(\.ratingHalfSteps).max() ?? 0 : 0)
             }
         }
         return playlists.sorted { lhs, rhs in
@@ -233,8 +233,8 @@ struct CollectionListingMenu: View {
 
                 Picker("Nota mínima", selection: minimumRating) {
                     Text("Todas").tag(0)
-                    ForEach(1...5, id: \.self) { value in
-                        Text("\(value)+ estrelas").tag(value)
+                    ForEach(1...10, id: \.self) { value in
+                        Text("\(RatingValues.number(value))+ estrelas").tag(value)
                     }
                 }
             }

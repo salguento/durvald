@@ -80,7 +80,7 @@ final class PlaybackHistoryRepositoryTests: XCTestCase {
         await probe.rename(id: 2, title: "Edited old recording")
         await store.setTrackRating(trackID: 1, rating: 5)
         await store.refreshHistory()
-        XCTAssertEqual(store.historyRepository.tracksByID[1]?.rating, 5)
+        XCTAssertEqual(store.historyRepository.tracksByID[1]?.ratingHalfSteps, 5)
         XCTAssertEqual(store.historyRepository.tracksByID[2]?.title, "Edited old recording")
         let stats = await probe.stats()
         XCTAssertEqual(stats.historyReads, 1)
@@ -181,7 +181,7 @@ final class PlaybackHistoryRepositoryTests: XCTestCase {
         await refresh.value
         XCTAssertTrue(store.historyRepository.entries.isEmpty)
         await store.refreshHistory()
-        XCTAssertEqual(store.historyRepository.tracksByID[1]?.rating, 4)
+        XCTAssertEqual(store.historyRepository.tracksByID[1]?.ratingHalfSteps, 4)
     }
 }
 

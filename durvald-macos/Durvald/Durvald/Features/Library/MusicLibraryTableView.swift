@@ -90,6 +90,9 @@ struct MusicLibraryTableView: NSViewRepresentable {
     var isPresented = true
     var scrollRestorationID = 0
     var tracksRevision: UInt64? = nil
+    var ratingGranularity: RatingGranularity = .halfStars
+    var ratingEditingEnabled = true
+    var ratingRevision: UInt64 = 0
     let onLayoutChange: (MusicLibraryColumnLayout) -> Void
     let onPlay: (Track) -> Void
     let onLoadMore: (Int64) -> Void
@@ -324,6 +327,10 @@ struct MusicLibraryTableView: NSViewRepresentable {
             appliedRatingsEnabled = parent.ratingsEnabled
         }
 
+        private var appliedRatingRevision: UInt64?
+        private var appliedRatingGranularity: RatingGranularity?
+        private var appliedRatingEditingEnabled: Bool?
+
         func updateRows() {
             guard let tableView else { return }
             isUpdating = true
@@ -351,6 +358,13 @@ struct MusicLibraryTableView: NSViewRepresentable {
                     if grouped { albumGroupsNeedLayout = true }
                 }
                 rows = parent.tracks
+            }
+            if appliedRatingRevision != parent.ratingRevision || appliedRatingGranularity != parent.ratingGranularity
+                || appliedRatingEditingEnabled != parent.ratingEditingEnabled {
+                changedRows.formUnion(IndexSet(rowIndexByID.values))
+                appliedRatingRevision = parent.ratingRevision
+                appliedRatingGranularity = parent.ratingGranularity
+                appliedRatingEditingEnabled = parent.ratingEditingEnabled
             }
             appliedTracksRevision = parent.tracksRevision
             if activeTrackID != parent.activeTrackID {
@@ -519,6 +533,8 @@ struct MusicLibraryTableView: NSViewRepresentable {
                 let commitFavorite = parent.onFavoriteChange
                 let commitRating = parent.onRatingChange
                 cell.configure(track: track, selected: parent.selection.contains(track.id),
+                               granularity: parent.ratingGranularity, editable: parent.ratingEditingEnabled,
+                               ratingRevision: parent.ratingRevision,
                                onFavoriteChange: { favorite in await commitFavorite(track, favorite) },
                                onRatingChange: { rating in await commitRating(track, rating) })
                 return cell
@@ -554,7 +570,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
             let cell = (tableView.makeView(withIdentifier: identifier, owner: nil) as? MusicLibraryHostedCell)
                 ?? MusicLibraryHostedCell(identifier: identifier)
             cell.requiresRowHover = (value == .favorite && !track.isFavorite)
-                || (value == .rating && (track.rating ?? 0) == 0)
+                || (value == .rating && (track.ratingHalfSteps ?? 0) == 0)
             cell.host.rootView = AnyView(
                 parent.cellContent(track, value)
                     .lineLimit(1)

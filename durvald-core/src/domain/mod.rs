@@ -6,3 +6,5 @@ pub(crate) mod playback_history;
 pub(crate) mod playback_session;
 pub(crate) mod playlist;
 pub(crate) mod settings;
+
+pub(crate) mod rating;

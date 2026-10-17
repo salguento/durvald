@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SmartPlaylistSheet: View {
+    @Environment(DurvaldCoreStore.self) private var store
     private struct RuleDraft: Identifiable {
         let id = UUID()
         var field: Field
@@ -95,7 +96,8 @@ struct SmartPlaylistSheet: View {
         _rules = State(initialValue: definition?.rules.compactMap { rule in
             guard let field = Field(rawValue: rule.field),
                   let comparison = Comparison(rawValue: rule.comparison) else { return nil }
-            return RuleDraft(field: field, comparison: comparison, value: rule.value)
+            let value = field == .rating ? RatingValues.halfSteps(ruleValue: rule.value).map(RatingValues.ruleValue) ?? rule.value : rule.value
+            return RuleDraft(field: field, comparison: comparison, value: value)
         } ?? [RuleDraft(field: .rating, comparison: .greaterOrEqual, value: "4")])
         _hasLimit = State(initialValue: definition?.limit != nil)
         _limit = State(initialValue: Int(definition?.limit ?? 100))
@@ -124,7 +126,7 @@ struct SmartPlaylistSheet: View {
                             }
                             .onChange(of: rule.field) { _, field in
                                 rule.comparison = comparisons(for: field).first ?? .equals
-                                rule.value = field == .favorite ? "true" : ""
+                                rule.value = field == .favorite ? "true" : field == .rating ? "4" : ""
                             }
                             Picker("Comparação", selection: $rule.comparison) {
                                 ForEach(comparisons(for: rule.field)) { Text($0.title).tag($0) }
@@ -135,6 +137,14 @@ struct SmartPlaylistSheet: View {
                                         Text("Sim").tag("true")
                                         Text("Não").tag("false")
                                     }.frame(width: 90)
+                                } else if rule.field == .rating {
+                                    Picker("Avaliação", selection: $rule.value) {
+                                        ForEach(RatingValues.options(store.ratingGranularity,
+                                            including: RatingValues.halfSteps(ruleValue: rule.value)), id: \.self) { value in
+                                            Text(PersonalValueLabels.rating(UInt8(value)))
+                                                .tag(RatingValues.ruleValue(value))
+                                        }
+                                    }.frame(width: 130)
                                 } else {
                                     TextField(valuePlaceholder(for: rule.field), text: $rule.value)
                                         .frame(width: 130)
