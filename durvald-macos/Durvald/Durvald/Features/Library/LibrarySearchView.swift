@@ -198,6 +198,7 @@ struct LibrarySearchView: View {
             ArtworkView(artworkID: model.artworkID, size: 42)
 
             TrackRowText(model: model, showsEmptySubtitle: true)
+                .environment(\.playbackSourceContext, PlaybackSourceContext.search(committedQuery))
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityLabel(model.accessibilityLabel)
             .accessibilityHint("Reproduz esta faixa agora")
@@ -213,10 +214,10 @@ struct LibrarySearchView: View {
             .accessibilityIdentifier("search.track.\(track.id).addToQueue")
         }
         .playTrackOnDoubleClick {
-            Task { await TrackRowPlayback.track(track.id).perform(using: store) }
+            Task { await TrackRowPlayback.track(track.id, sourceContext: PlaybackSourceContext.search(committedQuery)).perform(using: store) }
         }
         .trackContextMenu(track: track) {
-            Task { await TrackRowPlayback.track(track.id).perform(using: store) }
+            Task { await TrackRowPlayback.track(track.id, sourceContext: PlaybackSourceContext.search(committedQuery)).perform(using: store) }
         }
     }
 }

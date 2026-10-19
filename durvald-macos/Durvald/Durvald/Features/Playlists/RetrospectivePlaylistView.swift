@@ -206,7 +206,7 @@ struct RetrospectivePlaylistView: View {
     private var playbackActions: some View {
         HStack(spacing: 12) {
             Button {
-                Task { await PlaybackCollection.tracks(tracks).perform(.play, using: store) }
+                Task { await PlaybackCollection.tracks(tracks, sourceContext: PlaybackSourceContext.replay(draft.identity)).perform(.play, using: store) }
             } label: { Label("Reproduzir", systemImage: "play.fill") }
             .disabled(tracks.isEmpty || isLoading)
             .accessibilityIdentifier("retrospective.playlist.play")
@@ -256,8 +256,9 @@ struct RetrospectivePlaylistView: View {
 
     private func trackRow(_ track: Track, index: Int) -> some View {
         CollectionTrackRow(track: track, number: "\(index + 1)") {
-            Task { await store.playTracks(Array(tracks.dropFirst(index)), shuffleEnabled: false) }
+            Task { await store.playTracks(Array(tracks.dropFirst(index)), shuffleEnabled: false, sourceContext: PlaybackSourceContext.replay(draft.identity)) }
         }
+        .environment(\.playbackSourceContext, PlaybackSourceContext.replay(draft.identity))
         .accessibilityIdentifier("retrospective.playlist.track.\(track.id)")
     }
 

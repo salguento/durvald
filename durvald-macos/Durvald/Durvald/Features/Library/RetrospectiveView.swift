@@ -287,7 +287,7 @@ private struct RetrospectiveTrackRow: View {
             if let track {
                 label(track.title)
                     .trackContextMenu(track: track) {
-                        Task { await TrackRowPlayback.track(track.id).perform(using: store) }
+                        Task { await TrackRowPlayback.track(track.id, sourceContext: PlaybackSourceContext.history(item.id)).perform(using: store) }
                     }
             } else {
                 label("Música #\(item.trackId)")
@@ -302,6 +302,7 @@ private struct RetrospectiveTrackRow: View {
     private func label(_ title: String) -> some View {
         TrackRowText(model: TrackRowModel(trackID: item.trackId, title: title),
                      subtitle: playbackDate, spacing: nil, lineLimit: nil)
+            .environment(\.playbackSourceContext, PlaybackSourceContext.history(item.id))
     }
 
     private var playbackDate: String {

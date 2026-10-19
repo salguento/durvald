@@ -476,7 +476,8 @@ struct AlbumView: View {
     }
 
     private func trackRow(_ track: Track) -> some View {
-        CollectionTrackRow(track: track, number: trackNumber(for: track), showsArtwork: false, showsAlbum: false) {
+        CollectionTrackRow(track: track, number: trackNumber(for: track), showsArtwork: false, showsAlbum: false,
+                           activeOverride: PlaybackSourceContext.matches(trackID: track.id, activeTrackID: store.activeTrackID, origin: PlaybackSourceContext.release(track.releaseId), activeOrigin: store.activeSourceContext)) {
             guard let album else { return }
             Task { await TrackRowPlayback.release(album.id, startingAt: track.id).perform(using: store) }
         }

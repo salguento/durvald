@@ -2,6 +2,8 @@ import Foundation
 @testable import Durvald
 
 final class FakeDurvaldCore: DurvaldCore {
+    var contextualPlayRequests: [String] = []
+    var contextualQueueRequests: [String] = []
     var ratingPreferencesResult = RatingScalePreferences(granularity: .halfStars)
     var ratingConversionResult = RatingConversionPreview(tracks: 0, releases: 0, missingTracks: 0, archivedReleases: 0)
     var changeRatingPreferencesHandler: ((RatingGranularity, RatingRounding?) async throws -> RatingPreferenceChange)?
@@ -160,6 +162,18 @@ final class FakeDurvaldCore: DurvaldCore {
 
     override func clearQueue() async throws {
         playbackOperations.append("clear")
+    }
+
+    override func playWithContext(trackId: Int64, sourceContext: String) async throws -> PlaybackSnapshot {
+        contextualPlayRequests.append(sourceContext)
+        _ = try await play(trackId: trackId)
+        snapshot.sourceContext = sourceContext
+        return snapshot
+    }
+
+    override func addToQueueWithContext(trackId: Int64, sourceContext: String) async throws {
+        contextualQueueRequests.append(sourceContext)
+        try await addToQueue(trackId: trackId)
     }
 
     override func play(trackId: Int64) async throws -> PlaybackSnapshot {

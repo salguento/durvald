@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AlbumTrackPosition: View {
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(\.playbackSourceContext) private var sourceContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let trackID: Int64
@@ -9,7 +10,7 @@ struct AlbumTrackPosition: View {
     var isActiveOverride: Bool? = nil
 
     private var isActive: Bool {
-        isActiveOverride ?? (store.activeTrackID == trackID)
+        isActiveOverride ?? PlaybackSourceContext.matches(trackID: trackID, activeTrackID: store.activeTrackID, origin: sourceContext, activeOrigin: store.activeSourceContext)
     }
 
     var body: some View {

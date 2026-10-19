@@ -19,6 +19,8 @@ final class DurvaldCoreStore {
     private(set) var playback: PlaybackSnapshot? {
         didSet {
             let playbackActivityChanged = oldValue?.isPlaying != playback?.isPlaying
+            let origin = playback?.sourceContext ?? ""
+            if activeSourceContext != origin { activeSourceContext = origin }
             let trackID = playback?.currentTrack?.id
             if activeTrackID != trackID { activeTrackID = trackID }
             let updatedQueue = playback?.queue ?? []
@@ -31,6 +33,7 @@ final class DurvaldCoreStore {
             nowPlaying?.update(playback, core: core)
         }
     }
+    private(set) var activeSourceContext = ""
     private(set) var activeTrackID: Int64?
     private(set) var queueRevision: UInt64 = 0
     private(set) var queue: [QueueItem] = [] {
@@ -175,6 +178,7 @@ final class DurvaldCoreStore {
         self.libraryRepository = LibraryRepository(files: fileMetadata)
         self.core = core
         self.playback = playback
+        self.activeSourceContext = playback?.sourceContext ?? ""
         self.activeTrackID = playback?.currentTrack?.id
         self.queue = playback?.queue ?? []
         self.isPlaybackPaused = playback?.isPaused ?? true
@@ -1036,7 +1040,7 @@ final class DurvaldCoreStore {
         catch { errorMessage = String(describing: error) }
     }
 
-    func play(trackID: Int64) async {
+    func play(trackID: Int64, sourceContext: String = PlaybackSourceContext.library) async {
         guard let core else {
             errorMessage = "O core ainda está abrindo."
             return
@@ -1054,7 +1058,7 @@ final class DurvaldCoreStore {
         print("Durvald: solicitando reprodução da faixa \(trackID).")
 
         do {
-            let snapshot = try await core.play(trackId: trackID)
+            let snapshot = try await core.playWithContext(trackId: trackID, sourceContext: sourceContext)
             playback = snapshot
             print("Durvald: reprodução iniciada; pausada: \(snapshot.isPaused).")
         } catch {
@@ -1091,7 +1095,8 @@ final class DurvaldCoreStore {
     func playTracks(
         _ tracks: [Track],
         startingAt trackID: Int64? = nil,
-        shuffleEnabled: Bool
+        shuffleEnabled: Bool,
+        sourceContext: String = ""
     ) async {
         guard let core, !isChangingTrack, !tracks.isEmpty else { return }
 
@@ -1104,7 +1109,7 @@ final class DurvaldCoreStore {
 
         do {
             guard self.core === core else { return }
-            try await playbackCoordinator.playTracks(tracks, startingAt: trackID, shuffle: shuffleEnabled, core: core,
+            try await playbackCoordinator.playTracks(tracks, startingAt: trackID, shuffle: shuffleEnabled, sourceContext: sourceContext, core: core,
                 isCurrent: { self.core === core }, publish: { self.playback = $0 })
             guard self.core === core else { return }
             await refreshPlayback()
@@ -1857,7 +1862,7 @@ final class DurvaldCoreStore {
         guard let core else { return }
 
         do {
-            try await core.addToQueue(trackId: trackID)
+            try await core.addToQueueWithContext(trackId: trackID, sourceContext: "queue")
             await refreshPlayback()
         } catch {
             errorMessage = String(describing: error)
@@ -1904,7 +1909,7 @@ final class DurvaldCoreStore {
         do {
             var destination = position
             for id in ids {
-                try await core.addToQueue(trackId: id)
+                try await core.addToQueueWithContext(trackId: id, sourceContext: "queue")
                 let snapshot = await core.playback()
                 if let appended = snapshot.queue.last, appended.position > destination {
                     try await core.moveQueueItem(from: appended.position, to: destination)
@@ -1925,7 +1930,7 @@ final class DurvaldCoreStore {
         let initial = await core.playback()
         var destination: UInt64 = initial.currentTrack == nil ? 0 : 1
         for track in tracks {
-            try await core.addToQueue(trackId: track.id)
+            try await core.addToQueueWithContext(trackId: track.id, sourceContext: "queue")
             if playNext {
                 let snapshot = await core.playback()
                 if let appended = snapshot.queue.last, appended.position > destination {
@@ -1993,7 +1998,7 @@ final class DurvaldCoreStore {
     func playNext(trackID: Int64) async {
         guard let core else { return }
         do {
-            try await core.addToQueue(trackId: trackID)
+            try await core.addToQueueWithContext(trackId: trackID, sourceContext: "queue")
             let snapshot = await core.playback()
             let destination: UInt64 = snapshot.currentTrack == nil ? 0 : 1
             if let appended = snapshot.queue.last, appended.position > destination {

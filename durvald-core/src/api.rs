@@ -346,6 +346,8 @@ pub struct QueueItem {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PlaybackSnapshot {
+    /// Opaque presentation origin of the active queue occurrence; empty if unknown.
+    pub source_context: String,
     pub current_track: Option<Track>,
     pub position_seconds: f64,
     pub duration_seconds: Option<f64>,
@@ -421,7 +423,8 @@ pub struct LastSession {
     pub repeat_mode: RepeatMode,
     pub queue: Vec<i64>, // track IDs
     pub queue_position: u64,
-    pub source_context: String, // "release:42", "playlist:7", "library", "search", ""
+    /// Opaque persisted origin metadata; accepts legacy plain contexts and a versioned queue envelope.
+    pub source_context: String,
     pub updated_at: String,
 }
 

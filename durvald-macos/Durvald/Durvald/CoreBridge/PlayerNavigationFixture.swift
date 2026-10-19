@@ -52,6 +52,8 @@ enum PlayerNavigationFixture {
             return item
         } : [sameTitleAlbum, album]
         let snapshot = PlaybackSnapshot(
+                sourceContext: ProcessInfo.processInfo.arguments.contains("--playlist-origin-fixture")
+                    ? PlaybackSourceContext.playlist(7, position: 0) : PlaybackSourceContext.release(42),
                 currentTrack: tracks[0], positionSeconds: autoAdvance ? 0 : 30,
                 durationSeconds: tracks[0].durationSeconds, volume: 0.5,
                 isPlaying: livePlayback, isPaused: !livePlayback, queue: scrollable ? tracks.enumerated().map { QueueItem(trackId: $0.element.id, position: UInt64($0.offset)) } : [], queuePosition: 0,

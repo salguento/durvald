@@ -212,7 +212,7 @@ struct QueueView: View {
                                 size: max(0, geometry.size.width - 28)
                             )
                             .trackContextMenu(track: track, onPlay: {
-                                Task { await store.play(trackID: track.id) }
+                                Task { await store.play(trackID: track.id, sourceContext: "queue") }
                             })
 
                             HStack(alignment: .center, spacing: 8) {
@@ -231,7 +231,7 @@ struct QueueView: View {
                                     .buttonStyle(.plain)
                                     .onHover { isTrackLinkHovered = $0 }
                                     .trackContextMenu(track: track, onPlay: {
-                                        Task { await store.play(trackID: track.id) }
+                                        Task { await store.play(trackID: track.id, sourceContext: "queue") }
                                     })
                                     .accessibilityHint("Abrir página do álbum")
 

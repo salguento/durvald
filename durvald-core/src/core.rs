@@ -713,6 +713,28 @@ impl DurvaldCore {
             .await
     }
 
+    /// Starts a track with an opaque origin identifying its exact source occurrence.
+    pub async fn play_with_context(
+        &self,
+        track_id: i64,
+        source_context: String,
+    ) -> CoreResult<PlaybackSnapshot> {
+        self.playback_application
+            .play_with_context(track_id_from_api(track_id)?, source_context)
+            .await
+    }
+
+    /// Enqueues a track while preserving its presentation origin through navigation.
+    pub async fn add_to_queue_with_context(
+        &self,
+        track_id: i64,
+        source_context: String,
+    ) -> CoreResult<()> {
+        self.playback_application
+            .add_to_queue_with_context(track_id_from_api(track_id)?, source_context)
+            .await
+    }
+
     /// Returns the current playback state.
     pub async fn playback(&self) -> PlaybackSnapshot {
         self.playback_application.playback().await

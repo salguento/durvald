@@ -28,6 +28,7 @@ use std::sync::Arc;
 pub(crate) type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
 pub(crate) struct PlaybackBootstrap {
+    source_contexts: Vec<String>,
     pub(crate) volume: f64,
     pub(crate) current_track: Option<(i64, String)>,
     pub(crate) upcoming_tracks: Vec<(i64, String)>,
@@ -140,20 +141,29 @@ pub(crate) fn restore_playback(pool: &DatabasePool) -> CoreResult<PlaybackBootst
             .map(|track| (track_id, track.file_path))
     };
     let current_track = saved_session.current_song_id.and_then(track_path);
+    let contexts = crate::domain::playback_session::decode_contexts(&saved_session.source_context);
+    let mut source_contexts = Vec::new();
+    if current_track.is_some() {
+        source_contexts.push(contexts.first().cloned().unwrap_or_default());
+    }
     let mut skipped_current = false;
     let upcoming_tracks = queue_ids
         .into_iter()
-        .filter_map(|track_id| {
+        .enumerate()
+        .filter_map(|(index, track_id)| {
             if !skipped_current && Some(track_id) == saved_session.current_song_id {
                 skipped_current = true;
                 None
             } else {
-                track_path(track_id)
+                let track = track_path(track_id)?;
+                source_contexts.push(contexts.get(index).cloned().unwrap_or_default());
+                Some(track)
             }
         })
         .collect();
 
     Ok(PlaybackBootstrap {
+        source_contexts,
         volume: saved_session.volume,
         current_track,
         upcoming_tracks,
@@ -191,6 +201,7 @@ where
         playback.shuffle_enabled,
         playback.repeat_mode,
     );
+    audio_player.restore_contexts(playback.source_contexts);
 
     Ok((audio_player, settings_repository))
 }

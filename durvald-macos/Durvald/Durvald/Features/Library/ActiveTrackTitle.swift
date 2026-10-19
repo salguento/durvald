@@ -2,13 +2,14 @@ import SwiftUI
 
 private struct ActiveTrackTitle: ViewModifier {
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(\.playbackSourceContext) private var sourceContext
     let trackID: Int64
     var activeOverride: Bool? = nil
     var inactiveColor: Color? = nil
 
     func body(content: Content) -> some View {
         // Observe track changes here, without subscribing the list to playback ticks.
-        if activeOverride ?? (store.activeTrackID == trackID) {
+        if activeOverride ?? PlaybackSourceContext.matches(trackID: trackID, activeTrackID: store.activeTrackID, origin: sourceContext, activeOrigin: store.activeSourceContext) {
             content.foregroundStyle(Color.accentColor)
         } else if let inactiveColor {
             content.foregroundStyle(inactiveColor)

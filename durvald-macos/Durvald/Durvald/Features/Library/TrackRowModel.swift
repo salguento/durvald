@@ -82,14 +82,14 @@ struct TrackRowText: View {
 
 /// Preserve collection context and occurrence position when dispatching play.
 enum TrackRowPlayback: Equatable {
-    case track(Int64)
+    case track(Int64, sourceContext: String = PlaybackSourceContext.library)
     case release(Int64, startingAt: Int64)
     case playlist(Int64, position: Int)
 
     @MainActor
     func perform(using store: DurvaldCoreStore) async {
         switch self {
-        case .track(let id): await store.play(trackID: id)
+        case .track(let id, let context): await store.play(trackID: id, sourceContext: context)
         case .release(let id, let track): await store.playRelease(releaseID: id, startingAt: track)
         case .playlist(let id, let position): await store.playPlaylist(playlistID: id, startingAtPosition: position)
         }

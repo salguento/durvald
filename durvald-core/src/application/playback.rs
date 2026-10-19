@@ -138,6 +138,15 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn play(&self, track_id: TrackId) -> CoreResult<PlaybackSnapshot> {
+        self.play_with_context(track_id, String::new()).await
+    }
+
+    pub(crate) async fn play_with_context(
+        &self,
+        track_id: TrackId,
+        source_context: String,
+    ) -> CoreResult<PlaybackSnapshot> {
+        validate_source_context(&source_context)?;
         let track = self
             .track_query
             .find(track_id)
@@ -154,6 +163,7 @@ impl PlaybackApplication {
                 .map_err(|error| CoreError::Playback {
                     message: error.to_string(),
                 })?;
+            player.set_source_context(source_context);
             PlaybackStateSnapshot::from_player(&player)
         };
         drop(_transition);
@@ -276,6 +286,16 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn add_to_queue(&self, track_id: TrackId) -> CoreResult<()> {
+        self.add_to_queue_with_context(track_id, String::new())
+            .await
+    }
+
+    pub(crate) async fn add_to_queue_with_context(
+        &self,
+        track_id: TrackId,
+        source_context: String,
+    ) -> CoreResult<()> {
+        validate_source_context(&source_context)?;
         let track_id = track_id.get() as i64;
         let track = self.find_track(track_id).await?;
         let _transition = self.playback_transition.lock().await;
@@ -292,8 +312,9 @@ impl PlaybackApplication {
                 .map_err(|error| CoreError::Playback {
                     message: error.to_string(),
                 })?;
+            player.set_source_context(source_context);
         } else {
-            player.enqueue(track_id, track.file_path);
+            player.enqueue_with_context(track_id, track.file_path, source_context);
         }
         drop(player);
         drop(_transition);
@@ -489,8 +510,17 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn persist_session(&self) -> CoreResult<()> {
-        let (current_song_id, progress_seconds, volume, shuffle_enabled, repeat_mode, queue) = {
-            let player = self.audio_player.lock().await;
+        let (
+            current_song_id,
+            progress_seconds,
+            volume,
+            shuffle_enabled,
+            repeat_mode,
+            queue,
+            contexts,
+        ) = {
+            let mut player = self.audio_player.lock().await;
+            player.synchronize_gapless();
             (
                 player.get_current_song_id(),
                 player.get_position().as_secs_f64(),
@@ -502,6 +532,7 @@ impl PlaybackApplication {
                     .into_iter()
                     .map(|(song_id, _)| song_id)
                     .collect::<Vec<_>>(),
+                player.playback_contexts(),
             )
         };
         let session = PlaybackSessionState {
@@ -512,11 +543,11 @@ impl PlaybackApplication {
             repeat_mode: format!("{repeat_mode:?}").to_lowercase(),
             queue,
             queue_position: 0,
-            source_context: String::new(),
+            source_context: crate::domain::playback_session::encode_contexts(contexts),
             updated_at: String::new(),
         };
         self.session_repository
-            .save_preserving_source_context(session)
+            .save(session)
             .await
             .map_err(|message| CoreError::Storage { message })
     }
@@ -593,6 +624,7 @@ impl PlaybackApplication {
             None
         };
         PlaybackSnapshot {
+            source_context: state.source_context,
             current_track,
             position_seconds: state.position_seconds,
             duration_seconds: state.duration_seconds,
@@ -716,6 +748,7 @@ fn playback_track_error(error: CatalogTrackLookupError, track_id: TrackId) -> Co
 }
 
 struct PlaybackStateSnapshot {
+    source_context: String,
     current_track_id: Option<i64>,
     position_seconds: f64,
     duration_seconds: Option<f64>,
@@ -732,6 +765,7 @@ impl PlaybackStateSnapshot {
         let (position, duration) = player.get_progress();
         let is_paused = player.is_paused();
         Self {
+            source_context: player.source_context().to_string(),
             current_track_id: player.get_current_song_id(),
             position_seconds: position.as_secs_f64(),
             duration_seconds: duration.map(|duration| duration.as_secs_f64()),
@@ -787,4 +821,13 @@ fn public_to_upcoming_position(
         position
     };
     Ok(position as usize)
+}
+
+fn validate_source_context(context: &str) -> CoreResult<()> {
+    if context.len() > 2048 || context.chars().any(char::is_control) {
+        return Err(CoreError::InvalidInput {
+            message: "Invalid playback source context".into(),
+        });
+    }
+    Ok(())
 }

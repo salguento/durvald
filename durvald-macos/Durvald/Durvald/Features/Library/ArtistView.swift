@@ -1490,7 +1490,7 @@ struct ArtistView: View {
 
     private func playArtist(_ action: PlaybackCollection.Action) {
         guard canPlayArtist else { return }
-        Task { await PlaybackCollection.tracks(tracks).perform(action, using: store) }
+        Task { await PlaybackCollection.tracks(tracks, sourceContext: PlaybackSourceContext.artist(artist.id)).perform(action, using: store) }
     }
 
     private var artistPlayButton: some View {
@@ -1645,6 +1645,7 @@ struct ArtistView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(track.title)
                     .activeTrackTitle(trackID: track.id)
+                    .environment(\.playbackSourceContext, PlaybackSourceContext.artist(artist.id))
                 Text(track.release)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1663,10 +1664,10 @@ struct ArtistView: View {
         }
         .padding(.vertical, 8)
         .playTrackOnDoubleClick {
-            Task { await TrackRowPlayback.track(track.id).perform(using: store) }
+            Task { await TrackRowPlayback.track(track.id, sourceContext: PlaybackSourceContext.artist(artist.id)).perform(using: store) }
         }
         .trackContextMenu(track: track) {
-            Task { await TrackRowPlayback.track(track.id).perform(using: store) }
+            Task { await TrackRowPlayback.track(track.id, sourceContext: PlaybackSourceContext.artist(artist.id)).perform(using: store) }
         }
         .accessibilityIdentifier("artist.track.\(track.id)")
     }
@@ -1711,7 +1712,8 @@ struct ArtistView: View {
                 await store.playTracks(
                     popularPlaybackTracks,
                     startingAt: track.id,
-                    shuffleEnabled: false
+                    shuffleEnabled: false,
+                    sourceContext: PlaybackSourceContext.artistPopular(artist.id)
                 )
             }
         }
@@ -1742,6 +1744,7 @@ struct ArtistView: View {
         )
         .playTrackOnDoubleClick(playRanking)
         .trackContextMenu(track: currentTrack, onPlay: playRanking)
+        .environment(\.playbackSourceContext, PlaybackSourceContext.artistPopular(artist.id))
         .accessibilityIdentifier("artist.popular.local.\(track.id)")
     }
 

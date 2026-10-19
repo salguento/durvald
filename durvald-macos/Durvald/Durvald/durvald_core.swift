@@ -568,6 +568,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func addToQueue(trackId: Int64) async throws
 
     /**
+     * Enqueues a track while preserving its presentation origin through navigation.
+     */
+    func addToQueueWithContext(trackId: Int64, sourceContext: String) async throws
+
+    /**
      * Adds a track at a playlist position.
      */
     func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws  -> PlaylistTrack
@@ -760,6 +765,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Starts the upcoming track at the given queue position.
      */
     func playQueueItem(position: UInt64) async throws  -> PlaybackSnapshot
+
+    /**
+     * Starts a track with an opaque origin identifying its exact source occurrence.
+     */
+    func playWithContext(trackId: Int64, sourceContext: String) async throws  -> PlaybackSnapshot
 
     /**
      * Returns the current playback state.
@@ -1137,6 +1147,26 @@ open func addToQueue(trackId: Int64)async throws  {
                 uniffi_durvald_core_fn_method_durvaldcore_add_to_queue(
                     self.uniffiClonePointer(),
                     FfiConverterInt64.lower(trackId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Enqueues a track while preserving its presentation origin through navigation.
+     */
+open func addToQueueWithContext(trackId: Int64, sourceContext: String)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_add_to_queue_with_context(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(trackId),FfiConverterString.lower(sourceContext)
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -1951,6 +1981,26 @@ open func playQueueItem(position: UInt64)async throws  -> PlaybackSnapshot {
                 uniffi_durvald_core_fn_method_durvaldcore_play_queue_item(
                     self.uniffiClonePointer(),
                     FfiConverterUInt64.lower(position)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Starts a track with an opaque origin identifying its exact source occurrence.
+     */
+open func playWithContext(trackId: Int64, sourceContext: String)async throws  -> PlaybackSnapshot {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_play_with_context(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(trackId),FfiConverterString.lower(sourceContext)
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -6189,12 +6239,18 @@ public struct LastSession {
     public var repeatMode: RepeatMode
     public var queue: [Int64]
     public var queuePosition: UInt64
+    /**
+     * Opaque persisted origin metadata; accepts legacy plain contexts and a versioned queue envelope.
+     */
     public var sourceContext: String
     public var updatedAt: String
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(currentTrackId: Int64?, progressSeconds: Double, volume: Float, shuffleEnabled: Bool, repeatMode: RepeatMode, queue: [Int64], queuePosition: UInt64, sourceContext: String, updatedAt: String) {
+    public init(currentTrackId: Int64?, progressSeconds: Double, volume: Float, shuffleEnabled: Bool, repeatMode: RepeatMode, queue: [Int64], queuePosition: UInt64,
+        /**
+         * Opaque persisted origin metadata; accepts legacy plain contexts and a versioned queue envelope.
+         */sourceContext: String, updatedAt: String) {
         self.currentTrackId = currentTrackId
         self.progressSeconds = progressSeconds
         self.volume = volume
@@ -6683,6 +6739,10 @@ public func FfiConverterTypePlaybackHistoryPage_lower(_ value: PlaybackHistoryPa
  * Playback state snapshot
  */
 public struct PlaybackSnapshot {
+    /**
+     * Opaque presentation origin of the active queue occurrence; empty if unknown.
+     */
+    public var sourceContext: String
     public var currentTrack: Track?
     public var positionSeconds: Double
     public var durationSeconds: Double?
@@ -6696,7 +6756,11 @@ public struct PlaybackSnapshot {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(currentTrack: Track?, positionSeconds: Double, durationSeconds: Double?, volume: Float, isPlaying: Bool, isPaused: Bool, queue: [QueueItem], queuePosition: UInt64, shuffleEnabled: Bool, repeatMode: RepeatMode) {
+    public init(
+        /**
+         * Opaque presentation origin of the active queue occurrence; empty if unknown.
+         */sourceContext: String, currentTrack: Track?, positionSeconds: Double, durationSeconds: Double?, volume: Float, isPlaying: Bool, isPaused: Bool, queue: [QueueItem], queuePosition: UInt64, shuffleEnabled: Bool, repeatMode: RepeatMode) {
+        self.sourceContext = sourceContext
         self.currentTrack = currentTrack
         self.positionSeconds = positionSeconds
         self.durationSeconds = durationSeconds
@@ -6714,6 +6778,9 @@ public struct PlaybackSnapshot {
 
 extension PlaybackSnapshot: Equatable, Hashable {
     public static func ==(lhs: PlaybackSnapshot, rhs: PlaybackSnapshot) -> Bool {
+        if lhs.sourceContext != rhs.sourceContext {
+            return false
+        }
         if lhs.currentTrack != rhs.currentTrack {
             return false
         }
@@ -6748,6 +6815,7 @@ extension PlaybackSnapshot: Equatable, Hashable {
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(sourceContext)
         hasher.combine(currentTrack)
         hasher.combine(positionSeconds)
         hasher.combine(durationSeconds)
@@ -6766,6 +6834,7 @@ public struct FfiConverterTypePlaybackSnapshot: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaybackSnapshot {
         return
             try PlaybackSnapshot(
+                sourceContext: FfiConverterString.read(from: &buf),
                 currentTrack: FfiConverterOptionTypeTrack.read(from: &buf),
                 positionSeconds: FfiConverterDouble.read(from: &buf),
                 durationSeconds: FfiConverterOptionDouble.read(from: &buf),
@@ -6780,6 +6849,7 @@ public struct FfiConverterTypePlaybackSnapshot: FfiConverterRustBuffer {
     }
 
     public static func write(_ value: PlaybackSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.sourceContext, into: &buf)
         FfiConverterOptionTypeTrack.write(value.currentTrack, into: &buf)
         FfiConverterDouble.write(value.positionSeconds, into: &buf)
         FfiConverterOptionDouble.write(value.durationSeconds, into: &buf)
@@ -11246,9 +11316,7 @@ fileprivate func uniffiRustCallAsync<F, T>(
         pollResult = await withUnsafeContinuation {
             pollFunc(
                 rustFuture,
-                { handle, pollResult in
-                    uniffiFutureContinuationCallback(handle: handle, pollResult: pollResult)
-                },
+                uniffiFutureContinuationCallback,
                 uniffiContinuationHandleMap.insert(obj: $0)
             )
         }
@@ -11309,6 +11377,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_add_to_queue() != 32441) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_add_to_queue_with_context() != 63594) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_add_track_to_playlist() != 52605) {
@@ -11435,6 +11506,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_play_queue_item() != 38649) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_play_with_context() != 54924) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_playback() != 9980) {

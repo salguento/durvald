@@ -86,7 +86,7 @@ struct MusicLibraryView: View {
                 ratingsEnabled: ratingsEnabled,
                 artworkSize: artworkSize,
                 groupArtwork: groupArtwork,
-                activeTrackID: store.activeTrackID,
+                activeTrackID: store.activeSourceContext == PlaybackSourceContext.library ? store.activeTrackID : nil,
                 bottomContentInset: geometry.safeAreaInsets.bottom,
                 isPresented: isPresented,
                 scrollRestorationID: navigationEntryID,

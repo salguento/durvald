@@ -132,7 +132,7 @@ struct PlayerBar: View {
         if let track {
             artwork.trackContextMenu(
                 track: track,
-                onPlay: { Task { await store.play(trackID: track.id) } }
+                onPlay: { Task { await store.play(trackID: track.id, sourceContext: "player") } }
             )
         } else {
             artwork
@@ -152,7 +152,7 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.trackTitle")
                 .trackContextMenu(
                     track: track,
-                    onPlay: { Task { await store.play(trackID: track.id) } }
+                    onPlay: { Task { await store.play(trackID: track.id, sourceContext: "player") } }
                 )
             } else {
                 PlayerMetadataLink(
@@ -270,7 +270,7 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.options")
                 .trackOptionsMenu(track: track) {
                     guard let track else { return }
-                    Task { await store.play(trackID: track.id) }
+                    Task { await store.play(trackID: track.id, sourceContext: "player") }
                 }
             }
         }

@@ -159,10 +159,10 @@ struct PlaylistMusicPicker: View {
         }
         .padding(.vertical, 6)
         .playTrackOnDoubleClick {
-            Task { await store.play(trackID: track.id) }
+            Task { await store.play(trackID: track.id, sourceContext: "playlist-picker:\(playlist.id)") }
         }
         .trackContextMenu(track: track) {
-            Task { await store.play(trackID: track.id) }
+            Task { await store.play(trackID: track.id, sourceContext: "playlist-picker:\(playlist.id)") }
         }
     }
 

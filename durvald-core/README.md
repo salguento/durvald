@@ -80,3 +80,22 @@ parse text. Credential values are never included in diagnostics.
 ### Playback history
 
 Each completed listen creates a persistent playback-history record, including repeated completions of the same track under Repeat One. The player's internal queue history is separate: it exists only to implement Previous navigation.
+
+### Playback presentation origin
+
+`play_with_context` and `add_to_queue_with_context` attach an opaque presentation
+origin to each queue occurrence. `PlaybackSnapshot::source_context` identifies
+the active occurrence's origin, independently of the page currently displayed.
+Clients highlight a row only when both its track ID and origin match. A repeated
+playlist track needs a distinct origin for each original position.
+
+Queue navigation, shuffle, repeat, gapless transitions and session restoration
+preserve these origins. Manual queue additions in the macOS client use `queue`;
+album and playlist playback retain their respective origins. Calls to the legacy
+context-free APIs use an empty origin and cannot inherit a previous collection's
+highlight. Contexts must contain no control characters and at most 2048 UTF-8 bytes.
+
+Occurrence metadata is stored as a versioned envelope in the existing last-session
+`source_context` column. Legacy plain contexts restore conservatively: they describe
+only the current item. This metadata describes presentation, not a media provider,
+file path, or listening-history identity.

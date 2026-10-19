@@ -202,6 +202,16 @@ private final class CoordinationTestCore: DurvaldCore {
     override func releasesPage(pageSize: UInt64, offset: UInt64) async throws -> ReleasePage { .init(items: [], nextOffset: nil) }
     override func artists() async throws -> [Artist] { [] }
     override func clearQueue() async throws { playbackOperations.append("clear") }
+    override func playWithContext(trackId: Int64, sourceContext: String) async throws -> PlaybackSnapshot {
+        var result = try await play(trackId: trackId)
+        result.sourceContext = sourceContext
+        return result
+    }
+
+    override func addToQueueWithContext(trackId: Int64, sourceContext: String) async throws {
+        try await addToQueue(trackId: trackId)
+    }
+
     override func play(trackId: Int64) async throws -> PlaybackSnapshot {
         playbackOperations.append("play:\(trackId)")
         await onPlay?()

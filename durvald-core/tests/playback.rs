@@ -1625,3 +1625,85 @@ async fn repeat_one_records_each_natural_completion() -> TestResult<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn occurrence_context_survives_queue_edits_navigation_and_restart() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(2).await?;
+    let first = tracks[0].id;
+    let second = tracks[1].id;
+    let core = test_core.core();
+    let started = core.play_with_context(first, "playlist:7#0".into()).await?;
+    assert_eq!(started.source_context, "playlist:7#0");
+    core.add_to_queue_with_context(first, "playlist:7#1".into())
+        .await?;
+    core.add_to_queue_with_context(second, "release:8".into())
+        .await?;
+    core.move_queue_item(2, 1).await?;
+    assert_eq!(core.playback().await.source_context, "playlist:7#0");
+    assert_eq!(
+        core.play_queue_item(2).await?.source_context,
+        "playlist:7#1"
+    );
+    assert_eq!(core.previous_track().await?.source_context, "playlist:7#0");
+    assert_eq!(core.next_track().await?.source_context, "playlist:7#1");
+    core.pause().await?;
+    assert_eq!(core.playback().await.source_context, "playlist:7#1");
+    core.add_to_queue_with_context(second, "release:9".into())
+        .await?;
+    let test_core = test_core.restart().await?;
+    assert_eq!(
+        test_core.core().playback().await.source_context,
+        "playlist:7#1"
+    );
+    assert_eq!(
+        test_core.core().next_track().await?.source_context,
+        "release:9"
+    );
+    // A legacy caller provides no origin, so it cannot inherit the last collection.
+    assert!(
+        test_core
+            .core()
+            .play(first)
+            .await?
+            .source_context
+            .is_empty()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn shuffle_keeps_the_selected_duplicate_occurrence_context() -> TestResult<()> {
+    let (test_core, track) = core_with_one_track().await?;
+    let core = test_core.core();
+    core.play_with_context(track.id, "playlist:4#0".into())
+        .await?;
+    core.add_to_queue_with_context(track.id, "playlist:4#1".into())
+        .await?;
+    core.add_to_queue_with_context(track.id, "playlist:4#2".into())
+        .await?;
+    core.set_shuffle_enabled(true).await?;
+    let first = core.next_track().await?.source_context;
+    let second = core.next_track().await?.source_context;
+    assert_ne!(first, second);
+    assert!(["playlist:4#1", "playlist:4#2"].contains(&first.as_str()));
+    assert!(["playlist:4#1", "playlist:4#2"].contains(&second.as_str()));
+    Ok(())
+}
+
+#[tokio::test]
+async fn context_validation_does_not_replace_active_origin() -> TestResult<()> {
+    let (test_core, track) = core_with_one_track().await?;
+    let core = test_core.core();
+    core.play_with_context(track.id, "release:7".into()).await?;
+    assert!(matches!(
+        core.play_with_context(track.id, "x".repeat(2049)).await,
+        Err(CoreError::InvalidInput { .. })
+    ));
+    assert!(matches!(
+        core.play_with_context(track.id, "bad\ncontext".into())
+            .await,
+        Err(CoreError::InvalidInput { .. })
+    ));
+    assert_eq!(core.playback().await.source_context, "release:7");
+    Ok(())
+}

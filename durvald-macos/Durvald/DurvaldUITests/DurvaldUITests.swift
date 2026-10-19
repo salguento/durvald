@@ -412,6 +412,22 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testAlbumDoesNotHighlightTrackPlayingFromPlaylist() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture",
+                                "--playback-clock-fixture", "--playlist-origin-fixture"]
+        app.launch()
+        let artwork = app.buttons["player.artwork"]
+        XCTAssertTrue(artwork.waitForExistence(timeout: 3))
+        artwork.click()
+        XCTAssertTrue(app.descendants(matching: .any)["album.detail.42"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["album.track.100.number"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.images["album.track.100.playbackIndicator"].exists)
+        XCTAssertEqual(app.links["player.trackTitle"].label, "Faixa de teste")
+
+    }
+
+    @MainActor
     func testOpenPlayingAlbumKeepsProgressAndAutomaticTrackChangesLive() throws {
         executionTimeAllowance = 35
         let app = XCUIApplication()

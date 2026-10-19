@@ -515,7 +515,8 @@ struct PlaylistView: View {
     }
 
     private func trackRow(_ track: Track, position: Int) -> some View {
-        CollectionTrackRow(track: track, number: "\(position)", activeOverride: activeTrackPosition == position,
+        CollectionTrackRow(track: track, number: "\(position)", activeOverride: PlaybackSourceContext.matches(trackID: track.id, activeTrackID: store.activeTrackID,
+                               origin: PlaybackSourceContext.playlist(playlist.id, position: position - 1), activeOrigin: store.activeSourceContext),
                            isSelected: selectedTrackPosition == position) {
             Task { await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store) }
         }
@@ -529,21 +530,7 @@ struct PlaylistView: View {
         .accessibilityIdentifier("playlist.track.\(track.id)")
     }
 
-    private var activeTrackPosition: Int? {
-        guard let activeTrackID = store.activeTrackID else { return nil }
-        let queueTrackIDs = store.queue.map(\.trackId)
 
-        if !queueTrackIDs.isEmpty,
-           let index = tracks.indices.first(where: { index in
-               tracks[index...].map(\.id) == queueTrackIDs
-           }) {
-            return index + 1
-        }
-
-        let matchingPositions = tracks.indices.filter { tracks[$0].id == activeTrackID }
-        guard matchingPositions.count == 1, let index = matchingPositions.first else { return nil }
-        return index + 1
-    }
 }
 
 struct PlaylistDetailToolbarControls: View {
