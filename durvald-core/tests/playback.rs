@@ -1707,3 +1707,218 @@ async fn context_validation_does_not_replace_active_origin() -> TestResult<()> {
     assert_eq!(core.playback().await.source_context, "release:7");
     Ok(())
 }
+
+fn queue_ids(snapshot: &durvald_core::PlaybackSnapshot) -> Vec<i64> {
+    snapshot.queue.iter().map(|item| item.track_id).collect()
+}
+
+#[tokio::test]
+async fn collection_started_in_middle_repeats_from_first_occurrence() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(4).await?;
+    let core = test_core.core();
+    let ids: Vec<_> = tracks.iter().map(|track| track.id).collect();
+    core.play(tracks[0].id).await?;
+    core.add_to_queue(tracks[0].id).await?;
+    core.set_repeat_mode(RepeatMode::All).await?;
+    let snapshot = core
+        .play_collection(
+            ids.clone(),
+            vec!["release:1".into(); 4],
+            Some(2),
+            Some(false),
+        )
+        .await?;
+    assert_eq!(queue_ids(&snapshot), ids[2..]);
+    assert_eq!(core.next_track().await?.current_track.unwrap().id, ids[3]);
+    let restarted = core.next_track().await?;
+    assert_eq!(restarted.current_track.unwrap().id, ids[0]);
+    assert_eq!(queue_ids(&core.playback().await), ids);
+    Ok(())
+}
+
+#[tokio::test]
+async fn collection_shuffle_rebuilds_full_source_and_keeps_clicked_occurrence_first()
+-> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+    let core = test_core.core();
+    let ids = vec![tracks[0].id, tracks[1].id, tracks[0].id, tracks[2].id];
+    let contexts: Vec<_> = (0..4).map(|index| format!("playlist:7#{index}")).collect();
+    core.set_shuffle_enabled(true).await?;
+    let snapshot = core
+        .play_collection(ids.clone(), contexts, Some(2), None)
+        .await?;
+    assert_eq!(snapshot.source_context, "playlist:7#2");
+    assert_eq!(queue_ids(&snapshot)[0], ids[2]);
+    let mut expected = ids.clone();
+    expected.sort();
+    let mut shuffled = queue_ids(&snapshot);
+    shuffled.sort();
+    assert_eq!(shuffled, expected);
+    core.pause().await?;
+    test_core.process_mock_audio(1).await;
+    let ordered = core.set_shuffle_enabled(false).await?;
+    assert_eq!(queue_ids(&ordered), ids[2..]);
+    assert_eq!(ordered.source_context, "playlist:7#2");
+    assert!(ordered.is_paused);
+    for _ in 0..3 {
+        let shuffled = core.set_shuffle_enabled(true).await?;
+        let mut actual = queue_ids(&shuffled);
+        actual.sort();
+        assert_eq!(actual, expected);
+        assert_eq!(shuffled.source_context, "playlist:7#2");
+        assert_eq!(queue_ids(&core.set_shuffle_enabled(false).await?), ids[2..]);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn collection_and_earlier_tracks_survive_session_restart() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(4).await?;
+    let ids: Vec<_> = tracks.iter().map(|track| track.id).collect();
+    test_core
+        .core()
+        .play_collection(
+            ids.clone(),
+            vec!["release:1".into(); 4],
+            Some(2),
+            Some(false),
+        )
+        .await?;
+    test_core.core().pause().await?;
+    let test_core = test_core.restart().await?;
+    let mut restored = queue_ids(&test_core.core().set_shuffle_enabled(true).await?);
+    restored.sort();
+    let mut expected = ids.clone();
+    expected.sort();
+    assert_eq!(restored, expected);
+    assert_eq!(
+        queue_ids(&test_core.core().set_shuffle_enabled(false).await?),
+        ids[2..]
+    );
+    test_core.core().set_repeat_mode(RepeatMode::All).await?;
+    test_core.core().next_track().await?;
+    assert_eq!(
+        test_core
+            .core()
+            .next_track()
+            .await?
+            .current_track
+            .unwrap()
+            .id,
+        ids[0]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn shuffle_preserves_manual_extras_and_does_not_resurrect_removed_items() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(4).await?;
+    let core = test_core.core();
+    let ids: Vec<_> = tracks.iter().map(|track| track.id).collect();
+    core.play_collection(
+        ids[..3].to_vec(),
+        vec!["release:1".into(); 3],
+        Some(1),
+        Some(false),
+    )
+    .await?;
+    core.add_to_queue_with_context(ids[3], "queue".into())
+        .await?;
+    core.remove_from_queue(1).await?;
+    let shuffled = core.set_shuffle_enabled(true).await?;
+    assert_eq!(shuffled.queue.last().unwrap().track_id, ids[3]);
+    assert!(!queue_ids(&shuffled).contains(&ids[2]));
+    assert_eq!(
+        queue_ids(&core.set_shuffle_enabled(false).await?),
+        vec![ids[1], ids[3]]
+    );
+    let test_core = test_core.restart().await?;
+    assert!(!queue_ids(&test_core.core().set_shuffle_enabled(true).await?).contains(&ids[2]));
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_collection_leaves_active_track_and_queue_untouched() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(2).await?;
+    let core = test_core.core();
+    let ids: Vec<_> = tracks.iter().map(|track| track.id).collect();
+    core.play_collection(
+        ids.clone(),
+        vec!["release:1".into(); 2],
+        Some(0),
+        Some(false),
+    )
+    .await?;
+    for (bad_ids, contexts, position) in [
+        (vec![], vec![], Some(0)),
+        (ids.clone(), vec!["release:1".into()], Some(0)),
+        (ids.clone(), vec!["release:1".into(); 2], Some(u64::MAX)),
+        (vec![ids[0], i64::MAX], vec!["release:1".into(); 2], Some(0)),
+        (vec![-1], vec!["release:1".into()], Some(0)),
+    ] {
+        assert!(
+            core.play_collection(bad_ids, contexts, position, Some(true))
+                .await
+                .is_err()
+        );
+        let unchanged = core.playback().await;
+        assert_eq!(queue_ids(&unchanged), ids);
+        assert_eq!(unchanged.current_track.unwrap().id, ids[0]);
+        assert!(!unchanged.shuffle_enabled);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_queue_clear_does_not_restore_the_old_source_on_shuffle() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(3).await?;
+    let core = test_core.core();
+    let ids: Vec<_> = tracks.iter().map(|track| track.id).collect();
+    core.play_collection(
+        ids.clone(),
+        vec!["release:1".into(); 3],
+        Some(1),
+        Some(false),
+    )
+    .await?;
+    core.clear_queue().await?;
+    assert_eq!(
+        queue_ids(&core.set_shuffle_enabled(true).await?),
+        vec![ids[1]]
+    );
+    assert_eq!(
+        queue_ids(&core.set_shuffle_enabled(false).await?),
+        vec![ids[1]]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn collection_decoder_failure_preserves_previous_queue() -> TestResult<()> {
+    let (test_core, tracks) = core_with_tracks(2).await?;
+    let core = test_core.core();
+    let ids: Vec<_> = tracks.iter().map(|track| track.id).collect();
+    core.play_collection(
+        ids.clone(),
+        vec!["release:1".into(); 2],
+        Some(0),
+        Some(false),
+    )
+    .await?;
+    std::fs::remove_file(&tracks[1].file_path)?;
+    assert!(
+        core.play_collection(
+            ids.clone(),
+            vec!["release:2".into(); 2],
+            Some(1),
+            Some(true)
+        )
+        .await
+        .is_err()
+    );
+    let snapshot = core.playback().await;
+    assert_eq!(queue_ids(&snapshot), ids);
+    assert_eq!(snapshot.source_context, "release:1");
+    assert!(!snapshot.shuffle_enabled);
+    Ok(())
+}

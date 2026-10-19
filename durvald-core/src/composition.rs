@@ -29,6 +29,10 @@ pub(crate) type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
 pub(crate) struct PlaybackBootstrap {
     source_contexts: Vec<String>,
+    source_collection: Option<(
+        crate::domain::playback_session::StoredCollection,
+        Vec<String>,
+    )>,
     pub(crate) volume: f64,
     pub(crate) current_track: Option<(i64, String)>,
     pub(crate) upcoming_tracks: Vec<(i64, String)>,
@@ -142,8 +146,12 @@ pub(crate) fn restore_playback(pool: &DatabasePool) -> CoreResult<PlaybackBootst
     };
     let current_track = saved_session.current_song_id.and_then(track_path);
     let contexts = crate::domain::playback_session::decode_contexts(&saved_session.source_context);
+    let mut collection =
+        crate::domain::playback_session::decode_collection(&saved_session.source_context);
+    let mut retained_indices = Vec::new();
     let mut source_contexts = Vec::new();
     if current_track.is_some() {
+        retained_indices.push(0);
         source_contexts.push(contexts.first().cloned().unwrap_or_default());
     }
     let mut skipped_current = false;
@@ -156,14 +164,28 @@ pub(crate) fn restore_playback(pool: &DatabasePool) -> CoreResult<PlaybackBootst
                 None
             } else {
                 let track = track_path(track_id)?;
+                retained_indices.push(index);
                 source_contexts.push(contexts.get(index).cloned().unwrap_or_default());
                 Some(track)
             }
         })
         .collect();
 
+    let source_collection = collection.take().and_then(|mut saved| {
+        let paths: Option<Vec<_>> = saved
+            .items
+            .iter()
+            .map(|item| track_path(item.track_id).map(|(_, path)| path))
+            .collect();
+        saved.positions = retained_indices
+            .iter()
+            .map(|&index| saved.positions.get(index).copied().flatten())
+            .collect();
+        paths.map(|paths| (saved, paths))
+    });
     Ok(PlaybackBootstrap {
         source_contexts,
+        source_collection,
         volume: saved_session.volume,
         current_track,
         upcoming_tracks,
@@ -202,6 +224,9 @@ where
         playback.repeat_mode,
     );
     audio_player.restore_contexts(playback.source_contexts);
+    if let Some((saved, paths)) = playback.source_collection {
+        audio_player.restore_collection(saved, paths);
+    }
 
     Ok((audio_player, settings_repository))
 }

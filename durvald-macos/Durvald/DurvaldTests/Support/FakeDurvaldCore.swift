@@ -2,6 +2,7 @@ import Foundation
 @testable import Durvald
 
 final class FakeDurvaldCore: DurvaldCore {
+    var collectionRequests: [(trackIDs: [Int64], contexts: [String], start: UInt64?, shuffle: Bool?)] = []
     var contextualPlayRequests: [String] = []
     var contextualQueueRequests: [String] = []
     var ratingPreferencesResult = RatingScalePreferences(granularity: .halfStars)
@@ -162,6 +163,21 @@ final class FakeDurvaldCore: DurvaldCore {
 
     override func clearQueue() async throws {
         playbackOperations.append("clear")
+    }
+
+    override func playCollection(trackIds: [Int64], sourceContexts: [String], startingPosition: UInt64?, shuffleEnabled: Bool?) async throws -> PlaybackSnapshot {
+        collectionRequests.append((trackIds, sourceContexts, startingPosition, shuffleEnabled))
+        let start = Int(startingPosition ?? 0)
+        try await clearQueue()
+        _ = try await playWithContext(trackId: trackIds[start], sourceContext: sourceContexts[start])
+        let shuffle = shuffleEnabled ?? snapshot.shuffleEnabled
+        var remaining = shuffle ? trackIds.indices.filter { $0 != start } : Array(trackIds.indices.dropFirst(start + 1))
+        if shuffle { remaining.shuffle() }
+        for index in remaining { try await addToQueueWithContext(trackId: trackIds[index], sourceContext: sourceContexts[index]) }
+        if let shuffleEnabled { _ = try await setShuffleEnabled(enabled: shuffleEnabled) }
+        let ids = [trackIds[start]] + remaining.map { trackIds[$0] }
+        snapshot.queue = ids.enumerated().map { QueueItem(trackId: $0.element, position: UInt64($0.offset)) }
+        return snapshot
     }
 
     override func playWithContext(trackId: Int64, sourceContext: String) async throws -> PlaybackSnapshot {

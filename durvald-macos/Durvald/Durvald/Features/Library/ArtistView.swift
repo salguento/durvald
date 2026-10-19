@@ -1300,6 +1300,10 @@ struct ArtistView: View {
         let sideInsets = viewport.sideInsets
         let highlightArtworkSize: CGFloat = 160
         let popularTrackRowHeight = PopularTrackRowMetrics.height
+        // A short/empty latest-release block must not make LazyHStack clip the
+        // ranking's last row outside the horizontal viewport's hit-test area.
+        let highlightMinimumHeight = highlightArtworkSize + 16
+            + 2 * NSLayoutManager().defaultLineHeight(for: NSFont.preferredFont(forTextStyle: .title2))
         let latestReleaseTitleFont = Font.system(
             size: (NSFont.preferredFont(forTextStyle: .subheadline).pointSize + 1) * 1.25
         )
@@ -1467,6 +1471,7 @@ struct ArtistView: View {
         .contentMargins(.leading, 24 + sideInsets.leading, for: .scrollContent)
         .contentMargins(.trailing, 24 + sideInsets.trailing, for: .scrollContent)
         .frame(width: contentWidth, alignment: .leading)
+        .frame(minHeight: highlightMinimumHeight)
         .padding(.leading, -24 - sideInsets.leading)
         .padding(.trailing, -24 - sideInsets.trailing)
         .scrollClipDisabled()
@@ -1639,37 +1644,42 @@ struct ArtistView: View {
     }
 
     private func trackRow(_ track: Track) -> some View {
-        HStack(spacing: 12) {
-            ArtworkView(artworkID: track.artworkId, size: 36)
+        let play: () -> Void = {
+            Task { await store.playTracks(tracks, startingAt: track.id, sourceContext: PlaybackSourceContext.artist(artist.id)) }
+        }
+        return TrackPlaybackHoverRegion { hovered in
+            HStack(spacing: 12) {
+                TrackPositionPlayButton(trackID: track.id, title: track.title,
+                    number: "\((tracks.firstIndex(where: { $0.id == track.id }) ?? 0) + 1)", isRowHovered: hovered,
+                    isActiveOverride: PlaybackSourceContext.matches(trackID: track.id, activeTrackID: store.activeTrackID,
+                        origin: PlaybackSourceContext.artist(artist.id), activeOrigin: store.activeSourceContext), onPlay: play)
+                ArtworkView(artworkID: track.artworkId, size: 36)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(track.title)
-                    .activeTrackTitle(trackID: track.id)
-                    .environment(\.playbackSourceContext, PlaybackSourceContext.artist(artist.id))
-                Text(track.release)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityLabel("Reproduzir \(track.title)")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(track.title)
+                        .activeTrackTitle(trackID: track.id)
+                        .environment(\.playbackSourceContext, PlaybackSourceContext.artist(artist.id))
+                    Text(track.release)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("Reproduzir \(track.title)")
 
-            Button {
-                Task { await store.addToQueue(trackID: track.id) }
-            } label: {
-                Image(systemName: "plus.circle")
+                Button {
+                    Task { await store.addToQueue(trackID: track.id) }
+                } label: {
+                    Image(systemName: "plus.circle")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Adicionar \(track.title) à fila")
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Adicionar \(track.title) à fila")
+            .padding(.vertical, 8)
+            .playTrackOnDoubleClick(play)
+            .trackContextMenu(track: track, onPlay: play)
+            .accessibilityIdentifier("artist.track.\(track.id)")
         }
-        .padding(.vertical, 8)
-        .playTrackOnDoubleClick {
-            Task { await TrackRowPlayback.track(track.id, sourceContext: PlaybackSourceContext.artist(artist.id)).perform(using: store) }
-        }
-        .trackContextMenu(track: track) {
-            Task { await TrackRowPlayback.track(track.id, sourceContext: PlaybackSourceContext.artist(artist.id)).perform(using: store) }
-        }
-        .accessibilityIdentifier("artist.track.\(track.id)")
     }
 
     @ViewBuilder
@@ -1712,7 +1722,7 @@ struct ArtistView: View {
                 await store.playTracks(
                     popularPlaybackTracks,
                     startingAt: track.id,
-                    shuffleEnabled: false,
+                    shuffleEnabled: nil,
                     sourceContext: PlaybackSourceContext.artistPopular(artist.id)
                 )
             }
@@ -2028,10 +2038,15 @@ private struct PopularTrackListRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("\(rank)")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 22, alignment: .trailing)
+            if let trackID, let onPlay {
+                TrackPositionPlayButton(trackID: trackID, title: title, number: "\(rank)",
+                                        isRowHovered: isHovered, width: 34, onPlay: onPlay)
+            } else {
+                Text("\(rank)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, alignment: .center)
+            }
 
             if let onSelectArtwork {
                 Button(action: onSelectArtwork) {
@@ -2110,6 +2125,7 @@ private struct PopularTrackListRow: View {
         }
         .padding(.vertical, 4)
         .contentShape(.rect)
+        .accessibilityElement(children: .contain)
         .onHover { isHovered = $0 }
     }
 

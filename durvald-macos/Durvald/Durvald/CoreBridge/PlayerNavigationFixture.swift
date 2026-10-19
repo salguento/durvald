@@ -35,6 +35,15 @@ enum PlayerNavigationFixture {
             item.title = "Faixa de teste \(index + 1) — Biblioteca para rolagem"
             return item
         } : [track]
+        if ProcessInfo.processInfo.arguments.contains("--collection-play-fixture") {
+            tracks = (0..<4).map { index in
+                var item = track
+                item.id = Int64(100 + index)
+                item.trackNumber = UInt8(index + 1)
+                item.title = "Faixa de teste \(index + 1)"
+                return item
+            }
+        }
         if autoAdvance {
             var first = track
             first.durationSeconds = 14
@@ -91,6 +100,9 @@ enum PlayerNavigationFixture {
                 eligibleCount: current && scrollable ? 10 : 1, minimum: 5, standard: 10, maximum: 25,
                 available: current && scrollable, isCurrent: current, savedPlaylist: nil)
         }
+        if ProcessInfo.processInfo.arguments.contains("--collection-play-fixture") {
+            Task { try? await store.reloadPlaylists() }
+        }
         return store
     }
 }
@@ -142,6 +154,41 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         }
     }
 
+    override func playCollection(trackIds: [Int64], sourceContexts: [String], startingPosition: UInt64?, shuffleEnabled: Bool?) async throws -> PlaybackSnapshot {
+        try lock.withLock {
+            let start = Int(startingPosition ?? 0)
+            guard trackIds.indices.contains(start), sourceContexts.count == trackIds.count,
+                  let track = tracks.first(where: { $0.id == trackIds[start] }) else {
+                throw CoreError.InvalidInput(message: "Invalid fixture collection")
+            }
+            snapshot.currentTrack = track
+            snapshot.sourceContext = sourceContexts[start]
+            snapshot.positionSeconds = 0
+            snapshot.durationSeconds = track.durationSeconds
+            snapshot.isPlaying = true
+            snapshot.isPaused = false
+            snapshot.shuffleEnabled = shuffleEnabled ?? snapshot.shuffleEnabled
+            let remaining = snapshot.shuffleEnabled ? trackIds.indices.filter { $0 != start }.shuffled()
+                : Array(trackIds.indices.dropFirst(start + 1))
+            snapshot.queue = ([trackIds[start]] + remaining.map { trackIds[$0] }).enumerated().map {
+                QueueItem(trackId: $0.element, position: UInt64($0.offset))
+            }
+            lastUpdate = .now
+            return snapshot
+        }
+    }
+
+    override func playlists() async throws -> [Playlist] {
+        guard ProcessInfo.processInfo.arguments.contains("--collection-play-fixture") else { return [] }
+        return [Playlist(id: 7, name: "Playlist de teste", description: "", artworkId: nil,
+                         isFavorite: false, suggestLess: false, trackCount: UInt64(tracks.count),
+                         createdAt: "2026-10-19", updatedAt: "2026-10-19", isSmart: false, smartDefinition: nil)]
+    }
+
+    override func playlistTracks(playlistId: Int64) async throws -> [Track] {
+        tracks
+    }
+
     override func releaseTracks(releaseId: Int64) async throws -> [Track] {
         lock.withLock {
             tracks.filter { $0.releaseId == releaseId }
@@ -161,11 +208,15 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
     }
 
     override func artistIdentity(artistId: Int64) async throws -> ArtistIdentity {
-        throw CoreError.NotFound(message: "Fixture artist identity \(artistId) not found")
+        ArtistIdentity(artistId: artistId, status: .unresolved, musicbrainzId: nil, generation: 0,
+                       origin: nil, confirmedMusicbrainzId: nil, conflictingTags: false)
     }
 
     override func artistDetails(artistId: Int64, language: String) async throws -> ArtistDetails {
-        throw CoreError.NotFound(message: "Fixture artist details \(artistId) not found")
+        let name = tracks.first(where: { $0.artistId == artistId })?.artist ?? "Artista de teste"
+        return ArtistDetails(similarArtists: [], similarArtistsFetchedAt: nil,
+            artist: Artist(id: artistId, name: name), identityStatus: .unresolved, musicbrainzId: nil,
+            identityGeneration: 0, requestedLanguage: language, sources: [], portrait: nil, overrides: [])
     }
 
     override func artistDiscography(
@@ -173,7 +224,9 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         pageSize: UInt64,
         offset: UInt64
     ) async throws -> ArtistDiscographyPage {
-        throw CoreError.NotFound(message: "Fixture artist discography \(artistId) not found")
+        ArtistDiscographyPage(artistId: artistId, identityGeneration: 0, catalogGeneration: 0,
+            items: [], nextOffset: nil, remoteExhausted: true, remoteNextOffset: nil,
+            remoteTotal: 0, lastSuccessAt: nil, stale: false)
     }
 
     override func artistPopularTracks(artistId: Int64) async throws -> ArtistPopularTracks? {

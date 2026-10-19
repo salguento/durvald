@@ -17,7 +17,7 @@ enum PlaybackCollection {
         case .release(let id):
             await store.playRelease(releaseID: id, shuffleEnabled: shuffled)
         case .playlist(let id):
-            await store.playPlaylist(playlistID: id, startingAtPosition: 0, shuffleEnabled: shuffled)
+            await store.playPlaylist(playlistID: id, startingAtPosition: nil, shuffleEnabled: shuffled)
         case .tracks(let tracks, let context):
             await store.playTracks(tracks, shuffleEnabled: shuffled, sourceContext: context)
         }

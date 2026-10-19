@@ -762,6 +762,12 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func play(trackId: Int64) async throws  -> PlaybackSnapshot
 
     /**
+     * Replaces playback with a complete ordered source collection. A selected
+     * occurrence stays first even with shuffle; omitted selection chooses the start.
+     */
+    func playCollection(trackIds: [Int64], sourceContexts: [String], startingPosition: UInt64?, shuffleEnabled: Bool?) async throws  -> PlaybackSnapshot
+
+    /**
      * Starts the upcoming track at the given queue position.
      */
     func playQueueItem(position: UInt64) async throws  -> PlaybackSnapshot
@@ -1961,6 +1967,27 @@ open func play(trackId: Int64)async throws  -> PlaybackSnapshot {
                 uniffi_durvald_core_fn_method_durvaldcore_play(
                     self.uniffiClonePointer(),
                     FfiConverterInt64.lower(trackId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Replaces playback with a complete ordered source collection. A selected
+     * occurrence stays first even with shuffle; omitted selection chooses the start.
+     */
+open func playCollection(trackIds: [Int64], sourceContexts: [String], startingPosition: UInt64?, shuffleEnabled: Bool?)async throws  -> PlaybackSnapshot {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_play_collection(
+                    self.uniffiClonePointer(),
+                    FfiConverterSequenceInt64.lower(trackIds),FfiConverterSequenceString.lower(sourceContexts),FfiConverterOptionUInt64.lower(startingPosition),FfiConverterOptionBool.lower(shuffleEnabled)
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -10449,6 +10476,27 @@ fileprivate struct FfiConverterOptionDouble: FfiConverterRustBuffer {
     }
 }
 
+fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
+    typealias SwiftType = Bool?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterBool.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterBool.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
     typealias SwiftType = String?
 
@@ -11503,6 +11551,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_play() != 16881) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_play_collection() != 43501) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_play_queue_item() != 38649) {

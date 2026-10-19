@@ -21,8 +21,8 @@ struct CollectionTrackRow: View {
         HStack(spacing: 12) {
             HStack(spacing: 12) {
                 HStack(spacing: 4) {
-                    AlbumTrackPosition(trackID: track.id, number: number, isActiveOverride: activeOverride)
-                        .playTrackOnDoubleClick(onPlay)
+                    TrackPositionPlayButton(trackID: track.id, title: track.title, number: number,
+                                            isRowHovered: isHovered, isActiveOverride: activeOverride, onPlay: onPlay)
                     if showsArtwork {
                         ArtworkView(artworkID: track.artworkId, size: 42)
                             .playTrackOnDoubleClick(onPlay)

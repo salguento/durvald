@@ -22,48 +22,39 @@ struct PlaybackCoordinator {
             return $0.id < $1.id
         }
         guard !tracks.isEmpty else { throw SelectionError.emptyRelease }
-        let index: Int
+        let index: Int?
         if let trackID {
             guard let found = tracks.firstIndex(where: { $0.id == trackID }) else { throw SelectionError.missingTrack }
             index = found
-        } else { index = tracks.startIndex }
-        try await play(Array(tracks[index...]).map { ($0, PlaybackSourceContext.release(id)) }, shuffle: shuffle, core: core, isCurrent: isCurrent, publish: publish)
+        } else { index = nil }
+        try await play(tracks.map { ($0, PlaybackSourceContext.release(id)) }, startingAt: index, shuffle: shuffle, core: core, isCurrent: isCurrent, publish: publish)
     }
 
-    func playPlaylist(id: Int64, position: Int, shuffle: Bool?, core: DurvaldCore,
+    func playPlaylist(id: Int64, position: Int?, shuffle: Bool?, core: DurvaldCore,
                       isCurrent: () -> Bool, publish: (PlaybackSnapshot) -> Void) async throws {
         let tracks = try await core.playlistTracks(playlistId: id)
-        guard tracks.indices.contains(position) else { throw SelectionError.invalidPosition }
-        try await play(tracks.enumerated().dropFirst(position).map { ($0.element, PlaybackSourceContext.playlist(id, position: $0.offset)) }, shuffle: shuffle, core: core, isCurrent: isCurrent, publish: publish)
+        if let position, !tracks.indices.contains(position) { throw SelectionError.invalidPosition }
+        try await play(tracks.enumerated().map { ($0.element, PlaybackSourceContext.playlist(id, position: $0.offset)) }, startingAt: position, shuffle: shuffle, core: core, isCurrent: isCurrent, publish: publish)
     }
 
-    func playTracks(_ tracks: [Track], startingAt trackID: Int64?, shuffle: Bool, sourceContext: String = "", core: DurvaldCore,
+    func playTracks(_ tracks: [Track], startingAt trackID: Int64?, shuffle: Bool?, sourceContext: String = "", core: DurvaldCore,
                     isCurrent: () -> Bool, publish: (PlaybackSnapshot) -> Void) async throws {
-        let selected: [Track]
-        if let trackID, let index = tracks.firstIndex(where: { $0.id == trackID }) { selected = Array(tracks[index...]) }
-        else { selected = tracks }
-        try await play(selected.map { ($0, sourceContext) }, shuffle: shuffle, core: core, isCurrent: isCurrent, publish: publish)
+        let index: Int?
+        if let trackID {
+            guard let found = tracks.firstIndex(where: { $0.id == trackID }) else { throw SelectionError.missingTrack }
+            index = found
+        } else { index = nil }
+        try await play(tracks.map { ($0, sourceContext) }, startingAt: index, shuffle: shuffle,
+                       core: core, isCurrent: isCurrent, publish: publish)
     }
 
-    private func play(_ tracks: [(track: Track, origin: String)], shuffle: Bool?, core: DurvaldCore,
+    private func play(_ tracks: [(track: Track, origin: String)], startingAt position: Int?, shuffle: Bool?, core: DurvaldCore,
                       isCurrent: () -> Bool, publish: (PlaybackSnapshot) -> Void) async throws {
-        let selected = shuffle == true ? tracks.shuffled() : tracks
-        guard let first = selected.first else { return }
+        guard !tracks.isEmpty else { return }
         guard isCurrent() else { throw CancellationError() }
-        try await core.clearQueue()
-        guard isCurrent() else { throw CancellationError() }
-        let snapshot = try await core.playWithContext(trackId: first.track.id, sourceContext: first.origin)
+        let snapshot = try await core.playCollection(trackIds: tracks.map { $0.track.id },
+            sourceContexts: tracks.map(\.origin), startingPosition: position.map(UInt64.init), shuffleEnabled: shuffle)
         guard isCurrent() else { throw CancellationError() }
         publish(snapshot)
-        for item in selected.dropFirst() {
-            guard isCurrent() else { throw CancellationError() }
-            try await core.addToQueueWithContext(trackId: item.track.id, sourceContext: item.origin)
-        }
-        if let shuffle {
-            guard isCurrent() else { throw CancellationError() }
-            let snapshot = try await core.setShuffleEnabled(enabled: shuffle)
-            guard isCurrent() else { throw CancellationError() }
-            publish(snapshot)
-        }
     }
 }

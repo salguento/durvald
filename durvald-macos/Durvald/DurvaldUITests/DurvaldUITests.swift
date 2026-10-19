@@ -412,6 +412,63 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testPlaylistHoverPlayStartsClickedTrackAndReplacesQueue() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture",
+                                "--playback-clock-fixture", "--collection-play-fixture"]
+        app.launch()
+        if !app.buttons["sidebar.playlists"].isHittable { app.buttons["navigation.sidebar"].click() }
+        let playlists = app.buttons["sidebar.playlists"]
+        XCTAssertTrue(playlists.waitForExistence(timeout: 3))
+        playlists.click()
+        let playlist = app.descendants(matching: .any)["playlist.7"].firstMatch
+        XCTAssertTrue(playlist.waitForExistence(timeout: 3))
+        playlist.click()
+        XCTAssertTrue(app.descendants(matching: .any)["playlist.detail.7"].waitForExistence(timeout: 3))
+        let row = app.descendants(matching: .any)["playlist.track.102"].firstMatch
+        if !row.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        XCTAssertTrue(row.waitForExistence(timeout: 3))
+        row.hover()
+        let play = row.buttons["track.102.positionPlay"]
+        XCTAssertTrue(play.waitForExistence(timeout: 3))
+        play.click()
+        let title = app.links["player.trackTitle"]
+        expectation(for: NSPredicate(format: "label == %@", "Faixa de teste 3"), evaluatedWith: title)
+        waitForExpectations(timeout: 3)
+        XCTAssertFalse(app.staticTexts["player.error"].exists)
+    }
+
+    @MainActor
+    func testArtistHoverPlayStartsClickedTrack() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture",
+                                "--playback-clock-fixture", "--collection-play-fixture"]
+        app.launch()
+        let artist = app.links["player.artist"]
+        XCTAssertTrue(artist.waitForExistence(timeout: 3))
+        artist.click()
+        XCTAssertTrue(app.descendants(matching: .any)["artist.detail.7"].waitForExistence(timeout: 3))
+        let content = app.scrollViews["artist.detail.7"]
+        XCTAssertTrue(content.waitForExistence(timeout: 3))
+        content.swipeUp(velocity: .slow)
+        let highlights = content.scrollViews.firstMatch
+        XCTAssertTrue(highlights.waitForExistence(timeout: 3))
+        highlights.swipeLeft()
+        let row = app.descendants(matching: .any)["artist.popular.local.102"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 3))
+        let capture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        capture.name = "Artist hover play ranking"
+        capture.lifetime = .keepAlways
+        add(capture)
+        let play = row.buttons["track.102.positionPlay"]
+        XCTAssertTrue(play.waitForExistence(timeout: 3))
+        play.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
+        play.click()
+        expectation(for: NSPredicate(format: "label == %@", "Faixa de teste 3"), evaluatedWith: app.links["player.trackTitle"])
+        waitForExpectations(timeout: 3)
+    }
+
+    @MainActor
     func testAlbumDoesNotHighlightTrackPlayingFromPlaylist() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture",

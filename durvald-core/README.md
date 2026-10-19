@@ -99,3 +99,26 @@ Occurrence metadata is stored as a versioned envelope in the existing last-sessi
 `source_context` column. Legacy plain contexts restore conservatively: they describe
 only the current item. This metadata describes presentation, not a media provider,
 file path, or listening-history identity.
+
+### Source collections and queue modes
+
+`play_collection` validates the complete ordered collection and prepares its
+selected sound before replacing playback and the upcoming queue together. Track
+IDs may repeat: the selected original position identifies the occurrence. With
+no explicit shuffle preference, the current setting is retained. With shuffle
+enabled, a selected occurrence starts first; a collection-level shuffle command
+without a selection also chooses a random first occurrence.
+
+The source snapshot is separate from the visible queue. Normal playback includes
+only later occurrences; Repeat All starts a complete new cycle at the first
+source occurrence. Shuffle includes every other eligible source occurrence in
+random queue order. Disabling shuffle rebuilds the original-order suffix after
+the current occurrence; enabling it restores earlier occurrences as well.
+Neither toggle restarts the active sound. Repeat One retains its existing meaning.
+
+Manual queue additions survive mode changes. Removing a source occurrence from
+the queue excludes it from subsequent rebuilds and cycles; clearing the queue
+discards the source snapshot so a later shuffle toggle cannot resurrect it.
+Full source identity, occurrence positions and exclusions are persisted in the
+versioned session envelope, without a database-schema change. Legacy sessions
+continue to restore their saved queue without inventing an unknown full source.

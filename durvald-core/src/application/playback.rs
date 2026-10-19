@@ -163,12 +163,98 @@ impl PlaybackApplication {
                 .map_err(|error| CoreError::Playback {
                     message: error.to_string(),
                 })?;
+            player.discard_collection();
             player.set_source_context(source_context);
             PlaybackStateSnapshot::from_player(&player)
         };
         drop(_transition);
         self.wake_automatic_coordination();
 
+        let snapshot = self.snapshot_from_state(state).await;
+        self.persist_session().await?;
+        self.report_track_started(track_id).await;
+        Ok(snapshot)
+    }
+
+    /// Validate and prepare the selected sound before atomically replacing the queue.
+    pub(crate) async fn play_collection(
+        &self,
+        track_ids: Vec<i64>,
+        source_contexts: Vec<String>,
+        starting_position: Option<u64>,
+        shuffle_enabled: Option<bool>,
+    ) -> CoreResult<PlaybackSnapshot> {
+        if track_ids.is_empty() || track_ids.len() != source_contexts.len() {
+            return Err(CoreError::InvalidInput {
+                message: "Invalid playback collection".into(),
+            });
+        }
+        if starting_position.is_some_and(|index| index >= track_ids.len() as u64) {
+            return Err(CoreError::InvalidInput {
+                message: "Invalid collection position".into(),
+            });
+        }
+        for context in &source_contexts {
+            validate_source_context(context)?;
+        }
+        let ids = track_ids
+            .iter()
+            .map(|&id| {
+                TrackId::try_from(id).map_err(|_| CoreError::InvalidInput {
+                    message: "Invalid collection track ID".into(),
+                })
+            })
+            .collect::<CoreResult<Vec<_>>>()?;
+        let first_id = ids[0];
+        let tracks = self
+            .track_query
+            .find_many(ids)
+            .await
+            .map_err(|error| playback_track_error(error, first_id))?;
+        let paths: std::collections::HashMap<_, _> = tracks
+            .into_iter()
+            .map(|track| (track.id.get() as i64, track.file_path))
+            .collect();
+        let mut items = Vec::with_capacity(track_ids.len());
+        for (id, context) in track_ids.into_iter().zip(source_contexts) {
+            let path = paths
+                .get(&id)
+                .ok_or_else(|| CoreError::NotFound {
+                    message: format!("Track {id} not found"),
+                })?
+                .clone();
+            items.push(crate::audio::player::QueueItem {
+                song_id: id,
+                path,
+                source_context: context,
+                collection_position: None,
+            });
+        }
+        let transition = self.playback_transition.lock().await;
+        let shuffle = shuffle_enabled.unwrap_or(self.audio_player.lock().await.shuffle_enabled());
+        let start = if let Some(index) = starting_position {
+            index as usize
+        } else if shuffle {
+            let mut indices: Vec<_> = (0..items.len()).collect();
+            crate::audio::player::shuffle_items(&mut indices);
+            indices[0]
+        } else {
+            0
+        };
+        let track_id = items[start].song_id;
+        let prepared = self.prepare_sound(items[start].path.clone()).await?;
+        let state = {
+            let mut player = self.audio_player.lock().await;
+            player
+                .play_song_prepared(track_id, prepared)
+                .map_err(|error| CoreError::Playback {
+                    message: error.to_string(),
+                })?;
+            player.start_collection(items, start, shuffle);
+            PlaybackStateSnapshot::from_player(&player)
+        };
+        drop(transition);
+        self.wake_automatic_coordination();
         let snapshot = self.snapshot_from_state(state).await;
         self.persist_session().await?;
         self.report_track_started(track_id).await;
@@ -518,6 +604,7 @@ impl PlaybackApplication {
             repeat_mode,
             queue,
             contexts,
+            collection,
         ) = {
             let mut player = self.audio_player.lock().await;
             player.synchronize_gapless();
@@ -533,6 +620,7 @@ impl PlaybackApplication {
                     .map(|(song_id, _)| song_id)
                     .collect::<Vec<_>>(),
                 player.playback_contexts(),
+                player.stored_collection(),
             )
         };
         let session = PlaybackSessionState {
@@ -543,7 +631,9 @@ impl PlaybackApplication {
             repeat_mode: format!("{repeat_mode:?}").to_lowercase(),
             queue,
             queue_position: 0,
-            source_context: crate::domain::playback_session::encode_contexts(contexts),
+            source_context: crate::domain::playback_session::encode_collection(
+                contexts, collection,
+            ),
             updated_at: String::new(),
         };
         self.session_repository

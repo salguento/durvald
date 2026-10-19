@@ -1095,7 +1095,7 @@ final class DurvaldCoreStore {
     func playTracks(
         _ tracks: [Track],
         startingAt trackID: Int64? = nil,
-        shuffleEnabled: Bool,
+        shuffleEnabled: Bool? = nil,
         sourceContext: String = ""
     ) async {
         guard let core, !isChangingTrack, !tracks.isEmpty else { return }
@@ -1120,7 +1120,7 @@ final class DurvaldCoreStore {
 
     func playPlaylist(
         playlistID: Int64,
-        startingAtPosition position: Int,
+        startingAtPosition position: Int? = nil,
         shuffleEnabled: Bool? = nil
     ) async {
         guard let core, !isChangingTrack else { return }

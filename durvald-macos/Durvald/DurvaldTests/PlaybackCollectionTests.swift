@@ -24,6 +24,28 @@ final class PlaybackCollectionTests: XCTestCase {
         XCTAssertTrue(core.shuffleRequests.isEmpty)
     }
 
+    func testSelectedAlbumPassesWholeSourceToCoreAndPreservesShufflePreference() async {
+        let core = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        core.releaseTrackResults = makeTracks([4, 2, 1, 3])
+        let store = DurvaldCoreStore(core: core)
+        await store.playRelease(releaseID: 7, startingAt: 3)
+        let request = core.collectionRequests.first
+        XCTAssertEqual(request?.trackIDs, [1, 2, 3, 4])
+        XCTAssertEqual(request?.start, 2)
+        XCTAssertNil(request?.shuffle)
+        XCTAssertEqual(request?.contexts, Array(repeating: "release:7", count: 4))
+    }
+
+    func testSelectedPlaylistPassesEveryDuplicateWithItsOriginalOccurrence() async {
+        let core = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        core.playlistResultsByID[7] = makeTracks([1, 2, 1, 3])
+        await DurvaldCoreStore(core: core).playPlaylist(playlistID: 7, startingAtPosition: 2)
+        let request = core.collectionRequests.first
+        XCTAssertEqual(request?.trackIDs, [1, 2, 1, 3])
+        XCTAssertEqual(request?.start, 2)
+        XCTAssertEqual(request?.contexts, ["playlist:7#0", "playlist:7#1", "playlist:7#2", "playlist:7#3"])
+    }
+
     private func verify(_ collection: PlaybackCollection, input: [Int64], ordered: [Int64]) async {
         for action in [PlaybackCollection.Action.play, .shuffle] {
             let core = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)

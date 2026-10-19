@@ -20,6 +20,7 @@ pub struct QueueItem {
     pub song_id: i64,
     pub path: String,
     pub source_context: String,
+    pub collection_position: Option<usize>,
 }
 
 const MAX_PLAYBACK_HISTORY_ITEMS: usize = 100;
@@ -36,10 +37,20 @@ pub(crate) struct PreparedSound {
 #[derive(Clone)]
 pub(crate) enum PlaybackPlan {
     RepeatCurrent(QueueItem),
-    Next { item: QueueItem, index: usize },
+    Next {
+        item: QueueItem,
+        index: usize,
+    },
     RepeatAll(QueueItem),
+    RepeatCollection {
+        item: QueueItem,
+        remaining: Vec<QueueItem>,
+    },
     Previous(QueueItem),
-    Skip { item: QueueItem, position: usize },
+    Skip {
+        item: QueueItem,
+        position: usize,
+    },
 }
 
 struct ScheduledNext {
@@ -60,7 +71,8 @@ impl PlaybackPlan {
             | Self::Next { item, .. }
             | Self::RepeatAll(item)
             | Self::Previous(item)
-            | Self::Skip { item, .. } => &item.path,
+            | Self::Skip { item, .. }
+            | Self::RepeatCollection { item, .. } => &item.path,
         }
     }
 
@@ -70,7 +82,19 @@ impl PlaybackPlan {
             | Self::Next { item, .. }
             | Self::RepeatAll(item)
             | Self::Previous(item)
-            | Self::Skip { item, .. } => &item.source_context,
+            | Self::Skip { item, .. }
+            | Self::RepeatCollection { item, .. } => &item.source_context,
+        }
+    }
+
+    fn collection_position(&self) -> Option<usize> {
+        match self {
+            Self::RepeatCurrent(item)
+            | Self::RepeatAll(item)
+            | Self::Previous(item)
+            | Self::Next { item, .. }
+            | Self::Skip { item, .. }
+            | Self::RepeatCollection { item, .. } => item.collection_position,
         }
     }
 
@@ -80,7 +104,8 @@ impl PlaybackPlan {
             | Self::Next { item, .. }
             | Self::RepeatAll(item)
             | Self::Previous(item)
-            | Self::Skip { item, .. } => item.song_id,
+            | Self::Skip { item, .. }
+            | Self::RepeatCollection { item, .. } => item.song_id,
         }
     }
 }
@@ -124,6 +149,8 @@ pub struct AudioPlayer {
     history: VecDeque<QueueItem>,
     current_song_id: Option<i64>,
     current_source_context: String,
+    current_collection_position: Option<usize>,
+    source_collection: Option<SourceCollection>,
     crossfade_duration: Option<Duration>,
     shuffle_enabled: bool,
     repeat_mode: RepeatMode,
@@ -272,6 +299,8 @@ impl AudioPlayer {
             history: VecDeque::new(),
             current_song_id: None,
             current_source_context: String::new(),
+            current_collection_position: None,
+            source_collection: None,
             crossfade_duration: None,
             shuffle_enabled: false,
             repeat_mode: RepeatMode::None,
@@ -677,6 +706,7 @@ impl AudioPlayer {
         self.stop_sound();
         self.current_song_id = None;
         self.current_source_context.clear();
+        self.current_collection_position = None;
         self.playback_requested = false;
     }
 
@@ -784,6 +814,132 @@ impl AudioPlayer {
         }
     }
 
+    pub(crate) fn discard_collection(&mut self) {
+        self.source_collection = None;
+        self.current_collection_position = None;
+        self.history.clear();
+        for item in &mut self.queue {
+            item.collection_position = None;
+        }
+    }
+
+    pub(crate) fn start_collection(
+        &mut self,
+        mut items: Vec<QueueItem>,
+        start: usize,
+        shuffle: bool,
+    ) {
+        self.invalidate_gapless();
+        for (index, item) in items.iter_mut().enumerate() {
+            item.collection_position = Some(index);
+        }
+        self.current_source_context = items[start].source_context.clone();
+        self.current_collection_position = Some(start);
+        self.source_collection = Some(SourceCollection {
+            items,
+            excluded: Default::default(),
+        });
+        self.shuffle_enabled = shuffle;
+        self.queue.clear();
+        self.history.clear();
+        self.rebuild_collection_queue();
+    }
+
+    fn rebuild_collection_queue(&mut self) {
+        let (Some(collection), Some(current)) =
+            (&self.source_collection, self.current_collection_position)
+        else {
+            return;
+        };
+        let extras: Vec<_> = self
+            .queue
+            .iter()
+            .filter(|item| item.collection_position.is_none())
+            .cloned()
+            .collect();
+        let mut upcoming: Vec<_> = collection
+            .eligible()
+            .into_iter()
+            .filter(|item| {
+                let index = item.collection_position.unwrap();
+                if self.shuffle_enabled {
+                    index != current
+                } else {
+                    index > current
+                }
+            })
+            .collect();
+        if self.shuffle_enabled {
+            shuffle_items(&mut upcoming);
+        }
+        self.queue = upcoming.into();
+        self.queue.extend(extras);
+    }
+
+    pub(crate) fn stored_collection(
+        &self,
+    ) -> Option<crate::domain::playback_session::StoredCollection> {
+        use crate::domain::playback_session::{StoredCollection, StoredCollectionItem};
+        let collection = self.source_collection.as_ref()?;
+        let mut positions = Vec::new();
+        if self.current_song_id.is_some() {
+            positions.push(self.current_collection_position);
+        }
+        positions.extend(self.queue.iter().map(|item| item.collection_position));
+        Some(StoredCollection {
+            items: collection
+                .items
+                .iter()
+                .map(|item| StoredCollectionItem {
+                    track_id: item.song_id,
+                    source_context: item.source_context.clone(),
+                })
+                .collect(),
+            excluded: collection.excluded.iter().copied().collect(),
+            positions,
+        })
+    }
+
+    pub(crate) fn restore_collection(
+        &mut self,
+        saved: crate::domain::playback_session::StoredCollection,
+        paths: Vec<String>,
+    ) {
+        if saved.items.len() != paths.len() || saved.items.is_empty() {
+            return;
+        }
+        let items: Vec<_> = saved
+            .items
+            .into_iter()
+            .zip(paths)
+            .enumerate()
+            .map(|(index, (item, path))| QueueItem {
+                song_id: item.track_id,
+                path,
+                source_context: item.source_context,
+                collection_position: Some(index),
+            })
+            .collect();
+        let matches = |position: Option<usize>, song_id: i64| {
+            position.filter(|&index| items.get(index).is_some_and(|item| item.song_id == song_id))
+        };
+        let mut positions = saved.positions.into_iter();
+        if let Some(id) = self.current_song_id {
+            self.current_collection_position = matches(positions.next().flatten(), id);
+        }
+        for item in &mut self.queue {
+            item.collection_position = matches(positions.next().flatten(), item.song_id);
+        }
+        self.source_collection = Some(SourceCollection {
+            excluded: saved
+                .excluded
+                .into_iter()
+                .filter(|&index| index < items.len())
+                .collect(),
+            items,
+        });
+    }
+
     // Queue management methods
     #[cfg(test)]
     pub async fn add_to_queue(&mut self, song_id: i64, path: String) -> Result<(), AudioError> {
@@ -798,6 +954,7 @@ impl AudioPlayer {
                 song_id,
                 path,
                 source_context: String::new(),
+                collection_position: None,
             });
         }
         // A preload error must not reject a queue edit or stop active audio.
@@ -807,11 +964,12 @@ impl AudioPlayer {
 
     fn prepare_queue_append(&mut self) {
         self.synchronize_gapless();
-        if self
-            .scheduled_next
-            .as_ref()
-            .is_some_and(|next| matches!(next.plan, PlaybackPlan::RepeatAll(_)))
-        {
+        if self.scheduled_next.as_ref().is_some_and(|next| {
+            matches!(
+                next.plan,
+                PlaybackPlan::RepeatAll(_) | PlaybackPlan::RepeatCollection { .. }
+            )
+        }) {
             self.invalidate_gapless();
         }
     }
@@ -824,7 +982,9 @@ impl AudioPlayer {
         // Repeat-all temporarily uses history to reconstruct the complete
         // cycle. It is drained back into the queue at the cycle boundary, so
         // its size remains bounded by the user-managed queue in that mode.
-        if self.repeat_mode != RepeatMode::All && self.history.len() >= MAX_PLAYBACK_HISTORY_ITEMS {
+        if (self.source_collection.is_some() || self.repeat_mode != RepeatMode::All)
+            && self.history.len() >= MAX_PLAYBACK_HISTORY_ITEMS
+        {
             self.history.pop_front();
         }
         self.history.push_back(item);
@@ -840,17 +1000,16 @@ impl AudioPlayer {
                         song_id,
                         path,
                         source_context: self.current_source_context.clone(),
+                        collection_position: self.current_collection_position,
                     })
                 });
         }
 
         if !self.queue.is_empty() {
-            let index = if self.shuffle_enabled {
-                (std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos()
-                    % self.queue.len() as u128) as usize
+            let index = if self.shuffle_enabled && self.source_collection.is_none() {
+                let mut indices: Vec<_> = (0..self.queue.len()).collect();
+                shuffle_items(&mut indices);
+                indices[0]
             } else {
                 0
             };
@@ -862,6 +1021,18 @@ impl AudioPlayer {
         }
 
         if self.repeat_mode == RepeatMode::All && self.current_song_id.is_some() {
+            if let Some(collection) = &self.source_collection {
+                let mut cycle = collection.eligible();
+                if self.shuffle_enabled {
+                    shuffle_items(&mut cycle);
+                }
+                let item = cycle.first()?.clone();
+                return Some(PlaybackPlan::RepeatCollection {
+                    item,
+                    remaining: cycle.into_iter().skip(1).collect(),
+                });
+            }
+
             return self
                 .history
                 .front()
@@ -873,6 +1044,7 @@ impl AudioPlayer {
                             song_id,
                             path,
                             source_context: self.current_source_context.clone(),
+                            collection_position: self.current_collection_position,
                         })
                 })
                 .map(PlaybackPlan::RepeatAll);
@@ -905,6 +1077,7 @@ impl AudioPlayer {
                     song_id,
                     path,
                     source_context: self.current_source_context.clone(),
+                    collection_position: self.current_collection_position,
                 });
         let next_song_id = plan.song_id();
         self.play_prepared(prepared)?;
@@ -919,8 +1092,13 @@ impl AudioPlayer {
         previous: Option<QueueItem>,
     ) -> Result<(), AudioError> {
         self.current_source_context = plan.source_context().to_string();
+        self.current_collection_position = plan.collection_position();
         match plan {
             PlaybackPlan::RepeatCurrent(_) => {}
+            PlaybackPlan::RepeatCollection { remaining, .. } => {
+                self.queue = remaining.into();
+                self.history.clear();
+            }
             PlaybackPlan::Next { index, .. } => {
                 self.queue.remove(index).ok_or(AudioError::FailedToRemove)?;
                 if let Some(previous) = previous {
@@ -976,6 +1154,7 @@ impl AudioPlayer {
                 song_id,
                 path,
                 source_context: self.current_source_context.clone(),
+                collection_position: self.current_collection_position,
             });
         let next_id = next.plan.song_id();
         // Queue changes invalidate a pending transition before editing indices.
@@ -1154,6 +1333,7 @@ impl AudioPlayer {
                     song_id,
                     path: path.clone(),
                     source_context: self.current_source_context.clone(),
+                    collection_position: self.current_collection_position,
                 });
             }
             self.current_song_id = Some(next_item.song_id);
@@ -1168,6 +1348,7 @@ impl AudioPlayer {
                     song_id,
                     path: path.clone(),
                     source_context: self.current_source_context.clone(),
+                    collection_position: self.current_collection_position,
                 });
             }
             let next_item = self.history.pop_front().ok_or(AudioError::FailedToRemove)?;
@@ -1185,14 +1366,22 @@ impl AudioPlayer {
         if position >= self.queue.len() {
             return Err(AudioError::PositionOutOfBounds);
         }
-        self.queue
+        let removed = self
+            .queue
             .remove(position)
-            .ok_or(AudioError::FailedToRemove)
+            .ok_or(AudioError::FailedToRemove)?;
+        if let (Some(collection), Some(index)) =
+            (&mut self.source_collection, removed.collection_position)
+        {
+            collection.excluded.insert(index);
+        }
+        Ok(removed)
     }
 
     pub fn clear_queue(&mut self) {
         self.invalidate_gapless();
         self.queue.clear();
+        self.discard_collection();
     }
 
     pub fn get_queue(&self) -> Vec<(i64, String)> {
@@ -1235,6 +1424,7 @@ impl AudioPlayer {
             song_id,
             path,
             source_context,
+            collection_position: None,
         });
     }
 
@@ -1285,6 +1475,7 @@ impl AudioPlayer {
                 song_id,
                 path,
                 source_context: String::new(),
+                collection_position: None,
             })
             .collect();
         self.shuffle_enabled = shuffle_enabled;
@@ -1297,8 +1488,14 @@ impl AudioPlayer {
     }
 
     pub fn set_shuffle_enabled(&mut self, enabled: bool) {
+        if self.shuffle_enabled == enabled {
+            return;
+        }
         self.invalidate_gapless();
         self.shuffle_enabled = enabled;
+        if self.source_collection.is_some() && self.current_collection_position.is_some() {
+            self.rebuild_collection_queue();
+        }
     }
 
     pub fn repeat_mode(&self) -> RepeatMode {
@@ -1557,6 +1754,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn collection_repeat_gapless_starts_at_beginning_after_starting_at_last_track() {
+        let (directory, paths) = temporary_tracks("collection-cycle", 3);
+        let mut player = AudioPlayer::new_mock().unwrap();
+        player.play_song(3, paths[2].clone()).await.unwrap();
+        let items = paths
+            .iter()
+            .enumerate()
+            .map(|(index, path)| QueueItem {
+                song_id: index as i64 + 1,
+                path: path.clone(),
+                source_context: format!("playlist:7#{index}"),
+                collection_position: None,
+            })
+            .collect();
+        player.start_collection(items, 2, false);
+        player.set_repeat_mode(RepeatMode::All);
+        player.prepare_gapless_next().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        player.process_mock_audio(80);
+        assert_eq!(player.get_current_song_id(), Some(1));
+        assert_eq!(player.source_context(), "playlist:7#0");
+        player.synchronize_gapless();
+        assert_eq!(
+            player
+                .get_queue()
+                .iter()
+                .map(|item| item.0)
+                .collect::<Vec<_>>(),
+            vec![2, 3]
+        );
+        player.stop();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
     async fn gapless_transition_keeps_duplicate_occurrence_origin() {
         let (directory, paths) = temporary_tracks("context", 1);
         let mut player = AudioPlayer::new_mock().unwrap();
@@ -1647,6 +1879,7 @@ mod tests {
                 song_id,
                 path: format!("/{song_id}.mp3"),
                 source_context: String::new(),
+                collection_position: None,
             });
         }
 
@@ -1919,5 +2152,36 @@ mod tests {
         assert_eq!(player.crossfade_duration, None);
         player.set_crossfade(true, 0);
         assert_eq!(player.crossfade_duration, None);
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SourceCollection {
+    items: Vec<QueueItem>,
+    excluded: std::collections::BTreeSet<usize>,
+}
+
+impl SourceCollection {
+    fn eligible(&self) -> Vec<QueueItem> {
+        self.items
+            .iter()
+            .filter(|item| !self.excluded.contains(&item.collection_position.unwrap()))
+            .cloned()
+            .collect()
+    }
+}
+
+/// Fisher–Yates ordering for music queues, seeded independently for each shuffle.
+pub(crate) fn shuffle_items<T>(items: &mut [T]) {
+    use std::hash::{BuildHasher, Hasher};
+    let mut state = std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish()
+        | 1;
+    for index in (1..items.len()).rev() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        items.swap(index, (state % (index as u64 + 1)) as usize);
     }
 }

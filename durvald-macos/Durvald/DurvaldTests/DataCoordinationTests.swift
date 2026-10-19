@@ -133,7 +133,7 @@ final class DataCoordinationTests: XCTestCase {
                 startingAt: nil, shuffle: false, core: core, isCurrent: { current }, publish: { _ in publications += 1 })
             XCTFail("Expected old core operation to stop")
         } catch { XCTAssertTrue(error is CancellationError) }
-        XCTAssertEqual(core.playbackOperations, ["clear", "play:1"])
+        XCTAssertEqual(core.playbackOperations, ["collection"])
         XCTAssertEqual(publications, 0)
     }
 
@@ -202,6 +202,12 @@ private final class CoordinationTestCore: DurvaldCore {
     override func releasesPage(pageSize: UInt64, offset: UInt64) async throws -> ReleasePage { .init(items: [], nextOffset: nil) }
     override func artists() async throws -> [Artist] { [] }
     override func clearQueue() async throws { playbackOperations.append("clear") }
+    override func playCollection(trackIds: [Int64], sourceContexts: [String], startingPosition: UInt64?, shuffleEnabled: Bool?) async throws -> PlaybackSnapshot {
+        playbackOperations.append("collection")
+        await onPlay?()
+        return Fixtures.playingSnapshot
+    }
+
     override func playWithContext(trackId: Int64, sourceContext: String) async throws -> PlaybackSnapshot {
         var result = try await play(trackId: trackId)
         result.sourceContext = sourceContext

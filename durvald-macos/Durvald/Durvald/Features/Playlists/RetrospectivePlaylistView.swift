@@ -256,7 +256,7 @@ struct RetrospectivePlaylistView: View {
 
     private func trackRow(_ track: Track, index: Int) -> some View {
         CollectionTrackRow(track: track, number: "\(index + 1)") {
-            Task { await store.playTracks(Array(tracks.dropFirst(index)), shuffleEnabled: false, sourceContext: PlaybackSourceContext.replay(draft.identity)) }
+            Task { await store.playTracks(tracks, startingAt: track.id, shuffleEnabled: nil, sourceContext: PlaybackSourceContext.replay(draft.identity)) }
         }
         .environment(\.playbackSourceContext, PlaybackSourceContext.replay(draft.identity))
         .accessibilityIdentifier("retrospective.playlist.track.\(track.id)")

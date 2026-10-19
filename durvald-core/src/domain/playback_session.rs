@@ -18,19 +18,22 @@ pub(crate) struct PlaybackSessionState {
 struct SessionContexts {
     version: u8,
     contexts: Vec<String>,
+    #[serde(default)]
+    collection: Option<StoredCollection>,
 }
 
 pub(crate) fn encode_contexts(contexts: Vec<String>) -> String {
     serde_json::to_string(&SessionContexts {
         version: 1,
         contexts,
+        collection: None,
     })
     .unwrap_or_default()
 }
 
 pub(crate) fn decode_contexts(value: &str) -> Vec<String> {
     match serde_json::from_str::<SessionContexts>(value) {
-        Ok(saved) if saved.version == 1 => saved.contexts,
+        Ok(saved) if saved.version == 1 || saved.version == 2 => saved.contexts,
         _ if value.starts_with('{') => Vec::new(),
         _ => vec![value.to_string()],
     }
@@ -48,6 +51,43 @@ mod tests {
             contexts
         );
         assert_eq!(decode_contexts("release:8"), vec!["release:8"]);
-        assert!(decode_contexts(r#"{"version":2,"contexts":["release:8"]}"#).is_empty());
+        assert!(decode_contexts(r#"{"version":3,"contexts":["release:8"]}"#).is_empty());
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct StoredCollectionItem {
+    pub(crate) track_id: i64,
+    pub(crate) source_context: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct StoredCollection {
+    pub(crate) items: Vec<StoredCollectionItem>,
+    pub(crate) excluded: Vec<usize>,
+    pub(crate) positions: Vec<Option<usize>>,
+}
+
+pub(crate) fn encode_collection(
+    contexts: Vec<String>,
+    collection: Option<StoredCollection>,
+) -> String {
+    if collection.is_none() {
+        return encode_contexts(contexts);
+    }
+    serde_json::to_string(&SessionContexts {
+        version: 2,
+        contexts,
+        collection,
+    })
+    .unwrap_or_default()
+}
+
+pub(crate) fn decode_collection(value: &str) -> Option<StoredCollection> {
+    let saved: SessionContexts = serde_json::from_str(value).ok()?;
+    if saved.version == 2 {
+        saved.collection
+    } else {
+        None
     }
 }

@@ -735,6 +735,25 @@ impl DurvaldCore {
             .await
     }
 
+    /// Replaces playback with a complete ordered source collection. A selected
+    /// occurrence stays first even with shuffle; omitted selection chooses the start.
+    pub async fn play_collection(
+        &self,
+        track_ids: Vec<i64>,
+        source_contexts: Vec<String>,
+        starting_position: Option<u64>,
+        shuffle_enabled: Option<bool>,
+    ) -> CoreResult<PlaybackSnapshot> {
+        self.playback_application
+            .play_collection(
+                track_ids,
+                source_contexts,
+                starting_position,
+                shuffle_enabled,
+            )
+            .await
+    }
+
     /// Returns the current playback state.
     pub async fn playback(&self) -> PlaybackSnapshot {
         self.playback_application.playback().await
