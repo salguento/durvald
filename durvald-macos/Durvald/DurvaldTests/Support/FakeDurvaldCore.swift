@@ -11,6 +11,7 @@ final class FakeDurvaldCore: DurvaldCore {
     var artworkBytesHandler: ((String) async throws -> Data?)?
     var tracksPageHandler: ((UInt64, UInt64) async throws -> TrackPage)?
     var releasesPageHandler: ((UInt64, UInt64) async throws -> ReleasePage)?
+    var homeLibraryHandler: ((UInt64) async throws -> HomeLibrary)?
     var historyRevisionHandler: (() async throws -> UInt64)?
     var historyHandler: (() async throws -> [PlaybackHistoryItem])?
     var tracksByIDsHandler: (([Int64]) async throws -> [Track])?
@@ -70,6 +71,11 @@ final class FakeDurvaldCore: DurvaldCore {
 
     override func artworkBytes(artworkId: String) async throws -> Data? {
         try await artworkBytesHandler?(artworkId)
+    }
+
+    override func homeLibrary(limit: UInt64) async throws -> HomeLibrary {
+        if let homeLibraryHandler { return try await homeLibraryHandler(limit) }
+        return HomeLibrary(recentlyPlayed: [], recentlyAdded: [])
     }
 
     override func playbackHistoryRevision() async throws -> UInt64 {

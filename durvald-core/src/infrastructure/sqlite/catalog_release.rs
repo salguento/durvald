@@ -27,6 +27,31 @@ impl SqliteCatalogReleaseQuery {
         Self { db_pool }
     }
 
+    pub(crate) async fn home(
+        &self,
+        limit: u64,
+    ) -> Result<(Vec<CatalogRelease>, Vec<CatalogRelease>), CatalogReleaseLookupError> {
+        let pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut conn = pool
+                .get()
+                .map_err(|e| CatalogReleaseLookupError::Storage(e.to_string()))?;
+            let tx = conn
+                .transaction()
+                .map_err(|e| CatalogReleaseLookupError::Storage(e.to_string()))?;
+            let recent = crate::database::operations::get_home_releases(&tx, limit, true)
+                .map_err(|e| CatalogReleaseLookupError::Storage(e.to_string()))?;
+            let added = crate::database::operations::get_home_releases(&tx, limit, false)
+                .map_err(|e| CatalogReleaseLookupError::Storage(e.to_string()))?;
+            Ok((
+                recent.into_iter().map(release_from_row).collect(),
+                added.into_iter().map(release_from_row).collect(),
+            ))
+        })
+        .await
+        .map_err(|e| CatalogReleaseLookupError::Storage(e.to_string()))?
+    }
+
     pub(crate) async fn find(
         &self,
         release_id: ReleaseId,

@@ -7,6 +7,42 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testHomeShelvesScrollWithPanelsAndOpenAlbums() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture", "--home-library-fixture"]
+        app.launch()
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        if !app.buttons["sidebar.home"].isHittable { app.buttons["navigation.sidebar"].click() }
+        app.buttons["sidebar.home"].click()
+        let recent = app.descendants(matching: .any)["home.recentlyPlayed"]
+        XCTAssertTrue(recent.waitForExistence(timeout: 5))
+        let first = recent.buttons["album.42"]
+        XCTAssertTrue(first.waitForExistence(timeout: 5))
+        XCTAssertTrue(first.isHittable)
+        let initialX = first.frame.minX
+        app.buttons["player.queue"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["queue.sidebar"].waitForExistence(timeout: 3))
+        first.scroll(byDeltaX: -450, deltaY: 0)
+        XCTAssertLessThan(first.frame.minX, initialX - 50)
+        let attachment = XCTAttachment(screenshot: window.screenshot())
+        attachment.name = "Home shelves beneath both side panels"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        // Return to the first card and open it using the existing album route.
+        recent.scroll(byDeltaX: 1500, deltaY: 0)
+        XCTAssertTrue(first.isHittable)
+        first.click()
+        XCTAssertTrue(app.buttons["collection.play"].waitForExistence(timeout: 5))
+        app.buttons["navigation.back"].click()
+        XCTAssertTrue(app.buttons["home.history"].waitForExistence(timeout: 5))
+        app.buttons["home.history"].click()
+        XCTAssertTrue(app.descendants(matching: .any)["retrospective.tabs"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testSidebarToolbarShowsHomeOnlyWhenCollapsedAndPreservesHistory() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]

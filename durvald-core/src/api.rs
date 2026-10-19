@@ -233,6 +233,14 @@ pub struct Release {
     pub rating_half_steps: Option<u8>,
 }
 
+/// Offline Home shelves, each bounded independently.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct HomeLibrary {
+    pub recently_played: Vec<Release>,
+    pub recently_added: Vec<Release>,
+}
+
 /// One bounded page of releases. `next_offset` is absent on the final page.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

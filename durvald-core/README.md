@@ -8,6 +8,12 @@ belongs in this crate. See [the Linux frontend](../durvald-gtk/README.md).
 
 ## Core contracts
 
+### Local Home shelves
+
+`home_library(limit)` returns unique recently played and recently added local
+releases, capped at 50 per shelf. First library entry is stored independently of
+external catalog metadata and survives rescans. See [the Home contract](../docs/features/local-home.md).
+
 ### Paths and managed files
 
 - `CoreConfig::app_support_dir` is created during `open` and owns the SQLite

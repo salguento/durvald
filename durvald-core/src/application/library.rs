@@ -403,6 +403,19 @@ impl LibraryApplication {
             .map_err(catalog_release_storage_error)
     }
 
+    pub(crate) async fn home_library(&self, limit: u64) -> CoreResult<crate::api::HomeLibrary> {
+        let (recent, added) = self
+            .persistence
+            .catalog_release_query
+            .home(limit.min(50))
+            .await
+            .map_err(catalog_release_storage_error)?;
+        Ok(crate::api::HomeLibrary {
+            recently_played: recent.into_iter().map(release_from_catalog).collect(),
+            recently_added: added.into_iter().map(release_from_catalog).collect(),
+        })
+    }
+
     pub(crate) async fn releases_page(
         &self,
         page_size: u64,

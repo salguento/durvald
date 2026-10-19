@@ -873,3 +873,21 @@ async fn scans_all_configured_library_roots() -> Result<(), Box<dyn Error + Send
 
     Ok(())
 }
+
+#[tokio::test]
+async fn home_shelves_follow_import_rescan_and_restart() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+    assert!(test_core.core().home_library(24).await?.recently_added.is_empty());
+    test_core.files().write_silent_wav("Artist/Album/01 - Home.wav")?;
+    let path = test_core.files().library_dir().to_string_lossy().into_owned();
+    test_core.core().scan_library(vec![path.clone()]).await?;
+    let first = test_core.core().home_library(24).await?;
+    assert_eq!(first.recently_added.len(), 1);
+    assert!(first.recently_played.is_empty());
+    test_core.core().scan_library(vec![path]).await?;
+    assert_eq!(test_core.core().home_library(24).await?, first);
+    let test_core = test_core.restart().await?;
+    assert_eq!(test_core.core().home_library(24).await?, first);
+    assert!(test_core.core().home_library(0).await?.recently_added.is_empty());
+    Ok(())
+}

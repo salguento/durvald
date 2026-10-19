@@ -709,6 +709,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func extractMetadata(filePath: String) async throws  -> AudioMetadata
 
     /**
+     * Returns local Home shelves (at most 50 releases per shelf).
+     */
+    func homeLibrary(limit: UInt64) async throws  -> HomeLibrary
+
+    /**
      * Returns the last session state.
      */
     func lastSession() async throws  -> LastSession
@@ -1755,6 +1760,26 @@ open func extractMetadata(filePath: String)async throws  -> AudioMetadata {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeAudioMetadata.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Returns local Home shelves (at most 50 releases per shelf).
+     */
+open func homeLibrary(limit: UInt64)async throws  -> HomeLibrary {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_home_library(
+                    self.uniffiClonePointer(),
+                    FfiConverterUInt64.lower(limit)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeHomeLibrary.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -6132,6 +6157,66 @@ public func FfiConverterTypeExternalReleaseTrack_lift(_ buf: RustBuffer) throws 
 
 public func FfiConverterTypeExternalReleaseTrack_lower(_ value: ExternalReleaseTrack) -> RustBuffer {
     return FfiConverterTypeExternalReleaseTrack.lower(value)
+}
+
+
+/**
+ * Offline Home shelves, each bounded independently.
+ */
+public struct HomeLibrary {
+    public var recentlyPlayed: [Release]
+    public var recentlyAdded: [Release]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(recentlyPlayed: [Release], recentlyAdded: [Release]) {
+        self.recentlyPlayed = recentlyPlayed
+        self.recentlyAdded = recentlyAdded
+    }
+}
+
+
+
+extension HomeLibrary: Equatable, Hashable {
+    public static func ==(lhs: HomeLibrary, rhs: HomeLibrary) -> Bool {
+        if lhs.recentlyPlayed != rhs.recentlyPlayed {
+            return false
+        }
+        if lhs.recentlyAdded != rhs.recentlyAdded {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(recentlyPlayed)
+        hasher.combine(recentlyAdded)
+    }
+}
+
+
+public struct FfiConverterTypeHomeLibrary: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HomeLibrary {
+        return
+            try HomeLibrary(
+                recentlyPlayed: FfiConverterSequenceTypeRelease.read(from: &buf),
+                recentlyAdded: FfiConverterSequenceTypeRelease.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HomeLibrary, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeRelease.write(value.recentlyPlayed, into: &buf)
+        FfiConverterSequenceTypeRelease.write(value.recentlyAdded, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeHomeLibrary_lift(_ buf: RustBuffer) throws -> HomeLibrary {
+    return try FfiConverterTypeHomeLibrary.lift(buf)
+}
+
+public func FfiConverterTypeHomeLibrary_lower(_ value: HomeLibrary) -> RustBuffer {
+    return FfiConverterTypeHomeLibrary.lower(value)
 }
 
 
@@ -11518,6 +11603,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_extract_metadata() != 44986) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_home_library() != 41220) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_last_session() != 31866) {

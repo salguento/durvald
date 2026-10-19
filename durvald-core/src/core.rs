@@ -215,6 +215,11 @@ impl DurvaldCore {
         self.library_application.release_playback_recency().await
     }
 
+    /// Returns local Home shelves (at most 50 releases per shelf).
+    pub async fn home_library(&self, limit: u64) -> CoreResult<crate::api::HomeLibrary> {
+        self.library_application.home_library(limit).await
+    }
+
     /// Returns a bounded page of releases ordered by their stable database ID.
     pub async fn releases_page(&self, page_size: u64, offset: u64) -> CoreResult<ReleasePage> {
         self.library_application

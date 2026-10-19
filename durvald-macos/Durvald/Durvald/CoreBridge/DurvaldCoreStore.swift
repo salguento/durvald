@@ -80,6 +80,7 @@ final class DurvaldCoreStore {
     }
     private(set) var history: [PlaybackHistoryItem] = []
     @ObservationIgnored let historyRepository = PlaybackHistoryRepository()
+    @ObservationIgnored let homeRepository = HomeLibraryRepository()
     private(set) var metadataRevision = 0 {
         didSet { invalidateCatalog() }
     }

@@ -633,6 +633,32 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
         (),
     )?;
 
+    // Additive local-library entry ledger. Catalog-only releases have no entry.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS release_library_entries (
+            release_id INTEGER PRIMARY KEY REFERENCES releases(release_id) ON DELETE CASCADE,
+            first_added_at TEXT NOT NULL
+        );
+        INSERT OR IGNORE INTO release_library_entries(release_id, first_added_at)
+            SELECT s.release_id, MIN(s.created_at) FROM songs s
+            JOIN releases r ON r.release_id = s.release_id GROUP BY s.release_id;
+        CREATE INDEX IF NOT EXISTS idx_release_library_entry_date
+            ON release_library_entries(first_added_at DESC, release_id DESC);
+        CREATE TRIGGER IF NOT EXISTS release_library_entry_insert AFTER INSERT ON songs BEGIN
+            INSERT INTO release_library_entries(release_id, first_added_at)
+                SELECT NEW.release_id, NEW.created_at WHERE EXISTS (SELECT 1 FROM releases WHERE release_id = NEW.release_id)
+                ON CONFLICT(release_id) DO UPDATE SET first_added_at = MIN(first_added_at, excluded.first_added_at);
+        END;
+        CREATE TRIGGER IF NOT EXISTS release_library_entry_move AFTER UPDATE OF release_id ON songs BEGIN
+            INSERT INTO release_library_entries(release_id, first_added_at)
+                SELECT NEW.release_id, NEW.created_at WHERE EXISTS (SELECT 1 FROM releases WHERE release_id = NEW.release_id)
+                ON CONFLICT(release_id) DO UPDATE SET first_added_at = MIN(first_added_at, excluded.first_added_at);
+        END;
+        CREATE TRIGGER IF NOT EXISTS release_library_entry_delete AFTER DELETE ON releases BEGIN
+            DELETE FROM release_library_entries WHERE release_id = OLD.release_id;
+        END;"
+    )?;
+
     super::ratings::migrate(conn)?;
     ensure_indexes(conn)?;
     ensure_search_indexes(conn)?;
@@ -1354,6 +1380,36 @@ pub fn get_release_playback_recency(conn: &Connection) -> DatabaseResult<Vec<(u6
     Ok(releases
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
         .collect::<Result<_, _>>()?)
+}
+
+/// Bounded Home shelf; only visible releases with visible local tracks qualify.
+/// Library entry is preserved from the first track import, never catalog creation.
+pub fn get_home_releases(
+    conn: &Connection,
+    limit: u64,
+    recently_played: bool,
+) -> DatabaseResult<Vec<Releases>> {
+    let ordering = if recently_played {
+        "JOIN songs s ON s.release_id = releases.release_id
+         JOIN play_history h ON h.song_id = s.song_id
+         WHERE releases.is_hidden = 0 AND s.is_hidden = 0
+         GROUP BY releases.release_id
+         ORDER BY MAX(h.played_at) DESC, releases.release_id DESC LIMIT ?1"
+    } else {
+        "JOIN release_library_entries e ON e.release_id = releases.release_id
+         WHERE releases.is_hidden = 0 AND EXISTS (
+             SELECT 1 FROM songs s WHERE s.release_id = releases.release_id AND s.is_hidden = 0
+         )
+         ORDER BY e.first_added_at DESC, releases.release_id DESC LIMIT ?1"
+    };
+    let sql = format!(
+        "SELECT {} FROM releases {}",
+        release_columns!("releases"),
+        ordering
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map([limit.min(50) as i64], release_from_row)?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 pub fn get_releases_page(
@@ -3233,6 +3289,112 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
+
+    fn home_fixture() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        create_tables(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO artists (artist_id, name) VALUES (1, 'Artist')",
+            [],
+        )
+        .unwrap();
+        for id in 1..=5 {
+            conn.execute("INSERT INTO releases (release_id, title, artist_id, artist_name, created_at, release_date)
+                VALUES (?1, 'Album', 1, 'Artist', '2099-01-01', '2099-01-01')", [id]).unwrap();
+        }
+        for (id, release, added) in [
+            (1, 1, "2020-01-01"),
+            (2, 1, "2026-01-01"),
+            (3, 2, "2025-01-01"),
+            (4, 3, "2025-01-01"),
+            (5, 4, "2026-01-01"),
+        ] {
+            conn.execute("INSERT INTO songs (song_id, title, artist_id, artist_name, release_id, release_title,
+                track_number, duration, file_path, created_at) VALUES (?1, 'Track', 1, 'Artist', ?2, 'Album', 1, 180, '/local.wav', ?3)",
+                params![id, release, added]).unwrap();
+        }
+        conn.execute("UPDATE releases SET is_hidden = 1 WHERE release_id = 4", [])
+            .unwrap();
+        conn
+    }
+
+    #[test]
+    fn home_shelves_are_bounded_unique_stable_and_local() {
+        let conn = home_fixture();
+        for (song, date) in [
+            (1, "2026-01-01"),
+            (2, "2026-01-03"),
+            (3, "2026-01-02"),
+            (5, "2026-01-04"),
+        ] {
+            conn.execute(
+                "INSERT INTO play_history(song_id, played_at) VALUES (?1, ?2)",
+                params![song, date],
+            )
+            .unwrap();
+        }
+        let ids = |recent, limit| {
+            get_home_releases(&conn, limit, recent)
+                .unwrap()
+                .iter()
+                .map(|r| r.release_id)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(true, 24), [1, 2]);
+        assert_eq!(ids(false, 24), [3, 2, 1]);
+        assert_eq!(ids(true, 1), [1]);
+        assert!(ids(false, 0).is_empty());
+        conn.execute("UPDATE songs SET is_hidden = 1 WHERE release_id = 1", [])
+            .unwrap();
+        assert_eq!(ids(true, 24), [2]);
+        assert_eq!(ids(false, 24), [3, 2]);
+        conn.execute("DELETE FROM play_history", []).unwrap();
+        assert!(ids(true, 24).is_empty());
+    }
+
+    #[test]
+    fn home_first_entry_survives_rescan_metadata_changes_deletion_and_reopening() {
+        let conn = home_fixture();
+        conn.execute(
+            "UPDATE releases SET updated_at = '2099-01-01', title = 'Enriched'",
+            [],
+        )
+        .unwrap();
+        conn.execute("DELETE FROM songs WHERE song_id = 1", [])
+            .unwrap();
+        // Reopening initialization must not move an album forward after its first track is removed.
+        create_tables(&conn).unwrap();
+        assert_eq!(
+            get_home_releases(&conn, 24, false)
+                .unwrap()
+                .iter()
+                .map(|r| r.release_id)
+                .collect::<Vec<_>>(),
+            [3, 2, 1]
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT first_added_at FROM release_library_entries WHERE release_id=1",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "2020-01-01"
+        );
+        // Simulate upgrading an existing database with local tracks but no ledger.
+        conn.execute("DELETE FROM release_library_entries WHERE release_id=2", [])
+            .unwrap();
+        create_tables(&conn).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT first_added_at FROM release_library_entries WHERE release_id=2",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "2025-01-01"
+        );
+    }
 
     fn metadata(artist: &str, release: &str, year: u32) -> AudioMetadata {
         AudioMetadata {

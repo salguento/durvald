@@ -79,7 +79,7 @@ enum PlayerNavigationFixture {
             ]
         }
         let store = DurvaldCoreStore(
-            core: livePlayback ? PlaybackClockFixtureCore(
+            core: (livePlayback || ProcessInfo.processInfo.arguments.contains("--home-library-fixture")) ? PlaybackClockFixtureCore(
                 snapshot: snapshot,
                 tracks: tracks,
                 releases: releases,
@@ -178,6 +178,15 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         }
     }
 
+    override func playbackHistory() async throws -> [PlaybackHistoryItem] { [] }
+
+    override func playbackHistoryRevision() async throws -> UInt64 { 0 }
+
+    override func homeLibrary(limit: UInt64) async throws -> HomeLibrary {
+        HomeLibrary(recentlyPlayed: Array(releases.prefix(Int(limit))),
+                    recentlyAdded: Array(releases.reversed().prefix(Int(limit))))
+    }
+
     override func playlists() async throws -> [Playlist] {
         guard ProcessInfo.processInfo.arguments.contains("--collection-play-fixture") else { return [] }
         return [Playlist(id: 7, name: "Playlist de teste", description: "", artworkId: nil,
@@ -193,6 +202,22 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         lock.withLock {
             tracks.filter { $0.releaseId == releaseId }
         }
+    }
+
+    override func artist(artistId: Int64) async throws -> Artist {
+        Artist(id: artistId, name: tracks.first(where: { $0.artistId == artistId })?.artist ?? "Artista de teste")
+    }
+
+    override func release(releaseId: Int64) async throws -> Release {
+        guard let release = releases.first(where: { $0.id == releaseId }) else {
+            throw CoreError.NotFound(message: "Fixture release not found")
+        }
+        return release
+    }
+
+    override func tracksByIds(trackIds: [Int64]) async throws -> [Track] {
+        let ids = Set(trackIds)
+        return tracks.filter { ids.contains($0.id) }
     }
 
     override func artistTracks(artistId: Int64) async throws -> [Track] {
