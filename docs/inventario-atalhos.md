@@ -3,9 +3,11 @@
 Data: 20/10/2026. Base: commit `f8a490f`.
 Status: inventário do estado anterior por leitura do código. O recorte 5 foi
 implementado em 20/10/2026; ver [mapa atual e contrato](features/keyboard-commands.md).
-Compilação e 53 testes unitários passaram. A validação interativa segue pendente
-porque o macOS impediu a inicialização do runner de interface por autenticação em
-andamento. O item 3 ainda não tem sua validação completa concluída.
+A validação posterior exercitou os fluxos de teclado na interface e corrigiu
+problemas de foco, seleção e conflito com o menu Ajuda do macOS. Passaram 55
+testes unitários e 11 cenários de interface, após correções e reexecuções. O resultado e
+os limites da cobertura estão no mapa atual; as seções abaixo preservam o
+inventário anterior à implementação.
 
 Escopo principal: cliente macOS. Inclui uma verificação do cliente GTK e das
 fronteiras com o core. Este documento registra o que existe e prepara o recorte
@@ -185,11 +187,13 @@ O core continua responsável pelas operações de reprodução/persistência. Te
 foco, menu e combinação pertencem ao cliente; este inventário não indica migração
 de banco nem uma nova API Rust obrigatória para a primeira entrega.
 
-## 6. Cobertura encontrada e matriz de validação pendente
+## 6. Cobertura encontrada e matriz proposta no inventário
 
 Há testes de interface para `⌘K`, envio por Return, foco de busca, Esc e navegação
 com `⌘←/⌘→`, além de testes de menus, avaliação e reprodução. Isso comprova presença
 de cenários no repositório, não uma nova execução ou uma cobertura completa.
+
+A execução posterior está registrada na seção Verificação do [contrato atual](features/keyboard-commands.md).
 
 Fonte: [testes de interface](../durvald-macos/Durvald/DurvaldUITests/DurvaldUITests.swift).
 

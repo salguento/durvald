@@ -578,6 +578,7 @@ struct PlaylistView: View {
         .simultaneousGesture(
             TapGesture().onEnded {
                 selectedTrackPosition = position
+                commandRowFocus.focus("playlist:\(playlist.id)#\(position)")
             }
         )
         .accessibilityElement(children: .contain)

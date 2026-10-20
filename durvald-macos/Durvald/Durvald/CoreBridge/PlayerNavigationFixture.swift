@@ -44,6 +44,9 @@ enum PlayerNavigationFixture {
                 return item
             }
         }
+        if ProcessInfo.processInfo.arguments.contains("--duplicate-playlist-fixture"), tracks.count >= 4 {
+            tracks = [tracks[0], tracks[1], tracks[0], tracks[2]]
+        }
         if autoAdvance {
             var first = track
             first.durationSeconds = 14
@@ -112,6 +115,7 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
     private let lock = NSLock()
     private var snapshot: PlaybackSnapshot
     private let tracks: [Track]
+    private var playlistOrder: [Track]
     private let releases: [Release]
     private let autoAdvance: Bool
     private var lastUpdate = ContinuousClock.now
@@ -119,6 +123,7 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
     init(snapshot: PlaybackSnapshot, tracks: [Track], releases: [Release], autoAdvance: Bool) {
         self.snapshot = snapshot
         self.tracks = tracks
+        self.playlistOrder = tracks
         self.releases = releases
         self.autoAdvance = autoAdvance
         super.init(noPointer: .init())
@@ -154,6 +159,20 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         }
     }
 
+    override func playWithContext(trackId: Int64, sourceContext: String) async throws -> PlaybackSnapshot {
+        try lock.withLock {
+            guard let track = tracks.first(where: { $0.id == trackId }) else { throw CoreError.NotFound(message: "Fixture track not found") }
+            snapshot.currentTrack = track
+            snapshot.sourceContext = sourceContext
+            snapshot.positionSeconds = 0
+            snapshot.durationSeconds = track.durationSeconds
+            snapshot.isPlaying = true
+            snapshot.isPaused = false
+            lastUpdate = .now
+            return snapshot
+        }
+    }
+
     override func playCollection(trackIds: [Int64], sourceContexts: [String], startingPosition: UInt64?, shuffleEnabled: Bool?) async throws -> PlaybackSnapshot {
         try lock.withLock {
             let start = Int(startingPosition ?? 0)
@@ -178,6 +197,25 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         }
     }
 
+    override func search(query: String) async throws -> SearchResults {
+        SearchResults(tracks: tracks.filter { $0.title.localizedCaseInsensitiveContains(query) },
+                      releases: releases.filter { $0.title.localizedCaseInsensitiveContains(query) }, artists: [], playlists: [])
+    }
+
+    override func tracksPage(pageSize: UInt64, offset: UInt64) async throws -> TrackPage {
+        let page = Array(tracks.dropFirst(Int(offset)).prefix(Int(pageSize)))
+        let next = Int(offset) + page.count
+        return TrackPage(items: page, nextOffset: next < tracks.count ? UInt64(next) : nil)
+    }
+
+    override func releasesPage(pageSize: UInt64, offset: UInt64) async throws -> ReleasePage {
+        let page = Array(releases.dropFirst(Int(offset)).prefix(Int(pageSize)))
+        let next = Int(offset) + page.count
+        return ReleasePage(items: page, nextOffset: next < releases.count ? UInt64(next) : nil)
+    }
+
+    override func releasePlaybackRecency() async throws -> [KeyValuePair] { [] }
+
     override func playbackHistory() async throws -> [PlaybackHistoryItem] { [] }
 
     override func playbackHistoryRevision() async throws -> UInt64 { 0 }
@@ -195,7 +233,15 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
     }
 
     override func playlistTracks(playlistId: Int64) async throws -> [Track] {
-        tracks
+        lock.withLock { playlistOrder }
+    }
+
+    override func movePlaylistTrack(playlistId: Int64, from: UInt64, to: UInt64) async throws {
+        lock.withLock {
+            guard playlistOrder.indices.contains(Int(from)), playlistOrder.indices.contains(Int(to)) else { return }
+            let moved = playlistOrder.remove(at: Int(from))
+            playlistOrder.insert(moved, at: Int(to))
+        }
     }
 
     override func releaseTracks(releaseId: Int64) async throws -> [Track] {
@@ -286,6 +332,10 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
             snapshot.isPaused = false
             snapshot.isPlaying = true
         }
+    }
+
+    override func setVolume(volume: Float) async throws {
+        lock.withLock { snapshot.volume = min(1, max(0, volume)) }
     }
 
     override func seek(seconds: UInt64) async throws {

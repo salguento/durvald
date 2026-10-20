@@ -100,6 +100,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
     var onRatingChange: (Track, UInt8?) async -> Bool = { _, _ in true }
     let configureMenu: (TrackMenuController, Track) -> Void
     let cellContent: (Track, MusicLibraryColumn) -> AnyView
+    var commandTarget: AppCommandTarget? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -109,6 +110,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
         background.layer?.masksToBounds = true
 
         let table = MusicLibraryNativeTableView()
+        table.nativeCommandTarget = commandTarget
         table.focusRingType = .none
         table.style = .fullWidth
         table.rowSizeStyle = .custom
@@ -195,6 +197,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
 
     func updateNSView(_ background: NSView, context: Context) {
         context.coordinator.parent = self
+        (context.coordinator.tableView as? MusicLibraryNativeTableView)?.nativeCommandTarget = isPresented ? commandTarget : nil
         guard context.coordinator.updatePresentation(background) else { return }
         context.coordinator.applyLayout()
         context.coordinator.updateRows()
@@ -603,6 +606,7 @@ struct MusicLibraryTableView: NSViewRepresentable {
 
         func tableViewSelectionDidChange(_ notification: Notification) {
             guard !isUpdating, let tableView else { return }
+            tableView.window?.makeFirstResponder(tableView)
             let ids = Set(tableView.selectedRowIndexes.compactMap { displayRows.indices.contains($0) ? displayRows[$0]?.id : nil })
             parent.selection = ids
         }
@@ -874,9 +878,15 @@ private extension MusicLibraryColumn {
     }
 }
 
-private final class MusicLibraryNativeTableView: NSTableView {
+private final class MusicLibraryNativeTableView: NSTableView, NativeCommandSelectionProviding {
+    var nativeCommandTarget: AppCommandTarget?
     var contextRow = -1
     var nonselectableRows = IndexSet()
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        super.mouseDown(with: event)
+    }
 
     override func drawBackground(inClipRect clipRect: NSRect) {
         // MusicLibraryRowView already draws the system alternating colors at

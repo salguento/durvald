@@ -1,7 +1,7 @@
 # Comandos e atalhos de teclado no macOS
 
 Implementação do recorte 5 do [inventário](../inventario-atalhos.md), em 20/10/2026.
-A validação interativa está pendente pelo bloqueio de autenticação descrito abaixo.
+A validação interativa do recorte foi executada em 20/10/2026, com correções de foco e integração nativa descritas abaixo.
 
 ## Catálogo e execução
 
@@ -46,10 +46,11 @@ reprodução, evitando depender da posição do relógio para atualizar todo o c
 | Nova playlist / nova playlist inteligente | `⌘N` / `⇧⌘N` |
 | Atualizar biblioteca | `⌘R` |
 | Opções da listagem de músicas | `⌘J` |
-| Ajuda de atalhos | `⇧⌘/` |
+| Ajuda de atalhos | `⌥⌘/` |
 
 A ajuda abre pelo menu Ajuda e mostra a disponibilidade do contexto em que foi
-aberta. O grupo nativo de novos itens é substituído pelas ações de criação de
+aberta. `⌥⌘/` evita a combinação `⇧⌘/`, capturada pela busca nativa do menu Ajuda
+do macOS. O grupo nativo de novos itens é substituído pelas ações de criação de
 playlists, evitando que `⌘N` fique registrado também como nova janela.
 
 Os atalhos de histórico anteriores `⌘←/⌘→` foram substituídos. Essas combinações
@@ -72,8 +73,12 @@ com a edição ficam indisponíveis. A prévia da pesquisa deixa Shift+setas par
 seleção de texto. Esc nos ajustes não fecha diretamente a janela quando há editor,
 modificadores ou sheet subordinado.
 
-A tabela de músicas publica sua seleção múltipla somente quando a página está
-apresentada. Info reutiliza a confirmação existente de edição em lote e sua
+As tabelas nativas de músicas e fila expõem o alvo da seleção pelo primeiro
+respondedor, além dos valores de foco SwiftUI. A seleção de músicas só fica
+ativa enquanto a página está apresentada. Clicar na tabela transfere o foco
+para ela, preservando a seleção múltipla por Shift+setas. Linhas SwiftUI de faixas
+também transferem o foco para um respondedor nativo ao clicar, sem depender da
+preferência de navegação por teclado do sistema. Info reutiliza a confirmação existente de edição em lote e sua
 preferência de não perguntar novamente. Linhas focáveis de faixa, cartões de
 álbum e playlist publicam seus próprios alvos. Destinos ambíguos de artista/álbum
 ficam indisponíveis em vez de escolher arbitrariamente um deles.
@@ -101,21 +106,42 @@ ficam indisponíveis em vez de escolher arbitrariamente um deles.
 
 O cliente GTK e a API/banco Rust permanecem sem mudanças nesta entrega.
 
+## Correções durante a validação
+
+- A publicação dos comandos da janela foi separada da observação dos comandos
+  focados em `CommandInputModifier`. A ação da ajuda captura valores locais,
+  evitando um ciclo de closures no grafo de foco que travava a abertura de álbuns.
+- Uma ponte removida da hierarquia não pode mais apagar a referência da nova
+  janela; a execução verifica a janela realmente ativa.
+- Tabelas e linhas clicadas fornecem o alvo pelo primeiro respondedor. A mudança
+  de foco invalida a disponibilidade dos menus, e editores mantêm sua proteção.
+- A playlist solicita foco na ocorrência selecionada e na posição de destino
+  depois de mover um item, inclusive com faixas repetidas.
+- As fixtures de interface passaram a simular busca, volume, reprodução e
+  reordenação sem acessar o ponteiro Rust ausente nessas fixtures.
+
 ## Verificação
 
-- Testes unitários de catálogo verificam unicidade de IDs e combinações, resolução
-  de alvo por contexto, proteção durante edição, seleção em lote, ocorrência
-  repetida da playlist e restauração compartilhada de volume.
-- A regressão macOS cobre reprodução, contexto de origem, coordenação de dados,
-  pesquisa, menus nativos e tabela da fila.
-- Foram adicionados testes de interface para texto com espaços, navegação por
-  `⌘←` no editor, destinos, filtro e ajuda. O teste de histórico foi atualizado
-  para `⌘[`/`⌘]`.
-- Duas tentativas de iniciar o runner de interface foram impedidas pelo macOS:
-  `Authentication canceled. System authentication is running.` Os testes não
-  chegaram a executar; a validação completa de foco/Tab, layouts de teclado e
-  interação real dos menus continua pendente. A autenticação do sistema não foi
-  alterada para contornar o bloqueio.
+Os testes de interface usam bibliotecas isoladas e fixtures de reprodução,
+sem modificar a biblioteca pessoal. Cobrem navegação/histórico, busca global
+com barra lateral oculta, filtro, edição de texto, ajuda/Esc, mute/volume,
+seleção nativa/Return/Espaço, reprodução de coleção, Tab nos sliders,
+confirmação de Info em lote, janela auxiliar e ocorrência repetida após mover
+uma linha. A regressão inclui reprodução por clique em playlist e artista.
 
-Resultado final: compilação aprovada e 53 testes unitários macOS passaram. O diff
-passou na verificação de whitespace. Não houve alteração de bindings ou schema.
+Os testes unitários verificam catálogo, resolução de alvo, proteção do editor,
+seleção em lote, ocorrências repetidas, volume compartilhado, respondedor nativo
+e troca de janela. A regressão inclui reprodução, contexto de origem,
+coordenação de dados, pesquisa, menus nativos e tabela da fila.
+
+O bloqueio de autenticação das tentativas anteriores não ocorreu nesta execução.
+O layout ativo foi Colemak; outros layouts físicos não foram exercitados. O teste
+de Tab ativa a navegação por teclado apenas nos argumentos do aplicativo de teste,
+sem alterar as preferências globais do macOS.
+
+Resultado após as correções: compilação aprovada, **55 testes unitários e 11
+cenários de interface passaram**, considerando as reexecuções dos cenários
+corrigidos. O teste de Tab deixou de depender do item dinâmico “Fill” do menu
+Window; a validação usa a janela existente. A ajuda também foi conferida por
+captura de tela. O diff passou na verificação de whitespace. Não houve alteração
+de bindings, schema ou cliente GTK.

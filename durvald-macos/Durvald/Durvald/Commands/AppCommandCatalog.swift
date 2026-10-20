@@ -124,7 +124,7 @@ enum AppCommandID: String, CaseIterable, Identifiable {
         case .newSmartPlaylist: .init("n", modifiers: [.command, .shift])
         case .updateLibrary: .init("r", modifiers: .command)
         case .viewOptions: .init("j", modifiers: .command)
-        case .help: .init("/", modifiers: [.command, .shift])
+        case .help: .init("/", modifiers: [.command, .option])
         default: nil
         }
     }

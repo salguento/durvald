@@ -207,7 +207,8 @@ struct QueueView: View {
                             navigation: navigation)
                         return true
                     },
-                    onSelection: { commandSelectedPosition = $0 }
+                    onSelection: { commandSelectedPosition = $0 },
+                    commandTarget: queueSelectionCommands
             )
             .frame(width: max(0, geometry.size.width - 12), height: geometry.size.height)
             .padding(.horizontal, 6)

@@ -7,6 +7,63 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testKeyboardSelectionAndCollectionPlaybackUseFocusedTargets() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--playback-clock-fixture", "--collection-play-fixture", "-library.music.sort", "title", "-library.music.sortAscending", "YES", "-library.music.onlyFavorites", "NO", "-library.music.groupArtwork", "NO"]
+        app.launch()
+        app.typeKey("2", modifierFlags: .command)
+        let table = app.tables.firstMatch
+        XCTAssertTrue(table.waitForExistence(timeout: 5))
+        let third = table.tableRows.element(boundBy: 2)
+        XCTAssertTrue(third.waitForExistence(timeout: 5))
+        third.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5)).click()
+        XCTAssertTrue(third.isSelected)
+        app.typeKey(.return, modifierFlags: [])
+        let title = app.links["player.trackTitle"]
+        expectation(for: NSPredicate(format: "label == %@", "Faixa de teste 3"), evaluatedWith: title)
+        waitForExpectations(timeout: 4)
+        app.typeKey(.space, modifierFlags: [])
+        expectation(for: NSPredicate(format: "label == %@", "Reproduzir"), evaluatedWith: app.buttons["player.playPause"])
+        waitForExpectations(timeout: 4)
+        app.typeKey("3", modifierFlags: .command)
+        let album = app.buttons["album.42"]
+        XCTAssertTrue(album.waitForExistence(timeout: 5))
+        album.click()
+        XCTAssertTrue(app.buttons["collection.play"].waitForExistence(timeout: 5))
+        app.typeKey(.return, modifierFlags: .command)
+        expectation(for: NSPredicate(format: "label == %@", "Faixa de teste 1"), evaluatedWith: title)
+        waitForExpectations(timeout: 4)
+        XCTAssertEqual(app.buttons["player.playPause"].label, "Pausar")
+    }
+
+    @MainActor
+    func testTabReachesSlidersAndProtectsTheirSpaceKey() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--playback-clock-fixture", "--collection-play-fixture", "-AppleKeyboardUIMode", "3"]
+        app.launch()
+        XCTAssertTrue(app.sliders["player.progress"].waitForExistence(timeout: 5))
+        let progress = app.sliders["player.progress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        app.typeKey("k", modifierFlags: .command)
+        app.typeKey(.escape, modifierFlags: [])
+        func reach(_ element: XCUIElement) -> Bool {
+            for _ in 0..<45 {
+                app.typeKey(.tab, modifierFlags: [])
+                if element.value(forKey: "hasKeyboardFocus") as? Bool == true { return true }
+            }
+            return false
+        }
+        XCTAssertTrue(reach(progress), "Tab deve alcançar o slider de progresso")
+        let before = app.buttons["player.playPause"].label
+        app.typeKey(.space, modifierFlags: [])
+        XCTAssertEqual(app.buttons["player.playPause"].label, before)
+        let volume = app.sliders["player.volume"]
+        XCTAssertTrue(reach(volume), "Tab deve alcançar o slider de volume")
+        app.typeKey(.space, modifierFlags: [])
+        XCTAssertEqual(app.buttons["player.playPause"].label, before)
+    }
+
+    @MainActor
     func testKeyboardCommandsProtectTextAndExposeHelp() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--playback-clock-fixture", "--collection-play-fixture"]
@@ -31,8 +88,12 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertTrue(filter.waitForExistence(timeout: 3))
         app.typeKey("1", modifierFlags: .command)
         XCTAssertTrue(app.descendants(matching: .any)["home.page"].waitForExistence(timeout: 5))
-        app.typeKey("/", modifierFlags: [.command, .shift])
+        app.typeKey("/", modifierFlags: [.command, .option])
         XCTAssertTrue(app.descendants(matching: .any)["keyboardShortcuts.help"].waitForExistence(timeout: 5))
+        let helpCapture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        helpCapture.name = "Ajuda de atalhos"
+        helpCapture.lifetime = .keepAlways
+        add(helpCapture)
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertFalse(app.descendants(matching: .any)["keyboardShortcuts.help"].exists)
         app.typeKey("m", modifierFlags: [.command, .shift])
@@ -408,7 +469,7 @@ final class DurvaldUITests: XCTestCase {
     @MainActor
     func testCommandUpAndDownAdjustVolumeWithinLimits() throws {
         let app = XCUIApplication()
-        app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--playback-clock-fixture"]
         app.launch()
         let volume = app.sliders["player.volume"]
         XCTAssertTrue(volume.waitForExistence(timeout: 3))
@@ -430,9 +491,12 @@ final class DurvaldUITests: XCTestCase {
         app.buttons["player.mute"].click()
         app.typeKey(.downArrow, modifierFlags: .command)
         try assertVolume(0)
-        // Commands still work in the search editor and increasing volume unmutes.
+        // Command-arrows preserve native text editing while the field has focus.
         app.typeKey("k", modifierFlags: .command)
         XCTAssertTrue(app.textFields["search.field"].waitForExistence(timeout: 3))
+        app.typeKey(.upArrow, modifierFlags: .command)
+        try assertVolume(0)
+        app.typeKey(.escape, modifierFlags: [])
         app.typeKey(.upArrow, modifierFlags: .command)
         try assertVolume(0.05)
         XCTAssertEqual(app.buttons["player.mute"].label, "Mutar volume")

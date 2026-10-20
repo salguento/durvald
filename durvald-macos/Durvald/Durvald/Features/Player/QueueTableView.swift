@@ -30,6 +30,7 @@ struct QueueTableView: NSViewRepresentable {
     let onClear: () -> Void
     let configureMenu: (TrackMenuController, Int64) -> Bool
     var onSelection: (UInt64?) -> Void = { _ in }
+    var commandTarget: AppCommandTarget? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -37,6 +38,7 @@ struct QueueTableView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let tableView = QueueDropTableView()
+        tableView.nativeCommandTarget = commandTarget
         let column = NSTableColumn(identifier: Coordinator.columnIdentifier)
         column.minWidth = 0
         column.resizingMask = .autoresizingMask
@@ -97,6 +99,7 @@ struct QueueTableView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
+        (context.coordinator.tableView as? QueueDropTableView)?.nativeCommandTarget = commandTarget
         scrollView.contentInsets.top = topContentInset
 
         context.coordinator.updateRows()
@@ -747,7 +750,8 @@ private final class QueueTableCellView: NSTableCellView {
     }
 }
 
-private final class QueueDropTableView: NSTableView {
+private final class QueueDropTableView: NSTableView, NativeCommandSelectionProviding {
+    var nativeCommandTarget: AppCommandTarget?
     var firstUpcomingRow: Int?
     private let insertionLine = NSView()
 

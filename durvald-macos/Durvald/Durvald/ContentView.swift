@@ -58,9 +58,6 @@ struct ContentView: View {
     @State private var isCommandClearQueuePresented = false
     @State private var shortcutHelpAvailability = Set<AppCommandID>()
     @State private var pageFilterFocusRequest = 0
-    @FocusedValue(\.protectsBareCommandKeys) private var protectsBareCommandKeys
-    @FocusedValue(\.selectionCommands) private var commandSelection
-    @FocusedValue(\.pageCommands) private var commandPage
     @State private var globalSearch = SearchPresentation<SearchResults>()
     @State private var searchPreview = SearchPresentation<SearchResults>()
     @State private var windowLayout = WindowSplitLayoutCoordinator()
@@ -165,17 +162,12 @@ struct ContentView: View {
                 openWindow(id: "track-info")
             }
         }
-        .focusedSceneValue(\.windowCommands, windowCommandTarget)
         .focusedSceneValue(\.commandKeyboardState, commandKeyboard)
         .environment(\.pageFilterFocusRequest, pageFilterFocusRequest)
-        .background { CommandKeyboardBridge(state: commandKeyboard, perform: performKeyboardCommand).frame(width: 0, height: 0) }
-        .focusable()
-        .focusEffectDisabled()
-        .onKeyPress(keys: [.space, .return, .delete], phases: .down) { press in
-            guard press.modifiers.isEmpty else { return .ignored }
-            let id: AppCommandID = press.key == .space ? .playPause : press.key == .return ? .playSelection : .removeQueueItem
-            return performKeyboardCommand(id) ? .handled : .ignored
-        }
+        .modifier(CommandInputModifier(window: windowCommandTarget, keyboard: commandKeyboard) { available in
+            shortcutHelpAvailability = available
+            isShortcutHelpPresented = true
+        })
         .alert("Limpar a fila?", isPresented: $isCommandClearQueuePresented) {
             Button("Cancelar", role: .cancel) {}
             Button("Limpar fila", role: .destructive) { Task { await store.clearQueue() } }
@@ -818,15 +810,6 @@ struct ContentView: View {
         shell.submitSearch()
     }
 
-    private func performKeyboardCommand(_ id: AppCommandID) -> Bool {
-        commandKeyboard.update()
-        if id.isBareKey && (protectsBareCommandKeys == true || commandKeyboard.window?.firstResponder is NSControl && !(commandKeyboard.window?.firstResponder is NSTableView)) { return false }
-        guard let action = AppCommandDispatch.action(id, window: windowCommandTarget, page: commandPage,
-            selection: commandSelection, isMain: commandKeyboard.isMainContext, editing: commandKeyboard.isEditing) else { return false }
-        action()
-        return true
-    }
-
     private var windowCommandTarget: AppCommandTarget {
         var actions: [AppCommandID: () -> Void] = [
             .search: requestSearchFocus, .sidebar: toggleSidebar, .queue: toggleQueue,
@@ -837,14 +820,7 @@ struct ContentView: View {
             .playlists: { shell.navigationHistory.navigate(to: .playlists) },
             .retrospective: { shell.navigationHistory.navigate(to: .retrospective) },
             .newPlaylist: { playlistCreation.request(for: nil) },
-            .newSmartPlaylist: { playlistsToolbarState.isShowingSmartPlaylist = true },
-            .help: {
-                shortcutHelpAvailability = Set(AppCommandID.allCases.filter {
-                    AppCommandDispatch.action($0, window: self.windowCommandTarget, page: commandPage,
-                        selection: commandSelection, isMain: commandKeyboard.isMainContext, editing: commandKeyboard.isEditing) != nil
-                })
-                isShortcutHelpPresented = true
-            }
+            .newSmartPlaylist: { playlistsToolbarState.isShowingSmartPlaylist = true }
         ]
         if shell.navigationHistory.canGoBack { actions[.back] = navigateBack }
         if shell.navigationHistory.canGoForward { actions[.forward] = { shell.navigationHistory.goForward() } }

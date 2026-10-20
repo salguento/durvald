@@ -139,7 +139,8 @@ struct MusicLibraryView: View {
                             .environment(playlistCreation)
                             .environment(\.trackMenuNavigation, navigation)
                     )
-                }
+                },
+                commandTarget: libraryCommandTarget
             )
             // Let AppKit inset the header and first row while the document
             // continues underneath the toolbar during scrolling.

@@ -75,13 +75,13 @@ struct AppCommands: Commands {
     }
 
     private func command(_ id: AppCommandID) -> some View {
-        let action = AppCommandDispatch.action(id, window: window, page: page, selection: selection,
+        let action = AppCommandDispatch.action(id, window: window, page: page, selection: keyboard?.nativeSelection ?? selection,
                                                isMain: keyboard?.isMainContext == true, editing: keyboard?.isEditing == true)
         // Bare keys route after the focused control, not through menu equivalents
         // (which would otherwise steal spaces/Return/Delete from native editors).
         return Button(id.title + (id.isBareKey ? " (\(id.shortcutLabel))" : "")) {
             keyboard?.update()
-            AppCommandDispatch.action(id, window: window, page: page, selection: selection,
+            AppCommandDispatch.action(id, window: window, page: page, selection: keyboard?.nativeSelection ?? selection,
                 isMain: keyboard?.isMainContext == true, editing: keyboard?.isEditing == true)?()
         }
             .keyboardShortcut(id.isBareKey ? nil : id.shortcut)

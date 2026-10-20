@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import Durvald
 
@@ -65,6 +66,62 @@ final class AppCommandTests: XCTestCase {
         XCTAssertEqual(core.collectionRequests.first?.contexts, ["playlist:7#0", "playlist:7#1", "playlist:7#2"])
     }
 
+    func testNativeTableSelectionFollowsResponderAndDoesNotLeakIntoEditor() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let table = CommandTestNativeTable()
+        table.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("title")))
+        var hits = 0
+        table.nativeCommandTarget = AppCommandTarget(actions: [.info: { hits += 1 }])
+        window.contentView = table
+        XCTAssertTrue(window.makeFirstResponder(table))
+        XCTAssertTrue(window.firstResponder === table)
+        let state = CommandKeyboardState()
+        state.window = window
+        state.update()
+        state.nativeSelection?.perform(.info)
+        XCTAssertEqual(hits, 1)
+        let editor = NSTextView()
+        window.contentView = editor
+        XCTAssertTrue(window.makeFirstResponder(editor))
+        state.update()
+        XCTAssertTrue(state.isEditing)
+        XCTAssertNil(state.nativeSelection)
+        let row = CommandSelectionFocusBridge.SelectionView()
+        row.nativeCommandTarget = AppCommandTarget(actions: [.info: { hits += 10 }])
+        let focus = CommandSelectionFocus()
+        focus.view = row
+        window.contentView = row
+        focus.focus()
+        state.update()
+        XCTAssertTrue(window.firstResponder === row)
+        state.nativeSelection?.perform(.info)
+        XCTAssertEqual(hits, 11)
+    }
+
+    func testDetachedBridgeCannotClearNewWindowContext() async {
+        let state = CommandKeyboardState()
+        let first = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                             styleMask: [.titled], backing: .buffered, defer: false)
+        let second = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        first.isReleasedWhenClosed = false
+        second.isReleasedWhenClosed = false
+        defer { first.close(); second.close() }
+        let old = CommandKeyboardBridge.BridgeView()
+        old.state = state
+        first.contentView = old
+        let current = CommandKeyboardBridge.BridgeView()
+        current.state = state
+        second.contentView = current
+        first.contentView = NSView()
+        old.install()
+        for _ in 0..<4 { await Task.yield() }
+        XCTAssertTrue(state.window === second)
+    }
+
     func testMuteRestoresSharedVolumeAfterButtonOrCommandChanges() {
         var snapshot = Fixtures.playingSnapshot
         snapshot.volume = 0.73
@@ -81,4 +138,9 @@ final class AppCommandTests: XCTestCase {
         store.toggleMute()
         XCTAssertEqual(store.playback?.volume ?? 0, 0.05, accuracy: 0.001)
     }
+}
+
+@MainActor
+private final class CommandTestNativeTable: NSTableView, NativeCommandSelectionProviding {
+    var nativeCommandTarget: AppCommandTarget?
 }

@@ -212,13 +212,36 @@ private final class CommandPlaylistPicker: NSObject {
 }
 
 @MainActor
+protocol NativeCommandSelectionProviding: AnyObject {
+    var nativeCommandTarget: AppCommandTarget? { get set }
+}
+
+@MainActor
 @Observable
 final class CommandKeyboardState {
     var isEditing = false
     var windowIsKey = false
+    var nativeSelectionRevision = 0
+    private weak var lastResponder: NSResponder?
+    var nativeSelection: AppCommandTarget? {
+        _ = nativeSelectionRevision
+        var view = window?.firstResponder as? NSView
+        while let current = view {
+            if let source = current as? NativeCommandSelectionProviding { return source.nativeCommandTarget ?? AppCommandTarget() }
+            view = current.superview
+        }
+        return nil
+    }
     weak var window: NSWindow?
-    var isMainContext: Bool { windowIsKey && window != nil && NSApp.keyWindow === window && window?.attachedSheet == nil }
+    var isMainContext: Bool {
+        _ = windowIsKey // Invalidates observers when activation changes.
+        return window != nil && NSApp.keyWindow === window && window?.attachedSheet == nil
+    }
     func update() {
+        if lastResponder !== window?.firstResponder {
+            lastResponder = window?.firstResponder
+            nativeSelectionRevision += 1
+        }
         let isKey = window != nil && NSApp.keyWindow === window
         if windowIsKey != isKey { windowIsKey = isKey }
         let editing = window?.firstResponder is NSTextView
@@ -226,7 +249,7 @@ final class CommandKeyboardState {
     }
 }
 
-/// Only native table bare keys need bridging. SwiftUI controls get first refusal
+/// Native tables and clicked rows bridge bare keys. SwiftUI controls get first refusal
 /// through the parent's onKeyPress; text editors never enter this bridge.
 struct CommandKeyboardBridge: NSViewRepresentable {
     let state: CommandKeyboardState
@@ -244,17 +267,23 @@ struct CommandKeyboardBridge: NSViewRepresentable {
         private var observers: [NSObjectProtocol] = []
         override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); install() }
         func install() {
-            if state?.window !== window {
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    self.state?.window = self.window
+            guard let attachedWindow = window else { return }
+            if state?.window !== attachedWindow {
+                DispatchQueue.main.async { [weak self, weak attachedWindow] in
+                    guard let self, let attachedWindow, self.window === attachedWindow else { return }
+                    self.state?.window = attachedWindow
                     self.state?.update()
                 }
             }
-            guard monitor == nil, window != nil else { return }
-            for name in [NSControl.textDidBeginEditingNotification, NSControl.textDidEndEditingNotification, NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            guard monitor == nil else { return }
+            for name in [NSControl.textDidBeginEditingNotification, NSControl.textDidEndEditingNotification, NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification, NSTableView.selectionDidChangeNotification] {
                 observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.state?.update() }
+                    MainActor.assumeIsolated {
+                        self?.state?.update()
+                        if name == NSTableView.selectionDidChangeNotification {
+                            DispatchQueue.main.async { [weak self] in self?.state?.nativeSelectionRevision += 1 }
+                        }
+                    }
                 })
             }
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseUp]) { [weak self] event in
@@ -263,7 +292,7 @@ struct CommandKeyboardBridge: NSViewRepresentable {
                     self.state?.update()
                     DispatchQueue.main.async { [weak self] in self?.state?.update() }
                     guard event.type == .keyDown, self.state?.isMainContext == true,
-                          (self.window?.firstResponder is NSTableView || self.window?.firstResponder == nil || self.window?.firstResponder === self.window),
+                          (self.window?.firstResponder is NativeCommandSelectionProviding || self.window?.firstResponder == nil || self.window?.firstResponder === self.window),
                           event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
                     let id: AppCommandID?
                     switch event.keyCode { case 49: id = .playPause; case 36, 76: id = .playSelection; case 51: id = .removeQueueItem; default: id = nil }
@@ -277,6 +306,89 @@ struct CommandKeyboardBridge: NSViewRepresentable {
         deinit {
             if let monitor { NSEvent.removeMonitor(monitor) }
             for observer in observers { NotificationCenter.default.removeObserver(observer) }
+        }
+    }
+}
+
+/// The view publishing window actions must not also observe their focus graph:
+/// closures can otherwise embed successive copies of that graph in themselves.
+struct CommandInputModifier: ViewModifier {
+    let window: AppCommandTarget
+    let keyboard: CommandKeyboardState
+    let showHelp: (Set<AppCommandID>) -> Void
+    @FocusedValue(\.pageCommands) private var page
+    @FocusedValue(\.selectionCommands) private var selection
+    @FocusedValue(\.protectsBareCommandKeys) private var protectsBareKeys
+
+    private var target: AppCommandTarget {
+        var result = window
+        let window = window, page = page, selection = keyboard.nativeSelection ?? selection, keyboard = keyboard, showHelp = showHelp
+        result.actions[.help] = {
+            var available = Set(AppCommandID.allCases.filter {
+                AppCommandDispatch.action($0, window: window, page: page, selection: selection,
+                    isMain: keyboard.isMainContext, editing: keyboard.isEditing) != nil
+            })
+            available.insert(.help)
+            showHelp(available)
+        }
+        return result
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .focusable(interactions: .edit)
+            .focusEffectDisabled()
+            .focusedSceneValue(\.windowCommands, target)
+            .background { CommandKeyboardBridge(state: keyboard, perform: perform).frame(width: 0, height: 0) }
+            .onKeyPress(keys: [.space, .return, .delete], phases: .down) { press in
+                guard press.modifiers.isEmpty else { return .ignored }
+                let id: AppCommandID = press.key == .space ? .playPause : press.key == .return ? .playSelection : .removeQueueItem
+                return perform(id) ? .handled : .ignored
+            }
+    }
+
+    private func perform(_ id: AppCommandID) -> Bool {
+        keyboard.update()
+        if id.isBareKey && (protectsBareKeys == true || keyboard.window?.firstResponder is NSControl && !(keyboard.window?.firstResponder is NSTableView)) { return false }
+        guard let action = AppCommandDispatch.action(id, window: target, page: page, selection: keyboard.nativeSelection ?? selection,
+            isMain: keyboard.isMainContext, editing: keyboard.isEditing) else { return false }
+        action()
+        return true
+    }
+}
+
+/// Gives clicked SwiftUI rows a native responder even with keyboard navigation disabled.
+@MainActor
+final class CommandSelectionFocus {
+    weak var view: NSView?
+    func focus() {
+        guard let view else { return }
+        view.window?.makeFirstResponder(view)
+    }
+}
+
+struct CommandSelectionFocusBridge: NSViewRepresentable {
+    let focus: CommandSelectionFocus
+    let target: AppCommandTarget
+    func makeNSView(context: Context) -> SelectionView {
+        let view = SelectionView()
+        focus.view = view
+        view.nativeCommandTarget = target
+        return view
+    }
+    func updateNSView(_ view: SelectionView, context: Context) {
+        focus.view = view
+        view.nativeCommandTarget = target
+    }
+    final class SelectionView: NSView, NativeCommandSelectionProviding {
+        var nativeCommandTarget: AppCommandTarget?
+        override var acceptsFirstResponder: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func keyDown(with event: NSEvent) {
+            if event.keyCode == 48 {
+                if event.modifierFlags.contains(.shift) { window?.selectPreviousKeyView(self) }
+                else { window?.selectNextKeyView(self) }
+            } else { super.keyDown(with: event) }
         }
     }
 }
