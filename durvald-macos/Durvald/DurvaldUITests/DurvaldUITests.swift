@@ -7,6 +7,40 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
+    func testKeyboardCommandsProtectTextAndExposeHelp() {
+        let app = XCUIApplication()
+        app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--playback-clock-fixture", "--collection-play-fixture"]
+        app.launch()
+        XCTAssertTrue(app.buttons["player.playPause"].waitForExistence(timeout: 5))
+        app.typeKey("k", modifierFlags: .command)
+        let field = app.textFields["search.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        field.typeText("dois nomes")
+        XCTAssertEqual(field.value as? String, "dois nomes")
+        XCTAssertEqual(app.buttons["player.playPause"].label, "Pausar")
+        app.typeKey(.leftArrow, modifierFlags: .command)
+        field.typeText("X")
+        XCTAssertEqual(field.value as? String, "Xdois nomes")
+        XCTAssertTrue(app.descendants(matching: .any)["home.page"].exists)
+        app.typeKey(.escape, modifierFlags: [])
+        app.typeKey(.escape, modifierFlags: [])
+        app.typeKey("3", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["album.42"].waitForExistence(timeout: 5))
+        app.typeKey("f", modifierFlags: .command)
+        let filter = app.textFields["albums.search.field"]
+        XCTAssertTrue(filter.waitForExistence(timeout: 3))
+        app.typeKey("1", modifierFlags: .command)
+        XCTAssertTrue(app.descendants(matching: .any)["home.page"].waitForExistence(timeout: 5))
+        app.typeKey("/", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.descendants(matching: .any)["keyboardShortcuts.help"].waitForExistence(timeout: 5))
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertFalse(app.descendants(matching: .any)["keyboardShortcuts.help"].exists)
+        app.typeKey("m", modifierFlags: [.command, .shift])
+        app.typeKey("m", modifierFlags: [.command, .shift])
+        XCTAssertTrue(app.buttons["player.playPause"].exists)
+    }
+
+    @MainActor
     func testHomeShelvesScrollWithPanelsAndOpenAlbums() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture", "--scroll-effect-fixture", "--home-library-fixture"]
@@ -903,7 +937,7 @@ final class DurvaldUITests: XCTestCase {
     }
 
     @MainActor
-    func testCommandArrowsFollowAvailableNavigationHistory() {
+    func testCommandBracketsFollowAvailableNavigationHistory() {
         let app = XCUIApplication()
         app.launchArguments += ["--ui-testing", "--player-navigation-fixture"]
         app.launch()
@@ -914,33 +948,33 @@ final class DurvaldUITests: XCTestCase {
         XCTAssertTrue(home.waitForExistence(timeout: 3))
         XCTAssertFalse(back.isEnabled)
         XCTAssertFalse(forward.isEnabled)
-        app.typeKey(.leftArrow, modifierFlags: .command)
-        app.typeKey(.rightArrow, modifierFlags: .command)
+        app.typeKey("[", modifierFlags: .command)
+        app.typeKey("]", modifierFlags: .command)
         XCTAssertTrue(home.exists)
 
         app.buttons["player.artwork"].click()
         XCTAssertTrue(album.waitForExistence(timeout: 3))
-        app.typeKey(.leftArrow, modifierFlags: .command)
+        app.typeKey("[", modifierFlags: .command)
         XCTAssertTrue(home.waitForExistence(timeout: 3))
         XCTAssertFalse(back.isEnabled)
         XCTAssertTrue(forward.isEnabled)
-        app.typeKey(.rightArrow, modifierFlags: .command)
+        app.typeKey("]", modifierFlags: .command)
         XCTAssertTrue(album.waitForExistence(timeout: 3))
         XCTAssertFalse(forward.isEnabled)
 
-        // Navigation shortcuts must work even while the search editor has focus.
+        // Explicit history shortcuts work while search is focused; Command-arrows remain editing keys.
         app.typeKey("k", modifierFlags: .command)
         let field = app.textFields["search.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 3))
         app.typeText("teste")
-        app.typeKey(.leftArrow, modifierFlags: .command)
+        app.typeKey("[", modifierFlags: .command)
         XCTAssertTrue(album.waitForExistence(timeout: 3))
         XCTAssertTrue(forward.isEnabled)
 
         app.buttons["sidebar.home"].click()
         XCTAssertTrue(home.waitForExistence(timeout: 3))
         XCTAssertFalse(forward.isEnabled)
-        app.typeKey(.rightArrow, modifierFlags: .command)
+        app.typeKey("]", modifierFlags: .command)
         XCTAssertTrue(home.exists)
         XCTAssertTrue(field.exists)
     }

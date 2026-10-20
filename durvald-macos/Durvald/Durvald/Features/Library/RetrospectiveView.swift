@@ -147,6 +147,9 @@ struct RetrospectiveView: View {
                 }
             }
         }
+        .focusedSceneValue(\.pageCommands, AppCommandTarget(actions: availablePlaylistDraft.map { draft in
+            [.openReplay: { onOpenPlaylist(draft) }]
+        } ?? [:]))
         .task(id: RefreshRequest(coreID: store.core.map(ObjectIdentifier.init),
                                  catalogRevision: store.libraryCatalogRevision, tracksRevision: store.tracksRevision)) {
             await store.refreshHistory()

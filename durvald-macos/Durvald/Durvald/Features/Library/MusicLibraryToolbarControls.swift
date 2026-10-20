@@ -1,6 +1,14 @@
 import AppKit
 import SwiftUI
 
+private struct PageFilterFocusRequestKey: EnvironmentKey { static let defaultValue = 0 }
+extension EnvironmentValues {
+    var pageFilterFocusRequest: Int {
+        get { self[PageFilterFocusRequestKey.self] }
+        set { self[PageFilterFocusRequestKey.self] = newValue }
+    }
+}
+
 struct MusicLibraryViewOptionsMenu: View {
     let onShowViewOptions: () -> Void
     @AppStorage("library.music.onlyFavorites") private var onlyFavorites = false
@@ -39,6 +47,7 @@ struct MusicLibraryViewOptionsMenu: View {
 }
 
 struct LibraryToolbarSearchField: View {
+    @Environment(\.pageFilterFocusRequest) private var commandFocusRequest
     @Environment(\.appearsActive) private var appearsActive
     @Binding var searchText: String
     let placeholder: String
@@ -83,6 +92,10 @@ struct LibraryToolbarSearchField: View {
                     .accessibilityLabel(placeholder)
                     .accessibilityIdentifier("\(identifier).expand")
                 }
+            }
+            .onChange(of: commandFocusRequest) { _, _ in
+                isExpanded = true
+                focusRequest += 1
             }
             .onChange(of: isFocused) { _, focused in
                 // Reserve the expanded field while focus survives a resize,

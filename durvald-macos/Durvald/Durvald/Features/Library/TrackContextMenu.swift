@@ -84,17 +84,30 @@ extension EnvironmentValues {
 }
 
 private struct TrackContextMenuModifier: ViewModifier {
+    @Environment(\.commandFocusRequest) private var commandFocusRequest
+    @Environment(\.commandFocusID) private var commandFocusID
+    @Environment(\.commandSelectionOverride) private var commandOverride
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(TrackInfoCoordinator.self) private var trackInfo
     @Environment(\.trackMenuNavigation) private var navigation
 
+    @FocusState private var isCommandFocused: Bool
     let track: Track
     let onPlay: () -> Void
     let additionalActions: [TrackMenuAction]
 
     func body(content: Content) -> some View {
-        content.overlay {
+        content
+        .focusable()
+        .focused($isCommandFocused)
+        .onTapGesture { isCommandFocused = true }
+        .onChange(of: commandFocusRequest?.revision) { _, _ in
+            if let commandFocusID, commandFocusRequest?.target == commandFocusID { isCommandFocused = true }
+        }
+        .focusedValue(\.selectionCommands, commandOverride ?? AppCommandTarget.tracks([store.loadedTrack(id: track.id) ?? track],
+            store: store, info: trackInfo, creation: playlistCreation, navigation: navigation, play: onPlay))
+        .overlay {
             NativeLibraryMenu(mode: .context) { controller in
                 controller.configure(track: track, store: store, playlistCreation: playlistCreation,
                     trackInfo: trackInfo, navigation: navigation, additionalActions: additionalActions)
@@ -111,12 +124,16 @@ extension View {
 }
 
 private struct AlbumContextMenuModifier: ViewModifier {
+    @Environment(\.trackMenuNavigation) private var navigation
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     let album: Release?
 
     func body(content: Content) -> some View {
-        content.overlay {
+        content
+        .focusable()
+        .focusedValue(\.selectionCommands, album.map { AppCommandTarget.album($0, store: store, creation: playlistCreation, navigation: navigation) })
+        .overlay {
             if let album {
                 NativeLibraryMenu(mode: .context) { controller in
                     controller.configure(album: album, store: store, playlistCreation: playlistCreation)
@@ -140,7 +157,10 @@ private struct PlaylistContextMenuModifier: ViewModifier {
     let playlist: Playlist
 
     func body(content: Content) -> some View {
-        content.overlay {
+        content
+        .focusable()
+        .focusedValue(\.selectionCommands, AppCommandTarget.playlist(playlist, store: store, creation: creation, navigation: navigation))
+        .overlay {
             NativeLibraryMenu(mode: .context) { controller in
                 controller.configure(playlist: playlist, store: store, creation: creation, navigation: navigation)
             }.accessibilityHidden(true)

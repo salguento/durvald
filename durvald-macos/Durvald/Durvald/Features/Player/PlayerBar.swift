@@ -6,8 +6,7 @@ struct PlayerBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var position = 0.0
     @State private var volume = 0.5
-    @State private var volumeBeforeMute = 0.5
-    @State private var isVolumeMuted = false
+    private var isVolumeMuted: Bool { store.isVolumeMuted }
     @State private var seeking = false
     @State private var scrubbingTrackID: Int64?
     @State private var adjustingVolume = false
@@ -86,10 +85,6 @@ struct PlayerBar: View {
             }
             if !adjustingVolume {
                 volume = Double(snapshot.volume)
-                if volume > 0 {
-                    volumeBeforeMute = volume
-                    isVolumeMuted = false
-                }
             }
         }
         .popover(
@@ -336,7 +331,7 @@ struct PlayerBar: View {
                     Image(systemName: "backward.fill")
                         .contentShape(Rectangle())
                 }
-                .disabled(store.playback?.currentTrack == nil)
+                .disabled(store.playback?.currentTrack == nil || store.isChangingTrack)
                 .help("Faixa anterior")
                 .accessibilityLabel("Faixa anterior")
                 .accessibilityHint("Volta para a faixa anterior")
@@ -359,13 +354,12 @@ struct PlayerBar: View {
                 .font(.system(size: 28))
                 .contentShape(Rectangle())
             }
-            .disabled(store.playback?.currentTrack == nil || changingPlaybackState)
+            .disabled(store.playback?.currentTrack == nil || changingPlaybackState || store.isChangingTrack)
             .accessibilityHint("Alterna entre reproduzir e pausar a faixa atual")
             .accessibilityLabel(
                 store.playback?.isPaused == true ? "Reproduzir" : "Pausar"
             )
             .accessibilityIdentifier("player.playPause")
-            .keyboardShortcut(AppKeyboardShortcuts.playPause)
 
             Button {
                 Task { await store.next() }
@@ -373,7 +367,7 @@ struct PlayerBar: View {
                 Image(systemName: "forward.fill")
                     .contentShape(Rectangle())
             }
-            .disabled(store.playback?.currentTrack == nil)
+            .disabled(store.playback?.currentTrack == nil || store.isChangingTrack)
             .help("Próxima faixa")
             .accessibilityLabel("Próxima faixa")
             .accessibilityHint("Avança para a próxima faixa")
@@ -402,6 +396,7 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.repeat")
             }
         }
+        .disabled(store.activeTrackID == nil || store.isChangingTrack)
         .buttonStyle(.plain)
         .font(.system(size: 14))
     }
@@ -434,6 +429,7 @@ struct PlayerBar: View {
             .disabled(snapshot?.currentTrack == nil)
             .focusable(snapshot?.currentTrack != nil)
             .focusEffectDisabled()
+            .focusedValue(\.protectsBareCommandKeys, true)
             .onHover { isProgressHovered = $0 }
             .onKeyPress(AppKeyboardShortcuts.Slider.decrease) {
                 adjustProgress(by: -5, duration: duration)
@@ -514,6 +510,7 @@ struct PlayerBar: View {
             .frame(minWidth: 34, maxWidth: .infinity)
             .focusable()
             .focusEffectDisabled()
+            .focusedValue(\.protectsBareCommandKeys, true)
             .onKeyPress(AppKeyboardShortcuts.Slider.decrease) {
                 updateVolume(volume - 0.05)
                 return .handled
@@ -535,25 +532,18 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.volume")
             }
         }
+        .disabled(store.core == nil)
         .font(.caption)
     }
 
     private func updateVolume(_ newValue: Double, immediately: Bool = true) {
         volume = min(max(newValue, 0), 1)
-        isVolumeMuted = false
-        if volume > 0 { volumeBeforeMute = volume }
         store.scheduleVolume(volume, immediately: immediately)
     }
 
     private func toggleMute() {
-        if isVolumeMuted || volume == 0 {
-            updateVolume(volumeBeforeMute)
-        } else {
-            volumeBeforeMute = volume
-            volume = 0
-            isVolumeMuted = true
-            store.scheduleVolume(0, immediately: true)
-        }
+        store.toggleMute()
+        volume = Double(store.playback?.volume ?? 0)
     }
 
     private var muteButton: some View {

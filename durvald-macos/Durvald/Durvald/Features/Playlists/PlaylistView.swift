@@ -94,12 +94,15 @@ struct PlaylistView: View {
     }
 
     @Environment(DurvaldCoreStore.self) private var store
+    @Environment(TrackInfoCoordinator.self) private var commandTrackInfo
+    @Environment(\.trackMenuNavigation) private var navigation
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
 
     let playlist: Playlist
 
     @State private var tracks: [Track] = []
     @State private var isLoading = true
+    @State private var commandRowFocus = CommandFocusRequest()
     @State private var selectedTrackPosition: Int?
     @Bindable var toolbarState = PlaylistToolbarState()
     @State private var draggedTrackPosition: Int?
@@ -108,6 +111,7 @@ struct PlaylistView: View {
     @State private var isPersistingTrackOrder = false
     @State private var isExporting = false
     @State private var exportMessage: String?
+    @State private var isConfirmingCommandDelete = false
 
     private let artworkSize: CGFloat = 268
 
@@ -146,6 +150,13 @@ struct PlaylistView: View {
             isLoading = true
             tracks = await store.tracks(forPlaylistID: playlist.id)
             isLoading = false
+        }
+        .focusedSceneValue(\.pageCommands, playlistCommands)
+        .alert("Excluir playlist?", isPresented: $isConfirmingCommandDelete) {
+            Button("Cancelar", role: .cancel) {}
+            Button("Excluir", role: .destructive) {
+                Task { if await store.deletePlaylist(id: playlist.id) { navigation.deletedPlaylist(playlist.id) } }
+            }
         }
         .accessibilityIdentifier("playlist.detail.\(playlist.id)")
         .task(id: store.metadataRevision) {
@@ -188,6 +199,25 @@ struct PlaylistView: View {
                 }
             }
         }
+    }
+
+    private var playlistCommands: AppCommandTarget {
+        var actions: [AppCommandID: () -> Void] = [
+            .editPlaylist: {
+                if currentPlaylist.isSmart { toolbarState.isEditingSmartPlaylist = true }
+                else { playlistCreation.requestEdit(currentPlaylist) }
+            },
+            .deletePlaylist: { isConfirmingCommandDelete = true }
+        ]
+        if !isLoading && !tracks.isEmpty && !store.isChangingTrack {
+            actions[.playCollection] = { Task { await PlaybackCollection.playlist(playlist.id).perform(.play, using: store) } }
+            actions[.shuffleCollection] = { Task { await PlaybackCollection.playlist(playlist.id).perform(.shuffle, using: store) } }
+        }
+        if !isExporting {
+            actions[.exportRelative] = { export(relativePaths: true) }
+            actions[.exportAbsolute] = { export(relativePaths: false) }
+        }
+        return AppCommandTarget(actions: actions)
     }
 
     private var header: some View {
@@ -514,12 +544,37 @@ struct PlaylistView: View {
         return entries
     }
 
+    private func moveCommandRow(_ source: Int, to destination: Int) {
+        let insertion = destination < source ? destination - 1 : destination
+        guard moveTrack(from: source, toInsertionIndex: insertion) else { return }
+        selectedTrackPosition = destination
+        Task { @MainActor in
+            await Task.yield()
+            commandRowFocus.focus("playlist:\(playlist.id)#\(destination)")
+        }
+    }
+
+    private func playlistRowCommands(_ track: Track, position: Int) -> AppCommandTarget {
+        var target = AppCommandTarget.tracks([track], store: store, info: commandTrackInfo,
+            creation: playlistCreation, navigation: navigation) {
+                Task { await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store) }
+            }
+        if canReorderTracks {
+            if position > 1 { target.actions[.moveUp] = { moveCommandRow(position, to: position - 1) } }
+            if position < tracks.count { target.actions[.moveDown] = { moveCommandRow(position, to: position + 1) } }
+        }
+        return target
+    }
+
     private func trackRow(_ track: Track, position: Int) -> some View {
         CollectionTrackRow(track: track, number: "\(position)", activeOverride: PlaybackSourceContext.matches(trackID: track.id, activeTrackID: store.activeTrackID,
                                origin: PlaybackSourceContext.playlist(playlist.id, position: position - 1), activeOrigin: store.activeSourceContext),
                            isSelected: selectedTrackPosition == position) {
             Task { await TrackRowPlayback.playlist(playlist.id, position: position - 1).perform(using: store) }
         }
+        .environment(\.commandSelectionOverride, playlistRowCommands(track, position: position))
+        .environment(\.commandFocusRequest, commandRowFocus)
+        .environment(\.commandFocusID, "playlist:\(playlist.id)#\(position)")
         .simultaneousGesture(
             TapGesture().onEnded {
                 selectedTrackPosition = position

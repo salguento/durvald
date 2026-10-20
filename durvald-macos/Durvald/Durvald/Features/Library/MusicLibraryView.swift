@@ -30,6 +30,16 @@ struct MusicLibraryView: View {
     var navigationEntryID = 0
     let onSummaryChange: (MusicLibrarySummary) -> Void
 
+    private var libraryCommandTarget: AppCommandTarget {
+        let selected = presentation.displayedTracks.filter { selectedTrackIDs.contains($0.id) }
+        var target = AppCommandTarget.tracks(selected, store: store, info: trackInfo, creation: playlistCreation, navigation: navigation) {
+            guard let first = selected.first else { return }
+            Task { await store.play(trackID: first.id) }
+        }
+        if let first = selected.first { target.actions[.info] = { showInfo(for: first) } }
+        return target
+    }
+
     private var fileSizes: [String: Int64] { presentation.fileSizes }
     @AppStorage("library.music.skipBatchInfoConfirmation") private var skipBatchInfoConfirmation = false
     @AppStorage("library.music.onlyFavorites") private var onlyFavorites = false
@@ -144,6 +154,7 @@ struct MusicLibraryView: View {
                 ContentUnavailableView("Nenhuma música encontrada", systemImage: "magnifyingglass")
             }
         }
+        .focusedValue(\.selectionCommands, isPresented && !selectedTrackIDs.isEmpty ? libraryCommandTarget : nil)
         .onChange(of: summary, initial: true) { _, value in
             if isPresented { onSummaryChange(value) }
         }

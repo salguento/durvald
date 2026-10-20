@@ -96,6 +96,7 @@ struct QueueView: View {
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(\.trackMenuNavigation) private var navigation
     @State private var menuTracks = QueueMenuTrackPresentation()
+    @State private var commandSelectedPosition: UInt64?
     @State private var selectedPanel: Panel = .details
     @State private var isClearQueueConfirmationPresented = false
     @State private var isTrackLinkHovered = false
@@ -122,6 +123,9 @@ struct QueueView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("queue.sidebar")
+        .focusedValue(\.selectionCommands, queueSelectionCommands)
+        .onChange(of: selectedPanel) { _, _ in commandSelectedPosition = nil }
+        .onChange(of: store.queueRevision) { _, _ in commandSelectedPosition = nil }
         .alert("Limpar a fila?", isPresented: $isClearQueueConfirmationPresented) {
             Button("Cancelar", role: .cancel) {}
             Button("Limpar fila", role: .destructive) {
@@ -135,6 +139,28 @@ struct QueueView: View {
         .task(id: QueueMenuTrackRequest(store: store)) {
             await menuTracks.refresh(store: store)
         }
+    }
+
+    private var queueSelectionCommands: AppCommandTarget {
+        guard let position = commandSelectedPosition,
+              let row = tableRows.first(where: { $0.position == position }),
+              let track = store.loadedTrack(id: row.trackID)
+                ?? menuTracks.tracksByID[row.trackID]
+                ?? store.playback?.currentTrack.flatMap({ $0.id == row.trackID ? $0 : nil }) else { return AppCommandTarget() }
+        var target = AppCommandTarget.tracks([track], store: store, info: trackInfo,
+            creation: playlistCreation, navigation: navigation) {
+                Task {
+                    if row.isCurrent {
+                        if row.isPaused { await store.togglePause() }
+                    } else { await store.playQueueItem(at: position) }
+                }
+            }
+        if position > 0 {
+            target.actions[.removeQueueItem] = { Task { await store.removeQueueItem(at: position) } }
+            if position > 1 { target.actions[.moveUp] = { store.moveQueueItem(from: position, to: position - 1) } }
+            if position + 1 < store.queue.count { target.actions[.moveDown] = { store.moveQueueItem(from: position, to: position + 1) } }
+        }
+        return target
     }
 
     private var queuePanel: some View {
@@ -180,7 +206,8 @@ struct QueueView: View {
                             playlistCreation: playlistCreation, trackInfo: trackInfo,
                             navigation: navigation)
                         return true
-                    }
+                    },
+                    onSelection: { commandSelectedPosition = $0 }
             )
             .frame(width: max(0, geometry.size.width - 12), height: geometry.size.height)
             .padding(.horizontal, 6)

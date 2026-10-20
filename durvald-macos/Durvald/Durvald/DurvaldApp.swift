@@ -72,7 +72,7 @@ struct DurvaldApp: App {
         .defaultSize(width: 900, height: 620)
         .windowResizability(.contentMinSize)
         .commands {
-            AppCommands(store: coreStore)
+            AppCommands()
         }
         Window("Info da faixa", id: "track-info") {
             Group {

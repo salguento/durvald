@@ -29,6 +29,7 @@ struct QueueTableView: NSViewRepresentable {
     let onInfo: (Int64) -> Void
     let onClear: () -> Void
     let configureMenu: (TrackMenuController, Int64) -> Bool
+    var onSelection: (UInt64?) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -147,8 +148,12 @@ struct QueueTableView: NSViewRepresentable {
             return 46
         }
 
+        private var isApplyingRows = false
+
         func updateRows() {
             guard let tableView else { return }
+            isApplyingRows = true
+            defer { isApplyingRows = false }
             let newRows = parent.rows
             let coreID = parent.core.map(ObjectIdentifier.init)
             let coreChanged = coreID != appliedCoreID
@@ -163,6 +168,7 @@ struct QueueTableView: NSViewRepresentable {
             isWindowActive = parent.isWindowActive
             appliedCoreID = coreID
             if structural {
+                tableView.deselectAll(nil)
                 tableView.reloadData()
                 return
             }
@@ -371,6 +377,12 @@ struct QueueTableView: NSViewRepresentable {
             tableView.reloadData(forRowIndexes: affected, columnIndexes: IndexSet(integer: 0))
             parent.onMove(from, to)
             return true
+        }
+
+        func tableViewSelectionDidChange(_ notification: Notification) {
+            guard !isApplyingRows, let tableView else { return }
+            let row = tableView.selectedRow
+            parent.onSelection(rows.indices.contains(row) ? rows[row].position : nil)
         }
 
         private let trackMenuController = TrackMenuController()

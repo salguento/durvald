@@ -111,7 +111,7 @@ struct SearchPreviewAnchor<Content: View>: NSViewRepresentable {
                     guard let self, self.panel.isVisible, let anchor = self.anchor,
                           let window = anchor.window else { return false }
                     if event.type == .keyDown, event.window === window,
-                       event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+                       event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
                        self.parent.onKey(event.keyCode) { return true }
                     if event.type == .leftMouseDown || event.type == .rightMouseDown {
                         if event.window === self.panel { return false }

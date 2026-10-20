@@ -143,7 +143,10 @@ private final class WindowObserverView: NSView {
         removeEscapeMonitor()
         guard closesOnEscape, let observedWindow = window else { return }
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak observedWindow] event in
-            guard self != nil, event.window === observedWindow, event.keyCode == 53 else { return event }
+            guard self != nil, event.window === observedWindow, event.keyCode == 53,
+                  event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+                  observedWindow?.attachedSheet == nil,
+                  !(observedWindow?.firstResponder is NSTextView) else { return event }
             observedWindow?.performClose(nil)
             return nil
         }

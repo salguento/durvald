@@ -18,6 +18,7 @@ final class DurvaldCoreStore {
     // must not invalidate library lists, the sidebar or every artwork cell.
     private(set) var playback: PlaybackSnapshot? {
         didSet {
+            if let value = playback?.volume, value > 0 { volumeBeforeMute = Double(value) }
             let playbackActivityChanged = oldValue?.isPlaying != playback?.isPlaying
             let origin = playback?.sourceContext ?? ""
             if activeSourceContext != origin { activeSourceContext = origin }
@@ -135,7 +136,7 @@ final class DurvaldCoreStore {
     @ObservationIgnored private var activeLibraryScopes: [URL] = []
     @ObservationIgnored private var volumeTask: Task<Void, Never>?
     @ObservationIgnored private let playbackCoordinator = PlaybackCoordinator()
-    @ObservationIgnored private var isChangingTrack = false
+    private(set) var isChangingTrack = false
     @ObservationIgnored private var isMovingQueue = false
     @ObservationIgnored private var seekTask: Task<Void, Never>?
     @ObservationIgnored private var seekRequestID = 0
@@ -1578,6 +1579,18 @@ final class DurvaldCoreStore {
         await seekTask?.value
     }
 
+    private(set) var volumeBeforeMute: Double = 0.5
+    var isVolumeMuted: Bool { playback?.volume == 0 }
+
+    func toggleMute() {
+        guard let playback else { return }
+        if playback.volume == 0 { scheduleVolume(volumeBeforeMute, immediately: true) }
+        else {
+            volumeBeforeMute = Double(playback.volume)
+            scheduleVolume(0, immediately: true)
+        }
+    }
+
     func adjustVolume(by delta: Double) {
         guard let playback else { return }
         scheduleVolume(Double(playback.volume) + delta, immediately: true)
@@ -1588,6 +1601,7 @@ final class DurvaldCoreStore {
 
         let normalized = Float(min(max(value, 0), 1))
 
+        if normalized > 0 { volumeBeforeMute = Double(normalized) }
         // Atualização otimista da interface.
         if var snapshot = playback {
             snapshot.volume = normalized

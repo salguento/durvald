@@ -153,6 +153,7 @@ struct RetrospectivePlaylistView: View {
             .padding(24).frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("retrospective.playlist.preview")
+        .focusedSceneValue(\.pageCommands, replayCommands)
         .task(id: key) {
             isLoading = true
             let result = await store.loadReplayPreview(draft)
@@ -260,6 +261,16 @@ struct RetrospectivePlaylistView: View {
         }
         .environment(\.playbackSourceContext, PlaybackSourceContext.replay(draft.identity))
         .accessibilityIdentifier("retrospective.playlist.track.\(track.id)")
+    }
+
+    private var replayCommands: AppCommandTarget {
+        var actions: [AppCommandID: () -> Void] = [:]
+        if !isLoading && !tracks.isEmpty {
+            actions[.playCollection] = { Task { await PlaybackCollection.tracks(tracks, sourceContext: PlaybackSourceContext.replay(draft.identity)).perform(.play, using: store) } }
+            actions[.shuffleCollection] = { Task { await PlaybackCollection.tracks(tracks, sourceContext: PlaybackSourceContext.replay(draft.identity)).perform(.shuffle, using: store) } }
+        }
+        if canSave { actions[.saveReplay] = { if current { isChoosingSaveMode = true } else { save(live: false) } } }
+        return AppCommandTarget(actions: actions)
     }
 
     private func save(live: Bool) {

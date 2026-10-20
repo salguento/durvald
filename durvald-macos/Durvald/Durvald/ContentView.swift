@@ -53,6 +53,14 @@ struct ContentView: View {
     @State private var isLibrarySearchExpanded = false
     @State private var musicLibrarySummary = MusicLibrarySummary(tracks: [], kind: .all)
     @State private var shell = ContentShellState()
+    @State private var commandKeyboard = CommandKeyboardState()
+    @State private var isShortcutHelpPresented = false
+    @State private var isCommandClearQueuePresented = false
+    @State private var shortcutHelpAvailability = Set<AppCommandID>()
+    @State private var pageFilterFocusRequest = 0
+    @FocusedValue(\.protectsBareCommandKeys) private var protectsBareCommandKeys
+    @FocusedValue(\.selectionCommands) private var commandSelection
+    @FocusedValue(\.pageCommands) private var commandPage
     @State private var globalSearch = SearchPresentation<SearchResults>()
     @State private var searchPreview = SearchPresentation<SearchResults>()
     @State private var windowLayout = WindowSplitLayoutCoordinator()
@@ -157,9 +165,22 @@ struct ContentView: View {
                 openWindow(id: "track-info")
             }
         }
-        .focusedSceneValue(\.openLibrarySearch) {
-            requestSearchFocus()
+        .focusedSceneValue(\.windowCommands, windowCommandTarget)
+        .focusedSceneValue(\.commandKeyboardState, commandKeyboard)
+        .environment(\.pageFilterFocusRequest, pageFilterFocusRequest)
+        .background { CommandKeyboardBridge(state: commandKeyboard, perform: performKeyboardCommand).frame(width: 0, height: 0) }
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(keys: [.space, .return, .delete], phases: .down) { press in
+            guard press.modifiers.isEmpty else { return .ignored }
+            let id: AppCommandID = press.key == .space ? .playPause : press.key == .return ? .playSelection : .removeQueueItem
+            return performKeyboardCommand(id) ? .handled : .ignored
         }
+        .alert("Limpar a fila?", isPresented: $isCommandClearQueuePresented) {
+            Button("Cancelar", role: .cancel) {}
+            Button("Limpar fila", role: .destructive) { Task { await store.clearQueue() } }
+        }
+        .sheet(isPresented: $isShortcutHelpPresented) { KeyboardShortcutsHelp(available: shortcutHelpAvailability) }
         .onChange(of: shell.navigationHistory.current, initial: true) { _, destination in
             shell.handleDestinationChange(destination)
         }
@@ -669,7 +690,6 @@ struct ContentView: View {
         .accessibilityHint("Mostra ou oculta a fila lateral de reprodução")
         .accessibilityLabel(queueToggleTitle)
         .accessibilityIdentifier("player.queue")
-        .keyboardShortcut(AppKeyboardShortcuts.toggleQueue)
     }
 
     private var queueToggleTitle: String {
@@ -709,7 +729,6 @@ struct ContentView: View {
                 Label("Voltar", systemImage: "chevron.left")
             }
             .disabled(!shell.navigationHistory.canGoBack)
-            .keyboardShortcut(AppKeyboardShortcuts.goBack)
             .accessibilityIdentifier("navigation.back")
 
             Button {
@@ -718,7 +737,6 @@ struct ContentView: View {
                 Label("Avançar", systemImage: "chevron.right")
             }
             .disabled(!shell.navigationHistory.canGoForward)
-            .keyboardShortcut(AppKeyboardShortcuts.goForward)
             .accessibilityIdentifier("navigation.forward")
         }
         .labelStyle(.iconOnly)
@@ -798,6 +816,76 @@ struct ContentView: View {
         guard !shell.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         recentSearchesJSON = RecentSearchHistory.record(shell.searchText, in: recentSearchesJSON)
         shell.submitSearch()
+    }
+
+    private func performKeyboardCommand(_ id: AppCommandID) -> Bool {
+        commandKeyboard.update()
+        if id.isBareKey && (protectsBareCommandKeys == true || commandKeyboard.window?.firstResponder is NSControl && !(commandKeyboard.window?.firstResponder is NSTableView)) { return false }
+        guard let action = AppCommandDispatch.action(id, window: windowCommandTarget, page: commandPage,
+            selection: commandSelection, isMain: commandKeyboard.isMainContext, editing: commandKeyboard.isEditing) else { return false }
+        action()
+        return true
+    }
+
+    private var windowCommandTarget: AppCommandTarget {
+        var actions: [AppCommandID: () -> Void] = [
+            .search: requestSearchFocus, .sidebar: toggleSidebar, .queue: toggleQueue,
+            .home: { shell.navigationHistory.navigate(to: .home) },
+            .songs: { shell.navigationHistory.navigate(to: .songs) },
+            .albums: { shell.navigationHistory.navigate(to: .albums) },
+            .artists: { shell.navigationHistory.navigate(to: .artists) },
+            .playlists: { shell.navigationHistory.navigate(to: .playlists) },
+            .retrospective: { shell.navigationHistory.navigate(to: .retrospective) },
+            .newPlaylist: { playlistCreation.request(for: nil) },
+            .newSmartPlaylist: { playlistsToolbarState.isShowingSmartPlaylist = true },
+            .help: {
+                shortcutHelpAvailability = Set(AppCommandID.allCases.filter {
+                    AppCommandDispatch.action($0, window: self.windowCommandTarget, page: commandPage,
+                        selection: commandSelection, isMain: commandKeyboard.isMainContext, editing: commandKeyboard.isEditing) != nil
+                })
+                isShortcutHelpPresented = true
+            }
+        ]
+        if shell.navigationHistory.canGoBack { actions[.back] = navigateBack }
+        if shell.navigationHistory.canGoForward { actions[.forward] = { shell.navigationHistory.goForward() } }
+        if hasLibrarySearch { actions[.filter] = { pageFilterFocusRequest += 1 } }
+        if !playlistsToolbarState.isImporting { actions[.importPlaylist] = { playlistsToolbarState.isChoosingImport = true } }
+        if shell.navigationHistory.current == .songs { actions[.viewOptions] = { openWindow(id: "music-view-options") } }
+        if !store.queue.isEmpty { actions[.clearQueue] = { isCommandClearQueuePresented = true } }
+        if store.core != nil {
+            actions[.volumeUp] = { store.adjustVolume(by: 0.05) }
+            actions[.volumeDown] = { store.adjustVolume(by: -0.05) }
+            actions[.mute] = { store.toggleMute() }
+            if !store.isScanningLibrary {
+                actions[.addFolder] = {
+                    let panel = NSOpenPanel()
+                    panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
+                    guard let window = commandKeyboard.window else { return }
+                    panel.beginSheetModal(for: window) { result in
+                        if result == .OK, let url = panel.url { store.addAndScanLibraryFolder(url) }
+                    }
+                }
+                if !store.libraryPaths.isEmpty { actions[.updateLibrary] = { store.updateLibrary() } }
+            } else { actions[.cancelScan] = { store.cancelScan() } }
+        }
+        if store.activeTrackID != nil, !store.isChangingTrack {
+            actions[.playPause] = { Task { await store.togglePause() } }
+            actions[.next] = { Task { await store.next() } }
+            actions[.previous] = { Task { await store.previous() } }
+            actions[.shuffle] = { Task { await store.toggleShuffle() } }
+            actions[.repeatMode] = { Task { await store.cycleRepeatMode() } }
+            actions[.seekBack] = { store.seek(to: max(0, (store.playback?.positionSeconds ?? 0) - 5)) }
+            actions[.seekForward] = { store.seek(to: min(store.playback?.durationSeconds ?? .infinity, (store.playback?.positionSeconds ?? 0) + 5)) }
+            actions[.playingAlbum] = {
+                guard let track = store.playback?.currentTrack else { return }
+                Task { if let album = try? await store.core?.release(releaseId: track.releaseId) { showAlbum(album) } }
+            }
+            actions[.playingArtist] = {
+                guard let track = store.playback?.currentTrack else { return }
+                Task { if let artist = try? await store.core?.artist(artistId: track.artistId) { showArtist(artist) } }
+            }
+        }
+        return AppCommandTarget(actions: actions)
     }
 
     private func requestSearchFocus() {

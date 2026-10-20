@@ -202,7 +202,16 @@ struct ArtistView: View {
             .sheet(isPresented: $presentation.isIdentityPickerPresented) { identityPicker }
         } else {
             artistPage
+                .focusedSceneValue(\.pageCommands, artistCommands)
         }
+    }
+
+    private var artistCommands: AppCommandTarget {
+        guard canPlayArtist, !store.isChangingTrack else { return AppCommandTarget() }
+        return AppCommandTarget(actions: [
+            .playCollection: { Task { await PlaybackCollection.tracks(tracks).perform(.play, using: store) } },
+            .shuffleCollection: { Task { await PlaybackCollection.tracks(tracks).perform(.shuffle, using: store) } }
+        ])
     }
 
     private var pageChrome: PageChromePolicy {

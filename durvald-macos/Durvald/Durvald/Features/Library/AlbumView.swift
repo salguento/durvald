@@ -135,11 +135,20 @@ struct AlbumView: View {
                 )
             }
         }
+        .focusedSceneValue(\.pageCommands, albumCommands)
         .accessibilityIdentifier(accessibilityDetailID)
         .task(id: store.metadataRevision) {
             guard store.metadataRevision > 0, let album else { return }
             tracks = await store.tracks(forReleaseID: album.id)
         }
+    }
+
+    private var albumCommands: AppCommandTarget {
+        guard let album, !isLoading, !tracks.isEmpty, !store.isChangingTrack else { return AppCommandTarget() }
+        return AppCommandTarget(actions: [
+            .playCollection: { Task { await PlaybackCollection.release(album.id).perform(.play, using: store) } },
+            .shuffleCollection: { Task { await PlaybackCollection.release(album.id).perform(.shuffle, using: store) } }
+        ])
     }
 
     private var header: some View {
