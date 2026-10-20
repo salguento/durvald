@@ -159,8 +159,7 @@ struct AlbumView: View {
                     size: artworkSize
                 )
                 .albumContextMenu(album: currentAlbum)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Capa de \(title)")
+                .artworkPreview(source: artworkID.map(ArtworkSource.managed), title: title)
                 .accessibilityIdentifier("album.header.artwork")
 
                 VStack(alignment: .leading, spacing: 2) {

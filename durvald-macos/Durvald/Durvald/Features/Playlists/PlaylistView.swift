@@ -229,6 +229,8 @@ struct PlaylistView: View {
                     size: artworkSize
                 )
                 .playlistContextMenu(playlist: currentPlaylist)
+                .artworkPreview(source: currentPlaylist.artworkId.map(ArtworkSource.base64), title: currentPlaylist.name)
+                .accessibilityIdentifier("playlist.header.artwork")
 
                 VStack(alignment: .leading, spacing: 8) {
                     Button {

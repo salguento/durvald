@@ -4,6 +4,8 @@ import Foundation
 /// An isolated library for previews and navigation UI tests; never opens audio or disk data.
 @MainActor
 enum PlayerNavigationFixture {
+    nonisolated static let previewArtworkBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAYAAACddGYaAAAAGElEQVR4nGPQSNn3P8+t5/+dJo3/DMgcALClDhsGiuQTAAAAAElFTkSuQmCC"
+
     static func makeStore(longMetadata: Bool = false, scrollable: Bool = false, livePlayback: Bool = false, autoAdvance: Bool = false) -> DurvaldCoreStore {
         let artist = Artist(
             id: 7,
@@ -19,12 +21,13 @@ enum PlayerNavigationFixture {
             artworkId: nil, bitrate: nil, sampleRate: nil, bitDepth: nil, playCount: 0, lastPlayed: nil,
             rating: nil, isFavorite: false, isHidden: false, suggestLess: false
         )
-        let album = Release(
+        var album = Release(
             id: 42, title: track.release, artist: albumArtist.name, artistId: albumArtist.id,
             releaseDate: nil, genres: [], composers: [], producers: [],
             totalTracks: 1, totalDiscs: 1, durationSeconds: 180,
             artworkId: nil, isFavorite: false, isHidden: false, suggestLess: false, rating: nil
         )
+        if ProcessInfo.processInfo.arguments.contains("--artwork-preview-fixture") { album.artworkId = "preview-cover" }
         var sameTitleAlbum = album
         sameTitleAlbum.id = 43
         sameTitleAlbum.artistId = 8
@@ -152,6 +155,13 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         lastUpdate = now
     }
 
+    override func artworkBytes(artworkId: String) async throws -> Data? {
+        guard artworkId == "preview-cover", let data = Data(base64Encoded: PlayerNavigationFixture.previewArtworkBase64) else {
+            throw CoreError.NotFound(message: "Fixture artwork not found")
+        }
+        return data
+    }
+
     override func playback() async -> PlaybackSnapshot {
         lock.withLock {
             updateClock()
@@ -227,7 +237,7 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
 
     override func playlists() async throws -> [Playlist] {
         guard ProcessInfo.processInfo.arguments.contains("--collection-play-fixture") else { return [] }
-        return [Playlist(id: 7, name: "Playlist de teste", description: "", artworkId: nil,
+        return [Playlist(id: 7, name: "Playlist de teste", description: "", artworkId: ProcessInfo.processInfo.arguments.contains("--artwork-preview-fixture") ? PlayerNavigationFixture.previewArtworkBase64 : nil,
                          isFavorite: false, suggestLess: false, trackCount: UInt64(tracks.count),
                          createdAt: "2026-10-19", updatedAt: "2026-10-19", isSmart: false, smartDefinition: nil)]
     }
