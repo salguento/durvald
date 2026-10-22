@@ -159,6 +159,10 @@ struct PlaylistView: View {
             }
         }
         .accessibilityIdentifier("playlist.detail.\(playlist.id)")
+        .task(id: store.personalTagsRevision) {
+            guard currentPlaylist.isSmart else { return }
+            tracks = await store.tracks(forPlaylistID: playlist.id)
+        }
         .task(id: store.metadataRevision) {
             guard store.metadataRevision > 0 else { return }
             tracks = await store.tracks(forPlaylistID: playlist.id)

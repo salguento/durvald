@@ -267,6 +267,8 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         case .goToAlbum: return #selector(goToAlbum)
         case .navigateSelection: return #selector(navigateSelection(_:))
         case .showInfo: return #selector(showInfo)
+        case .personalTags: return #selector(editPersonalTags)
+        case .listenList: return #selector(saveToListenList)
         case .copyName: return #selector(copyName)
         case .additional: return #selector(performAdditionalAction(_:))
         }
@@ -406,6 +408,16 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         guard let playlist = sender.representedObject as? Playlist else { return }
         navigation.playlist(playlist)
     }
+    @objc private func saveToListenList() {
+        guard let store, let album else { return }
+        Task { await store.saveToListenList(releaseID: album.id) }
+    }
+
+    @objc private func editPersonalTags() {
+        if let album { store?.personalTagEditor = PersonalTagSelection(releaseIDs: [album.id]) }
+        else if !selectedTracks.isEmpty { store?.personalTagEditor = PersonalTagSelection(trackIDs: selectedTracks.map(\.id)) }
+    }
+
     @objc private func showInfo() { onInfo() }
     @objc private func copyName() {
         let title = album?.title ?? selectedTracks.map(\.title).joined(separator: " ")

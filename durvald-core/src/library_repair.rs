@@ -188,6 +188,12 @@ pub(crate) fn merge(
         )
         .map_err(storage)?;
         tx.execute(
+            "INSERT OR IGNORE INTO track_user_tags(song_id,tag_id)
+            SELECT ?2,tag_id FROM missing_track_user_tags WHERE missing_id=?1",
+            params![source_id, target_id],
+        )
+        .map_err(storage)?;
+        tx.execute(
             "DELETE FROM missing_tracks WHERE missing_id=?1",
             [source_id],
         )
@@ -214,6 +220,12 @@ pub(crate) fn merge(
         .map_err(storage)?;
         tx.execute(
             "UPDATE play_history SET song_id=?2 WHERE song_id=?1",
+            params![source_id, target_id],
+        )
+        .map_err(storage)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO track_user_tags(song_id,tag_id)
+            SELECT ?2,tag_id FROM track_user_tags WHERE song_id=?1",
             params![source_id, target_id],
         )
         .map_err(storage)?;
@@ -328,7 +340,17 @@ mod tests {
         )
         .unwrap();
 
+        let tag = crate::database::user_tags::create(&conn, "Reparada".into()).unwrap();
+        conn.execute(
+            "INSERT INTO missing_track_user_tags(missing_id,tag_id) VALUES(7,?1)",
+            [tag.id],
+        )
+        .unwrap();
         merge(&conn, 7, 1, true).unwrap();
+        assert_eq!(
+            crate::database::user_tags::matching_items(&conn, vec![tag.id], true, false).unwrap(),
+            vec![1]
+        );
 
         let values: (i64, Option<String>, Option<u8>, bool) = conn
             .query_row(

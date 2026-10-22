@@ -18,6 +18,8 @@ struct LibraryListingKey: Equatable {
     var ratingsEnabled = true
     var onlyLocal = false
     var newestFirst = true
+    var personalTagsRevision: UInt64 = 0
+    var personalTagFilter = PersonalTagFilter()
 }
 
 @MainActor
@@ -67,9 +69,10 @@ struct AlbumListingSnapshot {
     var summary = ""
 
     static func build(releases: [Release], updates: [Release], tracks: [Track], sizes: [String: Int64],
-                      key: LibraryListingKey, recency: [Int64: String]) -> Self {
+                      key: LibraryListingKey, recency: [Int64: String], taggedItemIDs: Set<Int64>? = nil) -> Self {
         let updated = Dictionary(updates.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         let filtered = releases.map { updated[$0.id] ?? $0 }.filter {
+            (taggedItemIDs?.contains($0.id) ?? true) &&
             (!key.ratingsEnabled || key.minimumRating == 0 || Int($0.ratingHalfSteps ?? 0) >= key.minimumRating)
             && (key.query.isEmpty || $0.title.localizedCaseInsensitiveContains(key.query)
                 || $0.artist.localizedCaseInsensitiveContains(key.query))

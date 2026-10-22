@@ -106,6 +106,7 @@ struct AlbumView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
+                if let album { PersonalTagSection(selection: PersonalTagSelection(releaseIDs: [album.id])) }
                 trackList
             }
             .padding(24)
@@ -209,6 +210,11 @@ struct AlbumView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .padding(.top, 4)
+                    }
+
+                    if album != nil || externalRelease != nil && externalArtist != nil {
+                        ListenListSaveButton(releaseID: album?.id, externalRelease: externalRelease, artist: externalArtist)
+                            .padding(.top, 8)
                     }
 
                     if let album, let currentAlbum {

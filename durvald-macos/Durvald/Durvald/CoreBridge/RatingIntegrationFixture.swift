@@ -39,6 +39,14 @@ enum RatingIntegrationFixture {
         return core
     }
 
+    static func onlineListenRelease() -> ExternalReleaseGroup {
+        ExternalReleaseGroup(primaryArtistMbid: nil,
+            musicbrainzId: "12345678-1234-1234-1234-123456789abc", title: "Online listening fixture",
+            primaryType: "Album", secondaryTypes: [], firstReleaseDate: nil, localReleaseId: nil, artwork: nil,
+            attribution: EnrichmentAttribution(sourceUrl: "https://musicbrainz.org/release-group/12345678-1234-1234-1234-123456789abc",
+                author: nil, licenseName: nil, licenseUrl: nil, revision: nil))
+    }
+
     @MainActor
     static func makeStore(directory: URL) async throws -> DurvaldCoreStore {
         let core = try await openCore(directory: directory)
@@ -47,6 +55,9 @@ enum RatingIntegrationFixture {
             for (index, id) in [Int64(1), 4, 5].enumerated() {
                 _ = try await core.addTrackToPlaylist(playlistId: playlist.id, trackId: id, position: UInt64(index))
             }
+        }
+        if ProcessInfo.processInfo.arguments.contains("--listen-list-external-fixture") {
+            _ = try await core.addExternalToListenList(artistId: 1, release: onlineListenRelease())
         }
         let tracks = try await core.tracksPage(pageSize: 100, offset: 0).items
         let releases = try await core.releasesPage(pageSize: 100, offset: 0).items

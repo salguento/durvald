@@ -660,6 +660,8 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
     )?;
 
     super::ratings::migrate(conn)?;
+    super::user_tags::migrate(conn)?;
+    super::listen_list::migrate(conn)?;
     ensure_indexes(conn)?;
     ensure_search_indexes(conn)?;
     crate::metadata_edit::create_tables(conn)?;
@@ -1726,6 +1728,8 @@ const SMART_FIELDS: &[&str] = &[
     "rating",
     "favorite",
     "genre",
+    "user_tag",
+    "release_user_tag",
     "year",
     "play_count",
     "last_played",
@@ -1790,6 +1794,10 @@ pub(crate) fn validate_smart_playlist_definition(
                 rule.comparison.as_str(),
                 "equals" | "not_equals" | "contains" | "is_empty" | "is_not_empty"
             ),
+            "user_tag" | "release_user_tag" => matches!(
+                rule.comparison.as_str(),
+                "equals" | "not_equals" | "is_empty" | "is_not_empty"
+            ),
             "last_played" | "date_added" => matches!(
                 rule.comparison.as_str(),
                 "before" | "after" | "is_empty" | "is_not_empty"
@@ -1814,6 +1822,17 @@ pub(crate) fn validate_smart_playlist_definition(
         }
         if !no_value && rule.value.trim().is_empty() {
             return Err("Smart playlist rule value cannot be empty".into());
+        }
+        if matches!(rule.field.as_str(), "user_tag" | "release_user_tag")
+            && !no_value
+            && rule
+                .value
+                .parse::<i64>()
+                .ok()
+                .filter(|id| *id > 0)
+                .is_none()
+        {
+            return Err("Personal tag rules require a positive tag ID".into());
         }
         if rule.field == "rating" && !no_value {
             crate::domain::rating::RatingHalfSteps::parse_stars(&rule.value)
@@ -2008,6 +2027,22 @@ pub fn get_smart_playlist_tracks(
     let mut clauses = Vec::new();
     let mut values = Vec::<Value>::new();
     for rule in &definition.rules {
+        if matches!(rule.field.as_str(), "user_tag" | "release_user_tag") {
+            let (table, column, item) = if rule.field == "user_tag" {
+                ("track_user_tags", "song_id", "s.song_id")
+            } else {
+                ("release_user_tags", "release_id", "s.release_id")
+            };
+            let name_clause = if matches!(rule.comparison.as_str(), "is_empty" | "is_not_empty") {
+                String::new()
+            } else {
+                values.push(Value::Integer(rule.value.parse::<i64>().unwrap()));
+                " AND ut.tag_id=?".to_owned()
+            };
+            let negate = matches!(rule.comparison.as_str(), "not_equals" | "is_empty");
+            clauses.push(format!("{}EXISTS(SELECT 1 FROM {table} ul JOIN user_tags ut USING(tag_id) WHERE ul.{column}={item}{name_clause})", if negate { "NOT " } else { "" }));
+            continue;
+        }
         let expression = match rule.field.as_str() {
             "rating" => "s.rating_half_steps",
             "favorite" => "s.is_favorite",
@@ -3195,6 +3230,13 @@ pub(crate) fn remove_missing_songs_in_folder(
         params![root_prefix, reconciliation.scan_id],
     )?;
     transaction.execute(
+        "INSERT OR IGNORE INTO missing_track_user_tags(missing_id,tag_id)
+         SELECT m.missing_id,t.tag_id FROM missing_tracks m
+         JOIN songs s ON s.song_id=m.original_song_id AND s.file_path=m.file_path
+         JOIN track_user_tags t ON t.song_id=s.song_id",
+        [],
+    )?;
+    transaction.execute(
         "INSERT OR IGNORE INTO missing_playlist_songs(missing_id,playlist_id,position,added_at)
          SELECT m.missing_id,p.playlist_id,p.position,p.added_at
          FROM missing_tracks m JOIN playlist_songs p ON p.song_id=m.original_song_id
@@ -3246,7 +3288,9 @@ pub(crate) fn remove_missing_songs_in_folder(
         [],
     )?;
     transaction.execute(
-        "DELETE FROM releases WHERE NOT EXISTS (SELECT 1 FROM songs WHERE songs.release_id = releases.release_id)",
+        "DELETE FROM releases WHERE NOT EXISTS (SELECT 1 FROM songs WHERE songs.release_id = releases.release_id)
+         AND NOT EXISTS (SELECT 1 FROM release_user_tags t WHERE t.release_id = releases.release_id)
+         AND NOT EXISTS (SELECT 1 FROM listen_list_entries l WHERE l.release_id = releases.release_id)",
         [],
     )?;
     // Artist rows are durable catalog entities. A library scan only reconciles

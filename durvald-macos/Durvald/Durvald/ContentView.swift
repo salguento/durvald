@@ -32,6 +32,7 @@ struct ContentView: View {
     @State private var playlistsSearchText = ""
     @State private var playlistsSummary = "Carregando…"
     @State private var playlistsToolbarState = PlaylistsToolbarState()
+    @State private var listenListSearchText = ""
     @State private var albumSearchText = ""
     @State private var albumsSummary = "Carregando…"
     @State private var artistSearchText = ""
@@ -161,6 +162,9 @@ struct ContentView: View {
             trackInfo.presentWindow = {
                 openWindow(id: "track-info")
             }
+        }
+        .sheet(item: Binding(get: { store.personalTagEditor }, set: { store.personalTagEditor = $0 })) { selection in
+            PersonalTagEditor(selection: selection)
         }
         .focusedSceneValue(\.commandKeyboardState, commandKeyboard)
         .environment(\.pageFilterFocusRequest, pageFilterFocusRequest)
@@ -348,7 +352,7 @@ struct ContentView: View {
     private var hasLibrarySearch: Bool {
         if isArtistDetail || isPlaylistDetail || isAlbumDetail { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
-        return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective || destination == .playlists
+        return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective || destination == .playlists || destination == .listenList
     }
 
     private var trackMenuNavigation: TrackMenuNavigation {
@@ -357,7 +361,7 @@ struct ContentView: View {
                 if case .playlist(let playlist) = shell.navigationHistory.currentRoute, playlist.id == id {
                     shell.navigationHistory.navigate(to: .playlists)
                 }
-            })
+            }, externalAlbum: { showExternalAlbum($0, artist: $1) })
     }
 
     private var isAlbumDetail: Bool {
@@ -390,6 +394,7 @@ struct ContentView: View {
         case .search:
             SummaryPresentation.search(results: globalSearch.value, query: shell.submittedSearchText,
                 isPending: globalSearch.isPending || globalSearch.committedQuery != shell.submittedSearchText)
+        case .listenList: "\(store.pendingListenListCount) para ouvir"
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
         case .playlists: playlistsSummary
@@ -400,6 +405,7 @@ struct ContentView: View {
 
     private var librarySearchText: Binding<String> {
         switch shell.navigationHistory.current {
+        case .listenList: $listenListSearchText
         case .songs: $musicSearchText
         case .artists: $artistSearchText
         case .playlists: $playlistsSearchText
@@ -410,6 +416,7 @@ struct ContentView: View {
 
     private var librarySearchPlaceholder: String {
         switch shell.navigationHistory.current {
+        case .listenList: "Pesquisar em Para ouvir"
         case .songs: "Pesquisar músicas"
         case .artists: "Pesquisar artistas"
         case .playlists: "Pesquisar playlists"
@@ -420,6 +427,7 @@ struct ContentView: View {
 
     private var librarySearchIdentifier: String {
         switch shell.navigationHistory.current {
+        case .listenList: "listenList.search"
         case .songs: "library.search"
         case .artists: "artists.search"
         case .playlists: "playlists.search"
@@ -595,7 +603,7 @@ struct ContentView: View {
                     RetrospectiveToolbarOptionsMenu()
                 } else if isPlaylistsListing {
                     collectionOptions(for: .playlists)
-                } else {
+                } else if shell.navigationHistory.current != .listenList {
                     collectionOptions(for: shell.navigationHistory.current == .artists ? .artists : .albums)
                 }
             }
@@ -944,6 +952,8 @@ struct ContentView: View {
         case .search:
             LibrarySearchView(searchText: $shell.submittedSearchText, search: globalSearch,
                               submissionRevision: shell.searchSubmissionRevision)
+        case .listenList:
+            ListenListView(searchText: $listenListSearchText)
         case .home:
             HomeView { destination in
                 shell.navigationHistory.navigate(to: destination)

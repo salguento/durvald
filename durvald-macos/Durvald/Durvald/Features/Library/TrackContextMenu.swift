@@ -70,6 +70,7 @@ struct TrackMenuNavigation {
     var album: (Release) -> Void = { _ in }
     var playlist: (Playlist) -> Void = { _ in }
     var deletedPlaylist: (Int64) -> Void = { _ in }
+    var externalAlbum: (ExternalReleaseGroup, Artist) -> Void = { _, _ in }
 }
 
 private struct TrackMenuNavigationKey: EnvironmentKey {

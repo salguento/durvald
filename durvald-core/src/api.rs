@@ -562,3 +562,39 @@ pub struct AuthTokenResponse {
 pub struct SessionResponse {
     pub username: String,
 }
+
+/// Personal, user-defined categories; distinct from audio-file tags and genres.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct UserTag {
+    pub id: i64,
+    pub name: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct UserTagLink {
+    pub tag_id: i64,
+    pub item_id: i64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct UserTagLibrary {
+    pub tags: Vec<UserTag>,
+    pub track_links: Vec<UserTagLink>,
+    pub release_links: Vec<UserTagLink>,
+}
+
+/// A saved intention to listen. Marking heard is explicit and does not delete the item.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ListenListEntry {
+    pub id: i64,
+    pub local_release_id: Option<i64>,
+    pub title: String,
+    pub artist: String,
+    pub artwork_id: Option<String>,
+    pub added_at: String,
+    pub heard_at: Option<String>,
+    pub external_release: Option<ExternalReleaseGroup>,
+    pub external_artist: Option<Artist>,
+}

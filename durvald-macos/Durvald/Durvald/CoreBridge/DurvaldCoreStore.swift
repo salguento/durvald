@@ -82,6 +82,19 @@ final class DurvaldCoreStore {
     private(set) var history: [PlaybackHistoryItem] = []
     @ObservationIgnored let historyRepository = PlaybackHistoryRepository()
     @ObservationIgnored let homeRepository = HomeLibraryRepository()
+    var isLoadingListenList = false
+    var listenListEntries: [ListenListEntry] = []
+    var listenListGeneration: UInt64 = 0
+    var isChangingListenList = false
+    var listenListError: String?
+
+    var personalTags = UserTagLibrary(tags: [], trackLinks: [], releaseLinks: [])
+    var personalTagsRevision: UInt64 = 0
+    var personalTagsLoadGeneration: UInt64 = 0
+    var isUpdatingPersonalTags = false
+    var personalTagsError: String?
+    var personalTagEditor: PersonalTagSelection?
+
     private(set) var metadataRevision = 0 {
         didSet { invalidateCatalog() }
     }

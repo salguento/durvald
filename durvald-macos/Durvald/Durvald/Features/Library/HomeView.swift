@@ -43,6 +43,7 @@ struct HomeView: View {
             }
         }
         .accessibilityIdentifier("home.page")
+        .task(id: store.listenListRequest) { await store.refreshListenList() }
         .task(id: store.libraryCatalogRevision) {
             guard let core = store.core else { return }
             let revision = store.libraryCatalogRevision
@@ -61,6 +62,8 @@ struct HomeView: View {
                 Text("Acesse rapidamente todo o conteúdo local.").foregroundStyle(.secondary)
             }
             LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                HomeLibraryCard(title: "Para ouvir", count: store.pendingListenListCount, systemImage: "bookmark",
+                                destination: .listenList, onNavigate: onNavigate)
                 HomeLibraryCard(title: "Músicas", count: store.tracks.count, systemImage: "music.note",
                                 destination: .songs, onNavigate: onNavigate)
                 HomeLibraryCard(title: "Álbuns", count: store.releases.count, systemImage: "square.stack",

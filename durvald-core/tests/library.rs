@@ -891,3 +891,143 @@ async fn home_shelves_follow_import_rescan_and_restart() -> Result<(), Box<dyn E
     assert!(test_core.core().home_library(0).await?.recently_added.is_empty());
     Ok(())
 }
+
+#[tokio::test]
+async fn personal_tags_survive_rescan_and_restart() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+    test_core
+        .files()
+        .write_silent_wav("Artist/Album/01 - Tags.wav")?;
+    let path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+    test_core.core().scan_library(vec![path.clone()]).await?;
+    let track = test_core.core().tracks_page(10, 0).await?.items.remove(0);
+    let tag = test_core.core().create_user_tag("Viagem".into()).await?;
+    test_core
+        .core()
+        .update_user_tag_links(tag.id, vec![track.id], vec![track.release_id], true)
+        .await?;
+    let expected = test_core.core().user_tag_library().await?;
+    test_core.core().scan_library(vec![path]).await?;
+    assert_eq!(test_core.core().user_tag_library().await?, expected);
+    let test_core = test_core.restart().await?;
+    assert_eq!(test_core.core().user_tag_library().await?, expected);
+    assert_eq!(
+        test_core
+            .core()
+            .filter_user_tag_items(vec![tag.id], true, false)
+            .await?,
+        vec![track.id]
+    );
+    assert_eq!(
+        test_core
+            .core()
+            .filter_user_tag_items(vec![tag.id], true, true)
+            .await?,
+        vec![track.release_id]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn personal_tags_follow_missing_track_repair_without_losing_the_album()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+    let original = test_core
+        .files()
+        .write_silent_wav("Artist/Album/01 - Tagged.wav")?;
+    let original = std::fs::canonicalize(original)?;
+    test_core
+        .files()
+        .write_silent_wav("Other/Other/01 - Keep.wav")?;
+    let path = test_core
+        .files()
+        .library_dir()
+        .to_string_lossy()
+        .into_owned();
+    test_core.core().scan_library(vec![path.clone()]).await?;
+    let track = test_core
+        .core()
+        .tracks_page(10, 0)
+        .await?
+        .items
+        .into_iter()
+        .find(|t| t.file_path == original.to_string_lossy())
+        .unwrap();
+    let tag = test_core.core().create_user_tag("Preservar".into()).await?;
+    test_core
+        .core()
+        .update_user_tag_links(tag.id, vec![track.id], vec![track.release_id], true)
+        .await?;
+    std::fs::remove_file(&original)?;
+    test_core.core().scan_library(vec![path.clone()]).await?;
+    assert_eq!(
+        test_core
+            .core()
+            .filter_user_tag_items(vec![tag.id], true, true)
+            .await?,
+        vec![track.release_id]
+    );
+    let missing = test_core
+        .core()
+        .analyze_library_repairs()
+        .await?
+        .broken_files
+        .into_iter()
+        .find(|t| t.is_missing && t.file_path == track.file_path)
+        .unwrap();
+    test_core
+        .files()
+        .write_silent_wav("Artist/Album/01 - Tagged.wav")?;
+    test_core.core().scan_library(vec![path]).await?;
+    let target = test_core
+        .core()
+        .tracks_page(10, 0)
+        .await?
+        .items
+        .into_iter()
+        .find(|t| t.file_path == track.file_path)
+        .unwrap();
+    test_core
+        .core()
+        .merge_library_records(missing.id, target.id, true)
+        .await?;
+    assert_eq!(
+        test_core
+            .core()
+            .filter_user_tag_items(vec![tag.id], true, false)
+            .await?,
+        vec![target.id]
+    );
+    assert_eq!(target.release_id, track.release_id);
+    Ok(())
+}
+
+#[tokio::test]
+async fn listen_list_survives_rescan_restart_and_missing_local_files() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core = TestCore::open().await?;
+    let original = test_core.files().write_silent_wav("Artist/Album/01 - Later.wav")?;
+    test_core.files().write_silent_wav("Other/Other/01 - Keep.wav")?;
+    let original = std::fs::canonicalize(original)?;
+    let path = test_core.files().library_dir().to_string_lossy().into_owned();
+    test_core.core().scan_library(vec![path.clone()]).await?;
+    let track = test_core.core().tracks_page(10, 0).await?.items.into_iter().find(|t| t.file_path == original.to_string_lossy()).unwrap();
+    let saved = test_core.core().add_release_to_listen_list(track.release_id).await?;
+    assert_eq!(test_core.core().add_release_to_listen_list(track.release_id).await?.id, saved.id);
+    test_core.core().set_listen_list_heard(saved.id, true).await?;
+    std::fs::remove_file(original)?;
+    test_core.core().scan_library(vec![path]).await?;
+    let test_core = test_core.restart().await?;
+    let entries = test_core.core().listen_list().await?;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].local_release_id, Some(track.release_id));
+    assert!(entries[0].heard_at.is_some());
+    test_core.core().set_listen_list_heard(saved.id, false).await?;
+    assert!(test_core.core().listen_list().await?[0].heard_at.is_none());
+    test_core.core().remove_from_listen_list(saved.id).await?;
+    assert!(test_core.core().listen_list().await?.is_empty());
+    Ok(())
+}

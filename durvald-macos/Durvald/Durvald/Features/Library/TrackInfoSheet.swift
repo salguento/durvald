@@ -101,6 +101,7 @@ struct TrackInfoSheet: View {
 
     private enum Tab: String, CaseIterable {
         case details = "Detalhes", artwork = "Capa", lyrics = "Letras", options = "Opções", file = "Arquivo"
+        case personalTags = "Tags pessoais"
     }
     @State private var selectedTab: Tab = .details
     @State private var lyrics: String?
@@ -270,6 +271,8 @@ struct TrackInfoSheet: View {
     @ViewBuilder
     private func tabContent(_ info: TrackInfo, availableHeight: CGFloat) -> some View {
         switch selectedTab {
+        case .personalTags:
+            PersonalTagSection(selection: PersonalTagSelection(trackIDs: [trackID]))
         case .details:
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
                 field("Título", \.title)

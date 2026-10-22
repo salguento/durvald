@@ -23,6 +23,8 @@ final class MusicLibraryPresentation {
         var searchRevision: UInt64 = 0
         var query = ""
         var usesLocalSearch = false
+        var personalTagsRevision: UInt64 = 0
+        var personalTagFilter = PersonalTagFilter()
         var onlyFavorites = false
         var sort: MusicLibrarySort = .title
         var ascending = true
@@ -36,6 +38,7 @@ final class MusicLibraryPresentation {
         let sort: MusicLibrarySort
         let ascending: Bool
         var updatedTracks: [Track] = []
+        var taggedItemIDs: Set<Int64>? = nil
     }
 
     private(set) var catalog: [Track]?
@@ -84,6 +87,7 @@ final class MusicLibraryPresentation {
         let updates = Dictionary(request.updatedTracks.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         let source = updates.isEmpty ? request.tracks : request.tracks.map { updates[$0.id] ?? $0 }
         let tracks = source.filter {
+            (request.taggedItemIDs?.contains($0.id) ?? true) &&
             (!request.onlyFavorites || $0.isFavorite) &&
             (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query)
                 || $0.artist.localizedCaseInsensitiveContains(query)

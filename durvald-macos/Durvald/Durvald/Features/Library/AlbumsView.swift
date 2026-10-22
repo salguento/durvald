@@ -52,6 +52,7 @@ enum AlbumsViewLayout {
 }
 
 struct AlbumsView: View {
+    @State private var personalTagFilter = PersonalTagFilter()
     @Binding var searchText: String
     @AppStorage("albums.listingMode") private var listingMode: CollectionListingMode = .standardGrid
     @AppStorage("albums.listingOrder") private var listingOrder: CollectionListingOrder = .recent
@@ -86,6 +87,7 @@ struct AlbumsView: View {
                 .task { await store.loadMoreReleases(ifNeededAfter: release.id) }
             }
         }
+        .safeAreaInset(edge: .top, spacing: 0) { PersonalTagFilterBar(filter: $personalTagFilter, selection: PersonalTagSelection(releaseIDs: presentation.value.items.map(\.id))) }
         .overlay {
             if !normalizedSearchText.isEmpty && isLoadingCatalog {
                 ProgressView("Pesquisando…")
@@ -137,8 +139,9 @@ struct AlbumsView: View {
         let tracks = completeTracks
         let sizes = fileSizes
         let recency = lastPlayedByRelease
-        await presentation.prepare(key: key, payload: (releases, updates, tracks, sizes, recency)) { payload in
-            AlbumListingSnapshot.build(releases: payload.0, updates: payload.1, tracks: payload.2, sizes: payload.3, key: key, recency: payload.4)
+        let taggedIDs = personalTagFilter.matchingIDs(in: store.personalTags.releaseLinks)
+        await presentation.prepare(key: key, payload: (releases, updates, tracks, sizes, recency, taggedIDs)) { payload in
+            AlbumListingSnapshot.build(releases: payload.0, updates: payload.1, tracks: payload.2, sizes: payload.3, key: key, recency: payload.4, taggedItemIDs: payload.5)
         }
         guard !Task.isCancelled else { return }
         onSummaryChange(presentation.value.summary)
@@ -149,7 +152,8 @@ struct AlbumsView: View {
                           releasesRevision: store.releasesRevision, payloadRevision: payloadRevision,
                           orderingRevision: orderingRevision, query: normalizedSearchText,
                           order: ratingsEnabled || listingOrder != .rating ? listingOrder : .recent,
-                          minimumRating: minimumRating, ratingsEnabled: ratingsEnabled)
+                          minimumRating: minimumRating, ratingsEnabled: ratingsEnabled,
+                          personalTagsRevision: store.personalTagsRevision, personalTagFilter: personalTagFilter)
     }
 
     private var normalizedSearchText: String {

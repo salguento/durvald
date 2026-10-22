@@ -117,6 +117,12 @@ final class FakeDurvaldCore: DurvaldCore {
 
     override func artistReleases(artistId: Int64) async throws -> [Release] { [] }
 
+    override func listenList() async throws -> [ListenListEntry] { [] }
+
+    override func userTagLibrary() async throws -> UserTagLibrary {
+        UserTagLibrary(tags: [], trackLinks: [], releaseLinks: [])
+    }
+
     override func playback() async -> PlaybackSnapshot {
         if let playbackHandler {
             return await playbackHandler()

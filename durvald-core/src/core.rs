@@ -541,6 +541,99 @@ impl DurvaldCore {
             .await
     }
 
+    /// Saved releases to listen to, including metadata-only external references.
+    pub async fn listen_list(&self) -> CoreResult<Vec<ListenListEntry>> {
+        self.library_application
+            .personal_library_operation(crate::database::listen_list::list)
+            .await
+    }
+    pub async fn add_release_to_listen_list(&self, release_id: i64) -> CoreResult<ListenListEntry> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::listen_list::add_local(c, release_id)
+            })
+            .await
+    }
+    pub async fn add_external_to_listen_list(
+        &self,
+        artist_id: i64,
+        release: ExternalReleaseGroup,
+    ) -> CoreResult<ListenListEntry> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::listen_list::add_external(c, artist_id, release)
+            })
+            .await
+    }
+    pub async fn set_listen_list_heard(&self, entry_id: i64, heard: bool) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::listen_list::set_heard(c, entry_id, heard)
+            })
+            .await
+    }
+    pub async fn remove_from_listen_list(&self, entry_id: i64) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| crate::database::listen_list::remove(c, entry_id))
+            .await
+    }
+
+    /// Snapshot of personal categories and their explicit associations.
+    pub async fn user_tag_library(&self) -> CoreResult<UserTagLibrary> {
+        self.library_application
+            .personal_library_operation(crate::database::user_tags::library)
+            .await
+    }
+    pub async fn create_user_tag(&self, name: String) -> CoreResult<UserTag> {
+        self.library_application
+            .personal_library_operation(move |c| crate::database::user_tags::create(c, name))
+            .await
+    }
+    pub async fn rename_user_tag(&self, tag_id: i64, name: String) -> CoreResult<UserTag> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::user_tags::rename(c, tag_id, name)
+            })
+            .await
+    }
+    pub async fn delete_user_tag(&self, tag_id: i64) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| crate::database::user_tags::delete(c, tag_id))
+            .await
+    }
+    /// Adds/removes only this tag; preserves all other tags on each selected item.
+    pub async fn update_user_tag_links(
+        &self,
+        tag_id: i64,
+        track_ids: Vec<i64>,
+        release_ids: Vec<i64>,
+        attached: bool,
+    ) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::user_tags::update_links(
+                    c,
+                    tag_id,
+                    track_ids,
+                    release_ids,
+                    attached,
+                )
+            })
+            .await
+    }
+    pub async fn filter_user_tag_items(
+        &self,
+        tag_ids: Vec<i64>,
+        match_all: bool,
+        releases: bool,
+    ) -> CoreResult<Vec<i64>> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::user_tags::matching_items(c, tag_ids, match_all, releases)
+            })
+            .await
+    }
+
     /// Sets whether a track is favorited.
     pub async fn set_track_favorite(&self, track_id: i64, favorite: bool) -> CoreResult<()> {
         self.library_application

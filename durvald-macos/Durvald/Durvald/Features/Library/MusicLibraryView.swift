@@ -14,6 +14,7 @@ struct MusicLibraryView: View {
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(\.trackMenuNavigation) private var navigation
     @Environment(\.libraryScrollOffset) private var savedScrollOffset
+    @State private var personalTagFilter = PersonalTagFilter()
     @State private var selectedTrackIDs = Set<Int64>()
     @Binding var searchText: String
     @State private var search = SearchPresentation<[Track]>()
@@ -223,6 +224,7 @@ struct MusicLibraryView: View {
               tracksRevision: store.tracksRevision, metadataRevision: store.metadataRevision,
               catalogRevision: normalizedSearchText.isEmpty ? presentation.catalogVersion : 0,
               searchRevision: searchRevision, query: normalizedSearchText, usesLocalSearch: usesLocalSearch,
+              personalTagsRevision: store.personalTagsRevision, personalTagFilter: personalTagFilter,
               onlyFavorites: onlyFavorites,
               sort: !ratingsEnabled && sort == .rating ? .title : sort, ascending: sortAscending)
     }
@@ -234,7 +236,8 @@ struct MusicLibraryView: View {
             onlyFavorites: onlyFavorites,
             sort: !ratingsEnabled && sort == .rating ? .title : sort,
             ascending: sortAscending,
-            updatedTracks: !usesLocalSearch ? store.tracks : []
+            updatedTracks: !usesLocalSearch ? store.tracks : [],
+            taggedItemIDs: personalTagFilter.matchingIDs(in: store.personalTags.trackLinks)
         )
     }
 
@@ -248,6 +251,7 @@ struct MusicLibraryView: View {
 
     @ViewBuilder
     private var libraryControls: some View {
+        PersonalTagFilterBar(filter: $personalTagFilter, selection: PersonalTagSelection(trackIDs: selectedTrackIDs.sorted()))
         if store.scanProgress != nil {
             VStack(spacing: 8) {
                 if let progress = store.scanProgress {

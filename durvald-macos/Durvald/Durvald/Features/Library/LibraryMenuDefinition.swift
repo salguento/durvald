@@ -4,7 +4,7 @@ import Foundation
 enum LibraryMenuCommand {
     case playPlaylist, shufflePlaylist, editPlaylist, deletePlaylist
     case playAlbum, shuffleAlbum, playNext, addToQueue, toggleFavorite, setRating
-    case goToArtist, goToAlbum, navigateSelection, showInfo, copyName, additional
+    case goToArtist, goToAlbum, navigateSelection, showInfo, copyName, additional, personalTags, listenList
 }
 
 struct LibraryMenuAction {
@@ -42,7 +42,7 @@ enum LibraryMenuDefinition {
                 .playlistPicker, .action("Tocar de próxima", .playNext), .action("Adicionar à fila", .addToQueue),
                 .separator, .action(album.isFavorite ? "Desfavoritar" : "Favoritar", .toggleFavorite)]
             if ratingsEnabled { items.append(rating(current: album.ratingHalfSteps, granularity: ratingGranularity, enabled: ratingEditingEnabled)) }
-            items += [.separator, .submenu("Compartilhar", [.action("Copiar título", .copyName)])]
+            items += [.separator, .action("Adicionar a Para ouvir", .listenList), .action("Tags pessoais…", .personalTags), .submenu("Compartilhar", [.action("Copiar título", .copyName)])]
             return items
         }
         let favorite = !selectedTracks.isEmpty && selectedTracks.allSatisfy(\.isFavorite)
@@ -51,7 +51,7 @@ enum LibraryMenuDefinition {
             .action(favorite ? "Desfavoritar" : "Favoritar", .toggleFavorite)]
         if ratingsEnabled { items.append(rating(current: track?.ratingHalfSteps, granularity: ratingGranularity, enabled: ratingEditingEnabled)) }
         items += [.separator, navigation(tracks: selectedTracks, artist: true), navigation(tracks: selectedTracks, artist: false),
-                  .containingPlaylists, .separator, .action("Info", .showInfo),
+                  .containingPlaylists, .separator, .action("Info", .showInfo), .action("Tags pessoais…", .personalTags),
                   .submenu("Compartilhar", [.action("Copiar nome", .copyName)])]
         if !additionalActions.isEmpty {
             items.append(.separator)

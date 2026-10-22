@@ -162,6 +162,12 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         return data
     }
 
+    override func listenList() async throws -> [ListenListEntry] { [] }
+
+    override func userTagLibrary() async throws -> UserTagLibrary {
+        UserTagLibrary(tags: [], trackLinks: [], releaseLinks: [])
+    }
+
     override func playback() async -> PlaybackSnapshot {
         lock.withLock {
             updateClock()

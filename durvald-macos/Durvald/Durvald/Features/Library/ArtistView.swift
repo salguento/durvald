@@ -1058,6 +1058,12 @@ struct ArtistView: View {
                                                     onSelectRelease: selectExternalRelease,
                                                     artworkSize: AlbumGridLayout.cardWidth
                                                 )
+                                                .contextMenu {
+                                                    Button("Adicionar a Para ouvir", systemImage: "bookmark") {
+                                                        Task { await store.saveToListenList(release: release, artist: artist) }
+                                                    }
+                                                    .disabled(store.isChangingListenList)
+                                                }
                                             }
                                         }
                                     }

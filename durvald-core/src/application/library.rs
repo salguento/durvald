@@ -512,6 +512,17 @@ impl LibraryApplication {
             .map_err(|error| catalog_release_error(error, release_id))
     }
 
+    pub(crate) async fn personal_library_operation<T, F>(&self, operation: F) -> CoreResult<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
+    {
+        self.persistence
+            .catalog_preferences_repository
+            .personal_library_operation(operation)
+            .await
+    }
+
     pub(crate) async fn set_track_favorite(
         &self,
         track_id: TrackId,

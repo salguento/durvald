@@ -10,6 +10,7 @@ struct SmartPlaylistSheet: View {
     }
 
     private enum Field: String, CaseIterable, Identifiable {
+        case userTag = "user_tag", releaseUserTag = "release_user_tag"
         case rating, favorite, genre, year, playCount = "play_count"
         case lastPlayed = "last_played", dateAdded = "date_added"
         var id: Self { self }
@@ -18,6 +19,8 @@ struct SmartPlaylistSheet: View {
             case .rating: "Nota"
             case .favorite: "Favorita"
             case .genre: "Gênero"
+            case .userTag: "Tag pessoal da faixa"
+            case .releaseUserTag: "Tag pessoal do álbum"
             case .year: "Ano"
             case .playCount: "Reproduções"
             case .lastPlayed: "Última reprodução"
@@ -137,6 +140,14 @@ struct SmartPlaylistSheet: View {
                                         Text("Sim").tag("true")
                                         Text("Não").tag("false")
                                     }.frame(width: 90)
+                                } else if rule.field == .userTag || rule.field == .releaseUserTag {
+                                    Picker("Tag pessoal", selection: $rule.value) {
+                                        Text("Selecionar tag").tag("")
+                                        ForEach(store.personalTags.tags, id: \.id) { tag in Text(tag.name).tag(String(tag.id)) }
+                                        if !rule.value.isEmpty && !store.personalTags.tags.contains(where: { String($0.id) == rule.value }) {
+                                            Text("Tag excluída").tag(rule.value)
+                                        }
+                                    }.frame(width: 150)
                                 } else if rule.field == .rating {
                                     Picker("Avaliação", selection: $rule.value) {
                                         ForEach(RatingValues.options(store.ratingGranularity,
@@ -181,6 +192,7 @@ struct SmartPlaylistSheet: View {
         }
         .padding(24)
         .frame(width: 720, height: 620)
+        .task(id: store.personalTagsRequest) { await store.refreshPersonalTags() }
     }
 
     private var canSave: Bool {
@@ -190,6 +202,7 @@ struct SmartPlaylistSheet: View {
     }
 
     private func comparisons(for field: Field) -> [Comparison] {
+        if field == .userTag || field == .releaseUserTag { return [.equals, .notEquals, .isEmpty, .isNotEmpty] }
         if field == .genre { return [.contains, .equals, .notEquals, .isEmpty, .isNotEmpty] }
         if field == .favorite { return [.equals, .notEquals] }
         if field.isDate { return [.before, .after, .isEmpty, .isNotEmpty] }
