@@ -213,8 +213,8 @@ struct AlbumView: View {
                             .padding(.top, 4)
                     }
 
-                    if album != nil || externalRelease != nil && externalArtist != nil {
-                        ListenListSaveButton(releaseID: album?.id, externalRelease: externalRelease, artist: externalArtist)
+                    if album == nil, let externalRelease, let externalArtist {
+                        ListenListSaveButton(externalRelease: externalRelease, artist: externalArtist)
                             .padding(.top, 8)
                     }
 
@@ -270,6 +270,8 @@ struct AlbumView: View {
             .accessibilityValue(currentAlbum.isFavorite ? "Favorito" : "Não favorito")
             .accessibilityAddTraits(currentAlbum.isFavorite ? .isSelected : [])
             .accessibilityIdentifier("collection.favorite")
+
+            ListenListSaveButton(releaseID: album.id)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("album.header.actions")

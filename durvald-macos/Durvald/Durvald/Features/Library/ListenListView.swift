@@ -17,9 +17,15 @@ struct ListenListSaveButton: View {
                     else if let externalRelease, let artist { await store.saveToListenList(release: externalRelease, artist: artist) }
                 }
             } label: {
-                Label(entry == nil ? "Adicionar a Para ouvir" : "Remover de Para ouvir", systemImage: entry == nil ? "bookmark" : "bookmark.fill")
+                Image(systemName: "bookmark.fill")
+                    .foregroundStyle(entry != nil ? Color.accentColor : .white.opacity(0.45))
             }
+            .buttonStyle(CollectionHeaderActionButtonStyle(size: 40))
             .disabled(store.core == nil || store.isChangingListenList)
+            .help(entry == nil ? "Adicionar a Para ouvir" : "Remover de Para ouvir")
+            .accessibilityLabel(entry == nil ? "Adicionar a Para ouvir" : "Remover de Para ouvir")
+            .accessibilityValue(entry == nil ? "Fora de Para ouvir" : "Em Para ouvir")
+            .accessibilityAddTraits(entry == nil ? [] : .isSelected)
             .accessibilityIdentifier("listenList.save")
             if let error = store.listenListError { Text(error).font(.caption).foregroundStyle(.red) }
         }
