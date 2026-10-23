@@ -32,6 +32,33 @@ final class ClassificationTests: XCTestCase {
         XCTAssertEqual(history.currentRoute, .classification(.style, 1))
     }
     @MainActor
+    func testContentOrderingIncludesEveryPageAndDefaultKeepsPagination() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("DurvaldGenreOrder-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let core = try await RatingIntegrationFixture.openCore(directory: directory, count: 105)
+        let state = ClassificationBrowserState()
+        await state.load(core: core, kind: .genre, id: 0)
+        XCTAssertNil(state.error)
+        XCTAssertEqual(state.releases.count, 100)
+        state.contentOrder = .name
+        await state.load(core: core, kind: .genre, id: 0)
+        XCTAssertEqual(state.releases.count, 105)
+        XCTAssertEqual(Set(state.visibleReleases.map(\.id)).count, 105)
+        XCTAssertEqual(state.visibleReleases.prefix(3).map(\.id), [1, 2, 3])
+        XCTAssertEqual(state.visibleTracks.last?.id, 105)
+        XCTAssertEqual(state.orderedTracks(Array(state.tracks.reversed()), order: .name).map(\.id), (1...105).map(Int64.init))
+        state.query = "105"
+        await state.load(core: core, kind: .genre, id: 0)
+        XCTAssertEqual(state.visibleReleases.map(\.id), [105])
+        state.query = ""
+        state.contentOrder = .library
+        await state.load(core: core, kind: .genre, id: 0)
+        XCTAssertEqual(state.releases.count, 100)
+        await state.load(core: core, kind: .genre, id: 0, more: true)
+        XCTAssertEqual(Set(state.releases.map(\.id)).count, 105)
+    }
+    @MainActor
     func testBridgePersistenceManualExclusionRelationsAndFullPlaybackSet() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("DurvaldGenres-\(UUID())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

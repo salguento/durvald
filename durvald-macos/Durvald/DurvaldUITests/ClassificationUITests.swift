@@ -61,6 +61,52 @@ final class ClassificationUITests: XCTestCase {
         openClassificationInfo(in: app)
         XCTAssertTrue(app.buttons["classification.link.genre.1"].waitForExistence(timeout: 5))
     }
+    @MainActor func testOverviewToolbarSearchOrderingAndHistory() {
+        let app = launch(); defer { app.terminate() }
+        app.menuBars.menuBarItems["Window"].click()
+        app.menuItems["Fill"].click()
+        XCTAssertEqual(app.buttons["sidebar.genres"].label, "Gêneros")
+        app.buttons["sidebar.genres"].click()
+        let summary = app.descendants(matching: .any)["genres.summary"].firstMatch
+        XCTAssertTrue(summary.waitForExistence(timeout: 8))
+        let electronic = app.buttons["classification.term.genre.1"]
+        XCTAssertTrue(electronic.waitForExistence(timeout: 8))
+        let options = app.menuButtons["classification.order"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5))
+        let expand = app.buttons["classification.search.expand"]
+        if expand.exists { expand.click() }
+        let search = app.textFields["classification.search.field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(search.frame.maxX, options.frame.minX)
+        XCTAssertLessThan(options.frame.maxX, app.buttons["player.queue"].frame.minX)
+        options.click()
+        app.menuItems["Álbuns na biblioteca"].click()
+        XCTAssertLessThan(electronic.frame.minX, app.buttons["classification.term.style.1"].frame.minX)
+        search.click(); search.typeText("electro")
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["classification.term.style.1"])
+        waitForExpectations(timeout: 5)
+        electronic.click()
+        XCTAssertEqual(title(in: app), "Electronic")
+        let detailSummary = app.descendants(matching: .any)["classification.summary"].firstMatch
+        XCTAssertTrue(detailSummary.exists)
+        XCTAssertLessThan(detailSummary.frame.maxY, app.buttons["classification.play"].frame.minY)
+        if expand.exists { expand.click() }
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        XCTAssertEqual(search.value as? String, "")
+        search.click(); search.typeText("album 5")
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["album.1"].firstMatch)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(app.buttons["album.5"].firstMatch.waitForExistence(timeout: 5))
+        options.click(); app.menuItems["Nome"].click()
+        let detailCapture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        detailCapture.name = "Topbar do gênero"; detailCapture.lifetime = .keepAlways; add(detailCapture)
+        app.buttons["navigation.back"].click()
+        XCTAssertTrue(electronic.waitForExistence(timeout: 5))
+        if expand.exists { expand.click() }
+        XCTAssertEqual(search.value as? String, "electro")
+        let capture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
+        capture.name = "Topbar de Gêneros"; capture.lifetime = .keepAlways; add(capture)
+    }
     @MainActor func testInfoStyleEditingAndRelaunchPersistence() {
         let app = launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)

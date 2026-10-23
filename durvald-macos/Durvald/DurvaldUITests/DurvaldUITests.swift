@@ -1891,6 +1891,7 @@ final class DurvaldUITests: XCTestCase {
             ("albums", "albums", "albums.listingMode"),
             ("artists", "artists", "artists.listingMode"),
             ("retrospective", "retrospective", "retrospective.viewOptions"),
+            ("genres", "classification", "classification.order"),
         ] {
             let windowMenu = app.menuBars.menuBarItems["Window"]
             windowMenu.click()
@@ -1965,6 +1966,7 @@ final class DurvaldUITests: XCTestCase {
             ("albums", "albums", "albums.listingMode"),
             ("artists", "artists", "artists.listingMode"),
             ("retrospective", "retrospective", "retrospective.viewOptions"),
+            ("genres", "classification", "classification.order"),
         ]
         for (destination, search, optionsID) in destinations {
             app.buttons["sidebar.\(destination)"].click()

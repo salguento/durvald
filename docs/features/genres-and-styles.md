@@ -6,11 +6,16 @@ continua separado.
 
 ## Interface
 
-- **Gêneros e estilos** na seção Biblioteca da sidebar esquerda.
+- **Gêneros** na seção Biblioteca da sidebar esquerda.
+- Título, descrição, busca e botão de ordenação na topbar compartilhada, com
+  o mesmo ajuste de espaço e busca compacta ao abrir a sidebar direita.
 - Visão geral com busca, seleção de gêneros/estilos/todos e ordenação por nome
   ou quantidade de álbuns. Apenas termos com conteúdo local aparecem.
 - **Sem gênero** consulta conteúdo não classificado; não cria um gênero no banco.
 - Detalhes por identidade, com abas Álbuns, Artistas e Músicas, busca e mais páginas.
+- As páginas de cada gênero e estilo também usam a topbar compartilhada para
+  nome, contagens, busca e ordenação. Nome e Artista ordenam o resultado inteiro;
+  Padrão mantém a ordem e a paginação do catálogo.
 - **Bem avaliados na sua biblioteca** usa avaliações pessoais dos álbuns a partir
   de 4 estrelas, ordenadas por avaliação e identidade. Exclui álbuns ocultos e
   sinalizados para sugerir menos; não apresenta avaliações externas.

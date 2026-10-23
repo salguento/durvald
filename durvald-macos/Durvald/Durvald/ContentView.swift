@@ -356,9 +356,18 @@ struct ContentView: View {
     }
 
     private var hasLibrarySearch: Bool {
-        if isArtistDetail || isPlaylistDetail || isAlbumDetail { return true }
+        if isArtistDetail || isPlaylistDetail || isAlbumDetail || isClassificationDetail { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
-        return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective || destination == .playlists || destination == .listenList
+        return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective || destination == .playlists || destination == .listenList || destination == .genres
+    }
+
+    private var currentClassificationState: ClassificationBrowserState? {
+        classificationStates[shell.navigationHistory.currentEntryID]
+    }
+
+    private var isClassificationDetail: Bool {
+        if case .classification = shell.navigationHistory.currentRoute { return true }
+        return false
     }
 
     private var trackMenuNavigation: TrackMenuNavigation {
@@ -400,7 +409,7 @@ struct ContentView: View {
         case .search:
             SummaryPresentation.search(results: globalSearch.value, query: shell.submittedSearchText,
                 isPending: globalSearch.isPending || globalSearch.committedQuery != shell.submittedSearchText)
-        case .genres: "Explore sua biblioteca"
+        case .genres: "Explore a classificação disponível na sua biblioteca."
         case .listenList: "\(store.pendingListenListCount) para ouvir"
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
@@ -412,6 +421,10 @@ struct ContentView: View {
 
     private var librarySearchText: Binding<String> {
         switch shell.navigationHistory.current {
+        case .genres: Binding(
+            get: { currentClassificationState?.query ?? "" },
+            set: { currentClassificationState?.query = $0 }
+        )
         case .listenList: $listenListSearchText
         case .songs: $musicSearchText
         case .artists: $artistSearchText
@@ -423,6 +436,7 @@ struct ContentView: View {
 
     private var librarySearchPlaceholder: String {
         switch shell.navigationHistory.current {
+        case .genres: isClassificationDetail ? "Pesquisar neste conteúdo" : "Pesquisar gêneros e estilos"
         case .listenList: "Pesquisar em Para ouvir"
         case .songs: "Pesquisar músicas"
         case .artists: "Pesquisar artistas"
@@ -434,6 +448,7 @@ struct ContentView: View {
 
     private var librarySearchIdentifier: String {
         switch shell.navigationHistory.current {
+        case .genres: "classification.search"
         case .listenList: "listenList.search"
         case .songs: "library.search"
         case .artists: "artists.search"
@@ -554,7 +569,15 @@ struct ContentView: View {
 
     @ViewBuilder
     private var libraryToolbarSummary: some View {
-        if shell.navigationHistory.current == .songs {
+        if isClassificationDetail {
+            LibrarySummaryView(
+                title: currentClassificationState?.page?.term.name ?? "Carregando…",
+                text: currentClassificationState?.page?.term.contentSummary ?? "",
+                identifier: "classification.summary",
+                titleIdentifier: "classification.title",
+                detailIdentifier: "classification.counts"
+            )
+        } else if shell.navigationHistory.current == .songs {
             MusicLibrarySummaryView(summary: musicLibrarySummary)
         } else {
             LibrarySummaryView(
@@ -602,7 +625,9 @@ struct ContentView: View {
                     expandedWidth: searchWidth,
                     isExpanded: $isLibrarySearchExpanded
                 )
-                if shell.navigationHistory.current == .songs {
+                if shell.navigationHistory.current == .genres, let state = currentClassificationState {
+                    ClassificationToolbarOptionsMenu(state: state, isDetail: isClassificationDetail)
+                } else if shell.navigationHistory.current == .songs {
                     MusicLibraryViewOptionsMenu(onShowViewOptions: {
                         openWindow(id: "music-view-options")
                     })
@@ -615,7 +640,7 @@ struct ContentView: View {
                 }
             }
             .fixedSize()
-            .id(shell.navigationHistory.current)
+            .id(shell.navigationHistory.current == .genres ? "classification:\(shell.navigationHistory.currentEntryID)" : shell.navigationHistory.current.rawValue)
         }
     }
 

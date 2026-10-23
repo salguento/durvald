@@ -22,17 +22,21 @@ struct LibrarySummaryView: View {
     let title: String
     let text: String
     let identifier: String
+    var titleIdentifier: String? = nil
+    var detailIdentifier: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: LibrarySummaryMetrics.spacing) {
             Text(title).font(LibraryTypography.summaryTitle)
+                .accessibilityIdentifier(titleIdentifier ?? "\(identifier).title")
             Text(text).font(LibraryTypography.summaryDetail)
+                .accessibilityIdentifier(detailIdentifier ?? "\(identifier).detail")
         }
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .frame(maxWidth: LibrarySummaryMetrics.maximumWidth, alignment: .leading)
         .help(text)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: titleIdentifier == nil ? .combine : .contain)
         .accessibilityIdentifier(identifier)
     }
 }

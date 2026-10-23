@@ -9,6 +9,7 @@ extension ClassificationKind {
 
 enum ClassificationTab: String, CaseIterable { case albums = "Álbuns", artists = "Artistas", tracks = "Músicas" }
 enum ClassificationFilter: String, CaseIterable { case all = "Todos", genres = "Gêneros", styles = "Estilos" }
+enum ClassificationContentOrder: String, CaseIterable { case library = "Padrão", name = "Nome", artist = "Artista" }
 
 @MainActor @Observable
 final class ClassificationBrowserState {
@@ -16,6 +17,7 @@ final class ClassificationBrowserState {
     var tab = ClassificationTab.albums
     var filter = ClassificationFilter.all
     var byCount = false
+    var contentOrder = ClassificationContentOrder.library
     var terms: [ClassificationTerm] = []
     var page: ClassificationPage?
     var releases: [Release] = []
@@ -39,6 +41,26 @@ final class ClassificationBrowserState {
         }
     }
 
+    private func ordered<T>(_ items: [T], name: (T) -> String, artist: (T) -> String, id: (T) -> Int64, order: ClassificationContentOrder? = nil) -> [T] {
+        let order = order ?? contentOrder
+        guard order != .library else { return items }
+        return items.sorted {
+            if order == .artist {
+                let order = artist($0).localizedStandardCompare(artist($1))
+                if order != .orderedSame { return order == .orderedAscending }
+            }
+            let order = name($0).localizedStandardCompare(name($1))
+            return order == .orderedSame ? id($0) < id($1) : order == .orderedAscending
+        }
+    }
+
+    var visibleReleases: [Release] { ordered(releases, name: { $0.title }, artist: { $0.artist }, id: { $0.id }) }
+    var visibleArtists: [Artist] { ordered(artists, name: { $0.name }, artist: { $0.name }, id: { $0.id }) }
+    var visibleTracks: [Track] { ordered(tracks, name: { $0.title }, artist: { $0.artist }, id: { $0.id }) }
+    func orderedTracks(_ tracks: [Track], order: ClassificationContentOrder) -> [Track] {
+        ordered(tracks, name: { $0.title }, artist: { $0.artist }, id: { $0.id }, order: order)
+    }
+
     func load(core: DurvaldCore, kind: ClassificationKind?, id: Int64?, more: Bool = false) async {
         generation &+= 1
         let request = generation
@@ -49,11 +71,28 @@ final class ClassificationBrowserState {
                 let next = more ? offset + 100 : 0
                 let result = try await core.classificationPage(kind: kind, id: id, query: query, offset: next, pageSize: 100)
                 guard !Task.isCancelled, generation == request else { return }
+                var newReleases = more ? releases + result.releases : result.releases
+                var newArtists = more ? artists + result.artists : result.artists
+                var newTracks = more ? tracks + result.tracks : result.tracks
+                var lastOffset = next
+                // Global ordering needs the full result, rather than sorting
+                // each page independently and moving items on "load more".
+                if contentOrder != .library {
+                    let total = max(result.totalReleases, result.totalArtists, result.totalTracks)
+                    while lastOffset + 100 < total {
+                        let batch = try await core.classificationPage(kind: kind, id: id, query: query, offset: lastOffset + 100, pageSize: 100)
+                        guard !Task.isCancelled, generation == request else { return }
+                        newReleases += batch.releases
+                        newArtists += batch.artists
+                        newTracks += batch.tracks
+                        lastOffset += 100
+                    }
+                }
                 page = result
-                releases = more ? releases + result.releases : result.releases
-                artists = more ? artists + result.artists : result.artists
-                tracks = more ? tracks + result.tracks : result.tracks
-                offset = next
+                releases = newReleases
+                artists = newArtists
+                tracks = newTracks
+                offset = lastOffset
             } else {
                 let result = try await core.classificationTerms()
                 guard !Task.isCancelled, generation == request else { return }
@@ -77,7 +116,7 @@ struct ClassificationBrowser: View {
     @State private var isEditingRelations = false
     @State private var isPreparingPlayback = false
     private let columns = [GridItem(.adaptive(minimum: 180, maximum: 260), spacing: 24)]
-    private var request: String { "\(kind?.key ?? "all"):\(termID ?? -1):\(store.libraryCatalogRevision):\(store.classificationRevision):\(kind == nil ? "" : state.query)" }
+    private var request: String { "\(kind?.key ?? "all"):\(termID ?? -1):\(store.libraryCatalogRevision):\(store.classificationRevision):\(kind == nil ? "" : state.query):\(kind == nil ? "" : state.contentOrder.rawValue)" }
     private var canLoadMore: Bool {
         guard let page = state.page else { return false }
         switch state.tab {
@@ -93,19 +132,6 @@ struct ClassificationBrowser: View {
             VStack(alignment: .leading, spacing: 24) {
                 if let kind, let page = state.page {
                     detailHeader(kind, page)
-                } else if kind == nil {
-                    Text("Gêneros e estilos").font(.largeTitle.bold())
-                    Text("Explore a classificação disponível na sua biblioteca.").foregroundStyle(.secondary)
-                }
-                HStack {
-                    TextField("Pesquisar \(kind == nil ? "gêneros e estilos" : "neste conteúdo")", text: $state.query)
-                        .textFieldStyle(.roundedBorder).accessibilityIdentifier("classification.search")
-                    if kind == nil {
-                        Picker("Ordenar", selection: $state.byCount) {
-                            Text("Nome").tag(false)
-                            Text("Álbuns na biblioteca").tag(true)
-                        }.frame(maxWidth: 220).accessibilityIdentifier("classification.order")
-                    }
                 }
                 if let error = state.error {
                     HStack { Text(error).foregroundStyle(.red); Button("Tentar novamente") { reload() } }
@@ -161,10 +187,6 @@ struct ClassificationBrowser: View {
     }
     private func detailHeader(_ kind: ClassificationKind, _ page: ClassificationPage) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(kind.singular).font(.subheadline).foregroundStyle(.secondary)
-            Text(page.term.name).font(.largeTitle.bold()).accessibilityIdentifier("classification.title")
-            Text(page.term.contentSummary)
-                .foregroundStyle(.secondary).accessibilityIdentifier("classification.counts")
             if let description = page.term.description, !description.isEmpty { Text(description) }
             Text("Álbuns podem aparecer por conter faixas desta classificação. Artistas são agrupados pelo conteúdo da biblioteca.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -208,7 +230,7 @@ struct ClassificationBrowser: View {
                 Text("Álbuns (\(page.totalReleases))").font(.title2.bold())
                 if state.releases.isEmpty { empty }
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 24) {
-                    ForEach(state.releases, id: \.id) { release in
+                    ForEach(state.visibleReleases, id: \.id) { release in
                         VStack(alignment: .leading, spacing: 6) {
                             AlbumCard(release: release, onSelectAlbum: navigation.album, artworkSize: 160)
                             if page.containsTracksReleaseIds.contains(release.id) { Text("Contém faixas").font(.caption).foregroundStyle(.secondary) }
@@ -219,7 +241,7 @@ struct ClassificationBrowser: View {
                 Text("Artistas (\(page.totalArtists))").font(.title2.bold())
                 if state.artists.isEmpty { empty }
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(state.artists, id: \.id) { artist in
+                    ForEach(state.visibleArtists, id: \.id) { artist in
                         Button { navigation.artist(artist) } label: { Label(artist.name, systemImage: "music.mic") }
                             .buttonStyle(.plain).accessibilityIdentifier("classification.artist.\(artist.id)")
                     }
@@ -228,7 +250,7 @@ struct ClassificationBrowser: View {
                 Text("Músicas (\(page.totalTracks))").font(.title2.bold())
                 if state.tracks.isEmpty { empty }
                 LazyVStack(spacing: 8) {
-                    ForEach(state.tracks, id: \.id) { track in
+                    ForEach(state.visibleTracks, id: \.id) { track in
                         CollectionTrackRow(track: track, number: String(track.trackNumber),
                             activeOverride: store.activeSourceContext == context && store.activeTrackID == track.id,
                             onPlay: { play(startingAt: track.id) })
@@ -243,16 +265,38 @@ struct ClassificationBrowser: View {
         guard let core = store.core, let kind, let termID, !isPreparingPlayback else { return }
         isPreparingPlayback = true
         let query = state.query
+        let order = state.contentOrder
         let sourceContext = context
         Task {
             defer { isPreparingPlayback = false }
             do {
-                let tracks = try await core.classificationTracks(kind: kind, id: termID, query: query)
+                let tracks = state.orderedTracks(try await core.classificationTracks(kind: kind, id: termID, query: query), order: order)
                 guard !Task.isCancelled, store.core === core else { return }
                 if let startingAt, !tracks.contains(where: { $0.id == startingAt }) { return }
                 await store.playTracks(tracks, startingAt: startingAt, shuffleEnabled: shuffle, sourceContext: sourceContext)
             } catch { state.error = "Não foi possível preparar a reprodução. Tente novamente." }
         }
+    }
+}
+
+struct ClassificationToolbarOptionsMenu: View {
+    @Bindable var state: ClassificationBrowserState
+    var isDetail = false
+
+    var body: some View {
+        ToolbarOptionsButton(title: "Opções de ordenação") {
+            if isDetail {
+                Picker("Ordenar por", selection: $state.contentOrder) {
+                    ForEach(ClassificationContentOrder.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.inline)
+            } else {
+                Picker("Ordenar por", selection: $state.byCount) {
+                    Text("Nome").tag(false)
+                    Text("Álbuns na biblioteca").tag(true)
+                }.pickerStyle(.inline)
+            }
+        }
+        .accessibilityIdentifier("classification.order")
     }
 }
 
