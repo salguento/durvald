@@ -5,6 +5,8 @@ struct ClassificationSection: View {
     @Environment(\.trackMenuNavigation) private var navigation
     let target: ClassificationTarget
     let itemID: Int64
+    enum Presentation { case full, links }
+    var presentation: Presentation = .full
     @State private var links: [ClassificationLink] = []
     @State private var editingKind: ClassificationKind?
     @State private var error: String?
@@ -12,29 +14,36 @@ struct ClassificationSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach([ClassificationKind.genre, .style], id: \.key) { kind in
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(kind.title).font(.subheadline.weight(.medium))
-                        if target != .artist {
-                            Button("Editar \(kind.title.lowercased())") { editingKind = kind }
-                                .buttonStyle(.borderless).accessibilityIdentifier("classification.edit.\(kind.key)")
+                let items = links.filter { $0.term.kind == kind }
+                if presentation == .full || !items.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if presentation == .full {
+                            HStack {
+                                Text(kind.title).font(.subheadline.weight(.medium))
+                                if target != .artist {
+                                    Button("Editar \(kind.title.lowercased())") { editingKind = kind }
+                                        .buttonStyle(.borderless).accessibilityIdentifier("classification.edit.\(kind.key)")
+                                }
+                            }
+                        }
+                        if items.isEmpty {
+                            Text("Não informado").font(.caption).foregroundStyle(.secondary)
+                        } else {
+                            ScrollView(.horizontal) {
+                                HStack(spacing: 8) { ForEach(items, id: \.term.selfIdentity) { link in
+                                    Button { navigation.classification(kind, link.term.id) } label: {
+                                        HStack(spacing: 4) {
+                                            Text(link.term.name)
+                                            if link.origin == "contains_tracks" { Image(systemName: "music.note") }
+                                        }.font(.caption).padding(.horizontal, 9).padding(.vertical, 5)
+                                            .background(.quaternary, in: .capsule)
+                                    }.buttonStyle(.plain).help(origin(link.origin))
+                                        .accessibilityLabel("\(link.term.name), \(origin(link.origin))")
+                                        .accessibilityIdentifier("classification.link.\(kind.key).\(link.term.id)")
+                                } }
+                            }.scrollIndicators(.hidden)
                         }
                     }
-                    let items = links.filter { $0.term.kind == kind }
-                    if items.isEmpty { Text("Não informado").font(.caption).foregroundStyle(.secondary) }
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 8) { ForEach(items, id: \.term.selfIdentity) { link in
-                            Button { navigation.classification(kind, link.term.id) } label: {
-                                HStack(spacing: 4) {
-                                    Text(link.term.name)
-                                    if link.origin == "contains_tracks" { Image(systemName: "music.note") }
-                                }.font(.caption).padding(.horizontal, 9).padding(.vertical, 5)
-                                    .background(.quaternary, in: .capsule)
-                            }.buttonStyle(.plain).help(origin(link.origin))
-                                .accessibilityLabel("\(link.term.name), \(origin(link.origin))")
-                                .accessibilityIdentifier("classification.link.\(kind.key).\(link.term.id)")
-                        } }
-                    }.scrollIndicators(.hidden)
                 }
             }
             if let error { Text(error).font(.caption).foregroundStyle(.red) }

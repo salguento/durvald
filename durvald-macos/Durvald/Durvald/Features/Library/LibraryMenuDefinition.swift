@@ -42,7 +42,7 @@ enum LibraryMenuDefinition {
                 .playlistPicker, .action("Tocar de próxima", .playNext), .action("Adicionar à fila", .addToQueue),
                 .separator, .action(album.isFavorite ? "Desfavoritar" : "Favoritar", .toggleFavorite)]
             if ratingsEnabled { items.append(rating(current: album.ratingHalfSteps, granularity: ratingGranularity, enabled: ratingEditingEnabled)) }
-            items += [.separator, .action("Adicionar a Para ouvir", .listenList), .action("Tags pessoais…", .personalTags), .submenu("Compartilhar", [.action("Copiar título", .copyName)])]
+            items += [.separator, .action("Info", .showInfo), .action("Adicionar a Para ouvir", .listenList), .action("Tags pessoais…", .personalTags), .submenu("Compartilhar", [.action("Copiar título", .copyName)])]
             return items
         }
         let favorite = !selectedTracks.isEmpty && selectedTracks.allSatisfy(\.isFavorite)

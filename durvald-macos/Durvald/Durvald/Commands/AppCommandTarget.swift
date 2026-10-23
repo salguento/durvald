@@ -149,9 +149,10 @@ extension AppCommandTarget {
         return Self(actions: actions)
     }
 
-    static func album(_ album: Release, store: DurvaldCoreStore, creation: PlaylistCreationCoordinator,
+    static func album(_ album: Release, store: DurvaldCoreStore, info: TrackInfoCoordinator, creation: PlaylistCreationCoordinator,
                       navigation: TrackMenuNavigation = TrackMenuNavigation()) -> Self {
         var actions: [AppCommandID: () -> Void] = [
+            .info: { Task { await info.openAlbum(releaseID: album.id, using: store) } },
             .playSelection: { Task { await store.playRelease(releaseID: album.id) } },
             .playNext: { Task { await store.enqueueRelease(releaseID: album.id, playNext: true) } },
             .enqueue: { Task { await store.enqueueRelease(releaseID: album.id) } },

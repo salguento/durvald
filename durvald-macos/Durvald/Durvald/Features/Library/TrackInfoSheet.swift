@@ -12,10 +12,32 @@ final class TrackInfoCoordinator {
     @ObservationIgnored var classificationNavigation: ((ClassificationKind, Int64) -> Void)?
     @ObservationIgnored var presentWindow: (() -> Void)?
     @ObservationIgnored weak var referenceWindow: NSWindow?
+    @ObservationIgnored private var openRequest = UUID()
 
     var trackID: Int64? { trackIDs.count == 1 ? trackIDs[0] : nil }
 
+    func openAlbum(releaseID: Int64, using store: DurvaldCoreStore) async {
+        let request = UUID()
+        openRequest = request
+        let core = store.core
+        let window = NSApp.keyWindow
+        let tracks = await store.tracks(forReleaseID: releaseID)
+        guard !Task.isCancelled, openRequest == request, store.core === core else { return }
+        guard !tracks.isEmpty else {
+            if store.errorMessage == nil { store.errorMessage = "Este álbum não possui faixas locais para consultar os metadados." }
+            return
+        }
+        var seen = Set<Int64>()
+        let orderedIDs = tracks.map(\.id).filter { seen.insert($0).inserted }
+        guard let firstID = orderedIDs.first else { return }
+        referenceWindow = window
+        trackIDs = [firstID]
+        navigationTrackIDs = orderedIDs
+        presentWindow?()
+    }
+
     func open(trackID: Int64, navigationTrackIDs: [Int64] = []) {
+        openRequest = UUID()
         referenceWindow = NSApp.keyWindow
         self.navigationTrackIDs = navigationTrackIDs
         trackIDs = [trackID]
@@ -23,6 +45,7 @@ final class TrackInfoCoordinator {
     }
 
     func openBatch(trackIDs: Set<Int64>) {
+        openRequest = UUID()
         referenceWindow = NSApp.keyWindow
         self.trackIDs = trackIDs.sorted()
         navigationTrackIDs = []
@@ -102,8 +125,8 @@ struct TrackInfoSheet: View {
 
     private enum Tab: String, CaseIterable {
         case details = "Detalhes", artwork = "Capa", lyrics = "Letras", options = "Opções", file = "Arquivo"
-        case classification = "Gêneros e estilos"
-        case personalTags = "Tags pessoais"
+        case classification = "Gêneros"
+        case personalTags = "Tags"
     }
     @State private var selectedTab: Tab = .details
     @State private var lyrics: String?

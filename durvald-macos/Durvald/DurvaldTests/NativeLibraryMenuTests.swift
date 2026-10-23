@@ -37,10 +37,39 @@ final class NativeLibraryMenuTests: XCTestCase {
         XCTAssertTrue(item.target === controller)
         _ = controller.perform(item.action!, with: item)
         XCTAssertEqual(calls, ["new"])
-        controller.configure(album: Fixtures.release, store: store, playlistCreation: creation)
-        XCTAssertFalse(controller.rootMenu.items.contains { $0.title == "Info" || $0.title == "new" })
+        controller.configure(album: Fixtures.release, store: store, playlistCreation: creation, trackInfo: TrackInfoCoordinator())
+        XCTAssertTrue(controller.rootMenu.items.contains { $0.title == "Info" })
+        XCTAssertFalse(controller.rootMenu.items.contains { $0.title == "new" })
         controller.configure(playlist: playlist(1), store: store, creation: creation, navigation: TrackMenuNavigation())
         XCTAssertFalse(controller.rootMenu.items.contains { $0.title == "Avaliação" || $0.title == "Compartilhar" })
+    }
+
+    func testAlbumInfoUsesOriginalInspectorAndAlbumScopedNavigation() async {
+        let core = FakeDurvaldCore(snapshot: Fixtures.playingSnapshot)
+        let second = Fixtures.track(id: 2, trackNumber: 2, discNumber: 1)
+        core.releaseTrackResults = [second, Fixtures.track]
+        let store = DurvaldCoreStore(core: core, tracks: [Fixtures.track])
+        let info = TrackInfoCoordinator()
+        let creation = PlaylistCreationCoordinator()
+        let controller = TrackMenuController()
+        controller.configure(album: Fixtures.release, store: store, playlistCreation: creation, trackInfo: info)
+        let opened = expectation(description: "Album metadata opened")
+        info.presentWindow = { opened.fulfill() }
+        let item = controller.rootMenu.items.first { $0.title == "Info" }!
+        XCTAssertTrue(item.isEnabled)
+        _ = controller.perform(item.action!, with: item)
+        await fulfillment(of: [opened], timeout: 2)
+        XCTAssertEqual(info.trackIDs, [1])
+        XCTAssertEqual(info.navigationTrackIDs, [1, 2])
+
+        let keyboardOpened = expectation(description: "Album metadata opened with keyboard")
+        info.presentWindow = { keyboardOpened.fulfill() }
+        let target = AppCommandTarget.album(Fixtures.release, store: store, info: info, creation: creation)
+        XCTAssertTrue(target.contains(.info))
+        target.perform(.info)
+        await fulfillment(of: [keyboardOpened], timeout: 2)
+        XCTAssertEqual(info.trackIDs, [1])
+        XCTAssertEqual(info.navigationTrackIDs, [1, 2])
     }
 
     func testMultiSelectionPreservesNavigationPayloadAndFavoriteMeaning() {
@@ -107,7 +136,7 @@ final class NativeLibraryMenuTests: XCTestCase {
         let create = picker.items[2]
         _ = controller.perform(create.action!, with: create)
         XCTAssertEqual(creation.pendingPlaylistID, 1)
-        controller.configure(album: Fixtures.release, store: store, playlistCreation: creation)
+        controller.configure(album: Fixtures.release, store: store, playlistCreation: creation, trackInfo: TrackInfoCoordinator())
         _ = controller.perform(create.action!, with: create)
         XCTAssertEqual(creation.pendingReleaseID, Fixtures.release.id)
         XCTAssertNil(creation.pendingPlaylistID)
@@ -130,7 +159,7 @@ final class NativeLibraryMenuTests: XCTestCase {
         XCTAssertNil(view.menu)
         XCTAssertTrue(controller.rootMenu.items.isEmpty)
         XCTAssertNil(released)
-        controller.configure(album: Fixtures.release, store: DurvaldCoreStore(), playlistCreation: PlaylistCreationCoordinator())
+        controller.configure(album: Fixtures.release, store: DurvaldCoreStore(), playlistCreation: PlaylistCreationCoordinator(), trackInfo: TrackInfoCoordinator())
         XCTAssertEqual(controller.rootMenu.items.first?.title, "Tocar")
     }
 
@@ -140,7 +169,7 @@ final class NativeLibraryMenuTests: XCTestCase {
             let core = MenuLoadCore(gate: gate)
             let controller = TrackMenuController()
             controller.configure(album: Fixtures.release, store: DurvaldCoreStore(core: core),
-                                 playlistCreation: PlaylistCreationCoordinator())
+                                 playlistCreation: PlaylistCreationCoordinator(), trackInfo: TrackInfoCoordinator())
             controller.menuWillOpen(controller.rootMenu)
             let pending = controller.loadingTask
             await gate.started()
@@ -148,7 +177,7 @@ final class NativeLibraryMenuTests: XCTestCase {
             else {
                 var replacement = Fixtures.release
                 replacement.id = 2
-                controller.configure(album: replacement, store: DurvaldCoreStore(), playlistCreation: PlaylistCreationCoordinator())
+                controller.configure(album: replacement, store: DurvaldCoreStore(), playlistCreation: PlaylistCreationCoordinator(), trackInfo: TrackInfoCoordinator())
             }
             await gate.release()
             await pending?.value

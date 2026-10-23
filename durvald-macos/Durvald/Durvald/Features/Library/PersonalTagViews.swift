@@ -16,19 +16,27 @@ struct PersonalTagSection: View {
             if store.tags(for: selection).isEmpty {
                 Text("Nenhuma tag").font(.caption).foregroundStyle(.secondary)
             } else {
-                ScrollView(.horizontal) {
-                    HStack {
-                        ForEach(store.tags(for: selection), id: \.id) { tag in
-                            Text(tag.name).font(.caption).padding(.horizontal, 9).padding(.vertical, 5)
-                                .background(.quaternary, in: .capsule)
-                                .accessibilityIdentifier("personalTags.chip.\(tag.id)")
-                        }
-                    }
-                }
+                PersonalTagChips(tags: store.tags(for: selection))
             }
         }
         .task(id: store.personalTagsRequest) { await store.refreshPersonalTags() }
         .sheet(isPresented: $isEditing) { PersonalTagEditor(selection: selection) }
+    }
+}
+
+/// Display-only tags, shared by the inspector and the album header.
+struct PersonalTagChips: View {
+    let tags: [UserTag]
+    var body: some View {
+        ScrollView(.horizontal) {
+            HStack {
+                ForEach(tags, id: \.id) { tag in
+                    Text(tag.name).font(.caption).padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(.quaternary, in: .capsule)
+                        .accessibilityIdentifier("personalTags.chip.\(tag.id)")
+                }
+            }
+        }
     }
 }
 

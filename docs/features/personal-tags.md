@@ -8,8 +8,9 @@ metadados embutidos nos arquivos. Esta funcionalidade não grava nos arquivos de
 
 - Faixas: menu de contexto **Tags pessoais…**, aba **Tags pessoais** em Info ou
   botão **Editar tags de N itens** após selecionar faixas na biblioteca.
-- Lançamentos/álbuns: seção de chips e **Editar tags** em AlbumView, menu de
-  contexto dos cartões ou edição em lote dos resultados na listagem de álbuns.
+- Lançamentos/álbuns: tags existentes aparecem abaixo da avaliação no cabeçalho
+  de AlbumView, sem seção sob a capa. A edição fica no menu de contexto dos
+  cartões ou na edição em lote dos resultados da listagem de álbuns.
 - O editor procura tags existentes enquanto o usuário digita e permite criar e
   associar uma tag pelo nome. Aplicar ou remover uma tag na seleção preserva as
   outras tags. Em seleção mista, informa quantos itens já usam a tag e oferece

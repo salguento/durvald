@@ -262,10 +262,10 @@ final class DurvaldCoreStoreTests: XCTestCase {
             defaults.set(ratingsEnabled, forKey: RatingPreferences.enabledKey)
             let controller = TrackMenuController()
             let creation = PlaylistCreationCoordinator()
-            controller.configure(album: Fixtures.release, store: DurvaldCoreStore(), playlistCreation: creation)
+            controller.configure(album: Fixtures.release, store: DurvaldCoreStore(), playlistCreation: creation, trackInfo: TrackInfoCoordinator())
 
             let expected = ["Tocar", "Aleatório", "—", "Adicionar à playlist", "Tocar de próxima", "Adicionar à fila",
-                            "—", "Favoritar"] + (ratingsEnabled ? ["Avaliação"] : []) + ["—", "Compartilhar"]
+                            "—", "Favoritar"] + (ratingsEnabled ? ["Avaliação"] : []) + ["—", "Info", "Adicionar a Para ouvir", "Tags pessoais…", "Compartilhar"]
             XCTAssertEqual(controller.rootMenu.items.map { $0.isSeparatorItem ? "—" : $0.title }, expected)
             XCTAssertEqual(controller.rootMenu.items.last?.submenu?.items.first?.title, "Copiar título")
             creation.requestAlbum(1)

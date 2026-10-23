@@ -78,10 +78,17 @@ final class PersonalTagUITests: XCTestCase {
         app.typeKey("3", modifierFlags: .command)
         let album = app.buttons["album.1"]
         XCTAssertTrue(album.waitForExistence(timeout: 5)); album.click()
-        let edit = app.buttons["personalTags.edit"]
-        XCTAssertTrue(edit.waitForExistence(timeout: 5)); edit.click()
+        XCTAssertFalse(app.buttons["personalTags.edit"].exists)
+        let cover = app.descendants(matching: .any)["album.header.artwork"].firstMatch
+        XCTAssertTrue(cover.waitForExistence(timeout: 5)); cover.rightClick()
+        app.menuItems["Tags pessoais…"].click()
         create("Viagem", app: app)
-        XCTAssertTrue(app.staticTexts["personalTags.chip.1"].exists)
+        let chip = app.staticTexts["personalTags.chip.1"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 5))
+        let rating = app.descendants(matching: .any)["album.rating"].firstMatch
+        XCTAssertTrue(rating.exists)
+        XCTAssertGreaterThanOrEqual(chip.frame.minY, rating.frame.maxY)
+        XCTAssertFalse(app.buttons["personalTags.edit"].exists)
         app.typeKey("2", modifierFlags: .command)
         let table = app.tables["library.musicTable"]
         XCTAssertTrue(table.waitForExistence(timeout: 5))

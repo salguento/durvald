@@ -69,6 +69,11 @@ enum RatingIntegrationFixture {
                 try await core.setStyleGenres(styleId: style.id, genreIds: [genre.id])
             }
         }
+        if ProcessInfo.processInfo.arguments.contains("--album-metadata-fixture") {
+            try withDatabase(config(directory: directory).databasePath) { database in
+                try execute("UPDATE songs SET release_id=1,release_title='Rating album 1',track_number=2 WHERE song_id=2; UPDATE releases SET total_tracks=2 WHERE release_id=1;", database: database)
+            }
+        }
         let tracks = try await core.tracksPage(pageSize: 100, offset: 0).items
         let releases = try await core.releasesPage(pageSize: 100, offset: 0).items
         let store = DurvaldCoreStore(core: core, tracks: tracks, releases: releases)

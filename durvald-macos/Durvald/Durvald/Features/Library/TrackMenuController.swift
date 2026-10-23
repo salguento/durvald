@@ -79,7 +79,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
     private var albumRatingRevision: UInt64?
 
     func configure(album: Release, store: DurvaldCoreStore,
-                   playlistCreation: PlaylistCreationCoordinator) {
+                   playlistCreation: PlaylistCreationCoordinator, trackInfo: TrackInfoCoordinator) {
         cancelPendingLoad()
         rootMenu.autoenablesItems = false
         self.sourcePlaylist = nil
@@ -97,6 +97,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         self.store = store
         playlists = store.playlists
         additionalActions = []
+        onInfo = { Task { await trackInfo.openAlbum(releaseID: album.id, using: store) } }
         onCreatePlaylist = { playlistCreation.requestAlbum(album.id) }
         onAddToPlaylist = { playlist in
             Task { await store.addRelease(album.id, to: playlist) }

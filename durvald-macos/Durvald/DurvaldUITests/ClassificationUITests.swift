@@ -18,6 +18,17 @@ final class ClassificationUITests: XCTestCase {
     @MainActor private func tab(_ name: String, in app: XCUIApplication) {
         app.descendants(matching: .any)["classification.tabs"].firstMatch.descendants(matching: .any).matching(NSPredicate(format: "label == %@", name)).firstMatch.click()
     }
+    @MainActor private func openClassificationInfo(in app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["classification.link.genre.1"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["classification.link.style.1"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["classification.edit.genre"].exists)
+        XCTAssertFalse(app.buttons["classification.edit.style"].exists)
+        let cover = app.buttons["album.header.artwork"].firstMatch
+        XCTAssertTrue(cover.waitForExistence(timeout: 8)); cover.rightClick()
+        app.menuItems["Info"].click()
+        let genres = app.buttons["trackInfo.tab.classification"]
+        XCTAssertTrue(genres.waitForExistence(timeout: 8)); genres.click()
+    }
     @MainActor func testGenreStyleContentAndHistory() {
         let app = launch(); defer { app.terminate() }
         app.buttons["sidebar.genres"].click()
@@ -47,19 +58,23 @@ final class ClassificationUITests: XCTestCase {
         let albumsCapture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
         albumsCapture.name = "Álbuns do gênero"; albumsCapture.lifetime = .keepAlways; add(albumsCapture)
         album.click()
+        openClassificationInfo(in: app)
         XCTAssertTrue(app.buttons["classification.link.genre.1"].waitForExistence(timeout: 5))
     }
-    @MainActor func testAlbumStyleEditingAndRelaunchPersistence() {
+    @MainActor func testInfoStyleEditingAndRelaunchPersistence() {
         let app = launch(); defer { app.terminate() }
         app.typeKey("3", modifierFlags: .command)
         let album = app.buttons["album.1"].firstMatch
         XCTAssertTrue(album.waitForExistence(timeout: 8)); album.click()
+        openClassificationInfo(in: app)
         let edit = app.buttons["classification.edit.style"]
         XCTAssertTrue(edit.waitForExistence(timeout: 8)); edit.click()
         let names = app.textViews["classification.editor.names"]
         XCTAssertTrue(names.waitForExistence(timeout: 5)); names.click()
         app.typeKey("a", modifierFlags: .command); names.typeText("Dream Pop")
         app.buttons["classification.editor.save"].click()
+        XCTAssertTrue(app.windows["Info da faixa"].buttons["Fechar"].waitForExistence(timeout: 5))
+        app.windows["Info da faixa"].buttons["Fechar"].click()
         app.buttons["sidebar.genres"].click()
         let dream = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "classification.term.style.", "Dream Pop")).firstMatch
         XCTAssertTrue(dream.waitForExistence(timeout: 8)); dream.click()

@@ -106,7 +106,6 @@ struct AlbumView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
-                if let album { PersonalTagSection(selection: PersonalTagSelection(releaseIDs: [album.id])) }
                 trackList
             }
             .padding(24)
@@ -136,6 +135,7 @@ struct AlbumView: View {
                 )
             }
         }
+        .task(id: store.personalTagsRequest) { await store.refreshPersonalTags() }
         .focusedSceneValue(\.pageCommands, albumCommands)
         .accessibilityIdentifier(accessibilityDetailID)
         .task(id: store.metadataRevision) {
@@ -185,9 +185,10 @@ struct AlbumView: View {
                     .accessibilityIdentifier("album.artist")
 
                     if let currentAlbum {
-                        ClassificationSection(target: .release, itemID: currentAlbum.id)
                         localReleaseMetadata(currentAlbum)
                             .padding(.top, 8)
+                        ClassificationSection(target: .release, itemID: currentAlbum.id, presentation: .links)
+                            .padding(.top, 6)
                         if ratingsEnabled {
                             RatingControl(
                                 rating: currentAlbum.ratingHalfSteps,
@@ -200,6 +201,13 @@ struct AlbumView: View {
                             )
                             .padding(.top, 6)
                             .accessibilityIdentifier("album.rating")
+                        }
+                        let tags = store.tags(for: PersonalTagSelection(releaseIDs: [currentAlbum.id]))
+                        if !tags.isEmpty {
+                            PersonalTagChips(tags: tags)
+                                .padding(.top, 6)
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("album.tags")
                         }
                     }
 
@@ -293,7 +301,7 @@ struct AlbumView: View {
         let metadata = releaseMetadataText(album)
 
         Text(metadata)
-            .font(.subheadline)
+            .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .help(metadata)

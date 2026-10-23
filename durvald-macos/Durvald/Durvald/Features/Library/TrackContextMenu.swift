@@ -129,6 +129,7 @@ extension View {
 }
 
 private struct AlbumContextMenuModifier: ViewModifier {
+    @Environment(TrackInfoCoordinator.self) private var trackInfo
     @Environment(\.trackMenuNavigation) private var navigation
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
@@ -137,11 +138,11 @@ private struct AlbumContextMenuModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
         .focusable(interactions: .edit)
-        .focusedValue(\.selectionCommands, album.map { AppCommandTarget.album($0, store: store, creation: playlistCreation, navigation: navigation) })
+        .focusedValue(\.selectionCommands, album.map { AppCommandTarget.album($0, store: store, info: trackInfo, creation: playlistCreation, navigation: navigation) })
         .overlay {
             if let album {
                 NativeLibraryMenu(mode: .context) { controller in
-                    controller.configure(album: album, store: store, playlistCreation: playlistCreation)
+                    controller.configure(album: album, store: store, playlistCreation: playlistCreation, trackInfo: trackInfo)
                 }
                     .accessibilityHidden(true)
             }
@@ -219,6 +220,7 @@ private struct TrackOptionsMenuModifier: ViewModifier {
 }
 
 private struct AlbumOptionsMenuModifier: ViewModifier {
+    @Environment(TrackInfoCoordinator.self) private var trackInfo
     @Environment(DurvaldCoreStore.self) private var store
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     let album: Release?
@@ -227,7 +229,7 @@ private struct AlbumOptionsMenuModifier: ViewModifier {
         content.overlay {
             if let album {
                 NativeLibraryMenu(mode: .options) { controller in
-                    controller.configure(album: album, store: store, playlistCreation: playlistCreation)
+                    controller.configure(album: album, store: store, playlistCreation: playlistCreation, trackInfo: trackInfo)
                 }
                 .accessibilityHidden(true)
             }

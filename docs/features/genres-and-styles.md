@@ -18,8 +18,10 @@ continua separado.
   as que ainda não apareceram na paginação. Iniciar pela posição de uma faixa
   preserva o conjunto completo da origem para repeat/shuffle.
 - As faixas reutilizam a linha de coleção, seus menus e destaque contextual.
-- Links e edição de classificação nos álbuns e na aba Gêneros e estilos da Info
-  de faixa. Artistas mostram um resumo navegável dos lançamentos da biblioteca.
+- O álbum mostra os gêneros e estilos existentes como links, sem títulos de
+  seção, botões de edição ou indicações de valores ausentes. A edição fica na
+  aba **Gêneros** da janela Info. Artistas mostram um resumo navegável dos
+  lançamentos da biblioteca.
 - Voltar/avançar preserva consulta, filtro, aba, páginas carregadas e posição
   de rolagem por entrada do histórico, enquanto os dados permanecem válidos.
 
