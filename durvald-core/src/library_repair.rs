@@ -193,6 +193,7 @@ pub(crate) fn merge(
             params![source_id, target_id],
         )
         .map_err(storage)?;
+        crate::database::classification::restore(&tx, source_id, target_id, true).map_err(storage)?;
         tx.execute(
             "DELETE FROM missing_tracks WHERE missing_id=?1",
             [source_id],
@@ -229,6 +230,7 @@ pub(crate) fn merge(
             params![source_id, target_id],
         )
         .map_err(storage)?;
+        crate::database::classification::restore(&tx, source_id, target_id, false).map_err(storage)?;
         tx.execute("DELETE FROM songs WHERE song_id=?1", [source_id])
             .map_err(storage)?;
     }

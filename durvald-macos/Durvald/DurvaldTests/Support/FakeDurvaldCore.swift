@@ -117,6 +117,8 @@ final class FakeDurvaldCore: DurvaldCore {
 
     override func artistReleases(artistId: Int64) async throws -> [Release] { [] }
 
+    override func classificationTerms() async throws -> [ClassificationTerm] { [] }
+    override func classificationLinks(target: ClassificationTarget, id: Int64) async throws -> [ClassificationLink] { [] }
     override func listenList() async throws -> [ListenListEntry] { [] }
 
     override func userTagLibrary() async throws -> UserTagLibrary {

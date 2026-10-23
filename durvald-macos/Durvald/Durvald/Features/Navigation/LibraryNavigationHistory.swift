@@ -1,5 +1,6 @@
 enum LibraryRoute: Equatable {
     case section(LibraryDestination)
+    case classification(ClassificationKind, Int64)
     case album(Release)
     case externalAlbum(ExternalReleaseGroup, Artist)
     case artist(Artist)
@@ -10,6 +11,7 @@ enum LibraryRoute: Equatable {
         switch self {
         case .section(let destination): destination
         case .album, .externalAlbum: .albums
+        case .classification: .genres
         case .artist: .artists
         case .playlist, .retrospectivePlaylist: .playlists
         }

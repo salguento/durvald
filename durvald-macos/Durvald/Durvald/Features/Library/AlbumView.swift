@@ -185,6 +185,7 @@ struct AlbumView: View {
                     .accessibilityIdentifier("album.artist")
 
                     if let currentAlbum {
+                        ClassificationSection(target: .release, itemID: currentAlbum.id)
                         localReleaseMetadata(currentAlbum)
                             .padding(.top, 8)
                         if ratingsEnabled {
@@ -299,16 +300,11 @@ struct AlbumView: View {
     }
 
     private func releaseMetadataText(_ album: Release) -> String {
-        let genre = album.genres
-            .lazy
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first(where: { !$0.isEmpty }) ?? "Gênero desconhecido"
         let year = releaseYear(album.releaseDate) ?? "Ano desconhecido"
         let trackCount = album.totalTracks > 0 ? Int(album.totalTracks) : tracks.count
         let trackLabel = trackCount == 1 ? "1 faixa" : "\(trackCount) faixas"
 
         return [
-            genre,
             year,
             trackLabel,
             DurationFormatter.text(seconds: album.durationSeconds, context: .albumHeader),

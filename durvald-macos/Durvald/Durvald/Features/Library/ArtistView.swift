@@ -258,6 +258,7 @@ struct ArtistView: View {
                         VStack(alignment: .leading, spacing: 24) {
                             artistHighlights(viewport: viewport)
 
+                            ClassificationSection(target: .artist, itemID: artist.id)
                             discographySections(viewport: viewport)
 
                             if isLoading {

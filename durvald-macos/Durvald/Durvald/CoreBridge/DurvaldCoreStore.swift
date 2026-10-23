@@ -83,6 +83,7 @@ final class DurvaldCoreStore {
     @ObservationIgnored let historyRepository = PlaybackHistoryRepository()
     @ObservationIgnored let homeRepository = HomeLibraryRepository()
     var isLoadingListenList = false
+    var classificationRevision: UInt64 = 0
     var listenListEntries: [ListenListEntry] = []
     var listenListGeneration: UInt64 = 0
     var isChangingListenList = false

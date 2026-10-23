@@ -91,6 +91,9 @@ struct DurvaldApp: App {
                         .environment(coreStore)
                 }
             }
+            .environment(\.trackMenuNavigation, TrackMenuNavigation(classification: { kind, id in
+                trackInfo.classificationNavigation?(kind, id)
+            }))
             .background(MetadataWindowBounds(referenceWindow: trackInfo.referenceWindow))
         }
         .defaultSize(width: 680, height: 780)

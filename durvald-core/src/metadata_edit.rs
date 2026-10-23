@@ -696,6 +696,27 @@ mod tests {
     }
 
     #[test]
+    fn undo_after_rescan_does_not_relabel_a_local_edit_as_file_evidence() {
+        use crate::api::{ClassificationKind, ClassificationTarget};
+        let (conn, dir, file) = fixture();
+        let mut original = draft();
+        original.genre.clear();
+        write_tags(&file, &original).unwrap();
+        let raw = crate::metadata::extract_metadata_blocking(file.to_str().unwrap(), &dir).unwrap();
+        operations::persist_metadata(&conn, vec![raw], vec![2]).unwrap();
+        let mut edit = info(&conn, 1).unwrap().metadata;
+        edit.genre = "Jazz".into();
+        save(&conn, 1, edit, false, &dir.join("backups")).unwrap();
+        let raw = crate::metadata::extract_metadata_blocking(file.to_str().unwrap(), &dir).unwrap();
+        operations::persist_metadata(&conn, vec![raw], vec![3]).unwrap();
+        let links = crate::database::classification::links(&conn, ClassificationTarget::Track, 1).unwrap();
+        assert!(links.iter().any(|l|l.origin == "metadata_edit" && l.term.name == "Jazz"));
+        undo(&conn, 1).unwrap();
+        assert!(crate::database::classification::links(&conn, ClassificationTarget::Track, 1).unwrap().iter().all(|l|l.term.kind != ClassificationKind::Genre));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn database_only_edit_survives_rescan_without_touching_file() {
         let (conn, dir, file) = fixture();
         let original = fs::read(&file).unwrap();

@@ -59,6 +59,16 @@ enum RatingIntegrationFixture {
         if ProcessInfo.processInfo.arguments.contains("--listen-list-external-fixture") {
             _ = try await core.addExternalToListenList(artistId: 1, release: onlineListenRelease())
         }
+        if ProcessInfo.processInfo.arguments.contains("--classification-fixture"), try await core.classificationTerms().isEmpty {
+            try await core.setClassification(target: .release, id: 1, kind: .genre, names: ["Electronic"])
+            try await core.setClassification(target: .release, id: 5, kind: .genre, names: ["Electronic"])
+            try await core.setClassification(target: .release, id: 2, kind: .genre, names: ["Rock"])
+            try await core.setClassification(target: .release, id: 1, kind: .style, names: ["Ambient"])
+            let terms = try await core.classificationTerms()
+            if let style = terms.first(where: { $0.kind == .style }), let genre = terms.first(where: { $0.name == "Electronic" }) {
+                try await core.setStyleGenres(styleId: style.id, genreIds: [genre.id])
+            }
+        }
         let tracks = try await core.tracksPage(pageSize: 100, offset: 0).items
         let releases = try await core.releasesPage(pageSize: 100, offset: 0).items
         let store = DurvaldCoreStore(core: core, tracks: tracks, releases: releases)

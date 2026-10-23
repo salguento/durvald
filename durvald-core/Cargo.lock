@@ -871,6 +871,7 @@ dependencies = [
  "chrono",
  "core-foundation 0.9.4",
  "cpal",
+ "icu_normalizer",
  "image",
  "keyring",
  "kira",

@@ -61,6 +61,7 @@ keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "sy
 
 # Utilities
 sys-info = "0.9"
+icu_normalizer = { version = "2.3.0", default-features = false, features = ["compiled_data"] }
 
 # UniFFI - only compiled when "uniffi" feature is enabled
 uniffi = { version = "0.27", features = ["tokio", "cli"], optional = true }

@@ -637,6 +637,17 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func cancelLibraryScan() throws
 
+    func classificationLinks(target: ClassificationTarget, id: Int64) async throws  -> [ClassificationLink]
+
+    func classificationPage(kind: ClassificationKind, id: Int64, query: String, offset: UInt64, pageSize: UInt64) async throws  -> ClassificationPage
+
+    /**
+     * Classification terms with content in the local library.
+     */
+    func classificationTerms() async throws  -> [ClassificationTerm]
+
+    func classificationTracks(kind: ClassificationKind, id: Int64, query: String) async throws  -> [Track]
+
     func clearArtistIdentity(artistId: Int64) async throws
 
     func clearArtistOverride(artistId: Int64, field: ArtistProfileField, language: String) async throws
@@ -957,6 +968,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     func setArtistOverride(artistId: Int64, value: ArtistFieldOverride) async throws
 
+    /**
+     * Some replaces this field, including an explicit empty exclusion; None restores source metadata.
+     */
+    func setClassification(target: ClassificationTarget, id: Int64, kind: ClassificationKind, names: [String]?) async throws
+
     func setListenListHeard(entryId: Int64, heard: Bool) async throws
 
     /**
@@ -1005,6 +1021,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Enables or disables the lock-free audio analysis tap.
      */
     func setSpectrumEnabled(enabled: Bool) async
+
+    /**
+     * Explicit local vocabulary relation, independent of content co-occurrence.
+     */
+    func setStyleGenres(styleId: Int64, genreIds: [Int64]) async throws
 
     /**
      * Sets whether a track is favorited.
@@ -1496,6 +1517,77 @@ open func cancelLibraryScan()throws  {try rustCallWithError(FfiConverterTypeCore
     uniffi_durvald_core_fn_method_durvaldcore_cancel_library_scan(self.uniffiClonePointer(),$0
     )
 }
+}
+
+open func classificationLinks(target: ClassificationTarget, id: Int64)async throws  -> [ClassificationLink] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_classification_links(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeClassificationTarget.lower(target),FfiConverterInt64.lower(id)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeClassificationLink.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func classificationPage(kind: ClassificationKind, id: Int64, query: String, offset: UInt64, pageSize: UInt64)async throws  -> ClassificationPage {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_classification_page(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeClassificationKind.lower(kind),FfiConverterInt64.lower(id),FfiConverterString.lower(query),FfiConverterUInt64.lower(offset),FfiConverterUInt64.lower(pageSize)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeClassificationPage.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Classification terms with content in the local library.
+     */
+open func classificationTerms()async throws  -> [ClassificationTerm] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_classification_terms(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeClassificationTerm.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func classificationTracks(kind: ClassificationKind, id: Int64, query: String)async throws  -> [Track] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_classification_tracks(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeClassificationKind.lower(kind),FfiConverterInt64.lower(id),FfiConverterString.lower(query)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeTrack.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
 }
 
 open func clearArtistIdentity(artistId: Int64)async throws  {
@@ -2890,6 +2982,26 @@ open func setArtistOverride(artistId: Int64, value: ArtistFieldOverride)async th
         )
 }
 
+    /**
+     * Some replaces this field, including an explicit empty exclusion; None restores source metadata.
+     */
+open func setClassification(target: ClassificationTarget, id: Int64, kind: ClassificationKind, names: [String]?)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_set_classification(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeClassificationTarget.lower(target),FfiConverterInt64.lower(id),FfiConverterTypeClassificationKind.lower(kind),FfiConverterOptionSequenceString.lower(names)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func setListenListHeard(entryId: Int64, heard: Bool)async throws  {
     return
         try  await uniffiRustCallAsync(
@@ -3102,6 +3214,26 @@ open func setSpectrumEnabled(enabled: Bool)async  {
             liftFunc: { $0 },
             errorHandler: nil
 
+        )
+}
+
+    /**
+     * Explicit local vocabulary relation, independent of content co-occurrence.
+     */
+open func setStyleGenres(styleId: Int64, genreIds: [Int64])async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_set_style_genres(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(styleId),FfiConverterSequenceInt64.lower(genreIds)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
         )
 }
 
@@ -5447,6 +5579,289 @@ public func FfiConverterTypeAuthTokenResponse_lift(_ buf: RustBuffer) throws -> 
 
 public func FfiConverterTypeAuthTokenResponse_lower(_ value: AuthTokenResponse) -> RustBuffer {
     return FfiConverterTypeAuthTokenResponse.lower(value)
+}
+
+
+public struct ClassificationLink {
+    public var term: ClassificationTerm
+    public var origin: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(term: ClassificationTerm, origin: String) {
+        self.term = term
+        self.origin = origin
+    }
+}
+
+
+
+extension ClassificationLink: Equatable, Hashable {
+    public static func ==(lhs: ClassificationLink, rhs: ClassificationLink) -> Bool {
+        if lhs.term != rhs.term {
+            return false
+        }
+        if lhs.origin != rhs.origin {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(term)
+        hasher.combine(origin)
+    }
+}
+
+
+public struct FfiConverterTypeClassificationLink: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ClassificationLink {
+        return
+            try ClassificationLink(
+                term: FfiConverterTypeClassificationTerm.read(from: &buf),
+                origin: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ClassificationLink, into buf: inout [UInt8]) {
+        FfiConverterTypeClassificationTerm.write(value.term, into: &buf)
+        FfiConverterString.write(value.origin, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeClassificationLink_lift(_ buf: RustBuffer) throws -> ClassificationLink {
+    return try FfiConverterTypeClassificationLink.lift(buf)
+}
+
+public func FfiConverterTypeClassificationLink_lower(_ value: ClassificationLink) -> RustBuffer {
+    return FfiConverterTypeClassificationLink.lower(value)
+}
+
+
+public struct ClassificationPage {
+    public var term: ClassificationTerm
+    public var relatedTerms: [ClassificationTerm]
+    public var releases: [Release]
+    public var tracks: [Track]
+    public var artists: [Artist]
+    public var totalReleases: UInt64
+    public var totalTracks: UInt64
+    public var totalArtists: UInt64
+    public var wellRated: [Release]
+    public var containsTracksReleaseIds: [Int64]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(term: ClassificationTerm, relatedTerms: [ClassificationTerm], releases: [Release], tracks: [Track], artists: [Artist], totalReleases: UInt64, totalTracks: UInt64, totalArtists: UInt64, wellRated: [Release], containsTracksReleaseIds: [Int64]) {
+        self.term = term
+        self.relatedTerms = relatedTerms
+        self.releases = releases
+        self.tracks = tracks
+        self.artists = artists
+        self.totalReleases = totalReleases
+        self.totalTracks = totalTracks
+        self.totalArtists = totalArtists
+        self.wellRated = wellRated
+        self.containsTracksReleaseIds = containsTracksReleaseIds
+    }
+}
+
+
+
+extension ClassificationPage: Equatable, Hashable {
+    public static func ==(lhs: ClassificationPage, rhs: ClassificationPage) -> Bool {
+        if lhs.term != rhs.term {
+            return false
+        }
+        if lhs.relatedTerms != rhs.relatedTerms {
+            return false
+        }
+        if lhs.releases != rhs.releases {
+            return false
+        }
+        if lhs.tracks != rhs.tracks {
+            return false
+        }
+        if lhs.artists != rhs.artists {
+            return false
+        }
+        if lhs.totalReleases != rhs.totalReleases {
+            return false
+        }
+        if lhs.totalTracks != rhs.totalTracks {
+            return false
+        }
+        if lhs.totalArtists != rhs.totalArtists {
+            return false
+        }
+        if lhs.wellRated != rhs.wellRated {
+            return false
+        }
+        if lhs.containsTracksReleaseIds != rhs.containsTracksReleaseIds {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(term)
+        hasher.combine(relatedTerms)
+        hasher.combine(releases)
+        hasher.combine(tracks)
+        hasher.combine(artists)
+        hasher.combine(totalReleases)
+        hasher.combine(totalTracks)
+        hasher.combine(totalArtists)
+        hasher.combine(wellRated)
+        hasher.combine(containsTracksReleaseIds)
+    }
+}
+
+
+public struct FfiConverterTypeClassificationPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ClassificationPage {
+        return
+            try ClassificationPage(
+                term: FfiConverterTypeClassificationTerm.read(from: &buf),
+                relatedTerms: FfiConverterSequenceTypeClassificationTerm.read(from: &buf),
+                releases: FfiConverterSequenceTypeRelease.read(from: &buf),
+                tracks: FfiConverterSequenceTypeTrack.read(from: &buf),
+                artists: FfiConverterSequenceTypeArtist.read(from: &buf),
+                totalReleases: FfiConverterUInt64.read(from: &buf),
+                totalTracks: FfiConverterUInt64.read(from: &buf),
+                totalArtists: FfiConverterUInt64.read(from: &buf),
+                wellRated: FfiConverterSequenceTypeRelease.read(from: &buf),
+                containsTracksReleaseIds: FfiConverterSequenceInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ClassificationPage, into buf: inout [UInt8]) {
+        FfiConverterTypeClassificationTerm.write(value.term, into: &buf)
+        FfiConverterSequenceTypeClassificationTerm.write(value.relatedTerms, into: &buf)
+        FfiConverterSequenceTypeRelease.write(value.releases, into: &buf)
+        FfiConverterSequenceTypeTrack.write(value.tracks, into: &buf)
+        FfiConverterSequenceTypeArtist.write(value.artists, into: &buf)
+        FfiConverterUInt64.write(value.totalReleases, into: &buf)
+        FfiConverterUInt64.write(value.totalTracks, into: &buf)
+        FfiConverterUInt64.write(value.totalArtists, into: &buf)
+        FfiConverterSequenceTypeRelease.write(value.wellRated, into: &buf)
+        FfiConverterSequenceInt64.write(value.containsTracksReleaseIds, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeClassificationPage_lift(_ buf: RustBuffer) throws -> ClassificationPage {
+    return try FfiConverterTypeClassificationPage.lift(buf)
+}
+
+public func FfiConverterTypeClassificationPage_lower(_ value: ClassificationPage) -> RustBuffer {
+    return FfiConverterTypeClassificationPage.lower(value)
+}
+
+
+public struct ClassificationTerm {
+    public var id: Int64
+    public var kind: ClassificationKind
+    public var name: String
+    public var description: String?
+    public var releaseCount: UInt64
+    public var trackCount: UInt64
+    public var artistCount: UInt64
+    public var artworkId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, kind: ClassificationKind, name: String, description: String?, releaseCount: UInt64, trackCount: UInt64, artistCount: UInt64, artworkId: String?) {
+        self.id = id
+        self.kind = kind
+        self.name = name
+        self.description = description
+        self.releaseCount = releaseCount
+        self.trackCount = trackCount
+        self.artistCount = artistCount
+        self.artworkId = artworkId
+    }
+}
+
+
+
+extension ClassificationTerm: Equatable, Hashable {
+    public static func ==(lhs: ClassificationTerm, rhs: ClassificationTerm) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.description != rhs.description {
+            return false
+        }
+        if lhs.releaseCount != rhs.releaseCount {
+            return false
+        }
+        if lhs.trackCount != rhs.trackCount {
+            return false
+        }
+        if lhs.artistCount != rhs.artistCount {
+            return false
+        }
+        if lhs.artworkId != rhs.artworkId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(kind)
+        hasher.combine(name)
+        hasher.combine(description)
+        hasher.combine(releaseCount)
+        hasher.combine(trackCount)
+        hasher.combine(artistCount)
+        hasher.combine(artworkId)
+    }
+}
+
+
+public struct FfiConverterTypeClassificationTerm: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ClassificationTerm {
+        return
+            try ClassificationTerm(
+                id: FfiConverterInt64.read(from: &buf),
+                kind: FfiConverterTypeClassificationKind.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                description: FfiConverterOptionString.read(from: &buf),
+                releaseCount: FfiConverterUInt64.read(from: &buf),
+                trackCount: FfiConverterUInt64.read(from: &buf),
+                artistCount: FfiConverterUInt64.read(from: &buf),
+                artworkId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ClassificationTerm, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterTypeClassificationKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterUInt64.write(value.releaseCount, into: &buf)
+        FfiConverterUInt64.write(value.trackCount, into: &buf)
+        FfiConverterUInt64.write(value.artistCount, into: &buf)
+        FfiConverterOptionString.write(value.artworkId, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeClassificationTerm_lift(_ buf: RustBuffer) throws -> ClassificationTerm {
+    return try FfiConverterTypeClassificationTerm.lift(buf)
+}
+
+public func FfiConverterTypeClassificationTerm_lower(_ value: ClassificationTerm) -> RustBuffer {
+    return FfiConverterTypeClassificationTerm.lower(value)
 }
 
 
@@ -10347,6 +10762,126 @@ extension ArtistRefreshStatus: Equatable, Hashable {}
 
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Genres and styles have separate identities and never imply one another.
+ */
+
+public enum ClassificationKind {
+
+    case genre
+    case style
+}
+
+
+public struct FfiConverterTypeClassificationKind: FfiConverterRustBuffer {
+    typealias SwiftType = ClassificationKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ClassificationKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .genre
+
+        case 2: return .style
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ClassificationKind, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .genre:
+            writeInt(&buf, Int32(1))
+
+
+        case .style:
+            writeInt(&buf, Int32(2))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeClassificationKind_lift(_ buf: RustBuffer) throws -> ClassificationKind {
+    return try FfiConverterTypeClassificationKind.lift(buf)
+}
+
+public func FfiConverterTypeClassificationKind_lower(_ value: ClassificationKind) -> RustBuffer {
+    return FfiConverterTypeClassificationKind.lower(value)
+}
+
+
+
+extension ClassificationKind: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum ClassificationTarget {
+
+    case release
+    case track
+    case artist
+}
+
+
+public struct FfiConverterTypeClassificationTarget: FfiConverterRustBuffer {
+    typealias SwiftType = ClassificationTarget
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ClassificationTarget {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .release
+
+        case 2: return .track
+
+        case 3: return .artist
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ClassificationTarget, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .release:
+            writeInt(&buf, Int32(1))
+
+
+        case .track:
+            writeInt(&buf, Int32(2))
+
+
+        case .artist:
+            writeInt(&buf, Int32(3))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeClassificationTarget_lift(_ buf: RustBuffer) throws -> ClassificationTarget {
+    return try FfiConverterTypeClassificationTarget.lift(buf)
+}
+
+public func FfiConverterTypeClassificationTarget_lower(_ value: ClassificationTarget) -> RustBuffer {
+    return FfiConverterTypeClassificationTarget.lower(value)
+}
+
+
+
+extension ClassificationTarget: Equatable, Hashable {}
+
+
+
 
 /**
  * Stable error type for the public API.
@@ -11464,6 +11999,27 @@ fileprivate struct FfiConverterOptionTypeRatingRounding: FfiConverterRustBuffer 
     }
 }
 
+fileprivate struct FfiConverterOptionSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterSequenceString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterSequenceString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterSequenceInt64: FfiConverterRustBuffer {
     typealias SwiftType = [Int64]
 
@@ -11679,6 +12235,50 @@ fileprivate struct FfiConverterSequenceTypeAudioOutputDevice: FfiConverterRustBu
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeAudioOutputDevice.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeClassificationLink: FfiConverterRustBuffer {
+    typealias SwiftType = [ClassificationLink]
+
+    public static func write(_ value: [ClassificationLink], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeClassificationLink.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ClassificationLink] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ClassificationLink]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeClassificationLink.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeClassificationTerm: FfiConverterRustBuffer {
+    typealias SwiftType = [ClassificationTerm]
+
+    public static func write(_ value: [ClassificationTerm], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeClassificationTerm.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ClassificationTerm] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ClassificationTerm]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeClassificationTerm.read(from: &buf))
         }
         return seq
     }
@@ -12193,6 +12793,18 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_library_scan() != 54997) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_classification_links() != 16104) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_classification_page() != 54166) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_classification_terms() != 27493) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_classification_tracks() != 51157) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_clear_artist_identity() != 48083) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12409,6 +13021,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_artist_override() != 53712) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_classification() != 50398) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_listen_list_heard() != 31845) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12440,6 +13055,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_spectrum_enabled() != 41184) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_style_genres() != 24632) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_track_favorite() != 16132) {

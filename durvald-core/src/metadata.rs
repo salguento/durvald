@@ -127,6 +127,10 @@ pub struct AudioMetadata {
     pub album_artist: Option<String>,
     pub release: Option<String>,
     pub genre: Option<String>,
+    #[serde(default)]
+    pub genres: Vec<String>,
+    #[serde(default)]
+    pub styles: Vec<String>,
     pub year: Option<u32>,
     pub track: Option<u32>,
     pub disc: Option<u32>,
@@ -275,6 +279,8 @@ pub fn extract_metadata_blocking_with_cancel(
         album_artist: None,
         release: None,
         genre: None,
+        genres: Vec::new(),
+        styles: Vec::new(),
         year: None,
         track: None,
         disc: None,
@@ -310,6 +316,22 @@ pub fn extract_metadata_blocking_with_cancel(
             .map(|artist| artist.to_string());
         metadata.release = tag.album().map(|s| s.to_string());
         metadata.genre = tag.genre().map(|s| s.to_string());
+        metadata.genres = tag
+            .get_strings(&ItemKey::Genre)
+            .map(str::to_owned)
+            .collect();
+        metadata.styles = tag
+            .items()
+            .filter_map(|item| match item.key() {
+                ItemKey::Unknown(name)
+                    if name.eq_ignore_ascii_case("STYLE")
+                        || name.eq_ignore_ascii_case("STYLES") =>
+                {
+                    item.value().text().map(str::to_owned)
+                }
+                _ => None,
+            })
+            .collect();
         metadata.year = tag.year();
         metadata.track = tag.track();
         metadata.disc = tag.disk();

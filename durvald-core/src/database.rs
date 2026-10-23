@@ -42,5 +42,6 @@ pub(crate) fn sqlite_busy_extended_code(error: &crate::api::CoreError) -> Option
 pub(crate) mod ratings;
 
 pub(crate) mod user_tags;
+pub(crate) mod classification;
 
 pub(crate) mod listen_list;

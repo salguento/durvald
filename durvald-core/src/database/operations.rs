@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
 
-const CURRENT_METADATA_VERSION: i64 = 8;
+// Version 9 retains individual genre values and explicit STYLE/STYLES file evidence.
+const CURRENT_METADATA_VERSION: i64 = 9;
 static SCAN_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
 const SCAN_DISCOVERY_BATCH_SIZE: usize = 512;
 
@@ -665,6 +666,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
     ensure_indexes(conn)?;
     ensure_search_indexes(conn)?;
     crate::metadata_edit::create_tables(conn)?;
+    super::classification::migrate(conn)?;
 
     Ok(())
 }
@@ -3130,6 +3132,8 @@ pub(crate) fn persist_metadata_with_existing_ids(
     let metadata: Vec<AudioMetadata> = metadata
         .into_iter()
         .map(|mut item| {
+            // Capture legacy single-value evidence before applying a database-only edit.
+            if item.genres.is_empty() { item.genres = item.genre.clone().into_iter().collect(); }
             crate::metadata_edit::apply_override(conn, &mut item)?;
             Ok(normalize_metadata(item))
         })
@@ -3150,6 +3154,8 @@ pub(crate) fn persist_metadata_with_existing_ids(
     let mut touched_release_ids = BTreeSet::new();
     for (i, md) in metadata.into_iter().enumerate() {
         let cached_metadata = crate::metadata_edit::from_extracted(&md);
+        let file_genres = md.genres.clone();
+        let file_styles = md.styles.clone();
         let existing_song_id = existing_song_ids[i];
         if let Some(song_id) = existing_song_id {
             if let Some(release_id) = transaction
@@ -3172,6 +3178,7 @@ pub(crate) fn persist_metadata_with_existing_ids(
         }
         touched_release_ids.insert(new_release_id);
         crate::metadata_edit::cache_scanned(&transaction, &file_path, &cached_metadata)?;
+        super::classification::cache_file(&transaction, &file_path, &file_genres, &file_styles)?;
     }
 
     for release in &all_releases {
@@ -3250,6 +3257,7 @@ pub(crate) fn remove_missing_songs_in_folder(
          JOIN songs s ON s.song_id=h.song_id AND s.file_path=m.file_path",
         [],
     )?;
+    super::classification::archive(&transaction)?;
     let affected_release_ids = transaction
         .prepare(
             "SELECT DISTINCT release_id FROM songs
@@ -3290,7 +3298,9 @@ pub(crate) fn remove_missing_songs_in_folder(
     transaction.execute(
         "DELETE FROM releases WHERE NOT EXISTS (SELECT 1 FROM songs WHERE songs.release_id = releases.release_id)
          AND NOT EXISTS (SELECT 1 FROM release_user_tags t WHERE t.release_id = releases.release_id)
-         AND NOT EXISTS (SELECT 1 FROM listen_list_entries l WHERE l.release_id = releases.release_id)",
+         AND NOT EXISTS (SELECT 1 FROM listen_list_entries l WHERE l.release_id = releases.release_id)
+         AND NOT EXISTS (SELECT 1 FROM release_genre_decisions d WHERE d.release_id = releases.release_id)
+         AND NOT EXISTS (SELECT 1 FROM release_style_decisions d WHERE d.release_id = releases.release_id)",
         [],
     )?;
     // Artist rows are durable catalog entities. A library scan only reconciles
@@ -3449,6 +3459,8 @@ mod tests {
             album_artist: Some(artist.to_string()),
             release: Some(release.to_string()),
             genre: None,
+            genres: Vec::new(),
+            styles: Vec::new(),
             year: Some(year),
             track: Some(1),
             disc: Some(1),

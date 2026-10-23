@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 final class TrackInfoCoordinator {
     var trackIDs: [Int64] = []
     var navigationTrackIDs: [Int64] = []
+    @ObservationIgnored var classificationNavigation: ((ClassificationKind, Int64) -> Void)?
     @ObservationIgnored var presentWindow: (() -> Void)?
     @ObservationIgnored weak var referenceWindow: NSWindow?
 
@@ -101,6 +102,7 @@ struct TrackInfoSheet: View {
 
     private enum Tab: String, CaseIterable {
         case details = "Detalhes", artwork = "Capa", lyrics = "Letras", options = "Opções", file = "Arquivo"
+        case classification = "Gêneros e estilos"
         case personalTags = "Tags pessoais"
     }
     @State private var selectedTab: Tab = .details
@@ -271,6 +273,8 @@ struct TrackInfoSheet: View {
     @ViewBuilder
     private func tabContent(_ info: TrackInfo, availableHeight: CGFloat) -> some View {
         switch selectedTab {
+        case .classification:
+            ClassificationSection(target: .track, itemID: trackID)
         case .personalTags:
             PersonalTagSection(selection: PersonalTagSelection(trackIDs: [trackID]))
         case .details:

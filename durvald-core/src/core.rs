@@ -541,6 +541,72 @@ impl DurvaldCore {
             .await
     }
 
+    /// Classification terms with content in the local library.
+    pub async fn classification_terms(&self) -> CoreResult<Vec<ClassificationTerm>> {
+        self.library_application
+            .personal_library_operation(crate::database::classification::terms)
+            .await
+    }
+    pub async fn classification_links(
+        &self,
+        target: ClassificationTarget,
+        id: i64,
+    ) -> CoreResult<Vec<ClassificationLink>> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::classification::links(c, target, id)
+            })
+            .await
+    }
+    pub async fn classification_page(
+        &self,
+        kind: ClassificationKind,
+        id: i64,
+        query: String,
+        offset: u64,
+        page_size: u64,
+    ) -> CoreResult<ClassificationPage> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::classification::page(c, kind, id, query, offset, page_size)
+            })
+            .await
+    }
+    pub async fn classification_tracks(
+        &self,
+        kind: ClassificationKind,
+        id: i64,
+        query: String,
+    ) -> CoreResult<Vec<Track>> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::classification::tracks(c, kind, id, query)
+            })
+            .await
+    }
+    /// Some replaces this field, including an explicit empty exclusion; None restores source metadata.
+    pub async fn set_classification(
+        &self,
+        target: ClassificationTarget,
+        id: i64,
+        kind: ClassificationKind,
+        names: Option<Vec<String>>,
+    ) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::classification::set(c, target, id, kind, names)
+            })
+            .await
+    }
+    /// Explicit local vocabulary relation, independent of content co-occurrence.
+    pub async fn set_style_genres(&self, style_id: i64, genre_ids: Vec<i64>) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::classification::set_relations(c, style_id, genre_ids)
+            })
+            .await
+    }
+
     /// Saved releases to listen to, including metadata-only external references.
     pub async fn listen_list(&self) -> CoreResult<Vec<ListenListEntry>> {
         self.library_application

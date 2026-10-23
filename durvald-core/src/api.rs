@@ -598,3 +598,50 @@ pub struct ListenListEntry {
     pub external_release: Option<ExternalReleaseGroup>,
     pub external_artist: Option<Artist>,
 }
+
+/// Genres and styles have separate identities and never imply one another.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ClassificationKind {
+    Genre,
+    Style,
+}
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ClassificationTarget {
+    Release,
+    Track,
+    Artist,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ClassificationTerm {
+    pub id: i64,
+    pub kind: ClassificationKind,
+    pub name: String,
+    pub description: Option<String>,
+    pub release_count: u64,
+    pub track_count: u64,
+    pub artist_count: u64,
+    pub artwork_id: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ClassificationLink {
+    pub term: ClassificationTerm,
+    pub origin: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ClassificationPage {
+    pub term: ClassificationTerm,
+    pub related_terms: Vec<ClassificationTerm>,
+    pub releases: Vec<Release>,
+    pub tracks: Vec<Track>,
+    pub artists: Vec<Artist>,
+    pub total_releases: u64,
+    pub total_tracks: u64,
+    pub total_artists: u64,
+    pub well_rated: Vec<Release>,
+    pub contains_tracks_release_ids: Vec<i64>,
+}

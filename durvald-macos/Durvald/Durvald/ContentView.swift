@@ -32,6 +32,7 @@ struct ContentView: View {
     @State private var playlistsSearchText = ""
     @State private var playlistsSummary = "Carregando…"
     @State private var playlistsToolbarState = PlaylistsToolbarState()
+    @State private var classificationStates: [Int: ClassificationBrowserState] = [:]
     @State private var listenListSearchText = ""
     @State private var albumSearchText = ""
     @State private var albumsSummary = "Carregando…"
@@ -159,6 +160,10 @@ struct ContentView: View {
         .environment(playlistCreation)
         .environment(\.trackMenuNavigation, trackMenuNavigation)
         .onAppear {
+            trackInfo.classificationNavigation = { kind, id in
+                shell.navigationHistory.navigate(to: .classification(kind, id))
+                trackInfo.referenceWindow?.makeKeyAndOrderFront(nil)
+            }
             trackInfo.presentWindow = {
                 openWindow(id: "track-info")
             }
@@ -264,6 +269,7 @@ struct ContentView: View {
             }
         }
             .onChange(of: shell.navigationHistory.currentEntryID, initial: true) { _, entryID in
+                if classificationStates[entryID] == nil { classificationStates[entryID] = ClassificationBrowserState() }
                 if shell.navigationHistory.current == .songs { musicEntryID = entryID }
                 isContentScrolled = PageChromePolicy.isScrolled(offset: pageScrollOffsets.offset(for: entryID))
             }
@@ -361,7 +367,7 @@ struct ContentView: View {
                 if case .playlist(let playlist) = shell.navigationHistory.currentRoute, playlist.id == id {
                     shell.navigationHistory.navigate(to: .playlists)
                 }
-            }, externalAlbum: { showExternalAlbum($0, artist: $1) })
+            }, classification: { shell.navigationHistory.navigate(to: .classification($0, $1)) }, externalAlbum: { showExternalAlbum($0, artist: $1) })
     }
 
     private var isAlbumDetail: Bool {
@@ -394,6 +400,7 @@ struct ContentView: View {
         case .search:
             SummaryPresentation.search(results: globalSearch.value, query: shell.submittedSearchText,
                 isPending: globalSearch.isPending || globalSearch.committedQuery != shell.submittedSearchText)
+        case .genres: "Explore sua biblioteca"
         case .listenList: "\(store.pendingListenListCount) para ouvir"
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
@@ -909,8 +916,17 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private func classificationBrowser(kind: ClassificationKind?, id: Int64?) -> some View {
+        if let state = classificationStates[shell.navigationHistory.currentEntryID] {
+            ClassificationBrowser(kind: kind, termID: id, state: state)
+        }
+    }
+
+    @ViewBuilder
     private var detail: some View {
         switch shell.navigationHistory.currentRoute {
+        case .classification(let kind, let id):
+            classificationBrowser(kind: kind, id: id)
         case .album(let album):
             AlbumView(album: album, toolbarState: albumToolbarState, onSelectArtist: showArtist)
                 .id(album.id)
@@ -952,6 +968,8 @@ struct ContentView: View {
         case .search:
             LibrarySearchView(searchText: $shell.submittedSearchText, search: globalSearch,
                               submissionRevision: shell.searchSubmissionRevision)
+        case .genres:
+            classificationBrowser(kind: nil, id: nil)
         case .listenList:
             ListenListView(searchText: $listenListSearchText)
         case .home:

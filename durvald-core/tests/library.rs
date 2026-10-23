@@ -1031,3 +1031,49 @@ async fn listen_list_survives_rescan_restart_and_missing_local_files() -> Result
     assert!(test_core.core().listen_list().await?.is_empty());
     Ok(())
 }
+
+#[tokio::test]
+async fn classification_decisions_survive_rescan_restart_and_explicit_missing_repair() -> Result<(), Box<dyn Error + Send + Sync>> {
+    use durvald_core::{ClassificationKind as K, ClassificationTarget as T};
+    let test_core=TestCore::open().await?;
+    let original=test_core.files().write_silent_wav("Artist/Album/01 - Classified.wav")?;
+    test_core.files().write_silent_wav("Other/Other/01 - Keep.wav")?;
+    let original=std::fs::canonicalize(original)?;
+    let path=test_core.files().library_dir().to_string_lossy().into_owned();
+    test_core.core().scan_library(vec![path.clone()]).await?;
+    let track=test_core.core().tracks_page(10,0).await?.items.into_iter().find(|t|t.file_path==original.to_string_lossy()).unwrap();
+    test_core.core().set_classification(T::Release,track.release_id,K::Genre,Some(vec!["Electronic".into()])).await?;
+    test_core.core().set_classification(T::Track,track.id,K::Style,Some(vec!["Ambient".into()])).await?;
+    test_core.core().scan_library(vec![path.clone()]).await?;
+    let before=test_core.core().classification_links(T::Track,track.id).await?;
+    assert_eq!(before.len(),2);
+    std::fs::remove_file(&original)?;
+    test_core.core().scan_library(vec![path.clone()]).await?;
+    let test_core=test_core.restart().await?;
+    assert_eq!(test_core.core().classification_links(T::Release,track.release_id).await?.len(),1);
+    let missing=test_core.core().analyze_library_repairs().await?.broken_files.into_iter().find(|t|t.is_missing && t.file_path==track.file_path).unwrap();
+    test_core.files().write_silent_wav("Artist/Album/01 - Classified.wav")?;
+    test_core.core().scan_library(vec![path]).await?;
+    let target=test_core.core().tracks_page(10,0).await?.items.into_iter().find(|t|t.file_path==track.file_path).unwrap();
+    test_core.core().merge_library_records(missing.id,target.id,true).await?;
+    let after=test_core.core().classification_links(T::Track,target.id).await?;
+    assert_eq!(before.iter().map(|l|(&l.term.name,&l.origin)).collect::<Vec<_>>(),after.iter().map(|l|(&l.term.name,&l.origin)).collect::<Vec<_>>());
+    assert_eq!(target.release_id,track.release_id);
+    Ok(())
+}
+
+#[tokio::test]
+async fn classification_backfills_unchanged_legacy_files_once() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let test_core=TestCore::open().await?;
+    test_core.files().write_silent_wav("Artist/Album/legacy.wav")?;
+    let path=test_core.files().library_dir().to_string_lossy().into_owned();
+    test_core.core().scan_library(vec![path.clone()]).await?;
+    let conn=rusqlite::Connection::open(test_core.files().core_config().database_path)?;
+    conn.execute("UPDATE songs SET metadata_version=8",[])?;
+    conn.execute("DELETE FROM track_file_classification",[])?;
+    let result=test_core.core().scan_library(vec![path.clone()]).await?;
+    assert_eq!(result.updated_tracks,1);
+    assert_eq!(conn.query_row("SELECT COUNT(*) FROM track_file_classification",[],|r|r.get::<_,i64>(0))?,1);
+    assert_eq!(test_core.core().scan_library(vec![path]).await?.updated_tracks,0);
+    Ok(())
+}

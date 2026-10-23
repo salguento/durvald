@@ -162,6 +162,8 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
         return data
     }
 
+    override func classificationTerms() async throws -> [ClassificationTerm] { [] }
+    override func classificationLinks(target: ClassificationTarget, id: Int64) async throws -> [ClassificationLink] { [] }
     override func listenList() async throws -> [ListenListEntry] { [] }
 
     override func userTagLibrary() async throws -> UserTagLibrary {

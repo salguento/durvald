@@ -2,6 +2,7 @@ import SwiftUI
 
 enum LibraryDestination: String, CaseIterable, Identifiable {
     case home
+    case genres
     case listenList
     case songs
     case albums
@@ -14,6 +15,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
 
     static let navigationItems: [LibraryDestination] = [
         .listenList,
+        .genres,
         .songs,
         .albums,
         .artists,
@@ -23,6 +25,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .genres: "Gêneros e estilos"
         case .home: "Início"
         case .listenList: "Para ouvir"
         case .songs: "Músicas"
@@ -36,6 +39,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .genres: "square.grid.2x2"
         case .home: "house"
         case .listenList: "bookmark"
         case .songs: "music.note"
