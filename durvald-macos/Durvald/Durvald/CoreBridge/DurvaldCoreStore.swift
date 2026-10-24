@@ -555,7 +555,7 @@ final class DurvaldCoreStore {
         let task = Task { @MainActor () -> Playlist? in
             do {
                 let saved = try await core.saveReplay(request: draft.request, name: draft.title,
-                    description: "As músicas da sua retrospectiva, equilibrando reproduções e tempo ouvido.",
+                    description: "",
                     mode: live ? .live : .snapshot, closeAutomatically: closeAutomatically, artworkBase64: artworkBase64)
                 if let index = playlists.firstIndex(where: { $0.id == saved.id }) { playlists[index] = saved }
                 else { playlists.append(saved) }

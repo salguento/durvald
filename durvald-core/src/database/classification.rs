@@ -172,7 +172,8 @@ fn insert(
     }
     Ok(())
 }
-fn refresh(c: &Connection) -> CoreResult<()> {
+/// Refresh the projection inside the caller's existing transaction.
+pub(crate) fn refresh(c: &Connection) -> CoreResult<()> {
     let dirty: bool = c
         .query_row(
             "SELECT dirty FROM classification_state WHERE id=1",

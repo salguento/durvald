@@ -4,6 +4,7 @@ pub mod enrichment;
 pub mod migrations;
 pub mod models;
 pub mod operations;
+pub(crate) mod replay_description;
 pub(crate) mod retrospective_playlists;
 
 pub mod identity;
@@ -41,7 +42,7 @@ pub(crate) fn sqlite_busy_extended_code(error: &crate::api::CoreError) -> Option
 
 pub(crate) mod ratings;
 
-pub(crate) mod user_tags;
 pub(crate) mod classification;
+pub(crate) mod user_tags;
 
 pub(crate) mod listen_list;

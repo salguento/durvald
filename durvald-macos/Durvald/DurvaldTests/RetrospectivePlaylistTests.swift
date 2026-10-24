@@ -62,10 +62,11 @@ final class RetrospectivePlaylistTests: XCTestCase {
         let store = DurvaldCoreStore(core: core)
         let saved = saved()
         var calls = 0
-        core.saveReplayHandler = { request, name, _, mode, close, artwork in
+        core.saveReplayHandler = { request, name, description, mode, close, artwork in
             calls += 1
             XCTAssertEqual(request, self.draft.request)
             XCTAssertEqual(name, self.draft.title)
+            XCTAssertEqual(description, "", "An empty description delegates musical summary generation to the core")
             XCTAssertEqual(mode, .live, "The core decides whether a closed period must become a snapshot")
             XCTAssertFalse(close)
             XCTAssertEqual(artwork, "cover")
@@ -93,6 +94,29 @@ final class RetrospectivePlaylistTests: XCTestCase {
         core.saveReplayHandler = { _, _, _, _, _, _ in saved }
         let retried = await store.saveRetrospectivePlaylist(draft, live: false, closeAutomatically: true)
         XCTAssertEqual(retried, saved)
+    }
+
+    func testSavingUsesMusicalDescriptionFromRealCore() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ReplayDescription-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let core = try await RatingIntegrationFixture.openCore(directory: directory)
+        for id in Int64(1)...7 {
+            try await core.setClassification(target: .track, id: id, kind: .genre, names: ["Jazz"])
+        }
+        let now = Date()
+        let playedAt = ISO8601DateFormatter().string(from: now.addingTimeInterval(-30))
+        try RatingIntegrationFixture.withDatabase(RatingIntegrationFixture.config(directory: directory).databasePath) { database in
+            try RatingIntegrationFixture.execute("INSERT INTO play_history(song_id,played_at,play_duration) SELECT song_id,'\(playedAt)',180 FROM songs;", database: database)
+        }
+        let draft = RetrospectivePlaylistDraft(period: .daily,
+            interval: DateInterval(start: now.addingTimeInterval(-120), end: now.addingTimeInterval(120)))
+        let store = DurvaldCoreStore(core: core)
+        let result = await store.saveRetrospectivePlaylist(draft, live: true, closeAutomatically: true)
+        let saved = try XCTUnwrap(result)
+        XCTAssertEqual(saved.description, "Seu dia ao som de Jazz.")
+        XCTAssertEqual(store.playlists.first?.description, saved.description)
+        XCTAssertEqual(saved.trackCount, 7)
     }
 
     func testLifecycleChangesUseDedicatedCoreAPI() async {

@@ -348,6 +348,22 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
             UNIQUE(period, start_at, end_at)
         );
         CREATE TABLE IF NOT EXISTS retrospective_playlist_migrations (version INTEGER PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS replay_descriptions (
+            playlist_id INTEGER PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE,
+            generated_text TEXT NOT NULL,
+            selection TEXT NOT NULL,
+            managed INTEGER NOT NULL DEFAULT 1
+        );
+        CREATE TRIGGER IF NOT EXISTS detach_edited_replay_description
+        AFTER UPDATE OF description ON playlists
+        WHEN OLD.description IS NOT NEW.description BEGIN
+            UPDATE replay_descriptions SET managed=0 WHERE playlist_id=NEW.id
+                AND generated_text IS NOT NEW.description;
+        END;
+        CREATE TRIGGER IF NOT EXISTS delete_replay_description
+        AFTER DELETE ON playlists BEGIN
+            DELETE FROM replay_descriptions WHERE playlist_id=OLD.id;
+        END;
         CREATE TRIGGER IF NOT EXISTS delete_retrospective_playlist_origin
         AFTER DELETE ON playlists BEGIN
             DELETE FROM retrospective_playlist_origins WHERE playlist_id=OLD.id;
@@ -1906,7 +1922,21 @@ pub fn create_smart_playlist(
         .as_ref()
         .and_then(|config| config.artwork_base64.clone())
         .unwrap_or_default();
-    let playlist = create_playlist(&tx, name, artwork, description)?;
+    let managed_description = retrospective.is_some() && description.is_empty();
+    let mut playlist = create_playlist(&tx, name, artwork, description)?;
+    if let Some(config) = &retrospective {
+        if managed_description {
+            super::replay_description::initialize(
+                &tx,
+                playlist.id,
+                &config.period,
+                retrospective_tracks.as_ref().unwrap(),
+            )?;
+            playlist = get_playlist_by_id(&tx, playlist.id)?;
+        } else {
+            super::replay_description::unmanage(&tx, playlist.id)?;
+        }
+    }
     // The cover belongs to the playlist blob, not its repeatedly evaluated rule.
     let mut persisted = definition.clone();
     if let Some(config) = &retrospective {
@@ -1950,14 +1980,12 @@ pub fn update_smart_playlist(
         if let Some(config) =
             super::retrospective_playlists::config(definition).map_err(DatabaseError::Custom)?
         {
+            let tracks =
+                super::retrospective_playlists::tracks(&tx, definition, Utc::now().timestamp())?;
+            super::replay_description::refresh(&tx, playlist_id, &config.period, &tracks, true)?;
             if config.mode == "snapshot"
                 || (config.close_automatically && config.end_at <= Utc::now().timestamp())
             {
-                let tracks = super::retrospective_playlists::tracks(
-                    &tx,
-                    definition,
-                    Utc::now().timestamp(),
-                )?;
                 super::retrospective_playlists::materialize(&tx, playlist_id, &tracks)?;
             }
         }
@@ -3133,7 +3161,9 @@ pub(crate) fn persist_metadata_with_existing_ids(
         .into_iter()
         .map(|mut item| {
             // Capture legacy single-value evidence before applying a database-only edit.
-            if item.genres.is_empty() { item.genres = item.genre.clone().into_iter().collect(); }
+            if item.genres.is_empty() {
+                item.genres = item.genre.clone().into_iter().collect();
+            }
             crate::metadata_edit::apply_override(conn, &mut item)?;
             Ok(normalize_metadata(item))
         })

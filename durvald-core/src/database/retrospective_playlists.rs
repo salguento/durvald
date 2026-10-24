@@ -420,10 +420,25 @@ pub(crate) fn finalize(conn: &Connection, now: i64) -> DatabaseResult<()> {
             continue;
         };
         let value = config(&definition).map_err(DatabaseError::Custom)?.unwrap();
+        let tracks = tracks(&tx, &definition, now)?;
+        super::replay_description::refresh(&tx, id, &value.period, &tracks, value.mode == "live")?;
         if value.mode == "live" && value.close_automatically && now >= value.end_at {
-            let tracks = tracks(&tx, &definition, now)?;
             materialize(&tx, id, &tracks)?;
         }
+    }
+    let legacy = {
+        let mut statement = tx.prepare("SELECT o.playlist_id,o.period FROM retrospective_playlist_origins o
+            WHERE NOT EXISTS(SELECT 1 FROM replay_descriptions d WHERE d.playlist_id=o.playlist_id)
+              AND NOT EXISTS(SELECT 1 FROM smart_playlist_definitions s WHERE s.playlist_id=o.playlist_id)")?;
+        statement
+            .query_map([], |row| {
+                Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, period) in legacy {
+        let tracks = operations::get_playlist_tracks(&tx, id)?;
+        super::replay_description::refresh(&tx, id, &period, &tracks, false)?;
     }
     tx.commit()?;
     Ok(())
