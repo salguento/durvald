@@ -270,6 +270,7 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
         case .showInfo: return #selector(showInfo)
         case .personalTags: return #selector(editPersonalTags)
         case .listenList: return #selector(saveToListenList)
+        case .albumCollection: return #selector(addToAlbumCollection)
         case .copyName: return #selector(copyName)
         case .additional: return #selector(performAdditionalAction(_:))
         }
@@ -412,6 +413,10 @@ final class TrackMenuController: NSObject, NSMenuDelegate, NSSearchFieldDelegate
     @objc private func saveToListenList() {
         guard let store, let album else { return }
         Task { await store.saveToListenList(releaseID: album.id) }
+    }
+    @objc private func addToAlbumCollection() {
+        guard let album else { return }
+        store?.albumCollectionAddRequest = AlbumCollectionAddRequest(release: album)
     }
 
     @objc private func editPersonalTags() {

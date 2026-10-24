@@ -8,6 +8,43 @@ use serde::{Deserialize, Serialize};
 mod enrichment;
 pub use enrichment::*;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AlbumCollectionDefinition {
+    pub match_all: bool,
+    pub rules: Vec<SmartPlaylistRule>,
+    pub sort_by: String,
+    pub descending: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AlbumCollection {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+    pub definition: Option<AlbumCollectionDefinition>,
+    pub album_count: u64,
+    pub artwork_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AlbumCollectionItem {
+    pub id: i64,
+    pub title: String,
+    pub artist: String,
+    pub artwork_id: Option<String>,
+    pub release: Option<Release>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AlbumCollectionPage {
+    pub collection: AlbumCollection,
+    pub items: Vec<AlbumCollectionItem>,
+}
+
 /// Configuration for initializing the core engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

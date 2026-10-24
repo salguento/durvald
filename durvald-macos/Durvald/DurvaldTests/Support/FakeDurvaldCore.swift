@@ -2,6 +2,8 @@ import Foundation
 @testable import Durvald
 
 final class FakeDurvaldCore: DurvaldCore {
+    var albumCollectionTrackResults: [Track] = []
+    override func albumCollectionTracks(collectionId: Int64) async throws -> [Track] { albumCollectionTrackResults }
     var collectionRequests: [(trackIDs: [Int64], contexts: [String], start: UInt64?, shuffle: Bool?)] = []
     var contextualPlayRequests: [String] = []
     var contextualQueueRequests: [String] = []

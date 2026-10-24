@@ -557,6 +557,8 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
  */
 public protocol DurvaldCoreProtocol : AnyObject {
 
+    func addAlbumToCollection(collectionId: Int64, releaseId: Int64) async throws
+
     func addExternalToListenList(artistId: Int64, release: ExternalReleaseGroup) async throws  -> ListenListEntry
 
     /**
@@ -580,6 +582,15 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Adds a track at a playlist position.
      */
     func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64) async throws  -> PlaylistTrack
+
+    func albumCollection(collectionId: Int64) async throws  -> AlbumCollectionPage
+
+    func albumCollectionTracks(collectionId: Int64) async throws  -> [Track]
+
+    /**
+     * Classification terms with content in the local library.
+     */
+    func albumCollections() async throws  -> [AlbumCollection]
 
     func analyzeLibraryRepairs() async throws  -> LibraryRepairAnalysis
 
@@ -696,6 +707,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func createSmartPlaylist(name: String, description: String, definition: SmartPlaylistDefinition) async throws  -> Playlist
 
     func createUserTag(name: String) async throws  -> UserTag
+
+    func deleteAlbumCollection(collectionId: Int64) async throws
 
     /**
      * Deletes a playlist and its track entries.
@@ -888,6 +901,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func releasesPage(pageSize: UInt64, offset: UInt64) async throws  -> ReleasePage
 
+    func removeAlbumFromCollection(collectionId: Int64, itemId: Int64) async throws
+
     func removeFromListenList(entryId: Int64) async throws
 
     /**
@@ -912,6 +927,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     func renameUserTag(tagId: Int64, name: String) async throws  -> UserTag
 
+    func reorderAlbumCollection(collectionId: Int64, itemIds: [Int64]) async throws
+
     /**
      * Read-only Replay availability, ordered preview and saved identity.
      */
@@ -923,6 +940,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Resumes playback.
      */
     func resume() async throws
+
+    func saveAlbumCollection(collectionId: Int64?, name: String, description: String, definition: AlbumCollectionDefinition?) async throws  -> AlbumCollection
 
     /**
      * Save or return the existing Replay for this exact calendar period.
@@ -1180,6 +1199,23 @@ open class DurvaldCore:
 
 
 
+open func addAlbumToCollection(collectionId: Int64, releaseId: Int64)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_add_album_to_collection(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(collectionId),FfiConverterInt64.lower(releaseId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func addExternalToListenList(artistId: Int64, release: ExternalReleaseGroup)async throws  -> ListenListEntry {
     return
         try  await uniffiRustCallAsync(
@@ -1290,6 +1326,60 @@ open func addTrackToPlaylist(playlistId: Int64, trackId: Int64, position: UInt64
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypePlaylistTrack.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func albumCollection(collectionId: Int64)async throws  -> AlbumCollectionPage {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_album_collection(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(collectionId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeAlbumCollectionPage.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func albumCollectionTracks(collectionId: Int64)async throws  -> [Track] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_album_collection_tracks(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(collectionId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeTrack.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Classification terms with content in the local library.
+     */
+open func albumCollections()async throws  -> [AlbumCollection] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_album_collections(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeAlbumCollection.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -1815,6 +1905,23 @@ open func createUserTag(name: String)async throws  -> UserTag {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeUserTag.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func deleteAlbumCollection(collectionId: Int64)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_delete_album_collection(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(collectionId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -2627,6 +2734,23 @@ open func releasesPage(pageSize: UInt64, offset: UInt64)async throws  -> Release
         )
 }
 
+open func removeAlbumFromCollection(collectionId: Int64, itemId: Int64)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_remove_album_from_collection(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(collectionId),FfiConverterInt64.lower(itemId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func removeFromListenList(entryId: Int64)async throws  {
     return
         try  await uniffiRustCallAsync(
@@ -2741,6 +2865,23 @@ open func renameUserTag(tagId: Int64, name: String)async throws  -> UserTag {
         )
 }
 
+open func reorderAlbumCollection(collectionId: Int64, itemIds: [Int64])async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_reorder_album_collection(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(collectionId),FfiConverterSequenceInt64.lower(itemIds)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Read-only Replay availability, ordered preview and saved identity.
      */
@@ -2794,6 +2935,23 @@ open func resume()async throws  {
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func saveAlbumCollection(collectionId: Int64?, name: String, description: String, definition: AlbumCollectionDefinition?)async throws  -> AlbumCollection {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_save_album_collection(
+                    self.uniffiClonePointer(),
+                    FfiConverterOptionInt64.lower(collectionId),FfiConverterString.lower(name),FfiConverterString.lower(description),FfiConverterOptionTypeAlbumCollectionDefinition.lower(definition)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeAlbumCollection.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -3730,6 +3888,306 @@ public func FfiConverterTypeDurvaldCore_lift(_ pointer: UnsafeMutableRawPointer)
 
 public func FfiConverterTypeDurvaldCore_lower(_ value: DurvaldCore) -> UnsafeMutableRawPointer {
     return FfiConverterTypeDurvaldCore.lower(value)
+}
+
+
+public struct AlbumCollection {
+    public var id: Int64
+    public var name: String
+    public var description: String
+    public var definition: AlbumCollectionDefinition?
+    public var albumCount: UInt64
+    public var artworkId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, name: String, description: String, definition: AlbumCollectionDefinition?, albumCount: UInt64, artworkId: String?) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.definition = definition
+        self.albumCount = albumCount
+        self.artworkId = artworkId
+    }
+}
+
+
+
+extension AlbumCollection: Equatable, Hashable {
+    public static func ==(lhs: AlbumCollection, rhs: AlbumCollection) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.description != rhs.description {
+            return false
+        }
+        if lhs.definition != rhs.definition {
+            return false
+        }
+        if lhs.albumCount != rhs.albumCount {
+            return false
+        }
+        if lhs.artworkId != rhs.artworkId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(name)
+        hasher.combine(description)
+        hasher.combine(definition)
+        hasher.combine(albumCount)
+        hasher.combine(artworkId)
+    }
+}
+
+
+public struct FfiConverterTypeAlbumCollection: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlbumCollection {
+        return
+            try AlbumCollection(
+                id: FfiConverterInt64.read(from: &buf),
+                name: FfiConverterString.read(from: &buf),
+                description: FfiConverterString.read(from: &buf),
+                definition: FfiConverterOptionTypeAlbumCollectionDefinition.read(from: &buf),
+                albumCount: FfiConverterUInt64.read(from: &buf),
+                artworkId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlbumCollection, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterString.write(value.description, into: &buf)
+        FfiConverterOptionTypeAlbumCollectionDefinition.write(value.definition, into: &buf)
+        FfiConverterUInt64.write(value.albumCount, into: &buf)
+        FfiConverterOptionString.write(value.artworkId, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeAlbumCollection_lift(_ buf: RustBuffer) throws -> AlbumCollection {
+    return try FfiConverterTypeAlbumCollection.lift(buf)
+}
+
+public func FfiConverterTypeAlbumCollection_lower(_ value: AlbumCollection) -> RustBuffer {
+    return FfiConverterTypeAlbumCollection.lower(value)
+}
+
+
+public struct AlbumCollectionDefinition {
+    public var matchAll: Bool
+    public var rules: [SmartPlaylistRule]
+    public var sortBy: String
+    public var descending: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(matchAll: Bool, rules: [SmartPlaylistRule], sortBy: String, descending: Bool) {
+        self.matchAll = matchAll
+        self.rules = rules
+        self.sortBy = sortBy
+        self.descending = descending
+    }
+}
+
+
+
+extension AlbumCollectionDefinition: Equatable, Hashable {
+    public static func ==(lhs: AlbumCollectionDefinition, rhs: AlbumCollectionDefinition) -> Bool {
+        if lhs.matchAll != rhs.matchAll {
+            return false
+        }
+        if lhs.rules != rhs.rules {
+            return false
+        }
+        if lhs.sortBy != rhs.sortBy {
+            return false
+        }
+        if lhs.descending != rhs.descending {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(matchAll)
+        hasher.combine(rules)
+        hasher.combine(sortBy)
+        hasher.combine(descending)
+    }
+}
+
+
+public struct FfiConverterTypeAlbumCollectionDefinition: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlbumCollectionDefinition {
+        return
+            try AlbumCollectionDefinition(
+                matchAll: FfiConverterBool.read(from: &buf),
+                rules: FfiConverterSequenceTypeSmartPlaylistRule.read(from: &buf),
+                sortBy: FfiConverterString.read(from: &buf),
+                descending: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlbumCollectionDefinition, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.matchAll, into: &buf)
+        FfiConverterSequenceTypeSmartPlaylistRule.write(value.rules, into: &buf)
+        FfiConverterString.write(value.sortBy, into: &buf)
+        FfiConverterBool.write(value.descending, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeAlbumCollectionDefinition_lift(_ buf: RustBuffer) throws -> AlbumCollectionDefinition {
+    return try FfiConverterTypeAlbumCollectionDefinition.lift(buf)
+}
+
+public func FfiConverterTypeAlbumCollectionDefinition_lower(_ value: AlbumCollectionDefinition) -> RustBuffer {
+    return FfiConverterTypeAlbumCollectionDefinition.lower(value)
+}
+
+
+public struct AlbumCollectionItem {
+    public var id: Int64
+    public var title: String
+    public var artist: String
+    public var artworkId: String?
+    public var release: Release?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, title: String, artist: String, artworkId: String?, release: Release?) {
+        self.id = id
+        self.title = title
+        self.artist = artist
+        self.artworkId = artworkId
+        self.release = release
+    }
+}
+
+
+
+extension AlbumCollectionItem: Equatable, Hashable {
+    public static func ==(lhs: AlbumCollectionItem, rhs: AlbumCollectionItem) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.artworkId != rhs.artworkId {
+            return false
+        }
+        if lhs.release != rhs.release {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(title)
+        hasher.combine(artist)
+        hasher.combine(artworkId)
+        hasher.combine(release)
+    }
+}
+
+
+public struct FfiConverterTypeAlbumCollectionItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlbumCollectionItem {
+        return
+            try AlbumCollectionItem(
+                id: FfiConverterInt64.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                artist: FfiConverterString.read(from: &buf),
+                artworkId: FfiConverterOptionString.read(from: &buf),
+                release: FfiConverterOptionTypeRelease.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlbumCollectionItem, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artist, into: &buf)
+        FfiConverterOptionString.write(value.artworkId, into: &buf)
+        FfiConverterOptionTypeRelease.write(value.release, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeAlbumCollectionItem_lift(_ buf: RustBuffer) throws -> AlbumCollectionItem {
+    return try FfiConverterTypeAlbumCollectionItem.lift(buf)
+}
+
+public func FfiConverterTypeAlbumCollectionItem_lower(_ value: AlbumCollectionItem) -> RustBuffer {
+    return FfiConverterTypeAlbumCollectionItem.lower(value)
+}
+
+
+public struct AlbumCollectionPage {
+    public var collection: AlbumCollection
+    public var items: [AlbumCollectionItem]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(collection: AlbumCollection, items: [AlbumCollectionItem]) {
+        self.collection = collection
+        self.items = items
+    }
+}
+
+
+
+extension AlbumCollectionPage: Equatable, Hashable {
+    public static func ==(lhs: AlbumCollectionPage, rhs: AlbumCollectionPage) -> Bool {
+        if lhs.collection != rhs.collection {
+            return false
+        }
+        if lhs.items != rhs.items {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(collection)
+        hasher.combine(items)
+    }
+}
+
+
+public struct FfiConverterTypeAlbumCollectionPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AlbumCollectionPage {
+        return
+            try AlbumCollectionPage(
+                collection: FfiConverterTypeAlbumCollection.read(from: &buf),
+                items: FfiConverterSequenceTypeAlbumCollectionItem.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AlbumCollectionPage, into buf: inout [UInt8]) {
+        FfiConverterTypeAlbumCollection.write(value.collection, into: &buf)
+        FfiConverterSequenceTypeAlbumCollectionItem.write(value.items, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeAlbumCollectionPage_lift(_ buf: RustBuffer) throws -> AlbumCollectionPage {
+    return try FfiConverterTypeAlbumCollectionPage.lift(buf)
+}
+
+public func FfiConverterTypeAlbumCollectionPage_lower(_ value: AlbumCollectionPage) -> RustBuffer {
+    return FfiConverterTypeAlbumCollectionPage.lower(value)
 }
 
 
@@ -11684,6 +12142,27 @@ fileprivate struct FfiConverterOptionData: FfiConverterRustBuffer {
     }
 }
 
+fileprivate struct FfiConverterOptionTypeAlbumCollectionDefinition: FfiConverterRustBuffer {
+    typealias SwiftType = AlbumCollectionDefinition?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAlbumCollectionDefinition.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAlbumCollectionDefinition.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionTypeArtist: FfiConverterRustBuffer {
     typealias SwiftType = Artist?
 
@@ -11847,6 +12326,27 @@ fileprivate struct FfiConverterOptionTypePlaylist: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypePlaylist.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+fileprivate struct FfiConverterOptionTypeRelease: FfiConverterRustBuffer {
+    typealias SwiftType = Release?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeRelease.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeRelease.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -12081,6 +12581,50 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeAlbumCollection: FfiConverterRustBuffer {
+    typealias SwiftType = [AlbumCollection]
+
+    public static func write(_ value: [AlbumCollection], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAlbumCollection.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AlbumCollection] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AlbumCollection]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAlbumCollection.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeAlbumCollectionItem: FfiConverterRustBuffer {
+    typealias SwiftType = [AlbumCollectionItem]
+
+    public static func write(_ value: [AlbumCollectionItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAlbumCollectionItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AlbumCollectionItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AlbumCollectionItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAlbumCollectionItem.read(from: &buf))
         }
         return seq
     }
@@ -12739,6 +13283,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_func_open() != 10526) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_add_album_to_collection() != 34363) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_add_external_to_listen_list() != 12598) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12755,6 +13302,15 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_add_track_to_playlist() != 52605) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_album_collection() != 57799) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_album_collection_tracks() != 4635) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_album_collections() != 12679) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_analyze_library_repairs() != 58181) {
@@ -12839,6 +13395,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_create_user_tag() != 33559) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_delete_album_collection() != 14189) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_delete_playlist() != 36449) {
@@ -12964,6 +13523,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_releases_page() != 33341) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_remove_album_from_collection() != 17891) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_remove_from_listen_list() != 65395) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12982,6 +13544,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_rename_user_tag() != 35787) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_reorder_album_collection() != 38235) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_replay_preview() != 42912) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -12989,6 +13554,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_resume() != 18016) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_save_album_collection() != 32282) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_save_replay() != 21158) {

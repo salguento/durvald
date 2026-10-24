@@ -85,6 +85,7 @@ final class DurvaldCoreStore {
     var isLoadingListenList = false
     var classificationRevision: UInt64 = 0
     var listenListEntries: [ListenListEntry] = []
+    var albumCollectionAddRequest: AlbumCollectionAddRequest?
     var listenListGeneration: UInt64 = 0
     var isChangingListenList = false
     var listenListError: String?

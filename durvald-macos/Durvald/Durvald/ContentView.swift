@@ -33,6 +33,8 @@ struct ContentView: View {
     @State private var playlistsSummary = "Carregando…"
     @State private var playlistsToolbarState = PlaylistsToolbarState()
     @State private var classificationStates: [Int: ClassificationBrowserState] = [:]
+    @State private var albumCollections = AlbumCollectionsState()
+    @State private var albumCollectionEditor: AlbumCollectionEditorRequest?
     @State private var listenListSearchText = ""
     @State private var albumSearchText = ""
     @State private var albumsSummary = "Carregando…"
@@ -175,6 +177,15 @@ struct ContentView: View {
             PersonalTagEditor(selection: selection)
         }
         .sheet(isPresented: $isManagingPersonalTags) { PersonalTagManager() }
+        .sheet(item: $albumCollectionEditor) { request in
+            AlbumCollectionEditor(collection: request.collection) { collection in
+                shell.navigationHistory.navigate(to: .albumCollection(collection.id))
+            }.environment(albumCollections)
+        }
+        .sheet(item: Binding(get: { store.albumCollectionAddRequest }, set: { store.albumCollectionAddRequest = $0 })) { request in
+            AlbumCollectionAddSheet(release: request.release).environment(albumCollections)
+        }
+        .environment(albumCollections)
         .task(id: store.personalTagsRequest) { await store.refreshPersonalTags() }
         .onChange(of: store.personalTags.tags.map(\.id)) { _, ids in
             albumTagState.filter.ids.formIntersection(ids)
@@ -366,13 +377,18 @@ struct ContentView: View {
     }
 
     private var hasLibrarySearch: Bool {
-        if isArtistDetail || isPlaylistDetail || isAlbumDetail || isClassificationDetail { return true }
+        if isArtistDetail || isPlaylistDetail || isAlbumDetail || isClassificationDetail || shell.navigationHistory.current == .albumCollections { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
         return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective || destination == .playlists || destination == .listenList || destination == .genres
     }
 
     private var currentClassificationState: ClassificationBrowserState? {
         classificationStates[shell.navigationHistory.currentEntryID]
+    }
+
+    private var albumCollectionID: Int64? {
+        if case .albumCollection(let id) = shell.navigationHistory.currentRoute { return id }
+        return nil
     }
 
     private var isClassificationDetail: Bool {
@@ -420,6 +436,7 @@ struct ContentView: View {
             SummaryPresentation.search(results: globalSearch.value, query: shell.submittedSearchText,
                 isPending: globalSearch.isPending || globalSearch.committedQuery != shell.submittedSearchText)
         case .genres: "Explore a classificação disponível na sua biblioteca."
+        case .albumCollections: "\(albumCollections.collections.count) coleções"
         case .listenList: "\(store.pendingListenListCount) para ouvir"
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
@@ -431,6 +448,13 @@ struct ContentView: View {
 
     private var librarySearchText: Binding<String> {
         switch shell.navigationHistory.current {
+        case .albumCollections: Binding(get: {
+            if let id = albumCollectionID { return albumCollections.detailQueries[id] ?? "" }
+            return albumCollections.listQuery
+        }, set: { query in
+            if let id = albumCollectionID { albumCollections.detailQueries[id] = query }
+            else { albumCollections.listQuery = query }
+        })
         case .genres: Binding(
             get: { currentClassificationState?.query ?? "" },
             set: { currentClassificationState?.query = $0 }
@@ -446,6 +470,7 @@ struct ContentView: View {
 
     private var librarySearchPlaceholder: String {
         switch shell.navigationHistory.current {
+        case .albumCollections: albumCollectionID == nil ? "Pesquisar coleções" : "Pesquisar álbuns na coleção"
         case .genres: isClassificationDetail ? "Pesquisar neste conteúdo" : "Pesquisar gêneros e estilos"
         case .listenList: "Pesquisar em Para ouvir"
         case .songs: "Pesquisar músicas"
@@ -458,6 +483,7 @@ struct ContentView: View {
 
     private var librarySearchIdentifier: String {
         switch shell.navigationHistory.current {
+        case .albumCollections: "albumCollections.search"
         case .genres: "classification.search"
         case .listenList: "listenList.search"
         case .songs: "library.search"
@@ -579,7 +605,12 @@ struct ContentView: View {
 
     @ViewBuilder
     private var libraryToolbarSummary: some View {
-        if isClassificationDetail {
+        if let id = albumCollectionID {
+            let collection = albumCollections.page.flatMap { $0.collection.id == id ? $0.collection : nil }
+            LibrarySummaryView(title: collection?.name ?? "Coleção de álbuns",
+                text: collection.map { "\($0.albumCount) álbuns" } ?? "Carregando…",
+                identifier: "albumCollection.summary")
+        } else if isClassificationDetail {
             LibrarySummaryView(
                 title: currentClassificationState?.page?.term.name ?? "Carregando…",
                 text: currentClassificationState?.page?.term.contentSummary ?? "",
@@ -635,7 +666,11 @@ struct ContentView: View {
                     expandedWidth: searchWidth,
                     isExpanded: $isLibrarySearchExpanded
                 )
-                if shell.navigationHistory.current == .genres, let state = currentClassificationState {
+                if shell.navigationHistory.current == .albumCollections {
+                    AlbumCollectionsToolbarOptions(state: albumCollections, collectionID: albumCollectionID,
+                        onCreate: { albumCollectionEditor = AlbumCollectionEditorRequest() },
+                        onEdit: { albumCollectionEditor = AlbumCollectionEditorRequest(collection: $0) })
+                } else if shell.navigationHistory.current == .genres, let state = currentClassificationState {
                     ClassificationToolbarOptionsMenu(state: state, isDetail: isClassificationDetail)
                 } else if shell.navigationHistory.current == .songs {
                     MusicLibraryViewOptionsMenu(onShowViewOptions: {
@@ -650,7 +685,7 @@ struct ContentView: View {
                 }
             }
             .fixedSize()
-            .id(shell.navigationHistory.current == .genres ? "classification:\(shell.navigationHistory.currentEntryID)" : shell.navigationHistory.current.rawValue)
+            .id(shell.navigationHistory.current == .genres || shell.navigationHistory.current == .albumCollections ? "entry:\(shell.navigationHistory.currentEntryID)" : shell.navigationHistory.current.rawValue)
         }
     }
 
@@ -959,9 +994,23 @@ struct ContentView: View {
         }
     }
 
+    private func albumCollectionsPage(id: Int64?) -> some View {
+        AlbumCollectionsView(collectionID: id,
+            onOpen: { shell.navigationHistory.navigate(to: .albumCollection($0)) },
+            onEdit: { albumCollectionEditor = AlbumCollectionEditorRequest(collection: $0) },
+            onCreate: { albumCollectionEditor = AlbumCollectionEditorRequest() },
+            onDeleted: {
+                if let id { shell.navigationHistory.replace(.albumCollection(id), with: .section(.albumCollections)) }
+                shell.navigationHistory.navigate(to: .albumCollections)
+            })
+            .environment(albumCollections)
+    }
+
     @ViewBuilder
     private var detail: some View {
         switch shell.navigationHistory.currentRoute {
+        case .albumCollection(let id):
+            albumCollectionsPage(id: id)
         case .classification(let kind, let id):
             classificationBrowser(kind: kind, id: id)
         case .album(let album):
@@ -1002,6 +1051,8 @@ struct ContentView: View {
     @ViewBuilder
     private func sectionContent(_ destination: LibraryDestination) -> some View {
         switch destination {
+        case .albumCollections:
+            albumCollectionsPage(id: nil)
         case .search:
             LibrarySearchView(searchText: $shell.submittedSearchText, search: globalSearch,
                               submissionRevision: shell.searchSubmissionRevision)

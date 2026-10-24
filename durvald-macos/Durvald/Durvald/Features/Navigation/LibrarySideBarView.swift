@@ -158,7 +158,7 @@ struct LibrarySidebarView: View {
 
                     navigationSectionHeader("Biblioteca")
 
-                    ForEach([LibraryDestination.artists, .albums, .songs, .genres]) { item in
+                    ForEach([LibraryDestination.artists, .albums, .songs, .genres, .albumCollections]) { item in
                         SidebarNavigationButton(
                             item: item,
                             selection: $destination,

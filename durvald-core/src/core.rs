@@ -542,6 +542,86 @@ impl DurvaldCore {
     }
 
     /// Classification terms with content in the local library.
+    pub async fn album_collections(&self) -> CoreResult<Vec<AlbumCollection>> {
+        self.library_application
+            .personal_library_operation(crate::database::album_collections::list)
+            .await
+    }
+    pub async fn album_collection(&self, collection_id: i64) -> CoreResult<AlbumCollectionPage> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::album_collections::page(c, collection_id)
+            })
+            .await
+    }
+    pub async fn save_album_collection(
+        &self,
+        collection_id: Option<i64>,
+        name: String,
+        description: String,
+        definition: Option<AlbumCollectionDefinition>,
+    ) -> CoreResult<AlbumCollection> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::album_collections::save(
+                    c,
+                    collection_id,
+                    name,
+                    description,
+                    definition,
+                )
+            })
+            .await
+    }
+    pub async fn delete_album_collection(&self, collection_id: i64) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::album_collections::delete(c, collection_id)
+            })
+            .await
+    }
+    pub async fn add_album_to_collection(
+        &self,
+        collection_id: i64,
+        release_id: i64,
+    ) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::album_collections::add(c, collection_id, release_id)
+            })
+            .await
+    }
+    pub async fn remove_album_from_collection(
+        &self,
+        collection_id: i64,
+        item_id: i64,
+    ) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::album_collections::remove(c, collection_id, item_id)
+            })
+            .await
+    }
+    pub async fn reorder_album_collection(
+        &self,
+        collection_id: i64,
+        item_ids: Vec<i64>,
+    ) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::album_collections::reorder(c, collection_id, item_ids)
+            })
+            .await
+    }
+    pub async fn album_collection_tracks(&self, collection_id: i64) -> CoreResult<Vec<Track>> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::album_collections::tracks(c, collection_id)
+            })
+            .await
+    }
+
+    /// Classification terms with content in the local library.
     pub async fn classification_terms(&self) -> CoreResult<Vec<ClassificationTerm>> {
         self.library_application
             .personal_library_operation(crate::database::classification::terms)
