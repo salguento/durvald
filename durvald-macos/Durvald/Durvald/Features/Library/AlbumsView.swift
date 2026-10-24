@@ -52,7 +52,8 @@ enum AlbumsViewLayout {
 }
 
 struct AlbumsView: View {
-    @State private var personalTagFilter = PersonalTagFilter()
+    let tagState: PersonalTagListingState
+    private var personalTagFilter: PersonalTagFilter { tagState.filter }
     @Binding var searchText: String
     @AppStorage("albums.listingMode") private var listingMode: CollectionListingMode = .standardGrid
     @AppStorage("albums.listingOrder") private var listingOrder: CollectionListingOrder = .recent
@@ -87,7 +88,9 @@ struct AlbumsView: View {
                 .task { await store.loadMoreReleases(ifNeededAfter: release.id) }
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { PersonalTagFilterBar(filter: $personalTagFilter, selection: PersonalTagSelection(releaseIDs: presentation.value.items.map(\.id))) }
+        .onChange(of: presentation.value.items.map(\.id), initial: true) { _, ids in
+            tagState.selection = PersonalTagSelection(releaseIDs: ids)
+        }
         .overlay {
             if !normalizedSearchText.isEmpty && isLoadingCatalog {
                 ProgressView("Pesquisando…")

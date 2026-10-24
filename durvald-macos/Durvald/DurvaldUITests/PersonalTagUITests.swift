@@ -14,8 +14,18 @@ final class PersonalTagUITests: XCTestCase {
     }
 
     @MainActor
+    private func openTagsMenu(app: XCUIApplication) {
+        XCTAssertFalse(app.buttons["personalTags.editBatch"].exists)
+        let musicOptions = app.menuButtons["library.viewOptions"]
+        let options = musicOptions.exists ? musicOptions : app.menuButtons["albums.listingMode"]
+        XCTAssertTrue(options.waitForExistence(timeout: 5)); options.click()
+        let tags = app.menuItems["personalTags.filter"].firstMatch
+        XCTAssertTrue(tags.waitForExistence(timeout: 4)); tags.hover()
+    }
+
+    @MainActor
     private func filter(_ name: String, app: XCUIApplication) {
-        app.descendants(matching: .any)["personalTags.filter"].firstMatch.click()
+        openTagsMenu(app: app)
         let item = app.menuItems[name].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 4))
         item.click()
@@ -43,7 +53,8 @@ final class PersonalTagUITests: XCTestCase {
         XCTAssertTrue(table.waitForExistence(timeout: 5))
         table.tableRows.element(boundBy: 0).coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.5)).click()
         app.typeKey(.downArrow, modifierFlags: .shift)
-        app.buttons["personalTags.editBatch"].click()
+        openTagsMenu(app: app)
+        app.menuItems["Editar tags de 2 itens"].firstMatch.click()
         create("Noite", app: app)
         filter("Noite", app: app)
         expectation(for: NSPredicate { _, _ in table.tableRows.count == 2 }, evaluatedWith: table)

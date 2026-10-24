@@ -1,3 +1,4 @@
+import Observation
 import SwiftUI
 
 struct PersonalTagSection: View {
@@ -164,44 +165,46 @@ private struct PersonalTagError: View {
     }
 }
 
-struct PersonalTagFilterBar: View {
+@MainActor @Observable
+final class PersonalTagListingState {
+    var filter = PersonalTagFilter()
+    var selection = PersonalTagSelection()
+}
+
+struct PersonalTagFilterMenu: View {
     @Environment(DurvaldCoreStore.self) private var store
-    @Binding var filter: PersonalTagFilter
-    var selection: PersonalTagSelection? = nil
-    @State private var isManaging = false
+    @Bindable var state: PersonalTagListingState
+    let onManage: () -> Void
+
     var body: some View {
-        HStack(spacing: 12) {
-            Menu {
-                Picker("Combinar tags", selection: $filter.matchAll) {
-                    Text("Todas as tags").tag(true)
-                    Text("Qualquer tag").tag(false)
-                }
-                Divider()
-                ForEach(store.personalTags.tags, id: \.id) { tag in
-                    Toggle(tag.name, isOn: Binding(get: { filter.ids.contains(tag.id) }, set: { on in
-                        if on { filter.ids.insert(tag.id) } else { filter.ids.remove(tag.id) }
-                    }))
-                }
-                Divider()
-                Button("Gerenciar tags…") { isManaging = true }
-            } label: { Label(filter.ids.isEmpty ? "Tags pessoais" : "Tags pessoais (\(filter.ids.count))", systemImage: "tag") }
-            .fixedSize().accessibilityIdentifier("personalTags.filter")
-            if !filter.ids.isEmpty {
-                Text(filter.matchAll ? "Todas as tags selecionadas" : "Qualquer tag selecionada")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Limpar") { filter.ids.removeAll() }.buttonStyle(.borderless)
+        Menu {
+            Picker("Combinar tags", selection: $state.filter.matchAll) {
+                Text("Todas as tags").tag(true)
+                Text("Qualquer tag").tag(false)
             }
-            Spacer()
-            if let selection, selection.count > 0 {
-                Button(selection.count == 1 ? "Editar tags de 1 item" : "Editar tags de \(selection.count) itens") { store.personalTagEditor = selection }
-                    .buttonStyle(.borderless)
-                    .disabled(selection.count > 10_000)
-                    .accessibilityIdentifier("personalTags.editBatch")
+            Divider()
+            ForEach(store.personalTags.tags, id: \.id) { tag in
+                Toggle(tag.name, isOn: Binding(get: { state.filter.ids.contains(tag.id) }, set: { on in
+                    if on { state.filter.ids.insert(tag.id) } else { state.filter.ids.remove(tag.id) }
+                }))
             }
+            if !state.filter.ids.isEmpty {
+                Divider()
+                Button("Limpar filtro de tags") { state.filter.ids.removeAll() }
+                    .accessibilityIdentifier("personalTags.clearFilter")
+            }
+            Divider()
+            Button("Gerenciar tags…", action: onManage)
+            if state.selection.count > 0 {
+                Button(state.selection.count == 1 ? "Editar tags de 1 item" : "Editar tags de \(state.selection.count) itens") {
+                    store.personalTagEditor = state.selection
+                }
+                .disabled(state.selection.count > 10_000)
+                .accessibilityIdentifier("personalTags.editBatch")
+            }
+        } label: {
+            Label(state.filter.ids.isEmpty ? "Tags pessoais" : "Tags pessoais (\(state.filter.ids.count))", systemImage: "tag")
         }
-        .padding(.horizontal, 16).padding(.vertical, 8)
-        .task(id: store.personalTagsRequest) { await store.refreshPersonalTags() }
-        .onChange(of: store.personalTags.tags.map(\.id)) { _, ids in filter.ids.formIntersection(ids) }
-        .sheet(isPresented: $isManaging) { PersonalTagManager() }
+        .accessibilityIdentifier("personalTags.filter")
     }
 }

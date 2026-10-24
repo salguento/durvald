@@ -11,6 +11,8 @@ extension EnvironmentValues {
 
 struct MusicLibraryViewOptionsMenu: View {
     let onShowViewOptions: () -> Void
+    let tagState: PersonalTagListingState
+    let onManageTags: () -> Void
     @AppStorage("library.music.onlyFavorites") private var onlyFavorites = false
     @AppStorage("library.music.sort") private var sort: MusicLibrarySort = .title
     @AppStorage("library.music.sortAscending") private var sortAscending = true
@@ -38,6 +40,8 @@ struct MusicLibraryViewOptionsMenu: View {
                 }
                 .pickerStyle(.inline)
             }
+            Divider()
+            PersonalTagFilterMenu(state: tagState, onManage: onManageTags)
             Divider()
             Button("Mostrar opções de visualização", action: onShowViewOptions)
         }

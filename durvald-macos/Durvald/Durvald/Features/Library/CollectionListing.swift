@@ -205,6 +205,8 @@ struct CollectionListingMenu: View {
     var controlSize: CGFloat = 32
     var controlWidth: CGFloat? = nil
     var usesGlassEffect = true
+    var tagState: PersonalTagListingState? = nil
+    var onManageTags: () -> Void = {}
     @AppStorage(RatingPreferences.enabledKey) private var ratingsEnabled = true
 
     var body: some View {
@@ -246,6 +248,10 @@ struct CollectionListingMenu: View {
                     Label(option.title, systemImage: option.icon)
                         .tag(option)
                 }
+            }
+            if let tagState {
+                Divider()
+                PersonalTagFilterMenu(state: tagState, onManage: onManageTags)
             }
         }
         .accessibilityValue("\(order.title), \(mode.title)")

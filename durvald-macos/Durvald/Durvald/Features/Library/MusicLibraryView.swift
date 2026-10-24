@@ -14,7 +14,8 @@ struct MusicLibraryView: View {
     @Environment(PlaylistCreationCoordinator.self) private var playlistCreation
     @Environment(\.trackMenuNavigation) private var navigation
     @Environment(\.libraryScrollOffset) private var savedScrollOffset
-    @State private var personalTagFilter = PersonalTagFilter()
+    let tagState: PersonalTagListingState
+    private var personalTagFilter: PersonalTagFilter { tagState.filter }
     @State private var selectedTrackIDs = Set<Int64>()
     @Binding var searchText: String
     @State private var search = SearchPresentation<[Track]>()
@@ -157,6 +158,9 @@ struct MusicLibraryView: View {
             }
         }
         .focusedValue(\.selectionCommands, isPresented && !selectedTrackIDs.isEmpty ? libraryCommandTarget : nil)
+        .onChange(of: selectedTrackIDs, initial: true) { _, ids in
+            tagState.selection = PersonalTagSelection(trackIDs: ids.sorted())
+        }
         .onChange(of: summary, initial: true) { _, value in
             if isPresented { onSummaryChange(value) }
         }
@@ -251,7 +255,6 @@ struct MusicLibraryView: View {
 
     @ViewBuilder
     private var libraryControls: some View {
-        PersonalTagFilterBar(filter: $personalTagFilter, selection: PersonalTagSelection(trackIDs: selectedTrackIDs.sorted()))
         if store.scanProgress != nil {
             VStack(spacing: 8) {
                 if let progress = store.scanProgress {

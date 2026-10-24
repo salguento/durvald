@@ -6,8 +6,9 @@ metadados embutidos nos arquivos. Esta funcionalidade não grava nos arquivos de
 
 ## Uso
 
-- Faixas: menu de contexto **Tags pessoais…**, aba **Tags pessoais** em Info ou
-  botão **Editar tags de N itens** após selecionar faixas na biblioteca.
+- Faixas: menu de contexto **Tags pessoais…**, aba **Tags** em Info ou
+  **Editar tags de N itens** no submenu **Tags pessoais** das opções de
+  visualização da topbar, após selecionar faixas na biblioteca.
 - Lançamentos/álbuns: tags existentes aparecem abaixo da avaliação no cabeçalho
   de AlbumView, sem seção sob a capa. A edição fica no menu de contexto dos
   cartões ou na edição em lote dos resultados da listagem de álbuns.
@@ -20,6 +21,8 @@ metadados embutidos nos arquivos. Esta funcionalidade não grava nos arquivos de
   remover uma associação preserva a definição e os demais usos.
 - As listagens de músicas e álbuns combinam o filtro de tags com a busca e os
   filtros já existentes. É possível exigir **Todas as tags** ou **Qualquer tag**.
+  Filtrar, limpar o filtro, gerenciar e editar em lote ficam no submenu
+  **Tags pessoais** das opções de visualização na topbar, sem botões no conteúdo.
 - Playlists inteligentes oferecem **Tag pessoal da faixa** e **Tag pessoal do
   álbum**, com igualdade, diferença, presença e ausência. As regras persistem o
   ID da tag, por isso continuam funcionando após renomeá-la. Uma tag excluída é

@@ -36,6 +36,9 @@ struct ContentView: View {
     @State private var listenListSearchText = ""
     @State private var albumSearchText = ""
     @State private var albumsSummary = "Carregando…"
+    @State private var albumTagState = PersonalTagListingState()
+    @State private var musicTagState = PersonalTagListingState()
+    @State private var isManagingPersonalTags = false
     @State private var artistSearchText = ""
     @State private var artistsSummary = "Carregando…"
     @State private var retrospectiveSearchText = ""
@@ -171,6 +174,12 @@ struct ContentView: View {
         .sheet(item: Binding(get: { store.personalTagEditor }, set: { store.personalTagEditor = $0 })) { selection in
             PersonalTagEditor(selection: selection)
         }
+        .sheet(isPresented: $isManagingPersonalTags) { PersonalTagManager() }
+        .task(id: store.personalTagsRequest) { await store.refreshPersonalTags() }
+        .onChange(of: store.personalTags.tags.map(\.id)) { _, ids in
+            albumTagState.filter.ids.formIntersection(ids)
+            musicTagState.filter.ids.formIntersection(ids)
+        }
         .focusedSceneValue(\.commandKeyboardState, commandKeyboard)
         .environment(\.pageFilterFocusRequest, pageFilterFocusRequest)
         .modifier(CommandInputModifier(window: windowCommandTarget, keyboard: commandKeyboard) { available in
@@ -251,6 +260,7 @@ struct ContentView: View {
         ZStack {
             if let entryID = musicEntryID {
                 MusicLibraryView(
+                    tagState: musicTagState,
                     searchText: $musicSearchText, presentation: musicPresentation,
                     isPresented: shell.navigationHistory.current == .songs,
                     navigationEntryID: entryID
@@ -630,7 +640,7 @@ struct ContentView: View {
                 } else if shell.navigationHistory.current == .songs {
                     MusicLibraryViewOptionsMenu(onShowViewOptions: {
                         openWindow(id: "music-view-options")
-                    })
+                    }, tagState: musicTagState, onManageTags: { isManagingPersonalTags = true })
                 } else if shell.navigationHistory.current == .retrospective {
                     RetrospectiveToolbarOptionsMenu()
                 } else if isPlaylistsListing {
@@ -650,7 +660,9 @@ struct ContentView: View {
             order: listingOrderBinding(for: destination),
             minimumRating: destination == .albums ? $albumMinimumRating : nil,
             onlyLocal: destination == .artists ? $artistOnlyLocal : nil,
-            controlSize: ToolbarControlMetrics.size, controlWidth: ToolbarControlMetrics.size, usesGlassEffect: true
+            controlSize: ToolbarControlMetrics.size, controlWidth: ToolbarControlMetrics.size, usesGlassEffect: true,
+            tagState: destination == .albums ? albumTagState : nil,
+            onManageTags: { isManagingPersonalTags = true }
         )
         .accessibilityIdentifier("\(destination.rawValue).listingMode")
     }
@@ -1005,7 +1017,7 @@ struct ContentView: View {
             // The music page lives in contentColumn with a stable identity.
             Color.clear
         case .albums:
-            AlbumsView(searchText: $albumSearchText, onSelectAlbum: showAlbum) { summary in
+            AlbumsView(tagState: albumTagState, searchText: $albumSearchText, onSelectAlbum: showAlbum) { summary in
                 albumsSummary = summary
             }
         case .artists:
