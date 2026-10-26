@@ -171,7 +171,7 @@ struct AlbumCollectionsToolbarOptions: View {
     let onEdit: (AlbumCollection) -> Void
     var body: some View {
         ToolbarOptionsButton(title: "Opções de coleções") {
-            Button("Nova coleção de álbuns", systemImage: "plus", action: onCreate)
+            Button("Nova coleção", systemImage: "plus", action: onCreate)
             if let id = collectionID, let page = state.page, page.collection.id == id {
                 Button(page.collection.definition == nil ? "Editar coleção…" : "Editar regras…") { onEdit(page.collection) }
                 if page.collection.definition == nil {

@@ -360,12 +360,7 @@ private struct SidebarNavigationButton: View {
     var allowsSelectionHighlight = true
 
     private var isSelected: Bool { allowsSelectionHighlight && selection == item }
-    private var title: String {
-        switch item {
-        case .albumCollections: "Coleções"
-        default: item.title
-        }
-    }
+    private var title: String { item.title }
 
     private var textForeground: Color {
         guard appearsActive else { return Color(nsColor: .secondaryLabelColor) }

@@ -1,4 +1,4 @@
-# Coleções de álbuns — fase 3, item 8
+# Coleções — fase 3, item 8
 
 Coleções organizam lançamentos inteiros com identidade própria. Não são playlists
 de faixas nem itens de Ouvir depois. O mesmo álbum pode participar de várias
@@ -6,12 +6,12 @@ coleções; cada coleção manual inclui uma edição local no máximo uma vez.
 
 ## Interface
 
-- **Coleções de álbuns** na sidebar Biblioteca abre a página central, com busca,
+- **Coleções** na sidebar Biblioteca abre a página central, com busca,
   ordenação por nome ou quantidade e criação pelo menu da topbar ou estado vazio.
 - Coleções manuais têm nome, descrição, adição de álbuns da biblioteca, remoção,
   edição e ordem persistida. Os botões de mover respeitam a ordem completa mesmo
   quando a busca esconde outros itens; o menu também ordena por título ou artista.
-- O menu de qualquer álbum local oferece **Adicionar à coleção de álbuns…**, com
+- O menu de qualquer álbum local oferece **Adicionar à coleção…**, com
   escolha de coleção manual existente ou criação de uma nova coleção.
 - Coleções inteligentes têm regras combinadas por todas/qualquer, e ordem por
   título, artista, ano ou avaliação, crescente ou decrescente. Editar as regras

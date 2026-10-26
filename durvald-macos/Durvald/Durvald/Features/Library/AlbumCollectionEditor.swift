@@ -77,7 +77,7 @@ struct AlbumCollectionEditor: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(collection == nil ? "Nova coleção de álbuns" : "Editar coleção").font(.title2.bold())
+            Text(collection == nil ? "Nova coleção" : "Editar coleção").font(.title2.bold())
             TextField("Nome", text: $name).textFieldStyle(.roundedBorder).accessibilityIdentifier("albumCollection.editor.name")
             TextField("Descrição", text: $description, axis: .vertical).lineLimit(2...4).textFieldStyle(.roundedBorder)
             if collection == nil {

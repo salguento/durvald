@@ -28,7 +28,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .genres: "Gêneros"
-        case .albumCollections: "Coleções de álbuns"
+        case .albumCollections: "Coleções"
         case .home: "Início"
         case .listenList: "Ouvir depois"
         case .songs: "Músicas"

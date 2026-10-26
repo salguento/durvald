@@ -32,7 +32,7 @@ final class AlbumCollectionUITests: XCTestCase {
         app.buttons["albumCollection.editor.save"].click()
         XCTAssertTrue(add.waitForExistence(timeout: 8))
         let capture = XCTAttachment(screenshot: app.windows.firstMatch.screenshot())
-        capture.name = "Coleção de álbuns manual"; capture.lifetime = .keepAlways; self.add(capture)
+        capture.name = "Coleção manual"; capture.lifetime = .keepAlways; self.add(capture)
         app.terminate(); app.launch()
         XCTAssertTrue(sidebar.waitForExistence(timeout: 15)); sidebar.click()
         let collection = app.buttons["albumCollection.1"]
@@ -63,7 +63,7 @@ final class AlbumCollectionUITests: XCTestCase {
         app.typeKey("3", modifierFlags: .command)
         let album = app.buttons["album.1"].firstMatch
         XCTAssertTrue(album.waitForExistence(timeout: 8)); album.rightClick()
-        app.menuItems["Adicionar à coleção de álbuns…"].click()
+        app.menuItems["Adicionar à coleção…"].click()
         let quickName = app.textFields["albumCollection.quick.name"]
         XCTAssertTrue(quickName.waitForExistence(timeout: 8)); quickName.click(); quickName.typeText("Manual pelo álbum")
         app.buttons["albumCollection.quick.create"].click()

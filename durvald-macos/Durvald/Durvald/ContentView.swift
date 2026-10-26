@@ -607,7 +607,7 @@ struct ContentView: View {
     private var libraryToolbarSummary: some View {
         if let id = albumCollectionID {
             let collection = albumCollections.page.flatMap { $0.collection.id == id ? $0.collection : nil }
-            LibrarySummaryView(title: collection?.name ?? "Coleção de álbuns",
+            LibrarySummaryView(title: collection?.name ?? "Coleção",
                 text: collection.map { "\($0.albumCount) álbuns" } ?? "Carregando…",
                 identifier: "albumCollection.summary")
         } else if isClassificationDetail {
