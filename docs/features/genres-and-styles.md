@@ -111,7 +111,7 @@ sem exigir essas integrações. Não foram criadas relações externas presumida
 - Regressões passaram: 23 testes de operações do banco, 28 relacionados a
   metadados e 2 de reparo. Alguns desses filtros incluem testes em comum.
 - 52 testes Swift passaram, incluindo ponte real Swift/Rust, filtros,
-  identidade das rotas e regressões de Home, menus, atalhos, tags e Para ouvir.
+  identidade das rotas e regressões de Home, menus, atalhos, tags e Ouvir depois.
 - 2 testes de interface passaram: navegação gênero → estilo → conteúdo,
   abas, retorno pelo histórico e links dos álbuns; edição de estilo,
   persistência ao reabrir e filtro Sem gênero. Capturas dos detalhes e dos

@@ -1,7 +1,7 @@
-# Para ouvir — fase 2, item 5
+# Ouvir depois — fase 2, item 5
 
 Implementado em 22/10/2026 no cliente macOS e na API compartilhada do core.
-O nome visível é **Para ouvir**, uma expressão curta que descreve a intenção e
+O nome visível é **Ouvir depois**, uma expressão curta que descreve a intenção e
 facilita a tradução. Identificadores internos usam `listenList`/`listen_list`.
 
 ## Uso
@@ -10,7 +10,7 @@ facilita a tradução. Identificadores internos usam `listenList`/`listen_list`.
   na Home com a quantidade de lançamentos pendentes.
 - Adicionar ou remover pela página do álbum; adicionar pelo menu de contexto
   dos álbuns locais e dos lançamentos on-line na página do artista.
-- A página oferece busca por título/artista, estados **Para ouvir**, **Ouvidos**
+- A página oferece busca por título/artista, estados **Ouvir depois**, **Ouvidos**
   e **Todos**, e ordenação por data de adição, título ou artista.
 - Cada item permite abrir o lançamento, reproduzir quando local, marcar como
   ouvido, desfazer essa marcação e remover da lista.

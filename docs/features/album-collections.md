@@ -1,7 +1,7 @@
 # Coleções de álbuns — fase 3, item 8
 
 Coleções organizam lançamentos inteiros com identidade própria. Não são playlists
-de faixas nem itens de Para ouvir. O mesmo álbum pode participar de várias
+de faixas nem itens de Ouvir depois. O mesmo álbum pode participar de várias
 coleções; cada coleção manual inclui uma edição local no máximo uma vez.
 
 ## Interface

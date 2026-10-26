@@ -360,6 +360,12 @@ private struct SidebarNavigationButton: View {
     var allowsSelectionHighlight = true
 
     private var isSelected: Bool { allowsSelectionHighlight && selection == item }
+    private var title: String {
+        switch item {
+        case .albumCollections: "Coleções"
+        default: item.title
+        }
+    }
 
     private var textForeground: Color {
         guard appearsActive else { return Color(nsColor: .secondaryLabelColor) }
@@ -377,7 +383,7 @@ private struct SidebarNavigationButton: View {
                     .foregroundStyle(appearsActive ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
                     .frame(width: 20)
 
-                Text(item.title)
+                Text(title)
                     .font(.body.weight(isSelected ? .semibold : .regular))
                     .foregroundStyle(textForeground)
                     .lineLimit(1)
@@ -401,8 +407,8 @@ private struct SidebarNavigationButton: View {
                     .fill(Color(nsColor: .labelColor).opacity(appearsActive ? 0.12 : 0.07))
             }
         }
-        .help(item.title)
-        .accessibilityLabel(item.title)
+        .help(title)
+        .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityIdentifier(accessibilityIdentifier)
         .animation(.easeOut(duration: 0.15), value: isSelected)

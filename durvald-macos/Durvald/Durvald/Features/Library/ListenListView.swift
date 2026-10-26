@@ -22,9 +22,9 @@ struct ListenListSaveButton: View {
             }
             .buttonStyle(CollectionHeaderActionButtonStyle(size: 40))
             .disabled(store.core == nil || store.isChangingListenList)
-            .help(entry == nil ? "Adicionar a Para ouvir" : "Remover de Para ouvir")
-            .accessibilityLabel(entry == nil ? "Adicionar a Para ouvir" : "Remover de Para ouvir")
-            .accessibilityValue(entry == nil ? "Fora de Para ouvir" : "Em Para ouvir")
+            .help(entry == nil ? "Adicionar a Ouvir depois" : "Remover de Ouvir depois")
+            .accessibilityLabel(entry == nil ? "Adicionar a Ouvir depois" : "Remover de Ouvir depois")
+            .accessibilityValue(entry == nil ? "Fora de Ouvir depois" : "Em Ouvir depois")
             .accessibilityAddTraits(entry == nil ? [] : .isSelected)
             .accessibilityIdentifier("listenList.save")
             if let error = store.listenListError { Text(error).font(.caption).foregroundStyle(.red) }
@@ -37,7 +37,7 @@ enum ListenListStatus: String, CaseIterable, Identifiable {
     case pending, heard, all
     var id: Self { self }
     var title: String {
-        switch self { case .pending: "Para ouvir"; case .heard: "Ouvidos"; case .all: "Todos" }
+        switch self { case .pending: "Ouvir depois"; case .heard: "Ouvidos"; case .all: "Todos" }
     }
 }
 enum ListenListOrder: String, CaseIterable, Identifiable {
@@ -96,10 +96,10 @@ struct ListenListView: View {
                 }
             }
             if store.isLoadingListenList && store.listenListEntries.isEmpty {
-                ProgressView("Carregando Para ouvir…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProgressView("Carregando Ouvir depois…").frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if items.isEmpty {
                 ContentUnavailableView(searchText.isEmpty ? (status == .heard ? "Nenhum lançamento marcado como ouvido" : "Sua lista está vazia") : "Nenhum resultado",
-                    systemImage: "bookmark", description: Text("Use “Adicionar a Para ouvir” na página ou no menu de um álbum ou lançamento."))
+                    systemImage: "bookmark", description: Text("Use “Adicionar a Ouvir depois” na página ou no menu de um álbum ou lançamento."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
@@ -127,7 +127,7 @@ private struct ListenListRow: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.title).font(.headline).foregroundStyle(.primary)
                         Text(entry.artist).foregroundStyle(.secondary)
-                        Text(entry.heardAt == nil ? "Para ouvir" : "Ouvido").font(.caption).foregroundStyle(.secondary)
+                        Text(entry.heardAt == nil ? "Ouvir depois" : "Ouvido").font(.caption).foregroundStyle(.secondary)
                         if entry.localReleaseId == nil { Text(entry.externalRelease == nil ? "Arquivos indisponíveis" : "Somente on-line").font(.caption).foregroundStyle(.secondary) }
                     }
                     Spacer(minLength: 0)
@@ -146,7 +146,7 @@ private struct ListenListRow: View {
             }
             .disabled(store.isChangingListenList).accessibilityIdentifier("listenList.heard.\(entry.id)")
             Spacer()
-            Button("Remover de Para ouvir", systemImage: "bookmark.slash", role: .destructive) {
+            Button("Remover de Ouvir depois", systemImage: "bookmark.slash", role: .destructive) {
                 Task { await store.removeFromListenList(entry) }
             }.labelStyle(.iconOnly).disabled(store.isChangingListenList).accessibilityIdentifier("listenList.remove.\(entry.id)")
             }

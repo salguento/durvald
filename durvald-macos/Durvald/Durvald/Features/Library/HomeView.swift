@@ -62,7 +62,7 @@ struct HomeView: View {
                 Text("Acesse rapidamente todo o conteúdo local.").foregroundStyle(.secondary)
             }
             LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                HomeLibraryCard(title: "Para ouvir", count: store.pendingListenListCount, systemImage: "bookmark",
+                HomeLibraryCard(title: "Ouvir depois", count: store.pendingListenListCount, systemImage: "bookmark",
                                 destination: .listenList, onNavigate: onNavigate)
                 HomeLibraryCard(title: "Músicas", count: store.tracks.count, systemImage: "music.note",
                                 destination: .songs, onNavigate: onNavigate)

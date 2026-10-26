@@ -1060,7 +1060,7 @@ struct ArtistView: View {
                                                     artworkSize: AlbumGridLayout.cardWidth
                                                 )
                                                 .contextMenu {
-                                                    Button("Adicionar a Para ouvir", systemImage: "bookmark") {
+                                                    Button("Adicionar a Ouvir depois", systemImage: "bookmark") {
                                                         Task { await store.saveToListenList(release: release, artist: artist) }
                                                     }
                                                     .disabled(store.isChangingListenList)

@@ -437,7 +437,7 @@ struct ContentView: View {
                 isPending: globalSearch.isPending || globalSearch.committedQuery != shell.submittedSearchText)
         case .genres: "Explore a classificação disponível na sua biblioteca."
         case .albumCollections: "\(albumCollections.collections.count) coleções"
-        case .listenList: "\(store.pendingListenListCount) para ouvir"
+        case .listenList: "\(store.pendingListenListCount) para ouvir depois"
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
         case .playlists: playlistsSummary
@@ -472,7 +472,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .albumCollections: albumCollectionID == nil ? "Pesquisar coleções" : "Pesquisar álbuns na coleção"
         case .genres: isClassificationDetail ? "Pesquisar neste conteúdo" : "Pesquisar gêneros e estilos"
-        case .listenList: "Pesquisar em Para ouvir"
+        case .listenList: "Pesquisar em Ouvir depois"
         case .songs: "Pesquisar músicas"
         case .artists: "Pesquisar artistas"
         case .playlists: "Pesquisar playlists"

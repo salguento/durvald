@@ -24,7 +24,7 @@ extension DurvaldCoreStore {
             listenListError = nil
         } catch {
             guard generation == listenListGeneration, self.core === core, !Task.isCancelled else { return }
-            listenListError = "Não foi possível carregar Para ouvir. Tente novamente."
+            listenListError = "Não foi possível carregar Ouvir depois. Tente novamente."
         }
     }
 
@@ -40,7 +40,7 @@ extension DurvaldCoreStore {
             await refreshListenList()
             return listenListError == nil
         } catch {
-            listenListError = "Não foi possível atualizar Para ouvir. Tente novamente."
+            listenListError = "Não foi possível atualizar Ouvir depois. Tente novamente."
             return false
         }
     }
