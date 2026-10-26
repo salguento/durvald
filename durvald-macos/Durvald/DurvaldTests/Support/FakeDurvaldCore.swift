@@ -2,6 +2,23 @@ import Foundation
 @testable import Durvald
 
 final class FakeDurvaldCore: DurvaldCore {
+    var followedArtistsResult: [FollowedArtist] = []
+    var newsHandler: ((ArtistNewsQuery) async throws -> ArtistNewsPage)?
+    var newsRefreshHandler: ((Int64, Bool) async throws -> ArtistRefreshResult)?
+    var followHandler: ((Int64, Bool) async throws -> Void)?
+    var seenHandler: ((String, Bool) async throws -> Void)?
+    override func importFollowedArtists(artistIds: [Int64]) async throws {}
+    override func followedArtists() async throws -> [FollowedArtist] { followedArtistsResult }
+    override func setArtistFollowed(artistId: Int64, followed: Bool) async throws { try await followHandler?(artistId, followed) }
+    override func artistNews(query: ArtistNewsQuery) async throws -> ArtistNewsPage {
+        if let newsHandler { return try await newsHandler(query) }
+        return ArtistNewsPage(items: [], followedArtists: followedArtistsResult, total: 0, nextOffset: nil)
+    }
+    override func setArtistNewsSeen(releaseGroupMbid: String, seen: Bool) async throws { try await seenHandler?(releaseGroupMbid, seen) }
+    override func refreshArtistNews(artistId: Int64, force: Bool) async throws -> ArtistRefreshResult {
+        if let newsRefreshHandler { return try await newsRefreshHandler(artistId, force) }
+        return ArtistRefreshResult(artistId: artistId, identityGeneration: 0, sections: [])
+    }
     var localRecommendationsHandler: ((UInt32) async throws -> LocalRecommendations)?
     var recommendationDismissHandler: ((Int64) async throws -> Void)?
     var recommendationRestoreHandler: (() async throws -> Void)?

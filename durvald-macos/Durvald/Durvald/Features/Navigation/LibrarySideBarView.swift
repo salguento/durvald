@@ -147,6 +147,8 @@ struct LibrarySidebarView: View {
                         accessibilityIdentifier: "sidebar.home"
                     )
 
+                    SidebarNavigationButton(item: .news, selection: $destination,
+                        accessibilityIdentifier: "sidebar.news")
                     SidebarNavigationButton(item: .listenList, selection: $destination,
                         accessibilityIdentifier: "sidebar.listenList")
 

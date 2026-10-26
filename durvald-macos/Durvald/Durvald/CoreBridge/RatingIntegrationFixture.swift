@@ -50,6 +50,9 @@ enum RatingIntegrationFixture {
     @MainActor
     static func makeStore(directory: URL) async throws -> DurvaldCoreStore {
         let core = try await openCore(directory: directory)
+        if ProcessInfo.processInfo.arguments.contains("--artist-news-fixture") {
+            try seedArtistNews(directory: directory)
+        }
         if ProcessInfo.processInfo.arguments.contains("--recommendations-fixture") {
             try withDatabase(config(directory: directory).databasePath) { database in
                 try execute("INSERT OR IGNORE INTO artists(artist_id,name) VALUES(2,'Jazz explorer'),(3,'Tag explorer'); UPDATE releases SET artist_id=2,artist_name='Jazz explorer',is_favorite=1 WHERE release_id=4; UPDATE releases SET artist_id=3,artist_name='Tag explorer' WHERE release_id=5; UPDATE releases SET is_favorite=1 WHERE release_id=1;", database: database)
@@ -90,6 +93,39 @@ enum RatingIntegrationFixture {
         await store.refreshRatingPreferences()
         try await store.reloadPlaylists()
         return store
+    }
+
+    static func seedArtistNews(directory: URL) throws {
+        try withDatabase(config(directory: directory).databasePath) { database in
+            let now = Int64(Date().timeIntervalSince1970)
+            let calendar = Calendar(identifier: .gregorian)
+            let dates = [Date().addingTimeInterval(-7 * 86_400), Date().addingTimeInterval(30 * 86_400)]
+            let mbids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"]
+            try execute("""
+                INSERT OR IGNORE INTO artist_enrichment_state(artist_id,generation) VALUES(1,0);
+                UPDATE artist_enrichment_state SET identity_status='resolved',musicbrainz_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                    confirmed_musicbrainz_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',identity_origin='manual' WHERE artist_id=1;
+                INSERT OR IGNORE INTO artist_follows(artist_id,followed_at) VALUES(1,\(now));
+                INSERT OR IGNORE INTO artist_discography_state(artist_id,identity_generation,active_generation,active_remote_exhausted,active_fetched_at,active_expires_at)
+                    VALUES(1,0,1,1,\(now),\(now + 86_400));
+                """, database: database)
+            for (index, date) in dates.enumerated() {
+                let parts = calendar.dateComponents([.year,.month,.day], from: date)
+                let title = index == 0 ? "Novidade recente" : "Próximo lançamento"
+                let attribution: [String: Any] = ["source_url": "https://musicbrainz.org/release-group/\(mbids[index])"]
+                let snapshot: [String: Any] = ["musicbrainz_id": mbids[index], "title": title, "primary_type": "Album",
+                    "secondary_types": [], "first_release_date": ["year": parts.year!, "month": parts.month!, "day": parts.day!],
+                    "genres": [], "composers": [], "producers": [], "attribution": attribution]
+                let payload = String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self).replacingOccurrences(of: "'", with: "''")
+                let source = String(decoding: try JSONSerialization.data(withJSONObject: attribution), as: UTF8.self)
+                try execute("""
+                    INSERT OR IGNORE INTO external_release_groups(musicbrainz_id,title,primary_type,secondary_types,first_release_year,first_release_month,first_release_day,attribution,fetched_at)
+                        VALUES('\(mbids[index])','\(title)','Album','[]',\(parts.year!),\(parts.month!),\(parts.day!),'\(source)',\(now));
+                    INSERT OR IGNORE INTO external_artist_release_groups(artist_id,release_group_mbid,identity_generation,catalog_generation,provider_position,snapshot_payload)
+                        VALUES(1,'\(mbids[index])',0,1,\(index),'\(payload)');
+                    """, database: database)
+            }
+        }
     }
 
     static func withDatabase<T>(_ path: String, body: (OpaquePointer) throws -> T) throws -> T {

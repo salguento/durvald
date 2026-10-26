@@ -136,7 +136,105 @@ impl EnrichmentApplication {
     }
 
     pub(crate) async fn clear_provider_data(&self, provider: EnrichmentProvider) -> CoreResult<()> {
-        self.service.clear_provider_data(provider).await
+        self.service.clear_provider_data(provider).await?;
+        if provider == EnrichmentProvider::MusicBrainz {
+            self.library
+                .personal_library_operation(crate::database::artist_news::clear_provider)
+                .await?;
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn refresh_artist_news(
+        &self,
+        artist_id: ArtistId,
+        force: bool,
+    ) -> CoreResult<ArtistRefreshResult> {
+        use crate::api::{ArtistRefreshSection, ArtistRefreshStatus};
+        let id = artist_id.get() as i64;
+        let identity = self.service.artist_identity(id).await?;
+        let followed = self
+            .library
+            .personal_library_operation(move |c| crate::database::artist_news::followed(c))
+            .await?
+            .into_iter()
+            .find(|f| f.artist.id == id)
+            .ok_or_else(|| CoreError::InvalidInput {
+                message: "Artist is not followed".into(),
+            })?;
+        let now = chrono::Utc::now().timestamp();
+        if !force && followed.next_refresh_at.is_some_and(|t| now < t) {
+            return Ok(ArtistRefreshResult {
+                artist_id: id,
+                identity_generation: identity.generation,
+                sections: vec![crate::api::ArtistRefreshSectionResult {
+                    section: ArtistRefreshSection::Discography,
+                    status: followed.status.unwrap_or(ArtistRefreshStatus::Unchanged),
+                    retry_after_seconds: None,
+                    cover_progress: None,
+                    diagnostic: None,
+                    provider: Some(EnrichmentProvider::MusicBrainz),
+                }],
+            });
+        }
+        let generation = followed.generation;
+        let identity_generation = identity.generation;
+        // News checks revalidate at most daily, while ordinary discography
+        // browsing can retain its longer TTL. The shared transport still owns
+        // validators, per-provider gates, cooldowns and bounded cursors.
+        let revalidate = force || followed.last_success_at.is_some_and(|t| now - t >= 86_400);
+        let request = ArtistRefreshRequest {
+            sections: vec![ArtistRefreshSection::Discography],
+            language: "pt".into(),
+            force: revalidate,
+        };
+        let refresh = self.service.refresh_artist(id, request);
+        tokio::pin!(refresh);
+        let result = loop {
+            tokio::select! {
+                result=&mut refresh=>break result,
+                _=tokio::time::sleep(std::time::Duration::from_millis(250))=> {
+                    let valid=self.library.personal_library_operation(move |c|crate::database::artist_news::current(c,id,generation,identity_generation)).await?;
+                    if !valid {return Ok(ArtistRefreshResult{artist_id:id,identity_generation,sections:vec![crate::api::ArtistRefreshSectionResult{
+                        section:ArtistRefreshSection::Discography,status:ArtistRefreshStatus::Superseded,retry_after_seconds:None,cover_progress:None,diagnostic:None,provider:Some(EnrichmentProvider::MusicBrainz)}]});}
+                }
+            }
+        };
+        let (status, retry) = result
+            .as_ref()
+            .ok()
+            .and_then(|r| r.sections.first())
+            .map(|r| (r.status, r.retry_after_seconds))
+            .unwrap_or((ArtistRefreshStatus::Unavailable, None));
+        let accepted = self
+            .library
+            .personal_library_operation(move |c| {
+                crate::database::artist_news::finish(
+                    c,
+                    id,
+                    generation,
+                    identity_generation,
+                    status,
+                    retry,
+                    chrono::Utc::now().timestamp(),
+                )
+            })
+            .await?;
+        if !accepted {
+            return Ok(ArtistRefreshResult {
+                artist_id: id,
+                identity_generation,
+                sections: vec![crate::api::ArtistRefreshSectionResult {
+                    section: ArtistRefreshSection::Discography,
+                    status: ArtistRefreshStatus::Superseded,
+                    retry_after_seconds: None,
+                    cover_progress: None,
+                    diagnostic: None,
+                    provider: Some(EnrichmentProvider::MusicBrainz),
+                }],
+            });
+        }
+        result
     }
 
     pub(crate) async fn refresh_artist(

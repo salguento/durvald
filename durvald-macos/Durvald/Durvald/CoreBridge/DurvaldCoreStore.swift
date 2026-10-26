@@ -81,6 +81,7 @@ final class DurvaldCoreStore {
     }
     private(set) var history: [PlaybackHistoryItem] = []
     @ObservationIgnored let historyRepository = PlaybackHistoryRepository()
+    @ObservationIgnored let artistNews = ArtistNewsRepository()
     @ObservationIgnored let homeRepository = HomeLibraryRepository()
     @ObservationIgnored let homeRecommendations = LocalRecommendationsRepository()
     var isLoadingListenList = false

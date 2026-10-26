@@ -3,6 +3,61 @@
 use super::Artist;
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct FollowedArtist {
+    pub artist: Artist,
+    pub identity: ArtistIdentity,
+    pub generation: u64,
+    pub followed_at: i64,
+    pub last_checked_at: Option<i64>,
+    pub last_success_at: Option<i64>,
+    pub next_refresh_at: Option<i64>,
+    pub status: Option<ArtistRefreshStatus>,
+    pub catalog_complete: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ArtistNewsKind {
+    Recent,
+    Upcoming,
+    PartialDate,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistNewsItem {
+    pub id: String,
+    pub artist: Artist,
+    pub release: ExternalReleaseGroup,
+    pub kind: ArtistNewsKind,
+    pub first_seen_at: i64,
+    pub seen: bool,
+    pub source_updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistNewsQuery {
+    pub query: String,
+    pub unseen_only: bool,
+    pub kind: Option<ArtistNewsKind>,
+    pub sort_by: String,
+    pub descending: bool,
+    pub offset: u64,
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ArtistNewsPage {
+    pub items: Vec<ArtistNewsItem>,
+    pub followed_artists: Vec<FollowedArtist>,
+    pub total: u64,
+    pub next_offset: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

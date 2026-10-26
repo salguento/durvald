@@ -19,6 +19,7 @@ struct ContentView: View {
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.openWindow) private var openWindow
 
+    @AppStorage("followedArtistIDs") private var legacyFollowedArtistIDs = ""
     @AppStorage("albums.listingMode") private var albumListingMode: CollectionListingMode = .standardGrid
     @AppStorage("artists.listingMode") private var artistListingMode: CollectionListingMode = .standardGrid
     @AppStorage("playlists.listingMode") private var playlistListingMode: CollectionListingMode = .standard
@@ -186,6 +187,9 @@ struct ContentView: View {
             AlbumCollectionAddSheet(release: request.release).environment(albumCollections)
         }
         .environment(albumCollections)
+        .task(id: store.core.map(ObjectIdentifier.init)) {
+            if let core = store.core { await store.artistNews.initialize(core: core, legacyIDs: legacyFollowedArtistIDs) }
+        }
         .task(id: store.personalTagsRequest) { await store.refreshPersonalTags() }
         .onChange(of: store.personalTags.tags.map(\.id)) { _, ids in
             albumTagState.filter.ids.formIntersection(ids)
@@ -379,7 +383,7 @@ struct ContentView: View {
     private var hasLibrarySearch: Bool {
         if isArtistDetail || isPlaylistDetail || isAlbumDetail || isClassificationDetail || shell.navigationHistory.current == .albumCollections { return true }
         guard case .section(let destination) = shell.navigationHistory.currentRoute else { return false }
-        return destination == .albums || destination == .songs || destination == .artists || destination == .retrospective || destination == .playlists || destination == .listenList || destination == .genres
+        return destination == .news || destination == .albums || destination == .songs || destination == .artists || destination == .retrospective || destination == .playlists || destination == .listenList || destination == .genres
     }
 
     private var currentClassificationState: ClassificationBrowserState? {
@@ -437,6 +441,7 @@ struct ContentView: View {
                 isPending: globalSearch.isPending || globalSearch.committedQuery != shell.submittedSearchText)
         case .genres: "Explore a classificação disponível na sua biblioteca."
         case .albumCollections: "\(albumCollections.collections.count) coleções"
+        case .news: "\(store.artistNews.total) \(store.artistNews.total == 1 ? "novidade" : "novidades") · \(store.artistNews.followed.count) \(store.artistNews.followed.count == 1 ? "artista" : "artistas")"
         case .listenList: "\(store.pendingListenListCount) para ouvir depois"
         case .songs: musicLibrarySummary.text
         case .artists: artistsSummary
@@ -459,6 +464,7 @@ struct ContentView: View {
             get: { currentClassificationState?.query ?? "" },
             set: { currentClassificationState?.query = $0 }
         )
+        case .news: Binding(get: { store.artistNews.query }, set: { store.artistNews.query = $0 })
         case .listenList: $listenListSearchText
         case .songs: $musicSearchText
         case .artists: $artistSearchText
@@ -472,6 +478,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .albumCollections: albumCollectionID == nil ? "Pesquisar coleções" : "Pesquisar álbuns na coleção"
         case .genres: isClassificationDetail ? "Pesquisar neste conteúdo" : "Pesquisar gêneros e estilos"
+        case .news: "Pesquisar novidades"
         case .listenList: "Pesquisar em Ouvir depois"
         case .songs: "Pesquisar músicas"
         case .artists: "Pesquisar artistas"
@@ -485,6 +492,7 @@ struct ContentView: View {
         switch shell.navigationHistory.current {
         case .albumCollections: "albumCollections.search"
         case .genres: "classification.search"
+        case .news: "news.search"
         case .listenList: "listenList.search"
         case .songs: "library.search"
         case .artists: "artists.search"
@@ -666,7 +674,9 @@ struct ContentView: View {
                     expandedWidth: searchWidth,
                     isExpanded: $isLibrarySearchExpanded
                 )
-                if shell.navigationHistory.current == .albumCollections {
+                if shell.navigationHistory.current == .news {
+                    NewsToolbarOptions(state: store.artistNews)
+                } else if shell.navigationHistory.current == .albumCollections {
                     AlbumCollectionsToolbarOptions(state: albumCollections, collectionID: albumCollectionID,
                         onCreate: { albumCollectionEditor = AlbumCollectionEditorRequest() },
                         onEdit: { albumCollectionEditor = AlbumCollectionEditorRequest(collection: $0) })
@@ -1065,6 +1075,8 @@ struct ContentView: View {
                               submissionRevision: shell.searchSubmissionRevision)
         case .genres:
             classificationBrowser(kind: nil, id: nil)
+        case .news:
+            NewsView(onSelectArtists: { shell.navigationHistory.navigate(to: .artists) })
         case .listenList:
             ListenListView(searchText: $listenListSearchText)
         case .home:

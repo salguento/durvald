@@ -31,7 +31,6 @@ struct ArtistView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appearsActive) private var appearsActive
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage("followedArtistIDs") private var followedArtistIDs = ""
     @AppStorage("favoriteArtistIDs") private var favoriteArtistIDs = ""
 
     let artist: Artist
@@ -1537,7 +1536,7 @@ struct ArtistView: View {
     }
 
     private var isFollowing: Bool {
-        followedArtistIDs.split(separator: ",").contains(Substring(String(artist.id)))
+        store.artistNews.followed.contains { $0.artist.id == artist.id }
     }
 
     private var isFavorite: Bool {
@@ -1557,7 +1556,12 @@ struct ArtistView: View {
 
     private var artistFollowButton: some View {
         Button {
-            followedArtistIDs = togglingArtist(in: followedArtistIDs)
+            Task {
+                if let core = store.core {
+                    await store.artistNews.setFollow(artist.id, followed: !isFollowing, core: core)
+                    if let error = store.artistNews.error { store.errorMessage = error }
+                }
+            }
         } label: {
             Group {
                 if isFollowing {
@@ -1581,6 +1585,7 @@ struct ArtistView: View {
         .accessibilityValue(isFollowing ? "Seguindo" : "Não seguindo")
         .accessibilityAddTraits(isFollowing ? .isSelected : [])
         .accessibilityIdentifier("artist.follow")
+        .disabled(!store.artistNews.initialized || store.artistNews.pending.contains(artist.id))
     }
 
     private var artistInformationButton: some View {

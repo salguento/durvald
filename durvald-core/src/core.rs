@@ -322,6 +322,68 @@ impl DurvaldCore {
             .await
     }
 
+    pub async fn followed_artists(&self) -> CoreResult<Vec<FollowedArtist>> {
+        self.library_application
+            .personal_library_operation(crate::database::artist_news::followed)
+            .await
+    }
+    pub async fn import_followed_artists(&self, artist_ids: Vec<i64>) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::artist_news::import_legacy(
+                    c,
+                    artist_ids,
+                    chrono::Utc::now().timestamp(),
+                )
+            })
+            .await
+    }
+    pub async fn set_artist_followed(&self, artist_id: i64, followed: bool) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::artist_news::set_follow(
+                    c,
+                    artist_id,
+                    followed,
+                    chrono::Utc::now().timestamp(),
+                )
+            })
+            .await
+    }
+    /// Offline, paged news from confirmed artists' published MusicBrainz caches.
+    pub async fn artist_news(&self, query: ArtistNewsQuery) -> CoreResult<ArtistNewsPage> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::artist_news::page(c, query, chrono::Utc::now().timestamp())
+            })
+            .await
+    }
+    pub async fn set_artist_news_seen(
+        &self,
+        release_group_mbid: String,
+        seen: bool,
+    ) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::artist_news::set_seen(
+                    c,
+                    release_group_mbid,
+                    seen,
+                    chrono::Utc::now().timestamp(),
+                )
+            })
+            .await
+    }
+    pub async fn refresh_artist_news(
+        &self,
+        artist_id: i64,
+        force: bool,
+    ) -> CoreResult<ArtistRefreshResult> {
+        self.enrichment_application
+            .refresh_artist_news(artist_id_from_api(artist_id)?, force)
+            .await
+    }
+
     /// Reads the locally persisted Last.fm ranking without performing network I/O.
     pub async fn artist_popular_tracks(
         &self,
