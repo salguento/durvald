@@ -10,6 +10,12 @@ struct HomeView: View {
     private let columns = [
         GridItem(.adaptive(minimum: 140, maximum: 220), spacing: 12)
     ]
+    private var recommendationSignals: String {
+        "\(store.libraryCatalogRevision):\(store.metadataRevision):\(store.releasesRevision):\(store.tracksRevision):\(store.classificationRevision):\(store.personalTagsRevision)"
+    }
+    private var homeRequest: String {
+        "\(store.core.map(ObjectIdentifier.init).map(String.init(describing:)) ?? "none"):\(recommendationSignals)"
+    }
 
     var body: some View {
         GeometryReader { visible in
@@ -28,6 +34,7 @@ struct HomeView: View {
                             shelf(title: "Adicionados recentemente", releases: store.homeRepository.snapshot.recentlyAdded,
                                   empty: "Importe músicas para ver seus álbuns aqui.", id: "recentlyAdded", viewport: viewport)
                         }
+                        recommendations(viewport: viewport)
                         if let error = store.homeRepository.errorMessage {
                             Label(error, systemImage: "exclamationmark.triangle")
                                 .font(.callout).foregroundStyle(.secondary)
@@ -44,15 +51,93 @@ struct HomeView: View {
         }
         .accessibilityIdentifier("home.page")
         .task(id: store.listenListRequest) { await store.refreshListenList() }
-        .task(id: store.libraryCatalogRevision) {
+        .task(id: homeRequest) {
             guard let core = store.core else { return }
             let revision = store.libraryCatalogRevision
             while !Task.isCancelled {
                 await store.homeRepository.refresh(core: core, catalogRevision: revision)
+                await store.homeRecommendations.refresh(core: core, signals: recommendationSignals)
                 do { try await Task.sleep(for: .seconds(2)) }
                 catch { return }
             }
         }
+    }
+
+    private func recommendations(viewport: PageViewport) -> some View {
+        let repository = store.homeRecommendations
+        let snapshot = repository.snapshot
+        return VStack(alignment: .leading, spacing: 20) {
+            HStack {
+                Text(snapshot.exploration ? "Explore sua biblioteca" : "Recomendações para você")
+                    .font(.title2.bold()).accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("home.recommendations.title")
+                Spacer()
+                Menu("Opções de sugestões", systemImage: "ellipsis") {
+                    Button("Atualizar sugestões") {
+                        guard let core = store.core else { return }
+                        Task { await repository.refresh(core: core, signals: recommendationSignals, force: true) }
+                    }
+                    Button("Restaurar sugestões dispensadas") {
+                        guard let core = store.core else { return }
+                        Task { await repository.restore(core: core, signals: recommendationSignals) }
+                    }
+                }.labelStyle(.iconOnly).menuIndicator(.hidden).fixedSize().help("Opções de sugestões")
+                    .disabled(repository.changing || repository.loading)
+                    .accessibilityIdentifier("home.recommendations.options")
+            }
+            Text(snapshot.exploration ? "Álbuns locais para descobrir. Seus favoritos e avaliações ajudam a escolher." : "Sugestões da sua biblioteca com base nas suas escutas e preferências.")
+                .font(.callout).foregroundStyle(.secondary)
+            if let error = repository.error {
+                HStack {
+                    Text(error).foregroundStyle(.secondary)
+                    Button("Tentar novamente") {
+                        guard let core = store.core else { return }
+                        Task { await repository.refresh(core: core, signals: recommendationSignals, force: true) }
+                    }
+                }
+            }
+            if repository.loading { ProgressView("Preparando sugestões…") }
+            else if snapshot.items.isEmpty && repository.error == nil {
+                Text("Nenhuma sugestão disponível agora. Continue explorando sua biblioteca ou restaure as sugestões dispensadas.")
+                    .foregroundStyle(.secondary).padding(.vertical, 24)
+            } else {
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 24) {
+                        ForEach(snapshot.items, id: \.release.id) { item in
+                            VStack(alignment: .leading, spacing: 10) {
+                                AlbumCard(release: item.release, onSelectAlbum: { release in
+                                    if let core = store.core { Task { await repository.record(.opened, releaseID: release.id, core: core) } }
+                                    navigation.album(release)
+                                }, artworkSize: min(220, max(160, (viewport.visibleWidth - 120) / 4)))
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text(item.reason).font(.caption).foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Spacer(minLength: 0)
+                                    Button("Dispensar sugestão", systemImage: "xmark") {
+                                        guard let core = store.core else { return }
+                                        Task { await repository.dismiss(releaseID: item.release.id, core: core, signals: recommendationSignals) }
+                                    }.labelStyle(.iconOnly).buttonStyle(.borderless).disabled(repository.changing)
+                                        .help("Ocultar esta sugestão por 30 dias")
+                                        .accessibilityIdentifier("home.recommendation.dismiss.\(item.release.id)")
+                                }
+                            }.frame(width: min(220, max(160, (viewport.visibleWidth - 120) / 4)), alignment: .leading)
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("home.recommendation.\(item.release.id)")
+                                .onScrollVisibilityChange(threshold: 0.5) { visible in
+                                    guard visible, let core = store.core else { return }
+                                    Task { await repository.record(.shown, releaseID: item.release.id, core: core) }
+                                }
+                        }
+                    }
+                }.scrollIndicators(.hidden)
+                    .contentMargins(.leading, 24 + viewport.leadingInset, for: .scrollContent)
+                    .contentMargins(.trailing, 24 + viewport.trailingInset, for: .scrollContent)
+                    .frame(width: viewport.expandedWidth, alignment: .leading)
+                    .padding(.leading, -24 - viewport.leadingInset)
+                    .padding(.trailing, -24 - viewport.trailingInset)
+                    .scrollClipDisabled()
+            }
+        }.accessibilityElement(children: .contain).accessibilityIdentifier("home.recommendations")
     }
 
     private var libraryShortcuts: some View {

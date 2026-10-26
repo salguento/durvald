@@ -10,6 +10,35 @@ pub use enrichment::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct LocalAlbumRecommendation {
+    pub release: Release,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct LocalRecommendations {
+    pub items: Vec<LocalAlbumRecommendation>,
+    pub exploration: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum RecommendationEvent {
+    Shown,
+    Opened,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RecommendationMetrics {
+    pub shown: u64,
+    pub opened: u64,
+    pub listened: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AlbumCollectionDefinition {
     pub match_all: bool,
     pub rules: Vec<SmartPlaylistRule>,

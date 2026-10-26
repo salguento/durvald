@@ -680,6 +680,7 @@ pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
     super::user_tags::migrate(conn)?;
     super::listen_list::migrate(conn)?;
     super::album_collections::migrate(conn)?;
+    super::recommendations::migrate(conn)?;
     ensure_indexes(conn)?;
     ensure_search_indexes(conn)?;
     crate::metadata_edit::create_tables(conn)?;

@@ -50,6 +50,16 @@ enum RatingIntegrationFixture {
     @MainActor
     static func makeStore(directory: URL) async throws -> DurvaldCoreStore {
         let core = try await openCore(directory: directory)
+        if ProcessInfo.processInfo.arguments.contains("--recommendations-fixture") {
+            try withDatabase(config(directory: directory).databasePath) { database in
+                try execute("INSERT OR IGNORE INTO artists(artist_id,name) VALUES(2,'Jazz explorer'),(3,'Tag explorer'); UPDATE releases SET artist_id=2,artist_name='Jazz explorer',is_favorite=1 WHERE release_id=4; UPDATE releases SET artist_id=3,artist_name='Tag explorer' WHERE release_id=5; UPDATE releases SET is_favorite=1 WHERE release_id=1;", database: database)
+                let date = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3 * 86_400))
+                try execute("INSERT INTO play_history(song_id,played_at,play_duration) SELECT 1,'\(date)',180 WHERE NOT EXISTS(SELECT 1 FROM play_history WHERE song_id=1);", database: database)
+            }
+            for id in [Int64(1), 4] { try await core.setClassification(target: .release, id: id, kind: .genre, names: ["Jazz"]) }
+            let tag = try await core.createUserTag(name: "Descobertas")
+            try await core.updateUserTagLinks(tagId: tag.id, trackIds: [], releaseIds: [1, 5], attached: true)
+        }
         if ProcessInfo.processInfo.arguments.contains("--collection-track-fixture"), try await core.playlists().isEmpty {
             let playlist = try await core.createPlaylist(name: "Collection row fixture", description: "", artworkBase64: nil)
             for (index, id) in [Int64(1), 4, 5].enumerated() {

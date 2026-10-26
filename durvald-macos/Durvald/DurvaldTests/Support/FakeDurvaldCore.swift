@@ -2,6 +2,17 @@ import Foundation
 @testable import Durvald
 
 final class FakeDurvaldCore: DurvaldCore {
+    var localRecommendationsHandler: ((UInt32) async throws -> LocalRecommendations)?
+    var recommendationDismissHandler: ((Int64) async throws -> Void)?
+    var recommendationRestoreHandler: (() async throws -> Void)?
+    var recommendationEvents: [(Int64, RecommendationEvent)] = []
+    override func localRecommendations(limit: UInt32) async throws -> LocalRecommendations {
+        if let localRecommendationsHandler { return try await localRecommendationsHandler(limit) }
+        return LocalRecommendations(items: [], exploration: true)
+    }
+    override func dismissLocalRecommendation(releaseId: Int64) async throws { try await recommendationDismissHandler?(releaseId) }
+    override func restoreLocalRecommendations() async throws { try await recommendationRestoreHandler?() }
+    override func recordRecommendationEvent(releaseId: Int64, event: RecommendationEvent) async throws { recommendationEvents.append((releaseId,event)) }
     var albumCollectionTrackResults: [Track] = []
     override func albumCollectionTracks(collectionId: Int64) async throws -> [Track] { albumCollectionTrackResults }
     var collectionRequests: [(trackIDs: [Int64], contexts: [String], start: UInt64?, shuffle: Bool?)] = []

@@ -723,6 +723,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func disconnectLastfm() async throws
 
+    func dismissLocalRecommendation(releaseId: Int64) async throws
+
     func enrichmentSettings() async throws  -> EnrichmentSettings
 
     /**
@@ -771,6 +773,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Saved releases to listen to, including metadata-only external references.
      */
     func listenList() async throws  -> [ListenListEntry]
+
+    /**
+     * Offline album suggestions, with transparent reasons and bounded diversity.
+     */
+    func localRecommendations(limit: UInt32) async throws  -> LocalRecommendations
 
     /**
      * Persists one explicitly selected remote result and returns its canonical
@@ -875,6 +882,10 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     func ratingPreferences() async throws  -> RatingScalePreferences
 
+    func recommendationMetrics() async throws  -> RecommendationMetrics
+
+    func recordRecommendationEvent(releaseId: Int64, event: RecommendationEvent) async throws
+
     /**
      * Explicitly refreshes the requested remote sections. Local reads remain
      * network-free and scanning/playback never call this method implicitly.
@@ -935,6 +946,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func replayPreview(request: ReplayRequest) async throws  -> ReplayPreview
 
     func resolveArtistCandidates(artistId: Int64) async throws  -> ArtistIdentityCandidates
+
+    func restoreLocalRecommendations() async throws
 
     /**
      * Resumes playback.
@@ -1984,6 +1997,23 @@ open func disconnectLastfm()async throws  {
         )
 }
 
+open func dismissLocalRecommendation(releaseId: Int64)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_dismiss_local_recommendation(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(releaseId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func enrichmentSettings()async throws  -> EnrichmentSettings {
     return
         try  await uniffiRustCallAsync(
@@ -2195,6 +2225,26 @@ open func listenList()async throws  -> [ListenListEntry] {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeListenListEntry.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Offline album suggestions, with transparent reasons and bounded diversity.
+     */
+open func localRecommendations(limit: UInt32)async throws  -> LocalRecommendations {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_local_recommendations(
+                    self.uniffiClonePointer(),
+                    FfiConverterUInt32.lower(limit)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeLocalRecommendations.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -2633,6 +2683,40 @@ open func ratingPreferences()async throws  -> RatingScalePreferences {
         )
 }
 
+open func recommendationMetrics()async throws  -> RecommendationMetrics {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_recommendation_metrics(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeRecommendationMetrics.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func recordRecommendationEvent(releaseId: Int64, event: RecommendationEvent)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_record_recommendation_event(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(releaseId),FfiConverterTypeRecommendationEvent.lower(event)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Explicitly refreshes the requested remote sections. Local reads remain
      * network-free and scanning/playback never call this method implicitly.
@@ -2915,6 +2999,23 @@ open func resolveArtistCandidates(artistId: Int64)async throws  -> ArtistIdentit
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeArtistIdentityCandidates.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func restoreLocalRecommendations()async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_restore_local_recommendations(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -7927,6 +8028,120 @@ public func FfiConverterTypeListenListEntry_lower(_ value: ListenListEntry) -> R
 }
 
 
+public struct LocalAlbumRecommendation {
+    public var release: Release
+    public var reason: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(release: Release, reason: String) {
+        self.release = release
+        self.reason = reason
+    }
+}
+
+
+
+extension LocalAlbumRecommendation: Equatable, Hashable {
+    public static func ==(lhs: LocalAlbumRecommendation, rhs: LocalAlbumRecommendation) -> Bool {
+        if lhs.release != rhs.release {
+            return false
+        }
+        if lhs.reason != rhs.reason {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(release)
+        hasher.combine(reason)
+    }
+}
+
+
+public struct FfiConverterTypeLocalAlbumRecommendation: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LocalAlbumRecommendation {
+        return
+            try LocalAlbumRecommendation(
+                release: FfiConverterTypeRelease.read(from: &buf),
+                reason: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LocalAlbumRecommendation, into buf: inout [UInt8]) {
+        FfiConverterTypeRelease.write(value.release, into: &buf)
+        FfiConverterString.write(value.reason, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeLocalAlbumRecommendation_lift(_ buf: RustBuffer) throws -> LocalAlbumRecommendation {
+    return try FfiConverterTypeLocalAlbumRecommendation.lift(buf)
+}
+
+public func FfiConverterTypeLocalAlbumRecommendation_lower(_ value: LocalAlbumRecommendation) -> RustBuffer {
+    return FfiConverterTypeLocalAlbumRecommendation.lower(value)
+}
+
+
+public struct LocalRecommendations {
+    public var items: [LocalAlbumRecommendation]
+    public var exploration: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(items: [LocalAlbumRecommendation], exploration: Bool) {
+        self.items = items
+        self.exploration = exploration
+    }
+}
+
+
+
+extension LocalRecommendations: Equatable, Hashable {
+    public static func ==(lhs: LocalRecommendations, rhs: LocalRecommendations) -> Bool {
+        if lhs.items != rhs.items {
+            return false
+        }
+        if lhs.exploration != rhs.exploration {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(items)
+        hasher.combine(exploration)
+    }
+}
+
+
+public struct FfiConverterTypeLocalRecommendations: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> LocalRecommendations {
+        return
+            try LocalRecommendations(
+                items: FfiConverterSequenceTypeLocalAlbumRecommendation.read(from: &buf),
+                exploration: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: LocalRecommendations, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeLocalAlbumRecommendation.write(value.items, into: &buf)
+        FfiConverterBool.write(value.exploration, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeLocalRecommendations_lift(_ buf: RustBuffer) throws -> LocalRecommendations {
+    return try FfiConverterTypeLocalRecommendations.lift(buf)
+}
+
+public func FfiConverterTypeLocalRecommendations_lower(_ value: LocalRecommendations) -> RustBuffer {
+    return FfiConverterTypeLocalRecommendations.lower(value)
+}
+
+
 /**
  * One completed playback event.
  */
@@ -8645,6 +8860,71 @@ public func FfiConverterTypeRatingScalePreferences_lift(_ buf: RustBuffer) throw
 
 public func FfiConverterTypeRatingScalePreferences_lower(_ value: RatingScalePreferences) -> RustBuffer {
     return FfiConverterTypeRatingScalePreferences.lower(value)
+}
+
+
+public struct RecommendationMetrics {
+    public var shown: UInt64
+    public var opened: UInt64
+    public var listened: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(shown: UInt64, opened: UInt64, listened: UInt64) {
+        self.shown = shown
+        self.opened = opened
+        self.listened = listened
+    }
+}
+
+
+
+extension RecommendationMetrics: Equatable, Hashable {
+    public static func ==(lhs: RecommendationMetrics, rhs: RecommendationMetrics) -> Bool {
+        if lhs.shown != rhs.shown {
+            return false
+        }
+        if lhs.opened != rhs.opened {
+            return false
+        }
+        if lhs.listened != rhs.listened {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(shown)
+        hasher.combine(opened)
+        hasher.combine(listened)
+    }
+}
+
+
+public struct FfiConverterTypeRecommendationMetrics: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecommendationMetrics {
+        return
+            try RecommendationMetrics(
+                shown: FfiConverterUInt64.read(from: &buf),
+                opened: FfiConverterUInt64.read(from: &buf),
+                listened: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: RecommendationMetrics, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.shown, into: &buf)
+        FfiConverterUInt64.write(value.opened, into: &buf)
+        FfiConverterUInt64.write(value.listened, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeRecommendationMetrics_lift(_ buf: RustBuffer) throws -> RecommendationMetrics {
+    return try FfiConverterTypeRecommendationMetrics.lift(buf)
+}
+
+public func FfiConverterTypeRecommendationMetrics_lower(_ value: RecommendationMetrics) -> RustBuffer {
+    return FfiConverterTypeRecommendationMetrics.lower(value)
 }
 
 
@@ -11712,6 +11992,61 @@ extension RatingRounding: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum RecommendationEvent {
+
+    case shown
+    case opened
+}
+
+
+public struct FfiConverterTypeRecommendationEvent: FfiConverterRustBuffer {
+    typealias SwiftType = RecommendationEvent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RecommendationEvent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .shown
+
+        case 2: return .opened
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: RecommendationEvent, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .shown:
+            writeInt(&buf, Int32(1))
+
+
+        case .opened:
+            writeInt(&buf, Int32(2))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeRecommendationEvent_lift(_ buf: RustBuffer) throws -> RecommendationEvent {
+    return try FfiConverterTypeRecommendationEvent.lift(buf)
+}
+
+public func FfiConverterTypeRecommendationEvent_lower(_ value: RecommendationEvent) -> RustBuffer {
+    return FfiConverterTypeRecommendationEvent.lower(value)
+}
+
+
+
+extension RecommendationEvent: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
  * Repeat mode for playback
  */
@@ -12982,6 +13317,28 @@ fileprivate struct FfiConverterSequenceTypeListenListEntry: FfiConverterRustBuff
     }
 }
 
+fileprivate struct FfiConverterSequenceTypeLocalAlbumRecommendation: FfiConverterRustBuffer {
+    typealias SwiftType = [LocalAlbumRecommendation]
+
+    public static func write(_ value: [LocalAlbumRecommendation], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeLocalAlbumRecommendation.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [LocalAlbumRecommendation] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [LocalAlbumRecommendation]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeLocalAlbumRecommendation.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 fileprivate struct FfiConverterSequenceTypePlaybackHistoryItem: FfiConverterRustBuffer {
     typealias SwiftType = [PlaybackHistoryItem]
 
@@ -13409,6 +13766,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_disconnect_lastfm() != 15313) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_dismiss_local_recommendation() != 65534) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_enrichment_settings() != 18001) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -13440,6 +13800,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_listen_list() != 19819) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_local_recommendations() != 35090) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_materialize_remote_artist() != 7346) {
@@ -13508,6 +13871,12 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_rating_preferences() != 7239) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_recommendation_metrics() != 29844) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_record_recommendation_event() != 26836) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_refresh_artist() != 43879) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -13551,6 +13920,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_resolve_artist_candidates() != 28873) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_restore_local_recommendations() != 42133) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_resume() != 18016) {

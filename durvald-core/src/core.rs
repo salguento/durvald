@@ -220,6 +220,54 @@ impl DurvaldCore {
         self.library_application.home_library(limit).await
     }
 
+    /// Offline album suggestions, with transparent reasons and bounded diversity.
+    pub async fn local_recommendations(&self, limit: u32) -> CoreResult<LocalRecommendations> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::recommendations::generate(c, limit, chrono::Utc::now().timestamp())
+            })
+            .await
+    }
+    pub async fn dismiss_local_recommendation(&self, release_id: i64) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::recommendations::dismiss(
+                    c,
+                    release_id,
+                    chrono::Utc::now().timestamp(),
+                )
+            })
+            .await
+    }
+    pub async fn restore_local_recommendations(&self) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(crate::database::recommendations::restore)
+            .await
+    }
+    pub async fn record_recommendation_event(
+        &self,
+        release_id: i64,
+        event: RecommendationEvent,
+    ) -> CoreResult<()> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::recommendations::record(
+                    c,
+                    release_id,
+                    event,
+                    chrono::Utc::now().timestamp(),
+                )
+            })
+            .await
+    }
+    pub async fn recommendation_metrics(&self) -> CoreResult<RecommendationMetrics> {
+        self.library_application
+            .personal_library_operation(move |c| {
+                crate::database::recommendations::metrics(c, chrono::Utc::now().timestamp())
+            })
+            .await
+    }
+
     /// Returns a bounded page of releases ordered by their stable database ID.
     pub async fn releases_page(&self, page_size: u64, offset: u64) -> CoreResult<ReleasePage> {
         self.library_application

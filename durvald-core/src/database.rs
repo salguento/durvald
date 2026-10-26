@@ -44,6 +44,7 @@ pub(crate) mod ratings;
 
 pub(crate) mod album_collections;
 pub(crate) mod classification;
+pub(crate) mod recommendations;
 pub(crate) mod user_tags;
 
 pub(crate) mod listen_list;
