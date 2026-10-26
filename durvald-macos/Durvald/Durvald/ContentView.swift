@@ -837,7 +837,14 @@ struct ContentView: View {
         Button {
             shell.navigationHistory.navigate(to: .home)
         } label: {
-            Label("Início", systemImage: "house")
+            Label {
+                Text("Início")
+            } icon: {
+                Image(systemName: "house")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: Layout.panelToggleIconWidth, height: Layout.panelToggleIconHeight)
+            }
                 .labelStyle(.iconOnly)
                 .frame(width: ToolbarControlMetrics.size, height: ToolbarControlMetrics.size)
                 .contentShape(Circle())
