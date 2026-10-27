@@ -222,26 +222,16 @@ impl DurvaldCore {
 
     /// Offline album suggestions, with transparent reasons and bounded diversity.
     pub async fn local_recommendations(&self, limit: u32) -> CoreResult<LocalRecommendations> {
-        self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::recommendations::generate(c, limit, chrono::Utc::now().timestamp())
-            })
-            .await
+        self.library_application.local_recommendations(limit).await
     }
     pub async fn dismiss_local_recommendation(&self, release_id: i64) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::recommendations::dismiss(
-                    c,
-                    release_id,
-                    chrono::Utc::now().timestamp(),
-                )
-            })
+            .dismiss_local_recommendation(release_id)
             .await
     }
     pub async fn restore_local_recommendations(&self) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(crate::database::recommendations::restore)
+            .restore_local_recommendations()
             .await
     }
     pub async fn record_recommendation_event(
@@ -250,22 +240,11 @@ impl DurvaldCore {
         event: RecommendationEvent,
     ) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::recommendations::record(
-                    c,
-                    release_id,
-                    event,
-                    chrono::Utc::now().timestamp(),
-                )
-            })
+            .record_recommendation_event(release_id, event)
             .await
     }
     pub async fn recommendation_metrics(&self) -> CoreResult<RecommendationMetrics> {
-        self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::recommendations::metrics(c, chrono::Utc::now().timestamp())
-            })
-            .await
+        self.library_application.recommendation_metrics().await
     }
 
     /// Returns a bounded page of releases ordered by their stable database ID.
@@ -323,40 +302,21 @@ impl DurvaldCore {
     }
 
     pub async fn followed_artists(&self) -> CoreResult<Vec<FollowedArtist>> {
-        self.library_application
-            .personal_library_operation(crate::database::artist_news::followed)
-            .await
+        self.library_application.followed_artists().await
     }
     pub async fn import_followed_artists(&self, artist_ids: Vec<i64>) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::artist_news::import_legacy(
-                    c,
-                    artist_ids,
-                    chrono::Utc::now().timestamp(),
-                )
-            })
+            .import_followed_artists(artist_ids)
             .await
     }
     pub async fn set_artist_followed(&self, artist_id: i64, followed: bool) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::artist_news::set_follow(
-                    c,
-                    artist_id,
-                    followed,
-                    chrono::Utc::now().timestamp(),
-                )
-            })
+            .set_artist_followed(artist_id, followed)
             .await
     }
     /// Offline, paged news from confirmed artists' published MusicBrainz caches.
     pub async fn artist_news(&self, query: ArtistNewsQuery) -> CoreResult<ArtistNewsPage> {
-        self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::artist_news::page(c, query, chrono::Utc::now().timestamp())
-            })
-            .await
+        self.library_application.artist_news(query).await
     }
     pub async fn set_artist_news_seen(
         &self,
@@ -364,14 +324,7 @@ impl DurvaldCore {
         seen: bool,
     ) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::artist_news::set_seen(
-                    c,
-                    release_group_mbid,
-                    seen,
-                    chrono::Utc::now().timestamp(),
-                )
-            })
+            .set_artist_news_seen(release_group_mbid, seen)
             .await
     }
     pub async fn refresh_artist_news(
@@ -653,15 +606,11 @@ impl DurvaldCore {
 
     /// Classification terms with content in the local library.
     pub async fn album_collections(&self) -> CoreResult<Vec<AlbumCollection>> {
-        self.library_application
-            .personal_library_operation(crate::database::album_collections::list)
-            .await
+        self.library_application.album_collections().await
     }
     pub async fn album_collection(&self, collection_id: i64) -> CoreResult<AlbumCollectionPage> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::album_collections::page(c, collection_id)
-            })
+            .album_collection(collection_id)
             .await
     }
     pub async fn save_album_collection(
@@ -672,22 +621,12 @@ impl DurvaldCore {
         definition: Option<AlbumCollectionDefinition>,
     ) -> CoreResult<AlbumCollection> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::album_collections::save(
-                    c,
-                    collection_id,
-                    name,
-                    description,
-                    definition,
-                )
-            })
+            .save_album_collection(collection_id, name, description, definition)
             .await
     }
     pub async fn delete_album_collection(&self, collection_id: i64) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::album_collections::delete(c, collection_id)
-            })
+            .delete_album_collection(collection_id)
             .await
     }
     pub async fn add_album_to_collection(
@@ -696,9 +635,7 @@ impl DurvaldCore {
         release_id: i64,
     ) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::album_collections::add(c, collection_id, release_id)
-            })
+            .add_album_to_collection(collection_id, release_id)
             .await
     }
     pub async fn remove_album_from_collection(
@@ -707,9 +644,7 @@ impl DurvaldCore {
         item_id: i64,
     ) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::album_collections::remove(c, collection_id, item_id)
-            })
+            .remove_album_from_collection(collection_id, item_id)
             .await
     }
     pub async fn reorder_album_collection(
@@ -718,24 +653,18 @@ impl DurvaldCore {
         item_ids: Vec<i64>,
     ) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::album_collections::reorder(c, collection_id, item_ids)
-            })
+            .reorder_album_collection(collection_id, item_ids)
             .await
     }
     pub async fn album_collection_tracks(&self, collection_id: i64) -> CoreResult<Vec<Track>> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::album_collections::tracks(c, collection_id)
-            })
+            .album_collection_tracks(collection_id)
             .await
     }
 
     /// Classification terms with content in the local library.
     pub async fn classification_terms(&self) -> CoreResult<Vec<ClassificationTerm>> {
-        self.library_application
-            .personal_library_operation(crate::database::classification::terms)
-            .await
+        self.library_application.classification_terms().await
     }
     pub async fn classification_links(
         &self,
@@ -743,9 +672,7 @@ impl DurvaldCore {
         id: i64,
     ) -> CoreResult<Vec<ClassificationLink>> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::classification::links(c, target, id)
-            })
+            .classification_links(target, id)
             .await
     }
     pub async fn classification_page(
@@ -757,9 +684,7 @@ impl DurvaldCore {
         page_size: u64,
     ) -> CoreResult<ClassificationPage> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::classification::page(c, kind, id, query, offset, page_size)
-            })
+            .classification_page(kind, id, query, offset, page_size)
             .await
     }
     pub async fn classification_tracks(
@@ -769,9 +694,7 @@ impl DurvaldCore {
         query: String,
     ) -> CoreResult<Vec<Track>> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::classification::tracks(c, kind, id, query)
-            })
+            .classification_tracks(kind, id, query)
             .await
     }
     /// Some replaces this field, including an explicit empty exclusion; None restores source metadata.
@@ -783,31 +706,23 @@ impl DurvaldCore {
         names: Option<Vec<String>>,
     ) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::classification::set(c, target, id, kind, names)
-            })
+            .set_classification(target, id, kind, names)
             .await
     }
     /// Explicit local vocabulary relation, independent of content co-occurrence.
     pub async fn set_style_genres(&self, style_id: i64, genre_ids: Vec<i64>) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::classification::set_relations(c, style_id, genre_ids)
-            })
+            .set_style_genres(style_id, genre_ids)
             .await
     }
 
     /// Saved releases to listen to, including metadata-only external references.
     pub async fn listen_list(&self) -> CoreResult<Vec<ListenListEntry>> {
-        self.library_application
-            .personal_library_operation(crate::database::listen_list::list)
-            .await
+        self.library_application.listen_list().await
     }
     pub async fn add_release_to_listen_list(&self, release_id: i64) -> CoreResult<ListenListEntry> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::listen_list::add_local(c, release_id)
-            })
+            .add_release_to_listen_list(release_id)
             .await
     }
     pub async fn add_external_to_listen_list(
@@ -816,46 +731,32 @@ impl DurvaldCore {
         release: ExternalReleaseGroup,
     ) -> CoreResult<ListenListEntry> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::listen_list::add_external(c, artist_id, release)
-            })
+            .add_external_to_listen_list(artist_id, release)
             .await
     }
     pub async fn set_listen_list_heard(&self, entry_id: i64, heard: bool) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::listen_list::set_heard(c, entry_id, heard)
-            })
+            .set_listen_list_heard(entry_id, heard)
             .await
     }
     pub async fn remove_from_listen_list(&self, entry_id: i64) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| crate::database::listen_list::remove(c, entry_id))
+            .remove_from_listen_list(entry_id)
             .await
     }
 
     /// Snapshot of personal categories and their explicit associations.
     pub async fn user_tag_library(&self) -> CoreResult<UserTagLibrary> {
-        self.library_application
-            .personal_library_operation(crate::database::user_tags::library)
-            .await
+        self.library_application.user_tag_library().await
     }
     pub async fn create_user_tag(&self, name: String) -> CoreResult<UserTag> {
-        self.library_application
-            .personal_library_operation(move |c| crate::database::user_tags::create(c, name))
-            .await
+        self.library_application.create_user_tag(name).await
     }
     pub async fn rename_user_tag(&self, tag_id: i64, name: String) -> CoreResult<UserTag> {
-        self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::user_tags::rename(c, tag_id, name)
-            })
-            .await
+        self.library_application.rename_user_tag(tag_id, name).await
     }
     pub async fn delete_user_tag(&self, tag_id: i64) -> CoreResult<()> {
-        self.library_application
-            .personal_library_operation(move |c| crate::database::user_tags::delete(c, tag_id))
-            .await
+        self.library_application.delete_user_tag(tag_id).await
     }
     /// Adds/removes only this tag; preserves all other tags on each selected item.
     pub async fn update_user_tag_links(
@@ -866,15 +767,7 @@ impl DurvaldCore {
         attached: bool,
     ) -> CoreResult<()> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::user_tags::update_links(
-                    c,
-                    tag_id,
-                    track_ids,
-                    release_ids,
-                    attached,
-                )
-            })
+            .update_user_tag_links(tag_id, track_ids, release_ids, attached)
             .await
     }
     pub async fn filter_user_tag_items(
@@ -884,9 +777,7 @@ impl DurvaldCore {
         releases: bool,
     ) -> CoreResult<Vec<i64>> {
         self.library_application
-            .personal_library_operation(move |c| {
-                crate::database::user_tags::matching_items(c, tag_ids, match_all, releases)
-            })
+            .filter_user_tag_items(tag_ids, match_all, releases)
             .await
     }
 

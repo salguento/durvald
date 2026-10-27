@@ -611,6 +611,45 @@ pub(crate) fn set_relations(c: &Connection, style_id: i64, genre_ids: Vec<i64>) 
     })
 }
 
+/// Separate file evidence preserves multiple values without punctuation heuristics.
+pub(crate) fn cache_file(
+    c: &Connection,
+    path: &str,
+    genres: &[String],
+    styles: &[String],
+) -> rusqlite::Result<()> {
+    c.execute("INSERT INTO track_file_classification(song_id,genres,styles) SELECT song_id,?2,?3 FROM songs WHERE file_path=?1
+        ON CONFLICT(song_id) DO UPDATE SET genres=excluded.genres,styles=excluded.styles",
+        params![path,serde_json::to_string(genres).unwrap(),serde_json::to_string(styles).unwrap()])?;
+    Ok(())
+}
+/// Archive decisions with the missing identity; never attach by a title guess.
+pub(crate) fn archive(c: &Connection) -> rusqlite::Result<()> {
+    for p in ["genre", "style"] {
+        c.execute(&format!("INSERT OR IGNORE INTO missing_track_{p}_decisions SELECT m.missing_id,d.names FROM missing_tracks m
+            JOIN songs s ON s.song_id=m.original_song_id AND s.file_path=m.file_path JOIN track_{p}_decisions d USING(song_id)"),[])?;
+    }
+    Ok(())
+}
+pub(crate) fn restore(
+    c: &Connection,
+    source: i64,
+    target: i64,
+    archived: bool,
+) -> rusqlite::Result<()> {
+    for p in ["genre", "style"] {
+        let table = if archived {
+            format!("missing_track_{p}_decisions")
+        } else {
+            format!("track_{p}_decisions")
+        };
+        let field = if archived { "missing_id" } else { "song_id" };
+        // An existing explicit target decision wins, including its empty exclusion.
+        c.execute(&format!("INSERT OR IGNORE INTO track_{p}_decisions SELECT ?2,names FROM {table} WHERE {field}=?1"),params![source,target])?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -906,43 +945,4 @@ mod tests {
             .is_err()
         );
     }
-}
-
-/// Separate file evidence preserves multiple values without punctuation heuristics.
-pub(crate) fn cache_file(
-    c: &Connection,
-    path: &str,
-    genres: &[String],
-    styles: &[String],
-) -> rusqlite::Result<()> {
-    c.execute("INSERT INTO track_file_classification(song_id,genres,styles) SELECT song_id,?2,?3 FROM songs WHERE file_path=?1
-        ON CONFLICT(song_id) DO UPDATE SET genres=excluded.genres,styles=excluded.styles",
-        params![path,serde_json::to_string(genres).unwrap(),serde_json::to_string(styles).unwrap()])?;
-    Ok(())
-}
-/// Archive decisions with the missing identity; never attach by a title guess.
-pub(crate) fn archive(c: &Connection) -> rusqlite::Result<()> {
-    for p in ["genre", "style"] {
-        c.execute(&format!("INSERT OR IGNORE INTO missing_track_{p}_decisions SELECT m.missing_id,d.names FROM missing_tracks m
-            JOIN songs s ON s.song_id=m.original_song_id AND s.file_path=m.file_path JOIN track_{p}_decisions d USING(song_id)"),[])?;
-    }
-    Ok(())
-}
-pub(crate) fn restore(
-    c: &Connection,
-    source: i64,
-    target: i64,
-    archived: bool,
-) -> rusqlite::Result<()> {
-    for p in ["genre", "style"] {
-        let table = if archived {
-            format!("missing_track_{p}_decisions")
-        } else {
-            format!("track_{p}_decisions")
-        };
-        let field = if archived { "missing_id" } else { "song_id" };
-        // An existing explicit target decision wins, including its empty exclusion.
-        c.execute(&format!("INSERT OR IGNORE INTO track_{p}_decisions SELECT ?2,names FROM {table} WHERE {field}=?1"),params![source,target])?;
-    }
-    Ok(())
 }

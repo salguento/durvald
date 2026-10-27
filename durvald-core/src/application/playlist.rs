@@ -26,7 +26,7 @@ impl PlaylistApplication {
         request: crate::api::ReplayRequest,
     ) -> CoreResult<crate::api::ReplayPreview> {
         let now = chrono::Utc::now().timestamp();
-        crate::database::retrospective_playlists::definition(
+        crate::domain::replay::definition(
             &request,
             crate::api::ReplaySaveMode::Snapshot,
             true,
@@ -39,8 +39,7 @@ impl PlaylistApplication {
             .replay_preview(request.clone())
             .await
             .map_err(|message| CoreError::Storage { message })?;
-        let (_, minimum, standard, maximum) =
-            crate::database::retrospective_playlists::policy(request.period);
+        let (_, minimum, standard, maximum) = crate::domain::replay::policy(request.period);
         let saved_playlist = if let Some(id) = selected.saved_id {
             Some(self.playlist(id).await?)
         } else {
@@ -72,7 +71,7 @@ impl PlaylistApplication {
         close_automatically: bool,
         artwork_base64: Option<String>,
     ) -> CoreResult<Playlist> {
-        let definition = crate::database::retrospective_playlists::definition(
+        let definition = crate::domain::replay::definition(
             &request,
             mode,
             close_automatically,
@@ -99,7 +98,7 @@ impl PlaylistApplication {
         if !saved.is_smart {
             return Ok(saved);
         }
-        let definition = crate::database::retrospective_playlists::definition(
+        let definition = crate::domain::replay::definition(
             &request,
             mode,
             close_automatically,
@@ -322,7 +321,7 @@ fn validate_smart_definition(name: &str, definition: &SmartPlaylistDefinition) -
             message: "Playlist name cannot be empty".into(),
         });
     }
-    crate::database::operations::validate_smart_playlist_definition(definition)
+    crate::domain::smart_playlist::validate_smart_playlist_definition(definition)
         .map_err(|message| CoreError::InvalidInput { message })
 }
 
@@ -351,33 +350,14 @@ mod replay_tests {
 
     #[tokio::test]
     async fn replay_use_cases_preview_save_reopen_update_and_deduplicate_without_artwork() {
-        let manager = r2d2_sqlite::SqliteConnectionManager::memory();
-        let pool = Arc::new(r2d2::Pool::builder().max_size(1).build(manager).unwrap());
         let now = chrono::Utc::now().timestamp();
-        {
-            let conn = pool.get().unwrap();
-            crate::database::operations::create_tables(&conn).unwrap();
-            for id in 1..=12 {
-                conn.execute("INSERT INTO songs(song_id,title,artist_id,artist_name,release_id,release_title,track_number,disc_number,duration,file_path)
-                    VALUES(?1,?2,1,'Artist',1,'Album',1,1,180,?3)", rusqlite::params![id, format!("Track {id}"), format!("/music/{id}.mp3")]).unwrap();
-                conn.execute(
-                    "INSERT INTO play_history(song_id,played_at,play_duration) VALUES(?1,?2,180)",
-                    rusqlite::params![
-                        id,
-                        chrono::DateTime::from_timestamp(now - 100, 0)
-                            .unwrap()
-                            .to_rfc3339()
-                    ],
-                )
-                .unwrap();
-            }
-        }
+        let (repository, reopened_repository) = crate::test_fixtures::replay_repositories(now);
         let request = ReplayRequest {
             period: ReplayPeriod::Daily,
             start_at: now - 200,
             end_at: now + 200,
         };
-        let app = PlaylistApplication::new(SqlitePlaylistRepository::new(pool.clone()));
+        let app = PlaylistApplication::new(repository);
         let preview = app.replay_preview(request.clone()).await.unwrap();
         assert!(preview.available && preview.is_current);
         assert!(preview.saved_playlist.is_none());
@@ -403,7 +383,7 @@ mod replay_tests {
             stored.iter().map(|t| t.id).collect::<Vec<_>>(),
             preview.tracks.iter().map(|t| t.id).collect::<Vec<_>>()
         );
-        let reopened = PlaylistApplication::new(SqlitePlaylistRepository::new(pool));
+        let reopened = PlaylistApplication::new(reopened_repository);
         assert_eq!(
             reopened
                 .replay_preview(request.clone())
@@ -439,6 +419,4 @@ mod replay_tests {
             .unwrap();
         assert!(!still_fixed.is_smart);
     }
-
-    use std::sync::Arc;
 }

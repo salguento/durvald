@@ -198,19 +198,68 @@ fn ensure(conn: &Connection, artist_id: i64) -> CoreResult<()> {
     Ok(())
 }
 
+struct IdentityEvidence {
+    tag_ids: BTreeSet<String>,
+    uncertain_tags: bool,
+    discovered_ids: BTreeSet<String>,
+}
+
+impl IdentityEvidence {
+    fn conflicting_tags(&self, confirmed: Option<&str>, suppressed: bool) -> bool {
+        self.tag_ids.len() > 1
+            || self.uncertain_tags
+            || match confirmed {
+                Some(manual) => self.tag_ids.iter().any(|id| id != manual),
+                None if !suppressed => self.tag_ids.iter().any(|id| {
+                    self.discovered_ids
+                        .iter()
+                        .any(|discovered| discovered != id)
+                }),
+                None => false,
+            }
+    }
+}
+
+/// Registry keys from discovery are durable evidence, unlike historical tag keys.
+/// Do not use generation-scoped external-ID caches to rebuild a lost identity.
+fn identity_evidence(conn: &Connection, artist_id: i64) -> CoreResult<IdentityEvidence> {
+    let tags = conn
+        .prepare("SELECT DISTINCT musicbrainz_id, uncertain FROM artist_tag_evidence WHERE artist_id = ?1")
+        .map_err(storage)?
+        .query_map([artist_id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?;
+    let discovered_ids = conn
+        .prepare(
+            "SELECT external_id FROM artist_identity_keys
+             WHERE artist_id = ?1 AND provider = 'musicbrainz'
+               AND origin IN ('similar_artist', 'remote_search', 'manual')",
+        )
+        .map_err(storage)?
+        .query_map([artist_id], |row| row.get::<_, String>(0))
+        .map_err(storage)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(storage)?
+        .into_iter()
+        .filter_map(|id| crate::enrichment::identity::normalize_mbid(&id))
+        .collect();
+    Ok(IdentityEvidence {
+        tag_ids: tags.iter().map(|(id, _)| id.clone()).collect(),
+        uncertain_tags: tags.iter().any(|(_, uncertain)| *uncertain),
+        discovered_ids,
+    })
+}
+
 pub(crate) fn read_inner(conn: &Connection, artist_id: i64) -> CoreResult<ArtistIdentity> {
     ensure(conn, artist_id)?;
     let (old_status, old_id, generation, confirmed, suppress): (String, Option<String>, u64, Option<String>, bool) = conn.query_row(
         "SELECT identity_status, musicbrainz_id, generation, confirmed_musicbrainz_id, suppress_tags FROM artist_enrichment_state WHERE artist_id = ?1", [artist_id],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))).map_err(storage)?;
-    let evidence: Vec<(String, bool)> = conn.prepare("SELECT DISTINCT musicbrainz_id, uncertain FROM artist_tag_evidence WHERE artist_id = ?1").map_err(storage)?
-        .query_map([artist_id], |r| Ok((r.get(0)?, r.get(1)?))).map_err(storage)?.collect::<rusqlite::Result<_>>().map_err(storage)?;
-    let ids: BTreeSet<String> = evidence.iter().map(|(id, _)| id.clone()).collect();
-    let conflict = ids.len() > 1
-        || evidence.iter().any(|(_, uncertain)| *uncertain)
-        || confirmed
-            .as_ref()
-            .is_some_and(|manual| ids.iter().any(|id| id != manual));
+    let evidence = identity_evidence(conn, artist_id)?;
+    let conflicting_tags = evidence.conflicting_tags(confirmed.as_deref(), suppress);
+    let conflict =
+        conflicting_tags || (confirmed.is_none() && !suppress && evidence.discovered_ids.len() > 1);
     let (status, id, origin) = if conflict {
         (ArtistIdentityStatus::Ambiguous, None, None)
     } else if let Some(manual) = &confirmed {
@@ -219,11 +268,18 @@ pub(crate) fn read_inner(conn: &Connection, artist_id: i64) -> CoreResult<Artist
             Some(manual.clone()),
             Some(ArtistIdentityOrigin::Manual),
         )
-    } else if !suppress && ids.len() == 1 {
+    } else if !suppress && evidence.tag_ids.len() == 1 {
         (
             ArtistIdentityStatus::Resolved,
-            ids.first().cloned(),
+            evidence.tag_ids.first().cloned(),
             Some(ArtistIdentityOrigin::Tag),
+        )
+    } else if !suppress && evidence.discovered_ids.len() == 1 {
+        // Discovery is not a manual confirmation or evidence read from local tags.
+        (
+            ArtistIdentityStatus::Resolved,
+            evidence.discovered_ids.first().cloned(),
+            None,
         )
     } else {
         let status = match old_status.as_str() {
@@ -252,7 +308,7 @@ pub(crate) fn read_inner(conn: &Connection, artist_id: i64) -> CoreResult<Artist
         generation: generation + u64::from(changed),
         origin,
         confirmed_musicbrainz_id: confirmed,
-        conflicting_tags: conflict,
+        conflicting_tags,
     })
 }
 
@@ -269,12 +325,19 @@ pub(crate) fn read_persisted_inner(
             message: "Artist ID must be non-negative".into(),
         });
     }
-    type PersistedIdentityRow = (String, Option<String>, u64, Option<String>, Option<String>);
+    type PersistedIdentityRow = (
+        String,
+        Option<String>,
+        u64,
+        Option<String>,
+        Option<String>,
+        bool,
+    );
     let row: Option<PersistedIdentityRow> = conn
         .query_row(
             "SELECT COALESCE(s.identity_status, 'unresolved'), s.musicbrainz_id,
                     COALESCE(s.generation, 0), s.identity_origin,
-                    s.confirmed_musicbrainz_id
+                    s.confirmed_musicbrainz_id, COALESCE(s.suppress_tags, 0)
              FROM artists a LEFT JOIN artist_enrichment_state s USING (artist_id)
              WHERE a.artist_id = ?1",
             [artist_id],
@@ -285,29 +348,21 @@ pub(crate) fn read_persisted_inner(
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
                 ))
             },
         )
         .optional()
         .map_err(storage)?;
-    let Some((status, musicbrainz_id, generation, origin, confirmed_musicbrainz_id)) = row else {
+    let Some((status, musicbrainz_id, generation, origin, confirmed_musicbrainz_id, suppress)) =
+        row
+    else {
         return Err(CoreError::NotFound {
             message: format!("Artist {artist_id} not found"),
         });
     };
-    let conflicting_tags: bool = conn
-        .query_row(
-            "SELECT COUNT(DISTINCT musicbrainz_id) > 1
-                    OR COALESCE(MAX(uncertain), 0)
-                    OR (?2 IS NOT NULL AND EXISTS(
-                        SELECT 1 FROM artist_tag_evidence
-                        WHERE artist_id = ?1 AND musicbrainz_id != ?2
-                    ))
-             FROM artist_tag_evidence WHERE artist_id = ?1",
-            params![artist_id, confirmed_musicbrainz_id],
-            |row| row.get(0),
-        )
-        .map_err(storage)?;
+    let conflicting_tags = identity_evidence(conn, artist_id)?
+        .conflicting_tags(confirmed_musicbrainz_id.as_deref(), suppress);
     let status = serde_json::from_value(serde_json::Value::String(status)).map_err(storage)?;
     let origin = origin
         .map(|origin| match origin.as_str() {
@@ -481,6 +536,131 @@ mod tests {
             params![song, id],
         )
         .unwrap();
+    }
+
+    fn discovered(conn: &Connection, mbid: Option<&str>, origin: &str) -> i64 {
+        crate::database::enrichment::upsert_discovered_artist(
+            conn,
+            "Remote Artist",
+            "last_fm",
+            "https://www.last.fm/music/remote",
+            mbid,
+            origin,
+            100,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn discovered_identity_survives_recalculation_without_generation_changes() {
+        for origin in ["similar_artist", "remote_search"] {
+            let conn = database();
+            let artist = discovered(&conn, Some(A), origin);
+            let persisted = read_persisted_inner(&conn, artist).unwrap();
+            assert_eq!(persisted.status, ArtistIdentityStatus::Resolved);
+            assert_eq!(persisted.musicbrainz_id.as_deref(), Some(A));
+            assert_eq!(persisted.origin, None);
+            assert_eq!(persisted.confirmed_musicbrainz_id, None);
+            assert_eq!(read(&conn, artist).unwrap(), persisted);
+            assert_eq!(read(&conn, artist).unwrap(), persisted);
+            assert_eq!(discovered(&conn, Some(A), origin), artist);
+            assert_eq!(read(&conn, artist).unwrap(), persisted);
+        }
+    }
+
+    #[test]
+    fn provisional_artist_is_promoted_once_and_recovers_a_previously_lost_state() {
+        let conn = database();
+        let artist = discovered(&conn, None, "similar_artist");
+        let provisional = read(&conn, artist).unwrap();
+        assert_eq!(provisional.status, ArtistIdentityStatus::Unresolved);
+        assert_eq!(provisional.generation, 0);
+        assert_eq!(discovered(&conn, Some(A), "similar_artist"), artist);
+        let promoted = read_persisted_inner(&conn, artist).unwrap();
+        assert!(promoted.generation > provisional.generation);
+        assert_eq!(read(&conn, artist).unwrap(), promoted);
+        // Simulate state lost by an older build; registered discovery evidence survives.
+        conn.execute(
+            "UPDATE artist_enrichment_state SET identity_status = 'unresolved',
+             musicbrainz_id = NULL, generation = generation + 1 WHERE artist_id = ?1",
+            [artist],
+        )
+        .unwrap();
+        let recovered = read(&conn, artist).unwrap();
+        assert_eq!(recovered.musicbrainz_id.as_deref(), Some(A));
+        assert!(recovered.generation > promoted.generation);
+        assert_eq!(read(&conn, artist).unwrap(), recovered);
+    }
+
+    #[test]
+    fn discovered_identity_conflicting_with_tags_is_ambiguous_and_recovers() {
+        let conn = database();
+        let artist = discovered(&conn, Some(A), "similar_artist");
+        let original = read_persisted_inner(&conn, artist).unwrap();
+        conn.execute(
+            "INSERT INTO artist_tag_evidence VALUES (1, ?1, 'track_artist', ?2, 0)",
+            params![artist, B],
+        )
+        .unwrap();
+        let conflict = read(&conn, artist).unwrap();
+        assert_eq!(conflict.status, ArtistIdentityStatus::Ambiguous);
+        assert!(conflict.musicbrainz_id.is_none());
+        assert!(conflict.conflicting_tags);
+        assert!(conflict.generation > original.generation);
+        assert_eq!(read_persisted_inner(&conn, artist).unwrap(), conflict);
+        conn.execute(
+            "DELETE FROM artist_tag_evidence WHERE artist_id = ?1",
+            [artist],
+        )
+        .unwrap();
+        let recovered = read(&conn, artist).unwrap();
+        assert_eq!(recovered.musicbrainz_id.as_deref(), Some(A));
+        assert_eq!(read(&conn, artist).unwrap(), recovered);
+    }
+
+    #[test]
+    fn manual_choice_and_explicit_clear_take_precedence_over_discovery() {
+        let conn = database();
+        let artist = discovered(&conn, Some(A), "similar_artist");
+        let manual = confirm(&conn, artist, Some(B.into())).unwrap();
+        assert_eq!(manual.musicbrainz_id.as_deref(), Some(B));
+        assert_eq!(manual.origin, Some(ArtistIdentityOrigin::Manual));
+        assert_eq!(read(&conn, artist).unwrap(), manual);
+        let cleared = confirm(&conn, artist, None).unwrap();
+        assert!(cleared.musicbrainz_id.is_none());
+        assert_eq!(cleared.status, ArtistIdentityStatus::Unresolved);
+        assert_eq!(read(&conn, artist).unwrap(), cleared);
+        assert_eq!(read_persisted_inner(&conn, artist).unwrap(), cleared);
+    }
+
+    #[test]
+    fn historical_local_tag_keys_do_not_restore_removed_tag_identity() {
+        let conn = database();
+        conn.execute(
+            "INSERT INTO artist_identity_keys VALUES ('musicbrainz', ?1, 1, 'local_tag', 0, 0)",
+            [A],
+        )
+        .unwrap();
+        evidence(&conn, 1, A);
+        assert_eq!(read(&conn, 1).unwrap().musicbrainz_id.as_deref(), Some(A));
+        conn.execute("DELETE FROM artist_tag_evidence", []).unwrap();
+        assert!(read(&conn, 1).unwrap().musicbrainz_id.is_none());
+    }
+
+    #[test]
+    fn multiple_discovery_mbids_never_select_an_arbitrary_identity() {
+        let conn = database();
+        let artist = discovered(&conn, Some(A), "remote_search");
+        conn.execute(
+            "INSERT INTO artist_identity_keys VALUES ('musicbrainz', ?1, ?2, 'remote_search', 0, 0)",
+            params![B, artist],
+        )
+        .unwrap();
+        let ambiguous = read(&conn, artist).unwrap();
+        assert_eq!(ambiguous.status, ArtistIdentityStatus::Ambiguous);
+        assert!(ambiguous.musicbrainz_id.is_none());
+        assert!(!ambiguous.conflicting_tags);
+        assert_eq!(read(&conn, artist).unwrap(), ambiguous);
     }
     #[test]
     fn tag_conflict_invalidates_inflight_work_and_never_selects_a_homonym() {

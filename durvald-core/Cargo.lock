@@ -898,6 +898,7 @@ dependencies = [
  "tokio-rusqlite",
  "uniffi",
  "uniffi_build",
+ "url",
  "windows 0.58.0",
  "zeroize",
 ]

@@ -382,7 +382,7 @@ impl AudioPlayer {
         output_devices()
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    #[cfg(test)]
     pub(crate) fn set_mock_output_devices(&mut self, devices: Vec<crate::api::AudioOutputDevice>) {
         self.mock_output_devices = Some(devices);
     }

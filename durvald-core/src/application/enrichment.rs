@@ -138,9 +138,7 @@ impl EnrichmentApplication {
     pub(crate) async fn clear_provider_data(&self, provider: EnrichmentProvider) -> CoreResult<()> {
         self.service.clear_provider_data(provider).await?;
         if provider == EnrichmentProvider::MusicBrainz {
-            self.library
-                .personal_library_operation(crate::database::artist_news::clear_provider)
-                .await?;
+            self.library.clear_artist_news_provider().await?;
         }
         Ok(())
     }
@@ -155,7 +153,7 @@ impl EnrichmentApplication {
         let identity = self.service.artist_identity(id).await?;
         let followed = self
             .library
-            .personal_library_operation(move |c| crate::database::artist_news::followed(c))
+            .followed_artists()
             .await?
             .into_iter()
             .find(|f| f.artist.id == id)
@@ -194,7 +192,7 @@ impl EnrichmentApplication {
             tokio::select! {
                 result=&mut refresh=>break result,
                 _=tokio::time::sleep(std::time::Duration::from_millis(250))=> {
-                    let valid=self.library.personal_library_operation(move |c|crate::database::artist_news::current(c,id,generation,identity_generation)).await?;
+                    let valid=self.library.artist_news_refresh_current(id,generation,identity_generation).await?;
                     if !valid {return Ok(ArtistRefreshResult{artist_id:id,identity_generation,sections:vec![crate::api::ArtistRefreshSectionResult{
                         section:ArtistRefreshSection::Discography,status:ArtistRefreshStatus::Superseded,retry_after_seconds:None,cover_progress:None,diagnostic:None,provider:Some(EnrichmentProvider::MusicBrainz)}]});}
                 }
@@ -208,17 +206,7 @@ impl EnrichmentApplication {
             .unwrap_or((ArtistRefreshStatus::Unavailable, None));
         let accepted = self
             .library
-            .personal_library_operation(move |c| {
-                crate::database::artist_news::finish(
-                    c,
-                    id,
-                    generation,
-                    identity_generation,
-                    status,
-                    retry,
-                    chrono::Utc::now().timestamp(),
-                )
-            })
+            .finish_artist_news_refresh(id, generation, identity_generation, status, retry)
             .await?;
         if !accepted {
             return Ok(ArtistRefreshResult {

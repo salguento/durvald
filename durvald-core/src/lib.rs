@@ -32,3 +32,6 @@ pub use crate::core::DurvaldCore;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
 pub mod test_support;
+
+#[cfg(test)]
+mod test_fixtures;

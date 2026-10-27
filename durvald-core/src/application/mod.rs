@@ -5,6 +5,9 @@ pub(crate) mod history;
 pub(crate) mod lastfm;
 pub(crate) mod library;
 pub(crate) mod metadata;
+// Stage 1 ports; adapters and orchestration are introduced in subsequent stages.
+#[allow(dead_code)]
+pub(crate) mod music_catalog;
 pub(crate) mod playback;
 pub(crate) mod playlist;
 pub(crate) mod settings;

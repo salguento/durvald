@@ -14,6 +14,15 @@ fn storage(error: impl ToString) -> CoreError {
     }
 }
 
+struct MissingTrackPreferences {
+    play_count: i64,
+    last_played: Option<String>,
+    rating_half_steps: Option<u8>,
+    is_favorite: bool,
+    is_hidden: bool,
+    suggest_less: bool,
+}
+
 fn content_hash(path: &str) -> CoreResult<(String, u64)> {
     let mut file = File::open(path).map_err(storage)?;
     let size = file.metadata().map_err(storage)?.len();
@@ -161,9 +170,16 @@ pub(crate) fn merge(
         });
     }
     if source_is_missing {
-        let preferences: Option<(i64,Option<String>,Option<u8>,bool,bool,bool)> = tx.query_row(
+        let preferences: Option<MissingTrackPreferences> = tx.query_row(
             "SELECT play_count,last_played,rating_half_steps,is_favorite,is_hidden,suggest_less FROM missing_tracks WHERE missing_id=?1",
-            [source_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))
+            [source_id], |r| Ok(MissingTrackPreferences {
+                play_count: r.get(0)?,
+                last_played: r.get(1)?,
+                rating_half_steps: r.get(2)?,
+                is_favorite: r.get(3)?,
+                is_hidden: r.get(4)?,
+                suggest_less: r.get(5)?,
+            })
         ).optional().map_err(storage)?;
         let Some(p) = preferences else {
             return Err(CoreError::NotFound {
@@ -175,7 +191,7 @@ pub(crate) fn merge(
             last_played=CASE WHEN last_played IS NULL THEN ?3 WHEN ?3 IS NULL THEN last_played ELSE MAX(last_played,?3) END,
             rating_half_steps=CASE WHEN rating_half_steps IS NULL THEN ?4 WHEN ?4 IS NULL THEN rating_half_steps ELSE MAX(rating_half_steps,?4) END,is_favorite=is_favorite OR ?5,
             is_hidden=is_hidden OR ?6,suggest_less=suggest_less OR ?7 WHERE song_id=?1",
-            params![target_id, p.0, p.1, p.2, p.3, p.4, p.5],
+            params![target_id, p.play_count, p.last_played, p.rating_half_steps, p.is_favorite, p.is_hidden, p.suggest_less],
         )
         .map_err(storage)?;
         tx.execute("INSERT OR IGNORE INTO playlist_songs(playlist_id,song_id,position,added_at)
@@ -193,7 +209,8 @@ pub(crate) fn merge(
             params![source_id, target_id],
         )
         .map_err(storage)?;
-        crate::database::classification::restore(&tx, source_id, target_id, true).map_err(storage)?;
+        crate::database::classification::restore(&tx, source_id, target_id, true)
+            .map_err(storage)?;
         tx.execute(
             "DELETE FROM missing_tracks WHERE missing_id=?1",
             [source_id],
@@ -230,7 +247,8 @@ pub(crate) fn merge(
             params![source_id, target_id],
         )
         .map_err(storage)?;
-        crate::database::classification::restore(&tx, source_id, target_id, false).map_err(storage)?;
+        crate::database::classification::restore(&tx, source_id, target_id, false)
+            .map_err(storage)?;
         tx.execute("DELETE FROM songs WHERE song_id=?1", [source_id])
             .map_err(storage)?;
     }

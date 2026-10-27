@@ -8,12 +8,10 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use crate::api::*;
+use crate::infrastructure::sqlite::personal_library::SqlitePersonalLibraryRepository;
 use base64::Engine;
 
-use crate::api::{
-    Artist, CoreError, CoreResult, KeyValuePair, Playlist, Release, ReleasePage, ScanPhase,
-    ScanProgress, ScanResult, SearchResults, Track, TrackPage,
-};
 use crate::domain::ids::{ArtistId, ReleaseId, TrackId};
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
 use crate::infrastructure::sqlite::catalog_artist::{
@@ -32,6 +30,7 @@ use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
 
 /// Coordinates library use cases behind the public core facade.
 pub(crate) struct LibraryApplication {
+    personal_library_repository: SqlitePersonalLibraryRepository,
     persistence: LibraryPersistence,
     metadata_extractor: LocalMetadataExtractor,
     covers_dir: String,
@@ -79,8 +78,10 @@ impl LibraryApplication {
         metadata_extractor: LocalMetadataExtractor,
         covers_dir: String,
         metadata_edit_queue: Arc<tokio::sync::Mutex<()>>,
+        personal_library_repository: SqlitePersonalLibraryRepository,
     ) -> Self {
         Self {
+            personal_library_repository,
             persistence,
             metadata_extractor,
             covers_dir,
@@ -512,14 +513,311 @@ impl LibraryApplication {
             .map_err(|error| catalog_release_error(error, release_id))
     }
 
-    pub(crate) async fn personal_library_operation<T, F>(&self, operation: F) -> CoreResult<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(&rusqlite::Connection) -> CoreResult<T> + Send + 'static,
-    {
-        self.persistence
-            .catalog_preferences_repository
-            .personal_library_operation(operation)
+    pub(crate) async fn local_recommendations(
+        &self,
+        limit: u32,
+    ) -> CoreResult<LocalRecommendations> {
+        self.personal_library_repository
+            .local_recommendations(limit)
+            .await
+    }
+
+    pub(crate) async fn dismiss_local_recommendation(&self, release_id: i64) -> CoreResult<()> {
+        self.personal_library_repository
+            .dismiss_local_recommendation(release_id)
+            .await
+    }
+
+    pub(crate) async fn restore_local_recommendations(&self) -> CoreResult<()> {
+        self.personal_library_repository
+            .restore_local_recommendations()
+            .await
+    }
+
+    pub(crate) async fn record_recommendation_event(
+        &self,
+        release_id: i64,
+        event: RecommendationEvent,
+    ) -> CoreResult<()> {
+        self.personal_library_repository
+            .record_recommendation_event(release_id, event)
+            .await
+    }
+
+    pub(crate) async fn recommendation_metrics(&self) -> CoreResult<RecommendationMetrics> {
+        self.personal_library_repository
+            .recommendation_metrics()
+            .await
+    }
+
+    pub(crate) async fn followed_artists(&self) -> CoreResult<Vec<FollowedArtist>> {
+        self.personal_library_repository.followed_artists().await
+    }
+
+    pub(crate) async fn import_followed_artists(&self, artist_ids: Vec<i64>) -> CoreResult<()> {
+        self.personal_library_repository
+            .import_followed_artists(artist_ids)
+            .await
+    }
+
+    pub(crate) async fn set_artist_followed(
+        &self,
+        artist_id: i64,
+        followed: bool,
+    ) -> CoreResult<()> {
+        self.personal_library_repository
+            .set_artist_followed(artist_id, followed)
+            .await
+    }
+
+    pub(crate) async fn artist_news(&self, query: ArtistNewsQuery) -> CoreResult<ArtistNewsPage> {
+        self.personal_library_repository.artist_news(query).await
+    }
+
+    pub(crate) async fn set_artist_news_seen(
+        &self,
+        release_group_mbid: String,
+        seen: bool,
+    ) -> CoreResult<()> {
+        self.personal_library_repository
+            .set_artist_news_seen(release_group_mbid, seen)
+            .await
+    }
+
+    pub(crate) async fn album_collections(&self) -> CoreResult<Vec<AlbumCollection>> {
+        self.personal_library_repository.album_collections().await
+    }
+
+    pub(crate) async fn album_collection(
+        &self,
+        collection_id: i64,
+    ) -> CoreResult<AlbumCollectionPage> {
+        self.personal_library_repository
+            .album_collection(collection_id)
+            .await
+    }
+
+    pub(crate) async fn save_album_collection(
+        &self,
+        collection_id: Option<i64>,
+        name: String,
+        description: String,
+        definition: Option<AlbumCollectionDefinition>,
+    ) -> CoreResult<AlbumCollection> {
+        self.personal_library_repository
+            .save_album_collection(collection_id, name, description, definition)
+            .await
+    }
+
+    pub(crate) async fn delete_album_collection(&self, collection_id: i64) -> CoreResult<()> {
+        self.personal_library_repository
+            .delete_album_collection(collection_id)
+            .await
+    }
+
+    pub(crate) async fn add_album_to_collection(
+        &self,
+        collection_id: i64,
+        release_id: i64,
+    ) -> CoreResult<()> {
+        self.personal_library_repository
+            .add_album_to_collection(collection_id, release_id)
+            .await
+    }
+
+    pub(crate) async fn remove_album_from_collection(
+        &self,
+        collection_id: i64,
+        item_id: i64,
+    ) -> CoreResult<()> {
+        self.personal_library_repository
+            .remove_album_from_collection(collection_id, item_id)
+            .await
+    }
+
+    pub(crate) async fn reorder_album_collection(
+        &self,
+        collection_id: i64,
+        item_ids: Vec<i64>,
+    ) -> CoreResult<()> {
+        self.personal_library_repository
+            .reorder_album_collection(collection_id, item_ids)
+            .await
+    }
+
+    pub(crate) async fn album_collection_tracks(
+        &self,
+        collection_id: i64,
+    ) -> CoreResult<Vec<Track>> {
+        self.personal_library_repository
+            .album_collection_tracks(collection_id)
+            .await
+    }
+
+    pub(crate) async fn classification_terms(&self) -> CoreResult<Vec<ClassificationTerm>> {
+        self.personal_library_repository
+            .classification_terms()
+            .await
+    }
+
+    pub(crate) async fn classification_links(
+        &self,
+        target: ClassificationTarget,
+        id: i64,
+    ) -> CoreResult<Vec<ClassificationLink>> {
+        self.personal_library_repository
+            .classification_links(target, id)
+            .await
+    }
+
+    pub(crate) async fn classification_page(
+        &self,
+        kind: ClassificationKind,
+        id: i64,
+        query: String,
+        offset: u64,
+        page_size: u64,
+    ) -> CoreResult<ClassificationPage> {
+        self.personal_library_repository
+            .classification_page(kind, id, query, offset, page_size)
+            .await
+    }
+
+    pub(crate) async fn classification_tracks(
+        &self,
+        kind: ClassificationKind,
+        id: i64,
+        query: String,
+    ) -> CoreResult<Vec<Track>> {
+        self.personal_library_repository
+            .classification_tracks(kind, id, query)
+            .await
+    }
+
+    pub(crate) async fn set_classification(
+        &self,
+        target: ClassificationTarget,
+        id: i64,
+        kind: ClassificationKind,
+        names: Option<Vec<String>>,
+    ) -> CoreResult<()> {
+        self.personal_library_repository
+            .set_classification(target, id, kind, names)
+            .await
+    }
+
+    pub(crate) async fn set_style_genres(
+        &self,
+        style_id: i64,
+        genre_ids: Vec<i64>,
+    ) -> CoreResult<()> {
+        self.personal_library_repository
+            .set_style_genres(style_id, genre_ids)
+            .await
+    }
+
+    pub(crate) async fn listen_list(&self) -> CoreResult<Vec<ListenListEntry>> {
+        self.personal_library_repository.listen_list().await
+    }
+
+    pub(crate) async fn add_release_to_listen_list(
+        &self,
+        release_id: i64,
+    ) -> CoreResult<ListenListEntry> {
+        self.personal_library_repository
+            .add_release_to_listen_list(release_id)
+            .await
+    }
+
+    pub(crate) async fn add_external_to_listen_list(
+        &self,
+        artist_id: i64,
+        release: ExternalReleaseGroup,
+    ) -> CoreResult<ListenListEntry> {
+        self.personal_library_repository
+            .add_external_to_listen_list(artist_id, release)
+            .await
+    }
+
+    pub(crate) async fn set_listen_list_heard(&self, entry_id: i64, heard: bool) -> CoreResult<()> {
+        self.personal_library_repository
+            .set_listen_list_heard(entry_id, heard)
+            .await
+    }
+
+    pub(crate) async fn remove_from_listen_list(&self, entry_id: i64) -> CoreResult<()> {
+        self.personal_library_repository
+            .remove_from_listen_list(entry_id)
+            .await
+    }
+
+    pub(crate) async fn user_tag_library(&self) -> CoreResult<UserTagLibrary> {
+        self.personal_library_repository.user_tag_library().await
+    }
+
+    pub(crate) async fn create_user_tag(&self, name: String) -> CoreResult<UserTag> {
+        self.personal_library_repository.create_user_tag(name).await
+    }
+
+    pub(crate) async fn rename_user_tag(&self, tag_id: i64, name: String) -> CoreResult<UserTag> {
+        self.personal_library_repository
+            .rename_user_tag(tag_id, name)
+            .await
+    }
+
+    pub(crate) async fn delete_user_tag(&self, tag_id: i64) -> CoreResult<()> {
+        self.personal_library_repository
+            .delete_user_tag(tag_id)
+            .await
+    }
+
+    pub(crate) async fn update_user_tag_links(
+        &self,
+        tag_id: i64,
+        track_ids: Vec<i64>,
+        release_ids: Vec<i64>,
+        attached: bool,
+    ) -> CoreResult<()> {
+        self.personal_library_repository
+            .update_user_tag_links(tag_id, track_ids, release_ids, attached)
+            .await
+    }
+
+    pub(crate) async fn filter_user_tag_items(
+        &self,
+        tag_ids: Vec<i64>,
+        match_all: bool,
+        releases: bool,
+    ) -> CoreResult<Vec<i64>> {
+        self.personal_library_repository
+            .filter_user_tag_items(tag_ids, match_all, releases)
+            .await
+    }
+    pub(crate) async fn clear_artist_news_provider(&self) -> CoreResult<()> {
+        self.personal_library_repository
+            .clear_artist_news_provider()
+            .await
+    }
+    pub(crate) async fn artist_news_refresh_current(
+        &self,
+        id: i64,
+        generation: u64,
+        identity_generation: u64,
+    ) -> CoreResult<bool> {
+        self.personal_library_repository
+            .artist_news_refresh_current(id, generation, identity_generation)
+            .await
+    }
+    pub(crate) async fn finish_artist_news_refresh(
+        &self,
+        id: i64,
+        generation: u64,
+        identity_generation: u64,
+        status: ArtistRefreshStatus,
+        retry: Option<u64>,
+    ) -> CoreResult<bool> {
+        self.personal_library_repository
+            .finish_artist_news_refresh(id, generation, identity_generation, status, retry)
             .await
     }
 

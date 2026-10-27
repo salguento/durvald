@@ -4048,12 +4048,18 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
+        let target_identity =
+            crate::database::identity::read_persisted_inner(&conn, first_target).unwrap();
+        assert_eq!(
+            crate::database::identity::read(&conn, first_target).unwrap(),
+            target_identity
+        );
         assert!(
             store_asset(
                 &conn,
                 &AssetSnapshot {
                     artist_id: first_target,
-                    identity_generation: 0,
+                    identity_generation: target_identity.generation,
                     provider: EnrichmentProvider::LastFm,
                     provider_id: "lastfm:first".into(),
                     source_url: "https://images.example/first.jpg".into(),

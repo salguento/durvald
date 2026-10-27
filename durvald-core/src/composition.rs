@@ -17,6 +17,7 @@ use crate::infrastructure::sqlite::catalog_search::SqliteCatalogSearchQuery;
 use crate::infrastructure::sqlite::catalog_track::SqliteCatalogTrackQuery;
 use crate::infrastructure::sqlite::library_paths::SqliteLibraryPathsRepository;
 use crate::infrastructure::sqlite::library_scan::SqliteLibraryScanRepository;
+use crate::infrastructure::sqlite::personal_library::SqlitePersonalLibraryRepository;
 use crate::infrastructure::sqlite::playback_history::SqlitePlaybackHistoryRepository;
 use crate::infrastructure::sqlite::playback_session::SqlitePlaybackSessionRepository;
 use crate::infrastructure::sqlite::playlists::SqlitePlaylistRepository;
@@ -267,11 +268,12 @@ pub(crate) fn build_library_application(
             SqliteCatalogSearchQuery::new(pool.clone()),
             SqliteCatalogTrackQuery::new(pool.clone()),
             SqliteLibraryPathsRepository::new(pool.clone()),
-            SqliteLibraryScanRepository::new(pool),
+            SqliteLibraryScanRepository::new(pool.clone()),
         ),
         LocalMetadataExtractor::new(),
         covers_dir,
         metadata_edit_queue,
+        SqlitePersonalLibraryRepository::new(pool),
     ))
 }
 

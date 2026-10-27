@@ -196,18 +196,15 @@ pub(crate) fn generate(c: &Connection, limit: u32, now: i64) -> CoreResult<Local
             + if a.favorite_tracks > 0 { 1.0 } else { 0.0 }
             + if a.rated_tracks > 0 { 0.5 } else { 0.0 };
         let own = a.history_weight + explicit;
-        let artist = (artist_weights.get(&a.artist_id).copied().unwrap_or(0.0) - own)
-            .max(0.0)
-            .min(4.0)
-            * 3.0;
+        let artist =
+            (artist_weights.get(&a.artist_id).copied().unwrap_or(0.0) - own).clamp(0.0, 4.0) * 3.0;
         let own_feature = own / (a.features.len().max(1) as f64).sqrt();
         let mut affinities = a
             .features
             .iter()
             .map(|(key, name)| {
-                let weight = (features.get(key).copied().unwrap_or(0.0) - own_feature)
-                    .max(0.0)
-                    .min(4.0);
+                let weight =
+                    (features.get(key).copied().unwrap_or(0.0) - own_feature).clamp(0.0, 4.0);
                 (weight, key.as_str(), name.as_str())
             })
             .filter(|(weight, _, _)| *weight > 0.001)

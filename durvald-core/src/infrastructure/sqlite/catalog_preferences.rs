@@ -140,25 +140,6 @@ impl SqliteCatalogPreferencesRepository {
         .map_err(|error| crate::domain::rating::RatingError::Storage(error.to_string()))?
     }
 
-    pub(crate) async fn personal_library_operation<T, F>(
-        &self,
-        operation: F,
-    ) -> crate::api::CoreResult<T>
-    where
-        T: Send + 'static,
-        F: FnOnce(&rusqlite::Connection) -> crate::api::CoreResult<T> + Send + 'static,
-    {
-        let pool = self.db_pool.clone();
-        tokio::task::spawn_blocking(move || {
-            let conn = pool
-                .get()
-                .map_err(|e| crate::database::storage_error("Personal tags pool", e))?;
-            operation(&conn)
-        })
-        .await
-        .map_err(|e| crate::database::storage_error("Personal tags task", e))?
-    }
-
     async fn update<F>(&self, operation: F) -> Result<bool, String>
     where
         F: FnOnce(&rusqlite::Connection) -> crate::database::operations::DatabaseResult<bool>
