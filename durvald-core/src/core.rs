@@ -31,6 +31,9 @@ use std::sync::Arc;
 /// the public API. All state is encapsulated behind this facade.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
+    // Owned from startup; native catalog commands will consume it in stage 3.
+    #[allow(dead_code)]
+    music_plugins: Arc<crate::application::music_plugins::PluginRuntime>,
     enrichment_application: EnrichmentApplication,
     history_application: HistoryApplication,
     library_application: Arc<LibraryApplication>,
@@ -42,6 +45,10 @@ pub struct DurvaldCore {
 }
 
 impl DurvaldCore {
+    #[cfg(feature = "test-support")]
+    pub(crate) fn music_plugins(&self) -> &Arc<crate::application::music_plugins::PluginRuntime> {
+        &self.music_plugins
+    }
     #[cfg(feature = "test-support")]
     pub(crate) fn audio_player(&self) -> &Arc<tokio::sync::Mutex<crate::audio::AudioPlayer>> {
         self.playback_application.audio_player()
@@ -143,6 +150,7 @@ impl DurvaldCore {
     {
         let components = compose(config, create_audio_player).await?;
         let core = Self {
+            music_plugins: components.music_plugins,
             enrichment_application: components.enrichment_application,
             history_application: components.history_application,
             lastfm_application: components.lastfm_application,

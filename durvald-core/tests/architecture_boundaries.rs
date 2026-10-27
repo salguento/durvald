@@ -85,6 +85,26 @@ fn playlist_rules_are_independent_from_storage() {
 }
 
 #[test]
+fn plugin_registry_has_no_personal_library_or_player_dependencies() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/application/music_plugins");
+    for path in rust_files(&root) {
+        let source = fs::read_to_string(&path).unwrap();
+        for dependency in [
+            "crate::core",
+            "crate::audio",
+            "application::library",
+            "LibraryApplication",
+        ] {
+            assert!(
+                !source.contains(dependency),
+                "{} references {dependency}",
+                path.display()
+            );
+        }
+    }
+}
+
+#[test]
 fn crate_root_exposes_only_deliberate_public_modules() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
     let source = fs::read_to_string(&crate_root).expect("crate root must be readable");

@@ -240,6 +240,10 @@ do provedor não impede navegar, organizar ou reproduzir a biblioteca.
 ## Trilha de arquitetura — Plugins
 
 O planejamento detalhado está no [roteiro unificado de integrações musicais](roteiro-integracoes-musicais.md).
+As etapas 1 e 2 foram concluídas em 27/10/2026: contratos de identidade e registro
+mínimo interno com ciclo de vida, configuração, credenciais e tarefas canceláveis.
+Ver [contrato do runtime](features/music-plugin-runtime.md). Provedores reais e
+busca de catálogo seguem nas próximas etapas.
 Ele define contratos e registro mínimo cedo, busca de catálogo antes de streaming,
 migração aditiva de origens, um provedor piloto e expansão por capacidade.
 

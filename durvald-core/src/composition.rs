@@ -4,12 +4,16 @@ use crate::application::history::HistoryApplication;
 use crate::application::lastfm::{LastFmApplication, lastfm_error};
 use crate::application::library::{LibraryApplication, LibraryPersistence};
 use crate::application::metadata::MetadataApplication;
+use crate::application::music_plugins::{PluginRuntime, RuntimeLimits};
 use crate::application::playback::PlaybackApplication;
 use crate::application::playlist::PlaylistApplication;
 use crate::application::settings::SettingsApplication;
 use crate::audio::{AudioPlayer, player::AudioError};
 use crate::enrichment::service::EnrichmentService;
 use crate::infrastructure::metadata_extraction::LocalMetadataExtractor;
+use crate::infrastructure::music_plugins::{
+    FilePluginStateStore, PlatformPluginCredentials, RemoteRequestScope,
+};
 use crate::infrastructure::sqlite::catalog_artist::SqliteCatalogArtistQuery;
 use crate::infrastructure::sqlite::catalog_preferences::SqliteCatalogPreferencesRepository;
 use crate::infrastructure::sqlite::catalog_release::SqliteCatalogReleaseQuery;
@@ -50,6 +54,7 @@ pub(crate) struct PersistenceApplications {
 }
 
 pub(crate) struct CoreComponents {
+    pub(crate) music_plugins: Arc<PluginRuntime>,
     pub(crate) enrichment_application: EnrichmentApplication,
     pub(crate) history_application: HistoryApplication,
     pub(crate) library_application: Arc<LibraryApplication>,
@@ -78,6 +83,25 @@ where
         config.covers_dir.clone(),
         metadata_edit_queue.clone(),
     );
+    let music_plugins = Arc::new(
+        PluginRuntime::new(
+            Arc::new(FilePluginStateStore::new(
+                std::path::PathBuf::from(&config.app_support_dir).join("music-plugins.json"),
+            )),
+            Arc::new(PlatformPluginCredentials::new(
+                std::path::PathBuf::from(&config.app_support_dir).join("music-plugin-credentials"),
+                format!("{}.music-plugins", config.keychain_service),
+            )),
+            Arc::new(RemoteRequestScope::new(
+                std::path::PathBuf::from(&config.covers_dir).join("enrichment-http.sqlite"),
+            )),
+            RuntimeLimits::default(),
+        )
+        .await
+        .map_err(|_| CoreError::Storage {
+            message: "Invalid music integration runtime limits".into(),
+        })?,
+    );
     let (enrichment_application, lastfm_application) = build_enrichment_applications(
         db_pool.clone(),
         config.covers_dir.clone(),
@@ -94,6 +118,7 @@ where
     );
 
     Ok(CoreComponents {
+        music_plugins,
         enrichment_application,
         history_application: persistence.history,
         library_application,

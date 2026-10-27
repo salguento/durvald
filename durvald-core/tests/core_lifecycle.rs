@@ -24,6 +24,70 @@ async fn opens_new_core_in_isolated_environment() -> Result<(), Box<dyn Error + 
 }
 
 #[tokio::test]
+async fn plugin_registry_starts_empty_without_credentials_or_remote_work()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let core = TestCore::open().await?;
+    assert_eq!(
+        durvald_core::test_support::registered_music_plugin_count(core.core()).await?,
+        0
+    );
+    assert!(
+        !core
+            .files()
+            .app_support_dir()
+            .join("music-plugin-credentials")
+            .exists()
+    );
+    assert!(
+        core.core()
+            .home_library(10)
+            .await?
+            .recently_added
+            .is_empty()
+    );
+    let core = core.restart().await?;
+    assert_eq!(
+        durvald_core::test_support::registered_music_plugin_count(core.core()).await?,
+        0
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn broken_plugin_preferences_do_not_block_local_library_or_reopening()
+-> Result<(), Box<dyn Error + Send + Sync>> {
+    let files = TestFs::new()?;
+    let path = files.app_support_dir().join("music-plugins.json");
+    std::fs::create_dir_all(files.app_support_dir())?;
+    std::fs::write(&path, r#"{"version":99,"plugins":{}}"#)?;
+    let core = TestCore::open_with_files(files).await?;
+    assert!(
+        durvald_core::test_support::registered_music_plugin_count(core.core())
+            .await
+            .is_err()
+    );
+    core.files().write_silent_wav("Local/Album/One.wav")?;
+    core.core()
+        .scan_library(vec![
+            core.files().library_dir().to_string_lossy().into_owned(),
+        ])
+        .await?;
+    assert_eq!(core.all_tracks_via_pages().await?.len(), 1);
+    let core = core.restart().await?;
+    assert_eq!(core.all_tracks_via_pages().await?.len(), 1);
+    assert!(
+        durvald_core::test_support::registered_music_plugin_count(core.core())
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        std::fs::read_to_string(path)?,
+        r#"{"version":99,"plugins":{}}"#
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn reopens_existing_installation() -> Result<(), Box<dyn Error + Send + Sync>> {
     let test_core = TestCore::open().await?;
 

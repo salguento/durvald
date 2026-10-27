@@ -217,3 +217,9 @@ mantidos. Os registros de exclusões acima descrevem apenas as rodadas anteriore
 
 As pendências de Clippy também foram corrigidas em 27/10/2026. A verificação do
 core com `--all-targets --all-features -- -D warnings` passou sem diagnósticos.
+
+A [etapa 2 de registro e runtime](music-plugin-runtime.md) foi concluída depois
+desta entrega. Os ports internos de busca, detalhes, fontes e resolução agora
+recebem `PluginContext`, com configuração, credenciais e cancelamento da operação.
+Isso não altera DTOs públicos ou bindings. A revisão atual passou em 434 testes
+com todas as features e no Clippy sem avisos.

@@ -12,6 +12,16 @@ pub async fn open_core(config: CoreConfig) -> CoreResult<Arc<DurvaldCore>> {
     DurvaldCore::open_with_mock_audio(config).await
 }
 
+pub async fn registered_music_plugin_count(core: &DurvaldCore) -> CoreResult<usize> {
+    core.music_plugins()
+        .list()
+        .await
+        .map(|plugins| plugins.len())
+        .map_err(|_| crate::api::CoreError::Storage {
+            message: "Music plugin preferences unavailable".into(),
+        })
+}
+
 pub async fn process_mock_audio(core: &DurvaldCore, blocks: usize) {
     core.process_mock_audio(blocks).await;
 }

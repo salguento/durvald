@@ -4,6 +4,7 @@
 
 pub(crate) mod catalog;
 pub(crate) mod identity;
+pub(crate) mod plugins;
 pub(crate) mod queue;
 pub(crate) mod sources;
 

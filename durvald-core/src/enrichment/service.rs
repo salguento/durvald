@@ -100,7 +100,7 @@ pub struct EnrichmentService {
     /// Enrichment snapshots are published in short, serialized database jobs.
     /// Network and filesystem work always happens before this gate is taken.
     write_coordinator: Arc<tokio::sync::Mutex<()>>,
-    http_request_locks: Arc<super::cache::RequestLocks>,
+    remote_requests: Arc<crate::infrastructure::music_plugins::RemoteRequestScope>,
     covers_dir: Arc<std::path::PathBuf>,
 }
 
@@ -113,6 +113,11 @@ impl EnrichmentService {
         covers_dir: String,
         lastfm: Arc<crate::lastfm::LastFmClient>,
     ) -> Self {
+        let remote_requests = Arc::new(
+            crate::infrastructure::music_plugins::RemoteRequestScope::new(
+                std::path::PathBuf::from(&covers_dir).join("enrichment-http.sqlite"),
+            ),
+        );
         Self {
             pool,
             covers_dir: Arc::new(covers_dir.into()),
@@ -124,7 +129,7 @@ impl EnrichmentService {
             flights: Arc::default(),
             refresh_flights: Arc::default(),
             write_coordinator: Arc::default(),
-            http_request_locks: Arc::default(),
+            remote_requests,
         }
     }
 
@@ -292,20 +297,12 @@ impl EnrichmentService {
         // opt into the same production CACHE_CONTEXT using a real clock.
         #[cfg(test)]
         {
-            let _ = (force, &self.http_request_locks);
+            let _ = (force, &self.remote_requests);
             request.await
         }
         #[cfg(not(test))]
         {
-            super::cache::REQUEST_LOCKS
-                .scope(
-                    self.http_request_locks.clone(),
-                    super::cache::CACHE_CONTEXT.scope(
-                        (self.covers_dir.join("enrichment-http.sqlite"), force),
-                        request,
-                    ),
-                )
-                .await
+            self.remote_requests.scope(force, request).await
         }
     }
 

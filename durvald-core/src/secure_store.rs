@@ -67,7 +67,7 @@ fn create_secure_dir(path: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(unix)]
-fn write_secure_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_secure_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
     use std::os::unix::fs::PermissionsExt;
@@ -104,7 +104,7 @@ fn write_secure_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
 }
 
 #[cfg(not(unix))]
-fn write_secure_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_secure_file(path: &Path, data: &[u8]) -> std::io::Result<()> {
     fs::write(path, data)
 }
 

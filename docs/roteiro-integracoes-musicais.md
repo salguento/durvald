@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 27/10/2026.
-Status: implementação incremental; etapa 1 concluída, demais etapas planejadas.
+Status: implementação incremental; etapas 1 e 2 concluídas, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -168,6 +168,9 @@ testes previamente ignorados foram mantidos. Core com UniFFI verificado novament
 
 **Dependências:** 1.
 
+**Status:** concluída em 27/10/2026. Contratos, ciclo de vida e limites em
+[registro mínimo de plugins](features/music-plugin-runtime.md).
+
 - Implementar registro de adaptadores internos, manifesto, capacidades, versão
   de API, flags, configuração e estados de habilitação.
 - Compartilhar scheduler, cache e cooldown existentes; aplicar limites,
@@ -177,6 +180,19 @@ testes previamente ignorados foram mantidos. Core com UniFFI verificado novament
 
 **Conclusão:** adaptador pode ser habilitado, desabilitado e removido sem afetar
 outros; tarefas são canceladas e dados pessoais preservados. Biblioteca funciona offline.
+
+**Entrega:** registro interno com manifesto/API v1, capacidades e permissões
+verificadas, configuração/flags persistidas, credenciais pela plataforma e
+tombstones de remoção. Gerações de plugin/consulta, concorrência limitada,
+timeout incluindo fila e cancelamento descartam trabalho obsoleto. Runtime e
+enriquecimento compartilham o request scope, locks, cache HTTP e cooldown; os
+clientes mantêm os gates de provedor existentes. Nenhum adapter real foi ativado.
+
+**Validação executada:** 434 testes passaram com todas as features, sem falhas
+ou exclusões; três testes previamente ignorados foram mantidos. Inclui 17 testes
+novos com adapters falsos, dois de ciclo de vida pela fachada e uma nova proteção
+arquitetural. Clippy com todos os alvos/features e avisos como erros passou.
+Não houve mudança dos DTOs nativos, bindings ou schema da biblioteca.
 
 ### 3. Busca de catálogo local e MusicBrainz
 
