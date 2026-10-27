@@ -1,0 +1,62 @@
+{
+  "decision_sha256": "391d5950683a9a7ad405c62e646ba18d8047deaf67abe0918376b59efa29566f",
+  "pilot": {
+    "direct_download": false,
+    "full_vs_preview": "not_verified",
+    "native_audio": false,
+    "pending": [
+      "app_transport_integration",
+      "signed_sandbox_build",
+      "notarized_distribution",
+      "per_item_access"
+    ],
+    "production_enabled": false,
+    "provider": "soundcloud",
+    "scope": "individual_audio_track",
+    "transport": "official_visible_widget_in_webkit"
+  },
+  "providers": {
+    "bandcamp": {
+      "download_transfer": "unverified",
+      "embedded_playback": "unverified",
+      "evidence": "bandcamp-public.json",
+      "evidence_current": true,
+      "native_audio": "unverified",
+      "observed_status": "limited",
+      "production_enabled": false,
+      "public_embed_discovery": "verified"
+    },
+    "slskd": {
+      "contract_fixture": "verified_simulation_only",
+      "download_transfer": "unverified",
+      "embedded_playback": "unverified",
+      "evidence": "slskd-live.json",
+      "evidence_current": true,
+      "native_audio": "unverified",
+      "observed_status": "limited",
+      "production_enabled": false
+    },
+    "soundcloud": {
+      "download_transfer": "unverified",
+      "embedded_playback": "verified",
+      "evidence": "soundcloud-widget.json",
+      "evidence_current": true,
+      "native_audio": "unverified",
+      "oauth_api_status": "blocked",
+      "observed_status": "passed",
+      "production_enabled": false
+    },
+    "youtube": {
+      "download_transfer": "unverified",
+      "embedded_playback": "verified",
+      "evidence": "youtube-playback.json",
+      "evidence_current": true,
+      "native_audio": "unverified",
+      "observed_status": "passed",
+      "production_enabled": false
+    }
+  },
+  "rule": "Simulation, metadata discovery and missing credentials never prove live playback or transfer",
+  "schema_version": 1,
+  "stage5_conclusion": "pilot_selected"
+}

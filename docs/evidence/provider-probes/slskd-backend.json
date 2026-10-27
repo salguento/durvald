@@ -1,0 +1,32 @@
+{
+  "account_credentials_redacted": true,
+  "api_authenticated": true,
+  "asset": "slskd-0.26.2-osx-arm64.zip",
+  "asset_sha256": "18d3ebf7760cd93296b61f640c87b383b41a142cd445a04a633d3b596313ef85",
+  "autostart_registered": false,
+  "captured_at": "2026-10-27T22:06:36.385272+00:00",
+  "checksum_verified": true,
+  "disconnect_observed": true,
+  "distributed_has_parent": false,
+  "mode": "real_native_backend",
+  "new_test_account_configured": true,
+  "post_login_timeout_observed": true,
+  "private_files_mode": {
+    "config": "0o600",
+    "credentials": "0o600"
+  },
+  "schema_version": 1,
+  "script_sha256": "1696a389ae0181772d031d2695a8d60bf739391c319b8e8a7aeefc3ec3763e9f",
+  "server_address": "server.slsknet.org",
+  "server_port": 2242,
+  "shared_directories": [],
+  "shared_files": 0,
+  "shares_ready": true,
+  "soulseek_connected": true,
+  "soulseek_logged_in": true,
+  "transfer_validated": false,
+  "unauthenticated_api_status": 401,
+  "url": "http://127.0.0.1:5030",
+  "version": "0.26.2.0",
+  "web_loopback_only": true
+}

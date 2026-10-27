@@ -1,0 +1,54 @@
+{
+  "backend_version": "0.26.2-fixture",
+  "captured_at": "2026-10-27T21:37:45.244397+00:00",
+  "download": "not_requested",
+  "file_mapping": {
+    "accessible": true,
+    "bytes": 64,
+    "paths_redacted": true,
+    "sha256": "96ca1e8d176b8f0fb41dc5a66bdd553ba480489369abc337a7c5b397d3c8279d"
+  },
+  "fixture_note": "Local HTTP simulator; not a Soulseek network or real backend proof",
+  "full_backend_validation": false,
+  "host": {
+    "python": "3.14.7",
+    "release": "27.2.0",
+    "system": "Darwin"
+  },
+  "mode": "contract_fixture",
+  "probe_version": 1,
+  "production_enabled": false,
+  "provider": "slskd",
+  "reference_contract": "slskd/0.26.2",
+  "schema_version": 1,
+  "search": {
+    "checks": {
+      "cancelled": true,
+      "created": true,
+      "incremental": true,
+      "removed_own_search": true
+    },
+    "identities_redacted": true,
+    "response_counts": [
+      0,
+      1,
+      2
+    ]
+  },
+  "server_connected": true,
+  "source_sha256": {
+    "WebKitProbe.swift": "bb555193b1bcee482f357800b8a069845f7fb7015f81aacd66b38029f26838ee",
+    "contracts.py": "3ca0297c5fcb9e8bb714e8f3263df800e83e3a5a341a12e3f4e576924680edfa",
+    "fixture_backend.py": "0d272f9d03836dd1e885c8ae2ea3c726816c807448b62e53396fb04fe05c7f4c",
+    "player.html": "149c1725893077db38f44abc2e2b8318f8261fd791f23952322e5aa3d495e0ef",
+    "player.js": "9005428c484a12c055980b5c932a507db5bb2e02c235fe422a8a6cb8c02bfbb4",
+    "probe.py": "3e940b2fb57dbeb2c08ff7d1b868d91f4dbf02303e7079908060b614a0109b0e"
+  },
+  "status": "passed",
+  "transfer": {
+    "bytes": 64,
+    "cancelled": false,
+    "completed": true,
+    "destination_mapping_required": true
+  }
+}

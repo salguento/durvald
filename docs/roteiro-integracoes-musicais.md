@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 27/10/2026.
-Status: implementação incremental; etapas 1–4 concluídas, demais etapas planejadas.
+Status: implementação incremental; etapas 1–5 concluídas, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -242,6 +242,16 @@ List externa e descoberta, sem esperar streaming.
 ### 5. Provas técnicas dos provedores
 
 **Dependências:** 2 e contratos de 1; pode começar antes de concluir 3–4.
+
+**Status:** concluída em 27/10/2026. [Provas, evidências e decisão do piloto](features/provider-proofs.md).
+Piloto técnico: faixa individual SoundCloud pelo widget oficial visível em
+WebKit. Execução real de controles/eventos e indisponibilidade; YouTube como
+alternativa de vídeo e Bandcamp limitado à descoberta de embed. O slskd real
+foi configurado e autenticado; a busca ficou limitada por ausência de respostas
+e timeouts. Investigação cancelada pelo usuário, backend encerrado e configuração
+preservada. Contratos adicionais foram testados em fixture. Nenhum
+provedor foi habilitado em produção; distribuição e demais limites estão
+explicitados na matriz.
 
 - Executar provas separadas para candidatos Bandcamp, SoundCloud, YouTube e
   Soulseek via slskd. Não exigir sucesso de todos para escolher o piloto.

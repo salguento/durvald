@@ -1,0 +1,57 @@
+{
+  "captured_at": "2026-10-27T21:35:59.695506+00:00",
+  "direct_download": "not_validated",
+  "distribution": "development_only_not_notarized",
+  "full_vs_preview": "not_verified",
+  "host": {
+    "python": "3.14.7",
+    "release": "27.2.0",
+    "system": "Darwin"
+  },
+  "mode": "live_official_embed",
+  "native_audio": "not_validated",
+  "observation": {
+    "captured_at": "2026-10-27T21:36:01Z",
+    "checks": {
+      "unavailable": true
+    },
+    "distribution_sandbox_notarization": "not_validated",
+    "engine": "WKWebView",
+    "environment": "development_process_nonpersistent_store",
+    "events": [
+      {
+        "event": "page_loaded"
+      },
+      {
+        "available": true,
+        "event": "script_context"
+      },
+      {
+        "event": "error",
+        "time": 1193
+      }
+    ],
+    "os": "Version 27.2 (Build 26B123)",
+    "schema_version": 1,
+    "status": "passed",
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+  },
+  "probe_version": 1,
+  "production_enabled": false,
+  "provider": "soundcloud",
+  "public_item_id": "999999999999999999",
+  "schema_version": 1,
+  "sdk_url": "https://w.soundcloud.com/player/api.js",
+  "sdk_version": "unversioned_remote_api",
+  "signed_url_expiry": "not_exposed_by_embed",
+  "source_sha256": {
+    "WebKitProbe.swift": "bb555193b1bcee482f357800b8a069845f7fb7015f81aacd66b38029f26838ee",
+    "contracts.py": "3ca0297c5fcb9e8bb714e8f3263df800e83e3a5a341a12e3f4e576924680edfa",
+    "fixture_backend.py": "0d272f9d03836dd1e885c8ae2ea3c726816c807448b62e53396fb04fe05c7f4c",
+    "player.html": "149c1725893077db38f44abc2e2b8318f8261fd791f23952322e5aa3d495e0ef",
+    "player.js": "9005428c484a12c055980b5c932a507db5bb2e02c235fe422a8a6cb8c02bfbb4",
+    "probe.py": "3e940b2fb57dbeb2c08ff7d1b868d91f4dbf02303e7079908060b614a0109b0e"
+  },
+  "status": "passed",
+  "test_case": "unavailable"
+}

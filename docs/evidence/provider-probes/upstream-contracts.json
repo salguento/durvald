@@ -1,0 +1,51 @@
+{
+  "captured_at": "2026-10-27T21:37:54.419321+00:00",
+  "optional_tools_in_path": {
+    "docker": false,
+    "ffmpeg": false,
+    "node": true,
+    "yt-dlp": false
+  },
+  "schema_version": 1,
+  "slskd_reference_tag": "0.26.2",
+  "slskd_tree_sha": "e472ecd706050332c8615dc3b908c92afaed592c",
+  "sources": [
+    {
+      "http_status": 200,
+      "sha256": "41dc7704bbb175318c837c699100e5b6739cdd15d8c6a688dd970a5a829441f8",
+      "url": "https://raw.githubusercontent.com/slskd/slskd/0.26.2/src/slskd/Search/API/Controllers/SearchesController.cs"
+    },
+    {
+      "http_status": 200,
+      "sha256": "c1bafd465f4e0c0ddac39d606d2aaf4a597dcf04d9b4e1120ff2bff36e57a705",
+      "url": "https://raw.githubusercontent.com/slskd/slskd/0.26.2/src/slskd/Transfers/API/Controllers/TransfersController.cs"
+    },
+    {
+      "http_status": 200,
+      "sha256": "6be54cedd6c5f0e58240ee5bc3989f54118dcb00c5e5b4b020b09e3cf7f9ee56",
+      "url": "https://raw.githubusercontent.com/slskd/slskd/0.26.2/src/slskd/Core/API/Controllers/ApplicationController.cs"
+    },
+    {
+      "http_status": 200,
+      "sha256": "91219e523492c68022c1262ac1a164b031d5b60790181b12005e4de3d022f807",
+      "url": "https://raw.githubusercontent.com/slskd/slskd/0.26.2/src/slskd/Transfers/API/DTO/EnqueueDownloadBatchRequest.cs"
+    },
+    {
+      "http_status": 200,
+      "sha256": "643231715e38bc2a612344c5863418647779149f0405345e00b9826a75a9622f",
+      "url": "https://raw.githubusercontent.com/slskd/slskd/0.26.2/src/slskd/Transfers/API/DTO/EnqueueDownloadBatchResponse.cs"
+    },
+    {
+      "http_status": 200,
+      "sha256": "53b5e1f8511040926b09b68c8ba1f3c8923a08a2c8437b3eaf6fef7ecca27aba",
+      "url": "https://raw.githubusercontent.com/slskd/slskd/0.26.2/src/slskd/Transfers/Types/Batch.cs"
+    },
+    {
+      "http_status": 200,
+      "sha256": "d7381228e4f5186b5477baaf4db89afd3e3963252b1e05e8d1bc7aac2cde0fe6",
+      "url": "https://raw.githubusercontent.com/slskd/slskd/0.26.2/src/slskd/Transfers/Types/Transfer.cs"
+    }
+  ],
+  "swift": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)",
+  "yt_dlp_adopted": false
+}

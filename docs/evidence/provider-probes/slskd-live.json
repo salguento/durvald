@@ -1,0 +1,53 @@
+{
+  "backend_setup_script_sha256": "1696a389ae0181772d031d2695a8d60bf739391c319b8e8a7aeefc3ec3763e9f",
+  "backend_version": "0.26.2.0",
+  "captured_at": "2026-10-27T22:05:13.673243+00:00",
+  "download": "not_requested",
+  "full_backend_validation": false,
+  "host": {
+    "python": "3.14.7",
+    "release": "27.2.0",
+    "system": "Darwin"
+  },
+  "live_backend_contacted": true,
+  "mode": "live_backend",
+  "pending": [
+    "real_peer_transfer",
+    "file_mapping_after_real_transfer",
+    "incremental_search_responses"
+  ],
+  "probe_version": 1,
+  "production_enabled": false,
+  "provider": "slskd",
+  "reference_contract": "slskd/0.26.2",
+  "schema_version": 1,
+  "search": {
+    "checks": {
+      "cancelled": true,
+      "created": true,
+      "incremental": false,
+      "removed_own_search": true
+    },
+    "identities_redacted": true,
+    "response_counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "server_connected": true,
+  "source_sha256": {
+    "WebKitProbe.swift": "bb555193b1bcee482f357800b8a069845f7fb7015f81aacd66b38029f26838ee",
+    "contracts.py": "3ca0297c5fcb9e8bb714e8f3263df800e83e3a5a341a12e3f4e576924680edfa",
+    "fixture_backend.py": "0d272f9d03836dd1e885c8ae2ea3c726816c807448b62e53396fb04fe05c7f4c",
+    "player.html": "149c1725893077db38f44abc2e2b8318f8261fd791f23952322e5aa3d495e0ef",
+    "player.js": "9005428c484a12c055980b5c932a507db5bb2e02c235fe422a8a6cb8c02bfbb4",
+    "probe.py": "3e940b2fb57dbeb2c08ff7d1b868d91f4dbf02303e7079908060b614a0109b0e"
+  },
+  "status": "limited"
+}
