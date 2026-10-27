@@ -182,7 +182,37 @@ impl DurvaldCore {
         Arc::new(CatalogSearchSession {
             application: self.catalog_search.clone(),
             state: Default::default(),
+            detail_state: Default::default(),
         })
+    }
+    pub async fn catalog_selection(
+        &self,
+        reference: CatalogReference,
+    ) -> CoreResult<Option<CatalogSelection>> {
+        self.catalog_search.saved_selection(reference).await
+    }
+    pub async fn catalog_selections(&self) -> CoreResult<Vec<CatalogSelection>> {
+        self.catalog_search.saved_selections().await
+    }
+    pub async fn save_catalog_selection(
+        &self,
+        entry: CatalogEntry,
+    ) -> CoreResult<CatalogSelection> {
+        self.catalog_search.save_selection(entry).await
+    }
+    pub async fn follow_catalog_artist(
+        &self,
+        entry: CatalogEntry,
+        followed: bool,
+    ) -> CoreResult<CatalogSelection> {
+        self.catalog_search.follow_selection(entry, followed).await
+    }
+    pub async fn add_catalog_to_listen_list(
+        &self,
+        entry: CatalogEntry,
+        artist: CatalogEntry,
+    ) -> CoreResult<ListenListEntry> {
+        self.catalog_search.listen_selection(entry, artist).await
     }
     pub async fn set_catalog_provider_enabled(&self, enabled: bool) -> CoreResult<bool> {
         self.catalog_search.set_enabled(enabled).await
@@ -1337,9 +1367,18 @@ pub async fn open(config: CoreConfig) -> CoreResult<Arc<DurvaldCore>> {
 pub struct CatalogSearchSession {
     application: Arc<crate::application::catalog_search::CatalogSearchApplication>,
     state: crate::application::catalog_search::CatalogSessionState,
+    detail_state: crate::application::catalog_details::CatalogDetailSessionState,
 }
 #[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 impl CatalogSearchSession {
+    pub async fn detail_section(
+        &self,
+        request: CatalogDetailRequest,
+    ) -> CoreResult<CatalogDetailPage> {
+        self.application
+            .detail_section(&self.detail_state, request)
+            .await
+    }
     pub async fn search_page(
         &self,
         provider: CatalogProvider,
@@ -1348,9 +1387,11 @@ impl CatalogSearchSession {
         self.application.page(&self.state, provider, query).await
     }
     pub async fn cancel(&self, generation: u64) {
+        self.detail_state.cancel(generation).await;
         self.state.cancel(generation).await
     }
     pub async fn close(&self) {
+        self.detail_state.close().await;
         self.state.close().await
     }
 }

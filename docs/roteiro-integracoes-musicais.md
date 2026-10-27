@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 27/10/2026.
-Status: implementação incremental; etapas 1–3 concluídas, demais etapas planejadas.
+Status: implementação incremental; etapas 1–4 concluídas, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -220,6 +220,12 @@ itens na biblioteca nem exige reprodução remota.
 ### 4. Detalhes progressivos e seleção persistente
 
 **Dependências:** 3.
+
+**Status:** concluída em 27/10/2026. Detalhes, ações e limites em
+[detalhes progressivos e seleção persistente](features/catalog-details.md).
+Blocos independentes, seleção idempotente e reabertura de itens salvos;
+Seguir e Listen List conectados às features existentes. Migração 20 e API
+aditiva com bindings Swift atualizados. Ouvir/baixar aguardam seus adaptadores.
 
 - Mostrar identidade e dados básicos primeiro; carregar capa, perfil, edição,
   tracklist, discografia e similares independentemente.

@@ -115,7 +115,15 @@ where
         CatalogSearchApplication::new(
             SqliteCatalogSearchQuery::new(db_pool.clone()),
             music_plugins.clone(),
-            Arc::new(crate::infrastructure::musicbrainz_catalog::MusicBrainzCatalog::new()),
+            Arc::new(
+                crate::infrastructure::musicbrainz_catalog::MusicBrainzCatalog::with_lastfm(
+                    lastfm.clone(),
+                ),
+            ),
+            crate::infrastructure::sqlite::catalog_selections::SqliteCatalogSelections::new(
+                db_pool.clone(),
+            ),
+            library_application.clone(),
         )
         .await,
     );

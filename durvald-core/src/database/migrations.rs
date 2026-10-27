@@ -579,6 +579,18 @@ ALTER TABLE artists DROP COLUMN similar_artists_fetched_at;
 ALTER TABLE artists DROP COLUMN similar_artists_expires_at;
 "#;
 
+const CATALOG_SELECTIONS: &str = r#"
+CREATE TABLE catalog_selections (
+ provider TEXT NOT NULL,
+ entity_kind TEXT NOT NULL,
+ external_id TEXT NOT NULL,
+ payload TEXT NOT NULL CHECK(json_valid(payload)),
+ local_artist_id INTEGER REFERENCES artists(artist_id) ON DELETE SET NULL,
+ saved_at INTEGER NOT NULL,
+ PRIMARY KEY(provider,entity_kind,external_id)
+);
+"#;
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     apply(
         conn,
@@ -602,6 +614,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (17, ARTIST_SIMILAR_ARTISTS),
             (18, CANONICAL_SIMILAR_ARTISTS),
             (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
+            (20, CATALOG_SELECTIONS),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -672,7 +685,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            19
+            20
         );
     }
 
@@ -891,8 +904,9 @@ mod tests {
                     (17, ARTIST_SIMILAR_ARTISTS),
                     (18, CANONICAL_SIMILAR_ARTISTS),
                     (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
+                    (20, CATALOG_SELECTIONS),
                     (
-                        20,
+                        21,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -905,7 +919,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            19
+            20
         );
     }
 

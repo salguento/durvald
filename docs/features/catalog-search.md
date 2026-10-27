@@ -107,3 +107,7 @@ Após essa limpeza, a suíte completa `DurvaldTests` passou em 409 testes, sem
 falhas ou exclusões. A rodada usou `ENABLE_APP_SANDBOX=NO` apenas como opção de
 execução para permitir a captura em `/tmp` do teste existente de metadados;
 a configuração de isolamento do projeto foi preservada.
+
+A [etapa 4](catalog-details.md) adicionou abertura de detalhes progressivos e
+seleções persistentes aos resultados externos, com ações explícitas para salvar,
+seguir e adicionar à Listen List.

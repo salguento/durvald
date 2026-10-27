@@ -161,6 +161,11 @@ extension CatalogItem {
         case .releaseEdition: "Edição"
         case .recording, .track: "Faixa"
         case .playlist: "Playlist"
+        case .releaseTrack: "Faixa da edição"
+        case .serviceProfile: "Perfil"
+        case .audioTrack: "Faixa"
+        case .video: "Vídeo"
+        case .albumVideo: "Vídeo de álbum"
         }
     }
 }

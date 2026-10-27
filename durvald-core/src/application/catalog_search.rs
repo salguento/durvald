@@ -12,7 +12,10 @@ use tokio::sync::Mutex;
 
 pub(crate) struct CatalogSearchApplication {
     local: SqliteCatalogSearchQuery,
-    plugins: Arc<PluginRuntime>,
+    pub(super) selections:
+        crate::infrastructure::sqlite::catalog_selections::SqliteCatalogSelections,
+    pub(super) library: Arc<super::library::LibraryApplication>,
+    pub(super) plugins: Arc<PluginRuntime>,
     builtin: Arc<dyn MusicPlugin>,
 }
 pub(crate) struct CatalogSessionState {
@@ -76,6 +79,8 @@ impl CatalogSearchApplication {
         local: SqliteCatalogSearchQuery,
         plugins: Arc<PluginRuntime>,
         builtin: Arc<dyn MusicPlugin>,
+        selections: crate::infrastructure::sqlite::catalog_selections::SqliteCatalogSelections,
+        library: Arc<super::library::LibraryApplication>,
     ) -> Self {
         // Invalid plugin preferences never prevent local catalog search or core startup.
         let _ = plugins
@@ -85,6 +90,8 @@ impl CatalogSearchApplication {
             local,
             plugins,
             builtin,
+            selections,
+            library,
         }
     }
     pub(crate) async fn set_enabled(&self, enabled: bool) -> CoreResult<bool> {
@@ -220,7 +227,7 @@ fn failed(
         from_cache: false,
     }
 }
-fn failure(error: PluginError) -> (CatalogFailure, Option<u64>) {
+pub(super) fn failure(error: PluginError) -> (CatalogFailure, Option<u64>) {
     match error {
         PluginError::Disabled | PluginError::NotRegistered => (CatalogFailure::Disabled, None),
         PluginError::Cancelled | PluginError::Adapter(IntegrationError::Cancelled) => {

@@ -9,6 +9,8 @@ struct CatalogExploreView: View {
     @State private var presentation = CatalogSearchPresentation()
     @State private var providerRevision: UInt64 = 0
     @State private var configurationError: String?
+    @State private var showSavedCatalog = false
+    @State private var detailDestination: CatalogDetailDestination?
 
     private var request: SearchRequest {
         SearchRequest(query: query, coreID: store.core.map(ObjectIdentifier.init),
@@ -18,6 +20,7 @@ struct CatalogExploreView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
+                HStack { Spacer(); Button("Itens salvos") { showSavedCatalog = true } }
                 providerSection(.library, title: "Sua biblioteca")
                 providerSection(.musicBrainz, title: "MusicBrainz")
             }
@@ -32,6 +35,12 @@ struct CatalogExploreView: View {
                                    loader: loader)
         }
         .onDisappear { presentation.cancel() }
+        .sheet(isPresented: $showSavedCatalog) { CatalogSavedView().frame(width: 760, height: 560) }
+        .sheet(item: $detailDestination) { destination in
+            NavigationStack { CatalogDetailsView(seed: destination.entry)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fechar") { detailDestination = nil } } }
+            }.frame(width: 760, height: 560)
+        }
     }
 
     private func providerSection(_ provider: CatalogProvider, title: String) -> some View {
@@ -88,8 +97,9 @@ struct CatalogExploreView: View {
             Spacer()
             if let id = item.localId {
                 Button("Abrir") { openLocal(item, id: id) }.buttonStyle(.borderless)
-            } else if let value = item.canonicalUrl, let url = URL(string: value) {
-                Link("Abrir no MusicBrainz", destination: url).buttonStyle(.borderless)
+            } else {
+                Button("Ver detalhes") { detailDestination = CatalogDetailDestination(entry: item.detailEntry) }.buttonStyle(.borderless)
+                if let value = item.canonicalUrl, let url = URL(string: value) { Link("Abrir no MusicBrainz", destination: url).buttonStyle(.borderless) }
             }
         }
         .padding(.vertical, 6)
@@ -106,6 +116,7 @@ struct CatalogExploreView: View {
             Task { if let playlist = try? await core.playlist(playlistId: id) { navigation.playlist(playlist) } }
         case .recording, .track:
             Task { await store.play(trackID: id, sourceContext: PlaybackSourceContext.search(query)) }
+        default: break
         }
     }
 

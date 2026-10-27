@@ -15,3 +15,5 @@ pub(crate) mod music_plugins;
 pub(crate) mod playback;
 pub(crate) mod playlist;
 pub(crate) mod settings;
+
+pub(crate) mod catalog_details;

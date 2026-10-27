@@ -23,6 +23,15 @@ pub(crate) trait CatalogReader: Send + Sync {
         request: CatalogSearchRequest,
     ) -> IntegrationFuture<'_, CatalogSearchPage>;
 
+    /// Independent detail blocks; unsupported blocks never prevent basic identity.
+    fn detail_section(
+        &self,
+        _context: PluginContext,
+        _request: crate::api::CatalogDetailRequest,
+    ) -> IntegrationFuture<'_, crate::api::CatalogDetailPage> {
+        Box::pin(async { Err(IntegrationError::UnsupportedCapability) })
+    }
+
     fn details(
         &self,
         context: PluginContext,

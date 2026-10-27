@@ -19,17 +19,26 @@ use std::{collections::BTreeMap, sync::OnceLock, time::Duration};
 const SEARCH_TTL: Duration = Duration::from_secs(15 * 60);
 pub(crate) struct MusicBrainzCatalog {
     client: OnceLock<Result<MusicBrainz, TransportError>>,
+    lastfm: Option<std::sync::Arc<crate::lastfm::LastFmClient>>,
 }
 impl MusicBrainzCatalog {
     pub(crate) fn new() -> Self {
         Self {
             client: OnceLock::new(),
+            lastfm: None,
+        }
+    }
+    pub(crate) fn with_lastfm(client: std::sync::Arc<crate::lastfm::LastFmClient>) -> Self {
+        Self {
+            lastfm: Some(client),
+            ..Self::new()
         }
     }
     #[cfg(test)]
     fn with_http(http: crate::enrichment::transport::EnrichmentHttpClient) -> Self {
         Self {
             client: OnceLock::from(Ok(MusicBrainz { http })),
+            lastfm: None,
         }
     }
 }
@@ -43,7 +52,7 @@ impl MusicPlugin for MusicBrainzCatalog {
                 patch: 0,
             },
             api_version: PLUGIN_API_VERSION,
-            capabilities: [PluginCapability::CatalogSearch].into(),
+            capabilities: [PluginCapability::CatalogSearch, PluginCapability::Metadata].into(),
             permissions: [PluginPermission::Network].into(),
             primary_host: Some("musicbrainz.org".into()),
             settings: BTreeMap::new(),
@@ -223,12 +232,19 @@ impl CatalogReader for MusicBrainzCatalog {
             Ok(page)
         })
     }
+    fn detail_section(
+        &self,
+        _context: PluginContext,
+        request: crate::api::CatalogDetailRequest,
+    ) -> IntegrationFuture<'_, crate::api::CatalogDetailPage> {
+        Box::pin(self.load_section(request))
+    }
     fn details(
         &self,
         _context: PluginContext,
-        _target: CatalogEntityRef,
+        target: CatalogEntityRef,
     ) -> IntegrationFuture<'_, CatalogEntityDetails> {
-        Box::pin(async { Err(IntegrationError::UnsupportedCapability) })
+        Box::pin(self.legacy_details(target))
     }
 }
 fn invalid() -> IntegrationError {
@@ -326,6 +342,7 @@ struct Credit {
 #[derive(Deserialize)]
 struct CreditArtist {
     name: String,
+    id: Option<String>,
 }
 impl RemoteItem {
     fn summary(self, kind: ExternalEntityKind) -> Result<CatalogEntitySummary, IntegrationError> {
@@ -454,3 +471,5 @@ impl CachedPage {
 
 #[cfg(test)]
 mod tests;
+
+mod details;

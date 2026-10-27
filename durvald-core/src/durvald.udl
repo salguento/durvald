@@ -203,3 +203,21 @@ typedef extern CatalogItemKind;
 
 [Rust="enum"]
 typedef extern CatalogFailure;
+
+[Rust="record"]
+typedef extern CatalogReference;
+
+[Rust="record"]
+typedef extern CatalogEntry;
+
+[Rust="record"]
+typedef extern CatalogSelection;
+
+[Rust="record"]
+typedef extern CatalogDetailRequest;
+
+[Rust="record"]
+typedef extern CatalogDetailPage;
+
+[Rust="enum"]
+typedef extern CatalogDetailSection;

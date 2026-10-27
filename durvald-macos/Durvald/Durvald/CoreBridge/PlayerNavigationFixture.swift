@@ -101,6 +101,8 @@ enum PlayerNavigationFixture {
         let exampleTracks = Array(tracks.prefix(10))
         if ProcessInfo.processInfo.arguments.contains("--catalog-search-fixture") {
             store.catalogSearchFixture = { NativeCatalogSearch(session: CatalogFixtureSession(noPointer: .init())) }
+            let details = CatalogFixtureDetails()
+            store.catalogDetailFixture = { details }
         }
         store.replayPreviewFixture = { request in
             let now = Int64(Date().timeIntervalSince1970)
@@ -385,5 +387,26 @@ private final class CatalogFixtureSession: CatalogSearchSession, @unchecked Send
         return CatalogPage(provider: provider, generation: query.generation, items: [item],
             nextCursor: nil, failure: nil, retryAfterSeconds: nil, fromCache: query.cacheOnly)
     }
+}
+@MainActor
+private final class CatalogFixtureDetails: CatalogDetailLoading {
+    private var saved: [String: CatalogSelection] = [:]
+    func page(_ request: CatalogDetailRequest) async throws -> CatalogDetailPage {
+        let entry = CatalogEntry(reference: request.reference, title: "Artista de teste", artistCredit: nil, versionLabel: nil, durationSeconds: nil, canonicalUrl: nil)
+        return CatalogDetailPage(reference: request.reference, section: request.section, generation: request.generation,
+            items: request.section == .basic ? [entry] : [], profile: nil, image: nil, attribution: nil, nextCursor: nil,
+            failure: request.section == .profile ? .unavailable : nil, retryAfterSeconds: nil, fromCache: false)
+    }
+    func selection(_ reference: CatalogReference) async throws -> CatalogSelection? { saved["\(reference.provider):\(reference.kind):\(reference.id)"] }
+    func save(_ entry: CatalogEntry) async throws -> CatalogSelection {
+        if let previous = saved[entry.entryKey] { return previous }
+        let value = CatalogSelection(entry: entry, localArtistId: 7, savedAt: 1)
+        saved[entry.entryKey] = value; return value
+    }
+    func followed(_ artistID: Int64) async throws -> Bool { false }
+    func follow(_ entry: CatalogEntry, followed: Bool) async throws -> CatalogSelection { try await save(entry) }
+    func hasListenIntent(_ entry: CatalogEntry) async throws -> Bool { false }
+    func listen(_ entry: CatalogEntry, artist: CatalogEntry) async throws {}
+    func close() async {}
 }
 #endif

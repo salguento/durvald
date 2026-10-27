@@ -8,6 +8,7 @@ import Observation
 final class DurvaldCoreStore {
     #if DEBUG
     @ObservationIgnored var replayPreviewFixture: ((ReplayRequest) -> ReplayPreview)?
+    @ObservationIgnored var catalogDetailFixture: (() -> any CatalogDetailLoading)?
     @ObservationIgnored var catalogSearchFixture: (() -> any CatalogSearchLoading)?
     #endif
     @ObservationIgnored private var retrospectiveHistoryRevision: UInt64?

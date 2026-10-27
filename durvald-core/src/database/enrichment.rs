@@ -3110,7 +3110,7 @@ pub fn upsert_discovered_artist(
     Ok(artist_id)
 }
 
-fn upsert_discovered_artist_inner(
+pub(crate) fn upsert_discovered_artist_inner(
     conn: &Connection,
     name: &str,
     provider: &str,

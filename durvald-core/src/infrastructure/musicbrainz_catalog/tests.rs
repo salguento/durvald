@@ -249,3 +249,116 @@ async fn rate_limit_exposes_retry_delay_without_repeated_requests() {
     );
     assert_eq!(h.mock.calls(), 1);
 }
+
+fn detail(
+    section: crate::api::CatalogDetailSection,
+    kind: crate::api::CatalogItemKind,
+) -> crate::api::CatalogDetailRequest {
+    crate::api::CatalogDetailRequest {
+        reference: crate::api::CatalogReference {
+            provider: "musicbrainz".into(),
+            kind,
+            id: FIRST.into(),
+        },
+        section,
+        language: "pt".into(),
+        cursor: None,
+        generation: 1,
+    }
+}
+async fn section(
+    h: &Harness,
+    request: crate::api::CatalogDetailRequest,
+) -> Result<crate::api::CatalogDetailPage, PluginError> {
+    let scope = RequestScope::default();
+    h.runtime
+        .detail_section(
+            &ProviderId::new("musicbrainz").unwrap(),
+            scope.begin(),
+            request,
+        )
+        .await
+}
+#[tokio::test]
+async fn detail_identity_is_read_only_and_cache_rebinds_generation_without_http() {
+    use crate::api::{CatalogDetailSection as S, CatalogItemKind as K};
+    let body = format!(
+        r#"{{"id":"{FIRST}","title":"Album","artist-credit":[{{"name":"Credit","artist":{{"id":"{SECOND}","name":"Artist"}}}}]}}"#
+    );
+    let h = Harness::new(vec![ok(&body)]).await;
+    let request = detail(S::Basic, K::ReleaseGroup);
+    let page = section(&h, request.clone()).await.unwrap();
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(page.items[1].reference.id, SECOND);
+    let mut next = request;
+    next.generation = 9;
+    let cached = section(&h, next).await.unwrap();
+    assert!(cached.from_cache);
+    assert_eq!(cached.generation, 9);
+    assert_eq!(h.mock.calls(), 1);
+}
+#[tokio::test]
+async fn edition_paging_is_bound_to_reference_section_and_language() {
+    use crate::api::{CatalogDetailSection as S, CatalogItemKind as K};
+    let body = format!(
+        r#"{{"release-count":2,"release-offset":0,"releases":[{{"id":"{SECOND}","title":"Edition"}}]}}"#
+    );
+    let h = Harness::new(vec![ok(&body)]).await;
+    let request = detail(S::Editions, K::ReleaseGroup);
+    let page = section(&h, request.clone()).await.unwrap();
+    assert_eq!(page.items[0].reference.kind, K::ReleaseEdition);
+    let cursor = page.next_cursor.unwrap();
+    let mut other = request;
+    other.language = "en".into();
+    other.cursor = Some(cursor);
+    assert!(section(&h, other).await.is_err());
+    assert_eq!(h.mock.calls(), 1);
+}
+#[tokio::test]
+async fn tracklist_preserves_recording_and_track_identity_without_inventing_playable_sources() {
+    use crate::api::{CatalogDetailSection as S, CatalogItemKind as K};
+    let body = format!(
+        r#"{{"id":"{FIRST}","title":"Edition","media":[{{"tracks":[{{"id":"{FIRST}","title":"Song","recording":{{"id":"{SECOND}","title":"Recording","length":123000}}}},{{"id":"{FIRST}","title":"Track without recording"}}]}}]}}"#
+    );
+    let h = Harness::new(vec![ok(&body)]).await;
+    let page = section(&h, detail(S::Tracklist, K::ReleaseEdition))
+        .await
+        .unwrap();
+    assert_eq!(page.items[0].reference.kind, K::Recording);
+    assert_eq!(page.items[0].duration_seconds, Some(123));
+    assert_eq!(page.items[1].reference.kind, K::ReleaseTrack);
+    assert!(page.items[1].canonical_url.is_none());
+}
+#[tokio::test]
+async fn failed_optional_block_does_not_invalidate_cached_basic_details() {
+    use crate::api::{CatalogDetailSection as S, CatalogItemKind as K};
+    let body = format!(r#"{{"id":"{FIRST}","name":"Artist","relations":[]}}"#);
+    let h = Harness::new(vec![ok(&body), response(404, &[], &[], None)]).await;
+    assert!(section(&h, detail(S::Basic, K::Artist)).await.is_ok());
+    assert!(
+        section(&h, detail(S::Discography, K::Artist))
+            .await
+            .is_err()
+    );
+    assert!(
+        section(&h, detail(S::Basic, K::Artist))
+            .await
+            .unwrap()
+            .from_cache
+    );
+    assert!(
+        section(&h, detail(S::Profile, K::Artist))
+            .await
+            .unwrap()
+            .profile
+            .is_none()
+    );
+    assert_eq!(h.mock.calls(), 2);
+}
+#[tokio::test]
+async fn mismatched_entity_response_is_rejected() {
+    use crate::api::{CatalogDetailSection as S, CatalogItemKind as K};
+    let body = format!(r#"{{"id":"{SECOND}","name":"Wrong entity"}}"#);
+    let h = Harness::new(vec![ok(&body)]).await;
+    assert!(section(&h, detail(S::Basic, K::Artist)).await.is_err());
+}

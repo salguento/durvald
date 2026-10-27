@@ -524,6 +524,29 @@ impl PluginRuntime {
         )
         .await
     }
+    pub(crate) async fn detail_section(
+        &self,
+        id: &ProviderId,
+        ticket: RequestTicket,
+        request: crate::api::CatalogDetailRequest,
+    ) -> Result<crate::api::CatalogDetailPage, PluginError> {
+        // Blocks can use different hosts. Each existing transport enforces its own
+        // cooldown; do not attribute a Wikimedia/CAA failure to MusicBrainz.
+        self.execute(
+            id,
+            PluginCapability::Metadata,
+            ticket,
+            false,
+            move |adapter, context| async move {
+                adapter
+                    .catalog()
+                    .ok_or(IntegrationError::UnsupportedCapability)?
+                    .detail_section(context, request)
+                    .await
+            },
+        )
+        .await
+    }
     pub(crate) async fn find_sources(
         &self,
         id: &ProviderId,
@@ -636,7 +659,7 @@ impl PluginRuntime {
                             Err(IntegrationError::RateLimited {
                                 retry_after_seconds: Some(seconds),
                             }),
-                        ) = (&host, &result)
+                        ) = (&host.as_ref().filter(|_| check_cooldown), &result)
                         {
                             remote.defer(host, *seconds).await?;
                         }
