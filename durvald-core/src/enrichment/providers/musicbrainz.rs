@@ -193,7 +193,7 @@ struct RelationUrl {
 }
 
 /// Quote a Lucene phrase separately from URL query encoding.
-fn phrase(value: &str) -> String {
+pub(crate) fn phrase(value: &str) -> String {
     let escaped: String = value
         .chars()
         .flat_map(|c| {

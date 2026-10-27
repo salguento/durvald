@@ -1604,7 +1604,7 @@ pub fn search_library_page(
          FROM songs_search
          JOIN songs s ON s.song_id = songs_search.rowid
          WHERE songs_search MATCH ?1
-         ORDER BY bm25(songs_search), s.title COLLATE NOCASE
+         ORDER BY bm25(songs_search), s.title COLLATE NOCASE, s.song_id
          LIMIT ?2 OFFSET ?3"
     } else {
         "SELECT s.song_id, s.title, s.artwork, s.artist_id, s.artist_name,
@@ -1616,7 +1616,7 @@ pub fn search_library_page(
          WHERE s.title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
             OR s.artist_name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
             OR s.release_title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
-         ORDER BY s.title COLLATE NOCASE
+         ORDER BY s.title COLLATE NOCASE, s.song_id
          LIMIT ?2 OFFSET ?3"
     };
     let search_term = if use_fts { &fts_query } else { &pattern };
@@ -1632,7 +1632,7 @@ pub fn search_library_page(
             " FROM releases_search
          JOIN releases r ON r.release_id = releases_search.rowid
          WHERE releases_search MATCH ?1
-         ORDER BY bm25(releases_search), r.title COLLATE NOCASE
+         ORDER BY bm25(releases_search), r.title COLLATE NOCASE, r.release_id
          LIMIT ?2 OFFSET ?3"
         )
     } else {
@@ -1642,7 +1642,7 @@ pub fn search_library_page(
             " FROM releases r
          WHERE r.title LIKE ?1 ESCAPE '\\' COLLATE NOCASE
             OR r.artist_name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
-         ORDER BY r.title COLLATE NOCASE
+         ORDER BY r.title COLLATE NOCASE, r.release_id
          LIMIT ?2 OFFSET ?3"
         )
     };
@@ -1656,12 +1656,12 @@ pub fn search_library_page(
          FROM artists_search
          JOIN artists a ON a.artist_id = artists_search.rowid
          WHERE artists_search MATCH ?1
-         ORDER BY bm25(artists_search), a.name COLLATE NOCASE
+         ORDER BY bm25(artists_search), a.name COLLATE NOCASE, a.artist_id
          LIMIT ?2 OFFSET ?3"
     } else {
         "SELECT a.artist_id, a.name FROM artists a
          WHERE a.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
-         ORDER BY a.name COLLATE NOCASE
+         ORDER BY a.name COLLATE NOCASE, a.artist_id
          LIMIT ?2 OFFSET ?3"
     };
     let mut artists_stmt = conn.prepare(artists_sql)?;
@@ -1680,7 +1680,7 @@ pub fn search_library_page(
          FROM playlists_search
          JOIN playlists p ON p.id = playlists_search.rowid
          WHERE playlists_search MATCH ?1
-         ORDER BY bm25(playlists_search), p.name COLLATE NOCASE
+         ORDER BY bm25(playlists_search), p.name COLLATE NOCASE, p.id
          LIMIT ?2 OFFSET ?3"
     } else {
         "SELECT p.id, p.name, NULL, p.description, p.is_favorite,
@@ -1688,7 +1688,7 @@ pub fn search_library_page(
          FROM playlists p
          WHERE p.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE
             OR p.description LIKE ?1 ESCAPE '\\' COLLATE NOCASE
-         ORDER BY p.name COLLATE NOCASE
+         ORDER BY p.name COLLATE NOCASE, p.id
          LIMIT ?2 OFFSET ?3"
     };
     let mut playlists_stmt = conn.prepare(playlists_sql)?;

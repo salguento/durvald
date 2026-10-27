@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 27/10/2026.
-Status: implementação incremental; etapas 1 e 2 concluídas, demais etapas planejadas.
+Status: implementação incremental; etapas 1–3 concluídas, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -197,6 +197,11 @@ Não houve mudança dos DTOs nativos, bindings ou schema da biblioteca.
 ### 3. Busca de catálogo local e MusicBrainz
 
 **Dependências:** 1–2.
+
+**Status:** concluída em 27/10/2026. Contratos, interface e limites em
+[busca de catálogo](features/catalog-search.md). Busca local e MusicBrainz
+com páginas independentes, cache, cancelamento e resultados externos somente
+para consulta; detalhes/adesão seguem na etapa 4.
 
 - Oferecer escopos Biblioteca/Explorar e filtros Tudo/Artistas/Lançamentos/Faixas.
 - Consulta externa por envio; sugestões durante digitação usam local/cache.

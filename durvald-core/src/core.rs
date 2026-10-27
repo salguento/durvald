@@ -31,6 +31,7 @@ use std::sync::Arc;
 /// the public API. All state is encapsulated behind this facade.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
+    catalog_search: Arc<crate::application::catalog_search::CatalogSearchApplication>,
     // Owned from startup; native catalog commands will consume it in stage 3.
     #[allow(dead_code)]
     music_plugins: Arc<crate::application::music_plugins::PluginRuntime>,
@@ -150,6 +151,7 @@ impl DurvaldCore {
     {
         let components = compose(config, create_audio_player).await?;
         let core = Self {
+            catalog_search: components.catalog_search,
             music_plugins: components.music_plugins,
             enrichment_application: components.enrichment_application,
             history_application: components.history_application,
@@ -174,6 +176,16 @@ impl DurvaldCore {
     /// Scans the library at the given paths.
     pub async fn scan_library(&self, paths: Vec<String>) -> CoreResult<ScanResult> {
         self.library_application.scan_library(paths).await
+    }
+
+    pub fn catalog_search_session(&self) -> Arc<CatalogSearchSession> {
+        Arc::new(CatalogSearchSession {
+            application: self.catalog_search.clone(),
+            state: Default::default(),
+        })
+    }
+    pub async fn set_catalog_provider_enabled(&self, enabled: bool) -> CoreResult<bool> {
+        self.catalog_search.set_enabled(enabled).await
     }
 
     /// Returns phase-level progress for the current or most recent library scan.
@@ -1318,6 +1330,29 @@ impl DurvaldCore {
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn open(config: CoreConfig) -> CoreResult<Arc<DurvaldCore>> {
     DurvaldCore::open(config).await
+}
+
+/// One independent search surface; dropping it cancels its outstanding request scope.
+#[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
+pub struct CatalogSearchSession {
+    application: Arc<crate::application::catalog_search::CatalogSearchApplication>,
+    state: crate::application::catalog_search::CatalogSessionState,
+}
+#[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
+impl CatalogSearchSession {
+    pub async fn search_page(
+        &self,
+        provider: CatalogProvider,
+        query: CatalogQuery,
+    ) -> CoreResult<CatalogPage> {
+        self.application.page(&self.state, provider, query).await
+    }
+    pub async fn cancel(&self, generation: u64) {
+        self.state.cancel(generation).await
+    }
+    pub async fn close(&self) {
+        self.state.close().await
+    }
 }
 
 #[cfg(test)]

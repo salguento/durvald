@@ -239,6 +239,7 @@ impl CatalogReader for Fake {
                 Behavior::Immediate => {}
             }
             Ok(CatalogSearchPage {
+                from_cache: false,
                 items: vec![CatalogEntitySummary {
                     identity: CatalogEntityRef::External(
                         ExternalEntityRef::new(

@@ -437,7 +437,9 @@ struct ContentView: View {
     private var librarySummaryText: String {
         switch shell.navigationHistory.current {
         case .search:
-            SummaryPresentation.search(results: globalSearch.value, query: shell.submittedSearchText,
+            shell.catalogSearchScope == .explore
+                ? "Catálogo · Resultados para “\(shell.submittedSearchText)”"
+                : SummaryPresentation.search(results: globalSearch.value, query: shell.submittedSearchText,
                 isPending: globalSearch.isPending || globalSearch.committedQuery != shell.submittedSearchText)
         case .genres: "Explore a classificação disponível na sua biblioteca."
         case .albumCollections: "\(albumCollections.collections.count) coleções"
@@ -1072,6 +1074,7 @@ struct ContentView: View {
             albumCollectionsPage(id: nil)
         case .search:
             LibrarySearchView(searchText: $shell.submittedSearchText, search: globalSearch,
+                              scope: $shell.catalogSearchScope,
                               submissionRevision: shell.searchSubmissionRevision)
         case .genres:
             classificationBrowser(kind: nil, id: nil)

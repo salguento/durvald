@@ -9,6 +9,7 @@ pub(crate) mod metadata;
 #[allow(dead_code)]
 pub(crate) mod music_catalog;
 // Internal runtime; real catalog adapters and native commands follow in stage 3.
+pub(crate) mod catalog_search;
 #[allow(dead_code)]
 pub(crate) mod music_plugins;
 pub(crate) mod playback;

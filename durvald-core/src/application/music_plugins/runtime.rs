@@ -146,7 +146,16 @@ impl PluginRuntime {
         &self,
         adapter: Arc<dyn MusicPlugin>,
     ) -> Result<Option<PluginStatus>, PluginError> {
-        self.mutation(move |runtime| async move { runtime.register(adapter, false).await })
+        self.mutation(move |runtime| async move { runtime.register(adapter, false, false).await })
+            .await
+    }
+    /// Defaults apply only to a previously unseen built-in; user disable/removal wins.
+    pub(crate) async fn register_builtin_with_default(
+        &self,
+        adapter: Arc<dyn MusicPlugin>,
+        enabled: bool,
+    ) -> Result<Option<PluginStatus>, PluginError> {
+        self.mutation(move |runtime| async move { runtime.register(adapter, false, enabled).await })
             .await
     }
     /// Explicit reinstall may replace a tombstone, with disabled default configuration.
@@ -156,7 +165,7 @@ impl PluginRuntime {
     ) -> Result<PluginStatus, PluginError> {
         self.mutation(move |runtime| async move {
             runtime
-                .register(adapter, true)
+                .register(adapter, true, false)
                 .await?
                 .ok_or(PluginError::NotRegistered)
         })
@@ -225,6 +234,7 @@ impl PluginRuntime {
         &self,
         adapter: Arc<dyn MusicPlugin>,
         explicit: bool,
+        default_enabled: bool,
     ) -> Result<Option<PluginStatus>, PluginError> {
         let _control = self.control.lock().await;
         let manifest = adapter.manifest();
@@ -255,6 +265,7 @@ impl PluginRuntime {
             }
             registry.preferences.clone()
         };
+        let was_registered = preferences.contains_key(manifest.id.as_str());
         let saved = preferences
             .get(manifest.id.as_str())
             .cloned()
@@ -267,7 +278,7 @@ impl PluginRuntime {
             configuration.values.extend(saved.configuration.values);
             configuration.flags.extend(saved.configuration.flags);
         }
-        let enabled = saved.enabled && !saved.removed;
+        let enabled = !saved.removed && (saved.enabled || (!was_registered && default_enabled));
         manifest.validate_configuration(&configuration, enabled)?;
         adapter.validate_configuration(&configuration)?;
         if enabled {
@@ -481,6 +492,7 @@ impl PluginRuntime {
             id,
             PluginCapability::CatalogSearch,
             ticket,
+            !request.is_cache_only(),
             move |adapter, context| async move {
                 adapter
                     .catalog()
@@ -501,6 +513,7 @@ impl PluginRuntime {
             id,
             PluginCapability::Metadata,
             ticket,
+            true,
             move |adapter, context| async move {
                 adapter
                     .catalog()
@@ -521,6 +534,7 @@ impl PluginRuntime {
             id,
             PluginCapability::SourceSearch,
             ticket,
+            true,
             move |adapter, context| async move {
                 adapter
                     .sources()
@@ -541,6 +555,7 @@ impl PluginRuntime {
             id,
             PluginCapability::Playback,
             ticket,
+            true,
             move |adapter, context| async move {
                 adapter
                     .resolver()
@@ -557,6 +572,7 @@ impl PluginRuntime {
         id: &ProviderId,
         capability: PluginCapability,
         ticket: RequestTicket,
+        check_cooldown: bool,
         operation: F,
     ) -> Result<T, PluginError>
     where
@@ -609,8 +625,10 @@ impl PluginRuntime {
                 let (_global, _local) = (global, local);
                 remote
                     .scope(false, async {
-                        if let Some(host) = &host {
-                            remote.cooldown(host).await?;
+                        if check_cooldown {
+                            if let Some(host) = &host {
+                                remote.cooldown(host).await?;
+                            }
                         }
                         let result = operation(adapter, context).await;
                         if let (

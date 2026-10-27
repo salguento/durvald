@@ -394,6 +394,19 @@ fileprivate struct FfiConverterUInt8: FfiConverterPrimitive {
     }
 }
 
+fileprivate struct FfiConverterUInt16: FfiConverterPrimitive {
+    typealias FfiType = UInt16
+    typealias SwiftType = UInt16
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt16 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
 fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
     typealias FfiType = UInt32
     typealias SwiftType = UInt32
@@ -550,6 +563,164 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 
 
 /**
+ * One independent search surface; dropping it cancels its outstanding request scope.
+ */
+public protocol CatalogSearchSessionProtocol : AnyObject {
+
+    func cancel(generation: UInt64) async
+
+    func close() async
+
+    func searchPage(provider: CatalogProvider, query: CatalogQuery) async throws  -> CatalogPage
+
+}
+
+/**
+ * One independent search surface; dropping it cancels its outstanding request scope.
+ */
+open class CatalogSearchSession:
+    CatalogSearchSessionProtocol {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    /// This constructor can be used to instantiate a fake object.
+    /// - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    ///
+    /// - Warning:
+    ///     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_durvald_core_fn_clone_catalogsearchsession(self.pointer, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_durvald_core_fn_free_catalogsearchsession(pointer, $0) }
+    }
+
+
+
+
+open func cancel(generation: UInt64)async  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_catalogsearchsession_cancel(
+                    self.uniffiClonePointer(),
+                    FfiConverterUInt64.lower(generation)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: nil
+
+        )
+}
+
+open func close()async  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_catalogsearchsession_close(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: nil
+
+        )
+}
+
+open func searchPage(provider: CatalogProvider, query: CatalogQuery)async throws  -> CatalogPage {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_catalogsearchsession_search_page(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeCatalogProvider.lower(provider),FfiConverterTypeCatalogQuery.lower(query)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeCatalogPage.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+
+}
+
+public struct FfiConverterTypeCatalogSearchSession: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = CatalogSearchSession
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> CatalogSearchSession {
+        return CatalogSearchSession(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: CatalogSearchSession) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogSearchSession {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: CatalogSearchSession, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+
+
+public func FfiConverterTypeCatalogSearchSession_lift(_ pointer: UnsafeMutableRawPointer) throws -> CatalogSearchSession {
+    return try FfiConverterTypeCatalogSearchSession.lift(pointer)
+}
+
+public func FfiConverterTypeCatalogSearchSession_lower(_ value: CatalogSearchSession) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeCatalogSearchSession.lower(value)
+}
+
+
+
+
+/**
  * Opaque core engine - the main entry point for all operations.
  *
  * Internally owns the application services and integration clients that back
@@ -652,6 +823,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Requests cancellation of the active library scan.
      */
     func cancelLibraryScan() throws
+
+    func catalogSearchSession()  -> CatalogSearchSession
 
     func classificationLinks(target: ClassificationTarget, id: Int64) async throws  -> [ClassificationLink]
 
@@ -1014,6 +1187,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func setArtistNewsSeen(releaseGroupMbid: String, seen: Bool) async throws
 
     func setArtistOverride(artistId: Int64, value: ArtistFieldOverride) async throws
+
+    func setCatalogProviderEnabled(enabled: Bool) async throws  -> Bool
 
     /**
      * Some replaces this field, including an explicit empty exclusion; None restores source metadata.
@@ -1655,6 +1830,13 @@ open func cancelLibraryScan()throws  {try rustCallWithError(FfiConverterTypeCore
     uniffi_durvald_core_fn_method_durvaldcore_cancel_library_scan(self.uniffiClonePointer(),$0
     )
 }
+}
+
+open func catalogSearchSession() -> CatalogSearchSession {
+    return try!  FfiConverterTypeCatalogSearchSession.lift(try! rustCall() {
+    uniffi_durvald_core_fn_method_durvaldcore_catalog_search_session(self.uniffiClonePointer(),$0
+    )
+})
 }
 
 open func classificationLinks(target: ClassificationTarget, id: Int64)async throws  -> [ClassificationLink] {
@@ -3357,6 +3539,23 @@ open func setArtistOverride(artistId: Int64, value: ArtistFieldOverride)async th
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func setCatalogProviderEnabled(enabled: Bool)async throws  -> Bool {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_set_catalog_provider_enabled(
+                    self.uniffiClonePointer(),
+                    FfiConverterBool.lower(enabled)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_i8,
+            completeFunc: ffi_durvald_core_rust_future_complete_i8,
+            freeFunc: ffi_durvald_core_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -6525,6 +6724,321 @@ public func FfiConverterTypeAuthTokenResponse_lift(_ buf: RustBuffer) throws -> 
 
 public func FfiConverterTypeAuthTokenResponse_lower(_ value: AuthTokenResponse) -> RustBuffer {
     return FfiConverterTypeAuthTokenResponse.lower(value)
+}
+
+
+public struct CatalogItem {
+    public var provider: CatalogProvider
+    public var kind: CatalogItemKind
+    public var id: String
+    public var localId: Int64?
+    public var title: String
+    public var artistCredit: String?
+    public var versionLabel: String?
+    public var durationSeconds: UInt64?
+    public var canonicalUrl: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(provider: CatalogProvider, kind: CatalogItemKind, id: String, localId: Int64?, title: String, artistCredit: String?, versionLabel: String?, durationSeconds: UInt64?, canonicalUrl: String?) {
+        self.provider = provider
+        self.kind = kind
+        self.id = id
+        self.localId = localId
+        self.title = title
+        self.artistCredit = artistCredit
+        self.versionLabel = versionLabel
+        self.durationSeconds = durationSeconds
+        self.canonicalUrl = canonicalUrl
+    }
+}
+
+
+
+extension CatalogItem: Equatable, Hashable {
+    public static func ==(lhs: CatalogItem, rhs: CatalogItem) -> Bool {
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.localId != rhs.localId {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artistCredit != rhs.artistCredit {
+            return false
+        }
+        if lhs.versionLabel != rhs.versionLabel {
+            return false
+        }
+        if lhs.durationSeconds != rhs.durationSeconds {
+            return false
+        }
+        if lhs.canonicalUrl != rhs.canonicalUrl {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(provider)
+        hasher.combine(kind)
+        hasher.combine(id)
+        hasher.combine(localId)
+        hasher.combine(title)
+        hasher.combine(artistCredit)
+        hasher.combine(versionLabel)
+        hasher.combine(durationSeconds)
+        hasher.combine(canonicalUrl)
+    }
+}
+
+
+public struct FfiConverterTypeCatalogItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogItem {
+        return
+            try CatalogItem(
+                provider: FfiConverterTypeCatalogProvider.read(from: &buf),
+                kind: FfiConverterTypeCatalogItemKind.read(from: &buf),
+                id: FfiConverterString.read(from: &buf),
+                localId: FfiConverterOptionInt64.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                artistCredit: FfiConverterOptionString.read(from: &buf),
+                versionLabel: FfiConverterOptionString.read(from: &buf),
+                durationSeconds: FfiConverterOptionUInt64.read(from: &buf),
+                canonicalUrl: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CatalogItem, into buf: inout [UInt8]) {
+        FfiConverterTypeCatalogProvider.write(value.provider, into: &buf)
+        FfiConverterTypeCatalogItemKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterOptionInt64.write(value.localId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.artistCredit, into: &buf)
+        FfiConverterOptionString.write(value.versionLabel, into: &buf)
+        FfiConverterOptionUInt64.write(value.durationSeconds, into: &buf)
+        FfiConverterOptionString.write(value.canonicalUrl, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeCatalogItem_lift(_ buf: RustBuffer) throws -> CatalogItem {
+    return try FfiConverterTypeCatalogItem.lift(buf)
+}
+
+public func FfiConverterTypeCatalogItem_lower(_ value: CatalogItem) -> RustBuffer {
+    return FfiConverterTypeCatalogItem.lower(value)
+}
+
+
+public struct CatalogPage {
+    public var provider: CatalogProvider
+    public var generation: UInt64
+    public var items: [CatalogItem]
+    public var nextCursor: String?
+    public var failure: CatalogFailure?
+    public var retryAfterSeconds: UInt64?
+    public var fromCache: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(provider: CatalogProvider, generation: UInt64, items: [CatalogItem], nextCursor: String?, failure: CatalogFailure?, retryAfterSeconds: UInt64?, fromCache: Bool) {
+        self.provider = provider
+        self.generation = generation
+        self.items = items
+        self.nextCursor = nextCursor
+        self.failure = failure
+        self.retryAfterSeconds = retryAfterSeconds
+        self.fromCache = fromCache
+    }
+}
+
+
+
+extension CatalogPage: Equatable, Hashable {
+    public static func ==(lhs: CatalogPage, rhs: CatalogPage) -> Bool {
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.generation != rhs.generation {
+            return false
+        }
+        if lhs.items != rhs.items {
+            return false
+        }
+        if lhs.nextCursor != rhs.nextCursor {
+            return false
+        }
+        if lhs.failure != rhs.failure {
+            return false
+        }
+        if lhs.retryAfterSeconds != rhs.retryAfterSeconds {
+            return false
+        }
+        if lhs.fromCache != rhs.fromCache {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(provider)
+        hasher.combine(generation)
+        hasher.combine(items)
+        hasher.combine(nextCursor)
+        hasher.combine(failure)
+        hasher.combine(retryAfterSeconds)
+        hasher.combine(fromCache)
+    }
+}
+
+
+public struct FfiConverterTypeCatalogPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogPage {
+        return
+            try CatalogPage(
+                provider: FfiConverterTypeCatalogProvider.read(from: &buf),
+                generation: FfiConverterUInt64.read(from: &buf),
+                items: FfiConverterSequenceTypeCatalogItem.read(from: &buf),
+                nextCursor: FfiConverterOptionString.read(from: &buf),
+                failure: FfiConverterOptionTypeCatalogFailure.read(from: &buf),
+                retryAfterSeconds: FfiConverterOptionUInt64.read(from: &buf),
+                fromCache: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CatalogPage, into buf: inout [UInt8]) {
+        FfiConverterTypeCatalogProvider.write(value.provider, into: &buf)
+        FfiConverterUInt64.write(value.generation, into: &buf)
+        FfiConverterSequenceTypeCatalogItem.write(value.items, into: &buf)
+        FfiConverterOptionString.write(value.nextCursor, into: &buf)
+        FfiConverterOptionTypeCatalogFailure.write(value.failure, into: &buf)
+        FfiConverterOptionUInt64.write(value.retryAfterSeconds, into: &buf)
+        FfiConverterBool.write(value.fromCache, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeCatalogPage_lift(_ buf: RustBuffer) throws -> CatalogPage {
+    return try FfiConverterTypeCatalogPage.lift(buf)
+}
+
+public func FfiConverterTypeCatalogPage_lower(_ value: CatalogPage) -> RustBuffer {
+    return FfiConverterTypeCatalogPage.lower(value)
+}
+
+
+public struct CatalogQuery {
+    public var query: String
+    public var scope: CatalogScope
+    public var filter: CatalogFilter
+    public var language: String
+    public var pageSize: UInt16
+    public var cursor: String?
+    public var generation: UInt64
+    public var cacheOnly: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(query: String, scope: CatalogScope, filter: CatalogFilter, language: String, pageSize: UInt16, cursor: String?, generation: UInt64, cacheOnly: Bool) {
+        self.query = query
+        self.scope = scope
+        self.filter = filter
+        self.language = language
+        self.pageSize = pageSize
+        self.cursor = cursor
+        self.generation = generation
+        self.cacheOnly = cacheOnly
+    }
+}
+
+
+
+extension CatalogQuery: Equatable, Hashable {
+    public static func ==(lhs: CatalogQuery, rhs: CatalogQuery) -> Bool {
+        if lhs.query != rhs.query {
+            return false
+        }
+        if lhs.scope != rhs.scope {
+            return false
+        }
+        if lhs.filter != rhs.filter {
+            return false
+        }
+        if lhs.language != rhs.language {
+            return false
+        }
+        if lhs.pageSize != rhs.pageSize {
+            return false
+        }
+        if lhs.cursor != rhs.cursor {
+            return false
+        }
+        if lhs.generation != rhs.generation {
+            return false
+        }
+        if lhs.cacheOnly != rhs.cacheOnly {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(query)
+        hasher.combine(scope)
+        hasher.combine(filter)
+        hasher.combine(language)
+        hasher.combine(pageSize)
+        hasher.combine(cursor)
+        hasher.combine(generation)
+        hasher.combine(cacheOnly)
+    }
+}
+
+
+public struct FfiConverterTypeCatalogQuery: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogQuery {
+        return
+            try CatalogQuery(
+                query: FfiConverterString.read(from: &buf),
+                scope: FfiConverterTypeCatalogScope.read(from: &buf),
+                filter: FfiConverterTypeCatalogFilter.read(from: &buf),
+                language: FfiConverterString.read(from: &buf),
+                pageSize: FfiConverterUInt16.read(from: &buf),
+                cursor: FfiConverterOptionString.read(from: &buf),
+                generation: FfiConverterUInt64.read(from: &buf),
+                cacheOnly: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: CatalogQuery, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.query, into: &buf)
+        FfiConverterTypeCatalogScope.write(value.scope, into: &buf)
+        FfiConverterTypeCatalogFilter.write(value.filter, into: &buf)
+        FfiConverterString.write(value.language, into: &buf)
+        FfiConverterUInt16.write(value.pageSize, into: &buf)
+        FfiConverterOptionString.write(value.cursor, into: &buf)
+        FfiConverterUInt64.write(value.generation, into: &buf)
+        FfiConverterBool.write(value.cacheOnly, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeCatalogQuery_lift(_ buf: RustBuffer) throws -> CatalogQuery {
+    return try FfiConverterTypeCatalogQuery.lift(buf)
+}
+
+public func FfiConverterTypeCatalogQuery_lower(_ value: CatalogQuery) -> RustBuffer {
+    return FfiConverterTypeCatalogQuery.lower(value)
 }
 
 
@@ -12064,6 +12578,351 @@ extension ArtistRefreshStatus: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum CatalogFailure {
+
+    case disabled
+    case unavailable
+    case invalidQuery
+    case rateLimited
+    case timedOut
+    case cancelled
+}
+
+
+public struct FfiConverterTypeCatalogFailure: FfiConverterRustBuffer {
+    typealias SwiftType = CatalogFailure
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogFailure {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .disabled
+
+        case 2: return .unavailable
+
+        case 3: return .invalidQuery
+
+        case 4: return .rateLimited
+
+        case 5: return .timedOut
+
+        case 6: return .cancelled
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CatalogFailure, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .disabled:
+            writeInt(&buf, Int32(1))
+
+
+        case .unavailable:
+            writeInt(&buf, Int32(2))
+
+
+        case .invalidQuery:
+            writeInt(&buf, Int32(3))
+
+
+        case .rateLimited:
+            writeInt(&buf, Int32(4))
+
+
+        case .timedOut:
+            writeInt(&buf, Int32(5))
+
+
+        case .cancelled:
+            writeInt(&buf, Int32(6))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeCatalogFailure_lift(_ buf: RustBuffer) throws -> CatalogFailure {
+    return try FfiConverterTypeCatalogFailure.lift(buf)
+}
+
+public func FfiConverterTypeCatalogFailure_lower(_ value: CatalogFailure) -> RustBuffer {
+    return FfiConverterTypeCatalogFailure.lower(value)
+}
+
+
+
+extension CatalogFailure: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum CatalogFilter {
+
+    case all
+    case artists
+    case releases
+    case tracks
+}
+
+
+public struct FfiConverterTypeCatalogFilter: FfiConverterRustBuffer {
+    typealias SwiftType = CatalogFilter
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogFilter {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .all
+
+        case 2: return .artists
+
+        case 3: return .releases
+
+        case 4: return .tracks
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CatalogFilter, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .all:
+            writeInt(&buf, Int32(1))
+
+
+        case .artists:
+            writeInt(&buf, Int32(2))
+
+
+        case .releases:
+            writeInt(&buf, Int32(3))
+
+
+        case .tracks:
+            writeInt(&buf, Int32(4))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeCatalogFilter_lift(_ buf: RustBuffer) throws -> CatalogFilter {
+    return try FfiConverterTypeCatalogFilter.lift(buf)
+}
+
+public func FfiConverterTypeCatalogFilter_lower(_ value: CatalogFilter) -> RustBuffer {
+    return FfiConverterTypeCatalogFilter.lower(value)
+}
+
+
+
+extension CatalogFilter: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum CatalogItemKind {
+
+    case artist
+    case releaseGroup
+    case releaseEdition
+    case recording
+    case track
+    case playlist
+}
+
+
+public struct FfiConverterTypeCatalogItemKind: FfiConverterRustBuffer {
+    typealias SwiftType = CatalogItemKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogItemKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .artist
+
+        case 2: return .releaseGroup
+
+        case 3: return .releaseEdition
+
+        case 4: return .recording
+
+        case 5: return .track
+
+        case 6: return .playlist
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CatalogItemKind, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .artist:
+            writeInt(&buf, Int32(1))
+
+
+        case .releaseGroup:
+            writeInt(&buf, Int32(2))
+
+
+        case .releaseEdition:
+            writeInt(&buf, Int32(3))
+
+
+        case .recording:
+            writeInt(&buf, Int32(4))
+
+
+        case .track:
+            writeInt(&buf, Int32(5))
+
+
+        case .playlist:
+            writeInt(&buf, Int32(6))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeCatalogItemKind_lift(_ buf: RustBuffer) throws -> CatalogItemKind {
+    return try FfiConverterTypeCatalogItemKind.lift(buf)
+}
+
+public func FfiConverterTypeCatalogItemKind_lower(_ value: CatalogItemKind) -> RustBuffer {
+    return FfiConverterTypeCatalogItemKind.lower(value)
+}
+
+
+
+extension CatalogItemKind: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum CatalogProvider {
+
+    case library
+    case musicBrainz
+}
+
+
+public struct FfiConverterTypeCatalogProvider: FfiConverterRustBuffer {
+    typealias SwiftType = CatalogProvider
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogProvider {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .library
+
+        case 2: return .musicBrainz
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CatalogProvider, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .library:
+            writeInt(&buf, Int32(1))
+
+
+        case .musicBrainz:
+            writeInt(&buf, Int32(2))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeCatalogProvider_lift(_ buf: RustBuffer) throws -> CatalogProvider {
+    return try FfiConverterTypeCatalogProvider.lift(buf)
+}
+
+public func FfiConverterTypeCatalogProvider_lower(_ value: CatalogProvider) -> RustBuffer {
+    return FfiConverterTypeCatalogProvider.lower(value)
+}
+
+
+
+extension CatalogProvider: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum CatalogScope {
+
+    case library
+    case explore
+}
+
+
+public struct FfiConverterTypeCatalogScope: FfiConverterRustBuffer {
+    typealias SwiftType = CatalogScope
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CatalogScope {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .library
+
+        case 2: return .explore
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CatalogScope, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .library:
+            writeInt(&buf, Int32(1))
+
+
+        case .explore:
+            writeInt(&buf, Int32(2))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeCatalogScope_lift(_ buf: RustBuffer) throws -> CatalogScope {
+    return try FfiConverterTypeCatalogScope.lift(buf)
+}
+
+public func FfiConverterTypeCatalogScope_lower(_ value: CatalogScope) -> RustBuffer {
+    return FfiConverterTypeCatalogScope.lower(value)
+}
+
+
+
+extension CatalogScope: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
  * Genres and styles have separate identities and never imply one another.
  */
@@ -13396,6 +14255,27 @@ fileprivate struct FfiConverterOptionTypeArtistRefreshStatus: FfiConverterRustBu
     }
 }
 
+fileprivate struct FfiConverterOptionTypeCatalogFailure: FfiConverterRustBuffer {
+    typealias SwiftType = CatalogFailure?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCatalogFailure.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCatalogFailure.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionTypeEnrichmentProvider: FfiConverterRustBuffer {
     typealias SwiftType = EnrichmentProvider?
 
@@ -13740,6 +14620,28 @@ fileprivate struct FfiConverterSequenceTypeAudioOutputDevice: FfiConverterRustBu
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeAudioOutputDevice.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeCatalogItem: FfiConverterRustBuffer {
+    typealias SwiftType = [CatalogItem]
+
+    public static func write(_ value: [CatalogItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeCatalogItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [CatalogItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [CatalogItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeCatalogItem.read(from: &buf))
         }
         return seq
     }
@@ -14288,6 +15190,15 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_func_open() != 10526) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_catalogsearchsession_cancel() != 10127) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_catalogsearchsession_close() != 41131) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_catalogsearchsession_search_page() != 53715) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_add_album_to_collection() != 34363) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -14355,6 +15266,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_library_scan() != 54997) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_catalog_search_session() != 36474) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_classification_links() != 16104) {
@@ -14625,6 +15539,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_artist_override() != 53712) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_catalog_provider_enabled() != 24699) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_classification() != 50398) {

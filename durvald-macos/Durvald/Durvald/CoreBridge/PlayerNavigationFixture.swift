@@ -99,6 +99,9 @@ enum PlayerNavigationFixture {
             history: history
         )
         let exampleTracks = Array(tracks.prefix(10))
+        if ProcessInfo.processInfo.arguments.contains("--catalog-search-fixture") {
+            store.catalogSearchFixture = { NativeCatalogSearch(session: CatalogFixtureSession(noPointer: .init())) }
+        }
         store.replayPreviewFixture = { request in
             let now = Int64(Date().timeIntervalSince1970)
             let current = request.startAt <= now && now < request.endAt
@@ -361,6 +364,26 @@ private final class PlaybackClockFixtureCore: DurvaldCore, @unchecked Sendable {
             updateClock()
             snapshot.positionSeconds = Double(seconds)
         }
+    }
+}
+
+private final class CatalogFixtureSession: CatalogSearchSession, @unchecked Sendable {
+    override func cancel(generation: UInt64) async {}
+    override func close() async {}
+    override func searchPage(provider: CatalogProvider, query: CatalogQuery) async throws -> CatalogPage {
+        let kind: CatalogItemKind = switch query.filter {
+        case .all, .artists: .artist
+        case .releases: .releaseGroup
+        case .tracks: provider == .library ? .track : .recording
+        }
+        let item = CatalogItem(provider: provider, kind: kind,
+            id: provider == .library ? "7" : "11111111-1111-4111-8111-111111111111",
+            localId: provider == .library ? 7 : nil, title: query.query,
+            artistCredit: nil, versionLabel: provider == .musicBrainz ? "Artista externo de teste" : nil,
+            durationSeconds: nil, canonicalUrl: provider == .musicBrainz
+                ? "https://musicbrainz.org/artist/11111111-1111-4111-8111-111111111111" : nil)
+        return CatalogPage(provider: provider, generation: query.generation, items: [item],
+            nextCursor: nil, failure: nil, retryAfterSeconds: nil, fromCache: query.cacheOnly)
     }
 }
 #endif

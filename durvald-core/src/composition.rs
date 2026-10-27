@@ -1,4 +1,5 @@
 use crate::api::{CoreConfig, CoreError, CoreResult, RepeatMode};
+use crate::application::catalog_search::CatalogSearchApplication;
 use crate::application::enrichment::EnrichmentApplication;
 use crate::application::history::HistoryApplication;
 use crate::application::lastfm::{LastFmApplication, lastfm_error};
@@ -54,6 +55,7 @@ pub(crate) struct PersistenceApplications {
 }
 
 pub(crate) struct CoreComponents {
+    pub(crate) catalog_search: Arc<CatalogSearchApplication>,
     pub(crate) music_plugins: Arc<PluginRuntime>,
     pub(crate) enrichment_application: EnrichmentApplication,
     pub(crate) history_application: HistoryApplication,
@@ -109,6 +111,14 @@ where
         playback_application.clone(),
         library_application.clone(),
     );
+    let catalog_search = Arc::new(
+        CatalogSearchApplication::new(
+            SqliteCatalogSearchQuery::new(db_pool.clone()),
+            music_plugins.clone(),
+            Arc::new(crate::infrastructure::musicbrainz_catalog::MusicBrainzCatalog::new()),
+        )
+        .await,
+    );
     let persistence = build_persistence_applications(
         db_pool.clone(),
         config.covers_dir.clone(),
@@ -118,6 +128,7 @@ where
     );
 
     Ok(CoreComponents {
+        catalog_search,
         music_plugins,
         enrichment_application,
         history_application: persistence.history,

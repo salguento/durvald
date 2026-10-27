@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 mod enrichment;
 pub use enrichment::*;
+mod catalog;
+pub use catalog::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

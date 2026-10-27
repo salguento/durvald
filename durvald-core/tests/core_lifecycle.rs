@@ -24,12 +24,12 @@ async fn opens_new_core_in_isolated_environment() -> Result<(), Box<dyn Error + 
 }
 
 #[tokio::test]
-async fn plugin_registry_starts_empty_without_credentials_or_remote_work()
+async fn catalog_plugin_registers_without_credentials_or_remote_work()
 -> Result<(), Box<dyn Error + Send + Sync>> {
     let core = TestCore::open().await?;
     assert_eq!(
         durvald_core::test_support::registered_music_plugin_count(core.core()).await?,
-        0
+        1
     );
     assert!(
         !core
@@ -48,7 +48,7 @@ async fn plugin_registry_starts_empty_without_credentials_or_remote_work()
     let core = core.restart().await?;
     assert_eq!(
         durvald_core::test_support::registered_music_plugin_count(core.core()).await?,
-        0
+        1
     );
     Ok(())
 }

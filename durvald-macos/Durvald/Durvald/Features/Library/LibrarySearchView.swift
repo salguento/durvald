@@ -8,14 +8,47 @@ struct LibrarySearchView: View {
     @Bindable var search = SearchPresentation<SearchResults>()
     private var committedQuery: String { search.committedQuery }
     private var searchResults: SearchResults? { search.value }
+    @Binding var scope: CatalogScope
+    @State private var filter = CatalogFilter.all
     var submissionRevision: UInt64 = 0
     private var request: SearchRequest {
         .init(query: normalizedSearchText, storeID: ObjectIdentifier(store), coreID: store.core.map(ObjectIdentifier.init),
-              metadataRevision: store.metadataRevision, sourceRevision: submissionRevision, scope: "global")
+              metadataRevision: store.metadataRevision, sourceRevision: submissionRevision, scope: "global.\(scope).\(filter)")
     }
 
     var body: some View {
-        resultsList(searchResults)
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                Picker("Onde pesquisar", selection: $scope) {
+                    Text("Biblioteca").tag(CatalogScope.library)
+                    Text("Explorar").tag(CatalogScope.explore)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 260)
+                .accessibilityIdentifier("catalog.scope")
+                Picker("Tipo de resultado", selection: $filter) {
+                    Text("Tudo").tag(CatalogFilter.all)
+                    Text("Artistas").tag(CatalogFilter.artists)
+                    Text("Lançamentos").tag(CatalogFilter.releases)
+                    Text("Faixas").tag(CatalogFilter.tracks)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 440)
+                .accessibilityIdentifier("catalog.filter")
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
+            .fixedSize(horizontal: false, vertical: true)
+            if scope == .library {
+                resultsList(searchResults)
+            } else {
+                CatalogExploreView(query: normalizedSearchText, filter: filter, submissionRevision: submissionRevision)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .overlay {
                 if normalizedSearchText.isEmpty {
                     ContentUnavailableView(
@@ -27,6 +60,7 @@ struct LibrarySearchView: View {
             }
         .accessibilityIdentifier("search.page")
         .task(id: request) {
+            guard scope == .library else { search.cancel(); return }
             let current = request
             await search.run(current, timing: SearchTiming(debounce: .zero, loadingDelay: .zero), isCurrent: { request == current }) {
                 await store.searchLibrary(query: $0)
@@ -68,114 +102,122 @@ struct LibrarySearchView: View {
     private func resultSections(_ results: SearchResults, viewport: PageViewport) -> some View {
         let artworkSize = min(200, max(120, (viewport.visibleWidth - 112) / 4))
         let trackColumnWidth = min(560, max(280, (viewport.visibleWidth - 72) / 2))
-        if !results.artists.isEmpty {
-            SearchResultShelf(title: "Artistas", identifier: "artists", viewport: viewport,
-                              itemWidth: artworkSize, itemCount: results.artists.count) {
-                ForEach(Array(results.artists.enumerated()), id: \.element.id) { index, artist in
-                    Button { navigation.artist(artist) } label: {
-                        VStack(spacing: 10) {
-                            ArtistPortraitView(
-                                artist: artist,
-                                fallbackArtworkID: results.releases.first {
-                                    $0.artistId == artist.id && $0.artworkId != nil
-                                }?.artworkId ?? store.releases.first {
-                                    $0.artistId == artist.id && $0.artworkId != nil
-                                }?.artworkId,
-                                size: artworkSize
-                            )
-                            Text(artist.name)
-                                .font(LibraryTypography.listingTitle)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(width: artworkSize, alignment: .top)
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Abrir artista \(artist.name)")
-                    .accessibilityIdentifier("search.artist.\(artist.id)")
-                    .id(SearchShelfBlockID(index: index))
-                }
-            }
-            .id("artists:\(committedQuery)")
-        } else {
-            emptySection(title: "Artistas", identifier: "artists",
-                         message: "Nenhum artista encontrado para esta pesquisa.")
-        }
-
-        if !results.releases.isEmpty {
-            SearchResultShelf(title: "Álbuns", identifier: "albums", viewport: viewport,
-                              itemWidth: artworkSize, itemCount: results.releases.count) {
-                ForEach(Array(results.releases.enumerated()), id: \.element.id) { index, release in
-                    AlbumCard(release: release, onSelectAlbum: navigation.album,
-                              artworkSize: artworkSize)
-                        .accessibilityIdentifier("search.release.\(release.id)")
-                    .id(SearchShelfBlockID(index: index))
-                }
-            }
-            .id("albums:\(committedQuery)")
-        } else {
-            emptySection(title: "Álbuns", identifier: "albums",
-                         message: "Nenhum álbum encontrado para esta pesquisa.")
-        }
-
-        if !results.tracks.isEmpty {
-            SearchResultShelf(title: "Faixas", identifier: "tracks", viewport: viewport,
-                              itemWidth: trackColumnWidth, itemCount: (results.tracks.count + 2) / 3) {
-                ForEach(Array(stride(from: 0, to: results.tracks.count, by: 3)), id: \.self) { start in
-                    let end = min(start + 3, results.tracks.count)
-                    VStack(spacing: 0) {
-                        ForEach(start..<end, id: \.self) { index in
-                            trackRow(results.tracks[index])
-                                .frame(height: 58)
-                                .overlay(alignment: .bottom) {
-                                    if index < end - 1 { Divider() }
-                                }
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .frame(width: trackColumnWidth, height: 174, alignment: .top)
-                    .id(SearchShelfBlockID(index: start / 3))
-                }
-            }
-            .id("tracks:\(committedQuery)")
-        } else {
-            emptySection(title: "Faixas", identifier: "tracks",
-                         message: "Nenhuma faixa encontrada para esta pesquisa.")
-        }
-
-        if !results.playlists.isEmpty {
-            SearchResultShelf(title: "Playlists", identifier: "playlists", viewport: viewport,
-                              itemWidth: artworkSize, itemCount: results.playlists.count) {
-                ForEach(Array(results.playlists.enumerated()), id: \.element.id) { index, playlist in
-                    Button { navigation.playlist(playlist) } label: {
-                        VStack(alignment: .leading, spacing: 7) {
-                            PlaylistArtworkThumbnail(playlistID: playlist.id,
-                                                     artworkBase64: playlist.artworkId,
-                                                     size: artworkSize)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(playlist.name)
+        if filter == .all || filter == .artists {
+            if !results.artists.isEmpty {
+                SearchResultShelf(title: "Artistas", identifier: "artists", viewport: viewport,
+                                  itemWidth: artworkSize, itemCount: results.artists.count) {
+                    ForEach(Array(results.artists.enumerated()), id: \.element.id) { index, artist in
+                        Button { navigation.artist(artist) } label: {
+                            VStack(spacing: 10) {
+                                ArtistPortraitView(
+                                    artist: artist,
+                                    fallbackArtworkID: results.releases.first {
+                                        $0.artistId == artist.id && $0.artworkId != nil
+                                    }?.artworkId ?? store.releases.first {
+                                        $0.artistId == artist.id && $0.artworkId != nil
+                                    }?.artworkId,
+                                    size: artworkSize
+                                )
+                                Text(artist.name)
                                     .font(LibraryTypography.listingTitle)
-                                    .lineLimit(1)
-                                Text("\(playlist.trackCount) músicas")
-                                    .font(LibraryTypography.listingSecondary)
-                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
                             }
+                            .frame(width: artworkSize, alignment: .top)
+                            .contentShape(.rect)
                         }
-                        .frame(width: artworkSize, alignment: .leading)
-                        .contentShape(.rect)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Abrir artista \(artist.name)")
+                        .accessibilityIdentifier("search.artist.\(artist.id)")
+                        .id(SearchShelfBlockID(index: index))
                     }
-                    .buttonStyle(.plain)
-                    .playlistContextMenu(playlist: playlist)
-                    .accessibilityLabel("Abrir playlist \(playlist.name)")
-                    .accessibilityIdentifier("search.playlist.\(playlist.id)")
-                    .id(SearchShelfBlockID(index: index))
                 }
+                .id("artists:\(committedQuery)")
+            } else {
+                emptySection(title: "Artistas", identifier: "artists",
+                             message: "Nenhum artista encontrado para esta pesquisa.")
             }
-            .id("playlists:\(committedQuery)")
-        } else {
-            emptySection(title: "Playlists", identifier: "playlists",
-                         message: "Nenhuma playlist encontrada para esta pesquisa.")
+
+        }
+        if filter == .all || filter == .releases {
+            if !results.releases.isEmpty {
+                SearchResultShelf(title: "Álbuns", identifier: "albums", viewport: viewport,
+                                  itemWidth: artworkSize, itemCount: results.releases.count) {
+                    ForEach(Array(results.releases.enumerated()), id: \.element.id) { index, release in
+                        AlbumCard(release: release, onSelectAlbum: navigation.album,
+                                  artworkSize: artworkSize)
+                            .accessibilityIdentifier("search.release.\(release.id)")
+                        .id(SearchShelfBlockID(index: index))
+                    }
+                }
+                .id("albums:\(committedQuery)")
+            } else {
+                emptySection(title: "Álbuns", identifier: "albums",
+                             message: "Nenhum álbum encontrado para esta pesquisa.")
+            }
+
+        }
+        if filter == .all || filter == .tracks {
+            if !results.tracks.isEmpty {
+                SearchResultShelf(title: "Faixas", identifier: "tracks", viewport: viewport,
+                                  itemWidth: trackColumnWidth, itemCount: (results.tracks.count + 2) / 3) {
+                    ForEach(Array(stride(from: 0, to: results.tracks.count, by: 3)), id: \.self) { start in
+                        let end = min(start + 3, results.tracks.count)
+                        VStack(spacing: 0) {
+                            ForEach(start..<end, id: \.self) { index in
+                                trackRow(results.tracks[index])
+                                    .frame(height: 58)
+                                    .overlay(alignment: .bottom) {
+                                        if index < end - 1 { Divider() }
+                                    }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(width: trackColumnWidth, height: 174, alignment: .top)
+                        .id(SearchShelfBlockID(index: start / 3))
+                    }
+                }
+                .id("tracks:\(committedQuery)")
+            } else {
+                emptySection(title: "Faixas", identifier: "tracks",
+                             message: "Nenhuma faixa encontrada para esta pesquisa.")
+            }
+
+        }
+        if filter == .all {
+            if !results.playlists.isEmpty {
+                SearchResultShelf(title: "Playlists", identifier: "playlists", viewport: viewport,
+                                  itemWidth: artworkSize, itemCount: results.playlists.count) {
+                    ForEach(Array(results.playlists.enumerated()), id: \.element.id) { index, playlist in
+                        Button { navigation.playlist(playlist) } label: {
+                            VStack(alignment: .leading, spacing: 7) {
+                                PlaylistArtworkThumbnail(playlistID: playlist.id,
+                                                         artworkBase64: playlist.artworkId,
+                                                         size: artworkSize)
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(playlist.name)
+                                        .font(LibraryTypography.listingTitle)
+                                        .lineLimit(1)
+                                    Text("\(playlist.trackCount) músicas")
+                                        .font(LibraryTypography.listingSecondary)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(width: artworkSize, alignment: .leading)
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .playlistContextMenu(playlist: playlist)
+                        .accessibilityLabel("Abrir playlist \(playlist.name)")
+                        .accessibilityIdentifier("search.playlist.\(playlist.id)")
+                        .id(SearchShelfBlockID(index: index))
+                    }
+                }
+                .id("playlists:\(committedQuery)")
+            } else {
+                emptySection(title: "Playlists", identifier: "playlists",
+                             message: "Nenhuma playlist encontrada para esta pesquisa.")
+            }
         }
     }
 

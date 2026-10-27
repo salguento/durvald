@@ -91,6 +91,7 @@ pub(crate) enum LocalEntityRef {
     Artist(ArtistId),
     Release(ReleaseId),
     Track(TrackId),
+    Playlist(crate::domain::ids::PlaylistId),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

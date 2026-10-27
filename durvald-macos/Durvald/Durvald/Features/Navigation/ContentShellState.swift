@@ -83,6 +83,7 @@ struct ContentShellState {
     var sidebarSection: SidebarSection = .navigation
     var searchText = ""
     var submittedSearchText = ""
+    var catalogSearchScope = CatalogScope.library
     var searchSubmissionRevision: UInt64 = 0
     // Mounting the Home field must match the native editor's idle token.
     var searchFocusRequest = -1

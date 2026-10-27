@@ -176,3 +176,30 @@ typedef extern ArtistRefreshSectionResult;
 
 [Rust="record"]
 typedef extern ArtistRefreshResult;
+
+[Rust="object"]
+typedef extern CatalogSearchSession;
+
+[Rust="record"]
+typedef extern CatalogQuery;
+
+[Rust="record"]
+typedef extern CatalogItem;
+
+[Rust="record"]
+typedef extern CatalogPage;
+
+[Rust="enum"]
+typedef extern CatalogProvider;
+
+[Rust="enum"]
+typedef extern CatalogScope;
+
+[Rust="enum"]
+typedef extern CatalogFilter;
+
+[Rust="enum"]
+typedef extern CatalogItemKind;
+
+[Rust="enum"]
+typedef extern CatalogFailure;
