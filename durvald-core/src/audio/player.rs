@@ -742,6 +742,25 @@ impl AudioPlayer {
     }
 
     /// Stops the active track but preserves the upcoming queue.
+    pub(crate) fn stop_for_embedded(&mut self) -> Result<(), AudioError> {
+        self.stop_sound_with_tween(Tween {
+            duration: Duration::ZERO,
+            ..Tween::default()
+        });
+        self.stop();
+        // A previous crossfade voice can outlive its handle. Releasing the native
+        // backend silences all voices, including outgoing tails, before WebKit starts.
+        #[cfg(any(test, feature = "test-support"))]
+        let mock = matches!(self.manager, PlayerBackend::Mock(_));
+        self.manager = PlayerBackend::Uninitialized;
+        self.active_output_device_id = None;
+        #[cfg(any(test, feature = "test-support"))]
+        if mock {
+            self.manager = Self::new_mock()?.manager;
+        }
+        Ok(())
+    }
+
     pub fn stop(&mut self) {
         self.stop_sound();
         self.current_song_id = None;

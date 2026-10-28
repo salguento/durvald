@@ -68,3 +68,11 @@ foram atualizados, inclusive a biblioteca distribuída com o aplicativo macOS.
   da ponte Swift/UniFFI passou com os bindings e a biblioteca Release.
 
 A suíte é offline; não comprova disponibilidade atual dos links nos serviços.
+
+## Atualização: player integrado
+
+A [etapa 9B](embedded-playback.md), concluída em 28/10/2026, acrescenta
+**Ouvir no player integrado** para uma origem SoundCloud salva e habilitada.
+A escolha é explícita; candidatos continuam como links até a associação, e
+YouTube/Bandcamp mantêm somente abertura externa. A capacidade real de cada
+item é observada ao carregar o widget, sem inferir áudio completo ou prévia.

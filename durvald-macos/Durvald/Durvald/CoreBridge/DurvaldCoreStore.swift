@@ -139,6 +139,8 @@ final class DurvaldCoreStore {
     @ObservationIgnored private var releaseRatingEdits: [Int64: PersonalValueEdit<UInt8?>] = [:]
     @ObservationIgnored private var ratingEdits: [Int64: PersonalValueEdit<UInt8?>] = [:]
     @ObservationIgnored private var historyRefreshTask: Task<Void, Never>?
+    let embeddedPlayer = EmbeddedPlayerController()
+    @ObservationIgnored nonisolated(unsafe) private var embeddedCore: DurvaldCore?
     @ObservationIgnored private var nowPlaying: NowPlayingCoordinator?
     @ObservationIgnored private var scanProgressPollingTask: Task<Void, Never>?
     @ObservationIgnored private var libraryFileWatcher: LibraryFileWatcher?
@@ -275,6 +277,8 @@ final class DurvaldCoreStore {
             let openedCore = try await open(config: try makeConfig())
             let initialPlayback = await openedCore.playback()
             core = openedCore
+            try await embeddedPlayer.connect(to: openedCore)
+            embeddedCore = openedCore
             playback = initialPlayback
             startPlaybackPolling()
             try await reloadPrimaryLibrary(using: openedCore)
@@ -306,6 +310,7 @@ final class DurvaldCoreStore {
                    !self.isSeeking {
                     let revision = self.seekRequestID
                     let snapshot = await core.playback()
+                    await self.embeddedPlayer.refresh()
                     // A seek/track change can start while this read is suspended.
                     guard !Task.isCancelled else { return }
                     if !self.isChangingTrack, !self.isMovingQueue, !self.isSeeking {
@@ -1067,6 +1072,25 @@ final class DurvaldCoreStore {
         catch { errorMessage = String(describing: error) }
     }
 
+    var canSeekCurrentPlayback: Bool {
+        guard playback?.currentTrack != nil else { return false }
+        if playback?.sourceContext.hasPrefix("embedded:") == true {
+            return embeddedPlayer.status?.seekAvailable == true && embeddedPlayer.status?.state != .failed && embeddedPlayer.status?.state != .ended
+        }
+        return true
+    }
+
+    func playEmbeddedSource(_ source: TrackSource) async {
+        guard let core, !isChangingTrack else { return }
+        isChangingTrack = true
+        await finishSeekBeforeChangingTrack()
+        defer { isChangingTrack = false; seekRequestID &+= 1 }
+        do {
+            playback = try await core.playEmbeddedTrackSource(trackId: source.trackId, sourceId: source.sourceId)
+            await embeddedPlayer.refresh()
+        } catch { errorMessage = String(describing: error) }
+    }
+
     func play(trackID: Int64, sourceContext: String = PlaybackSourceContext.library) async {
         guard let core else {
             errorMessage = "O core ainda está abrindo."
@@ -1481,6 +1505,7 @@ final class DurvaldCoreStore {
     }
 
     func seek(to seconds: Double) {
+        guard canSeekCurrentPlayback else { return }
         guard let core, !isChangingTrack, seconds.isFinite,
               var optimisticSnapshot = playback,
               let trackID = optimisticSnapshot.currentTrack?.id,
@@ -2636,6 +2661,7 @@ final class DurvaldCoreStore {
     }
 
     deinit {
+        if let activeCore = embeddedCore { Task { try? await activeCore.detachEmbeddedPlaybackHost() } }
         historyRefreshTask?.cancel()
         playbackPollingTask?.cancel()
         scanProgressPollingTask?.cancel()

@@ -922,6 +922,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     func deleteUserTag(tagId: Int64) async throws
 
+    func detachEmbeddedPlaybackHost() async throws
+
     /**
      * Ends the Last.fm integration and removes its credentials and cached
      * metadata without affecting snapshots from other providers.
@@ -929,6 +931,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func disconnectLastfm() async throws
 
     func dismissLocalRecommendation(releaseId: Int64) async throws
+
+    func embeddedPlayback() async  -> EmbeddedPlaybackSnapshot?
 
     func enrichmentSettings() async throws  -> EnrichmentSettings
 
@@ -1028,6 +1032,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * occurrence stays first even with shuffle; omitted selection chooses the start.
      */
     func playCollection(trackIds: [Int64], sourceContexts: [String], startingPosition: UInt64?, shuffleEnabled: Bool?) async throws  -> PlaybackSnapshot
+
+    func playEmbeddedTrackSource(trackId: Int64, sourceId: Int64) async throws  -> PlaybackSnapshot
 
     /**
      * Starts the upcoming track at the given queue position.
@@ -1164,6 +1170,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func replayPreview(request: ReplayRequest) async throws  -> ReplayPreview
 
+    func reportEmbeddedPlaybackEvent(event: EmbeddedPlaybackEvent) async throws
+
     func resolveArtistCandidates(artistId: Int64) async throws  -> ArtistIdentityCandidates
 
     func restoreLocalRecommendations() async throws
@@ -1236,6 +1244,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Some replaces this field, including an explicit empty exclusion; None restores source metadata.
      */
     func setClassification(target: ClassificationTarget, id: Int64, kind: ClassificationKind, names: [String]?) async throws
+
+    func setEmbeddedPlaybackHost(host: EmbeddedPlaybackHost) async throws
 
     func setListenListHeard(entryId: Int64, heard: Bool) async throws
 
@@ -2317,6 +2327,23 @@ open func deleteUserTag(tagId: Int64)async throws  {
         )
 }
 
+open func detachEmbeddedPlaybackHost()async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_detach_embedded_playback_host(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Ends the Last.fm integration and removes its credentials and cached
      * metadata without affecting snapshots from other providers.
@@ -2352,6 +2379,24 @@ open func dismissLocalRecommendation(releaseId: Int64)async throws  {
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func embeddedPlayback()async  -> EmbeddedPlaybackSnapshot? {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_embedded_playback(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeEmbeddedPlaybackSnapshot.lift,
+            errorHandler: nil
+
         )
 }
 
@@ -2790,6 +2835,23 @@ open func playCollection(trackIds: [Int64], sourceContexts: [String], startingPo
                 uniffi_durvald_core_fn_method_durvaldcore_play_collection(
                     self.uniffiClonePointer(),
                     FfiConverterSequenceInt64.lower(trackIds),FfiConverterSequenceString.lower(sourceContexts),FfiConverterOptionUInt64.lower(startingPosition),FfiConverterOptionBool.lower(shuffleEnabled)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypePlaybackSnapshot.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func playEmbeddedTrackSource(trackId: Int64, sourceId: Int64)async throws  -> PlaybackSnapshot {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_play_embedded_track_source(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(trackId),FfiConverterInt64.lower(sourceId)
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
@@ -3446,6 +3508,23 @@ open func replayPreview(request: ReplayRequest)async throws  -> ReplayPreview {
         )
 }
 
+open func reportEmbeddedPlaybackEvent(event: EmbeddedPlaybackEvent)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_report_embedded_playback_event(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeEmbeddedPlaybackEvent.lower(event)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func resolveArtistCandidates(artistId: Int64)async throws  -> ArtistIdentityCandidates {
     return
         try  await uniffiRustCallAsync(
@@ -3799,6 +3878,23 @@ open func setClassification(target: ClassificationTarget, id: Int64, kind: Class
                 uniffi_durvald_core_fn_method_durvaldcore_set_classification(
                     self.uniffiClonePointer(),
                     FfiConverterTypeClassificationTarget.lower(target),FfiConverterInt64.lower(id),FfiConverterTypeClassificationKind.lower(kind),FfiConverterOptionSequenceString.lower(names)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func setEmbeddedPlaybackHost(host: EmbeddedPlaybackHost)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_set_embedded_playback_host(
+                    self.uniffiClonePointer(),
+                    FfiConverterCallbackInterfaceEmbeddedPlaybackHost.lower(host)
                 )
             },
             pollFunc: ffi_durvald_core_rust_future_poll_void,
@@ -8482,6 +8578,249 @@ public func FfiConverterTypeDuplicateTrackGroup_lift(_ buf: RustBuffer) throws -
 
 public func FfiConverterTypeDuplicateTrackGroup_lower(_ value: DuplicateTrackGroup) -> RustBuffer {
     return FfiConverterTypeDuplicateTrackGroup.lower(value)
+}
+
+
+public struct EmbeddedPlaybackCommand {
+    public var generation: String
+    public var kind: EmbeddedCommandKind
+    public var url: String?
+    public var value: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(generation: String, kind: EmbeddedCommandKind, url: String?, value: Double) {
+        self.generation = generation
+        self.kind = kind
+        self.url = url
+        self.value = value
+    }
+}
+
+
+
+extension EmbeddedPlaybackCommand: Equatable, Hashable {
+    public static func ==(lhs: EmbeddedPlaybackCommand, rhs: EmbeddedPlaybackCommand) -> Bool {
+        if lhs.generation != rhs.generation {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.url != rhs.url {
+            return false
+        }
+        if lhs.value != rhs.value {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(generation)
+        hasher.combine(kind)
+        hasher.combine(url)
+        hasher.combine(value)
+    }
+}
+
+
+public struct FfiConverterTypeEmbeddedPlaybackCommand: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EmbeddedPlaybackCommand {
+        return
+            try EmbeddedPlaybackCommand(
+                generation: FfiConverterString.read(from: &buf),
+                kind: FfiConverterTypeEmbeddedCommandKind.read(from: &buf),
+                url: FfiConverterOptionString.read(from: &buf),
+                value: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EmbeddedPlaybackCommand, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.generation, into: &buf)
+        FfiConverterTypeEmbeddedCommandKind.write(value.kind, into: &buf)
+        FfiConverterOptionString.write(value.url, into: &buf)
+        FfiConverterDouble.write(value.value, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeEmbeddedPlaybackCommand_lift(_ buf: RustBuffer) throws -> EmbeddedPlaybackCommand {
+    return try FfiConverterTypeEmbeddedPlaybackCommand.lift(buf)
+}
+
+public func FfiConverterTypeEmbeddedPlaybackCommand_lower(_ value: EmbeddedPlaybackCommand) -> RustBuffer {
+    return FfiConverterTypeEmbeddedPlaybackCommand.lower(value)
+}
+
+
+public struct EmbeddedPlaybackEvent {
+    public var generation: String
+    public var sequence: UInt64
+    public var kind: EmbeddedEventKind
+    public var positionSeconds: Double
+    public var durationSeconds: Double?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(generation: String, sequence: UInt64, kind: EmbeddedEventKind, positionSeconds: Double, durationSeconds: Double?) {
+        self.generation = generation
+        self.sequence = sequence
+        self.kind = kind
+        self.positionSeconds = positionSeconds
+        self.durationSeconds = durationSeconds
+    }
+}
+
+
+
+extension EmbeddedPlaybackEvent: Equatable, Hashable {
+    public static func ==(lhs: EmbeddedPlaybackEvent, rhs: EmbeddedPlaybackEvent) -> Bool {
+        if lhs.generation != rhs.generation {
+            return false
+        }
+        if lhs.sequence != rhs.sequence {
+            return false
+        }
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.positionSeconds != rhs.positionSeconds {
+            return false
+        }
+        if lhs.durationSeconds != rhs.durationSeconds {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(generation)
+        hasher.combine(sequence)
+        hasher.combine(kind)
+        hasher.combine(positionSeconds)
+        hasher.combine(durationSeconds)
+    }
+}
+
+
+public struct FfiConverterTypeEmbeddedPlaybackEvent: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EmbeddedPlaybackEvent {
+        return
+            try EmbeddedPlaybackEvent(
+                generation: FfiConverterString.read(from: &buf),
+                sequence: FfiConverterUInt64.read(from: &buf),
+                kind: FfiConverterTypeEmbeddedEventKind.read(from: &buf),
+                positionSeconds: FfiConverterDouble.read(from: &buf),
+                durationSeconds: FfiConverterOptionDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EmbeddedPlaybackEvent, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.generation, into: &buf)
+        FfiConverterUInt64.write(value.sequence, into: &buf)
+        FfiConverterTypeEmbeddedEventKind.write(value.kind, into: &buf)
+        FfiConverterDouble.write(value.positionSeconds, into: &buf)
+        FfiConverterOptionDouble.write(value.durationSeconds, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeEmbeddedPlaybackEvent_lift(_ buf: RustBuffer) throws -> EmbeddedPlaybackEvent {
+    return try FfiConverterTypeEmbeddedPlaybackEvent.lift(buf)
+}
+
+public func FfiConverterTypeEmbeddedPlaybackEvent_lower(_ value: EmbeddedPlaybackEvent) -> RustBuffer {
+    return FfiConverterTypeEmbeddedPlaybackEvent.lower(value)
+}
+
+
+public struct EmbeddedPlaybackSnapshot {
+    public var generation: String
+    public var trackId: Int64
+    public var sourceId: Int64
+    public var state: EmbeddedPlaybackState
+    public var seekAvailable: Bool
+    public var message: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(generation: String, trackId: Int64, sourceId: Int64, state: EmbeddedPlaybackState, seekAvailable: Bool, message: String?) {
+        self.generation = generation
+        self.trackId = trackId
+        self.sourceId = sourceId
+        self.state = state
+        self.seekAvailable = seekAvailable
+        self.message = message
+    }
+}
+
+
+
+extension EmbeddedPlaybackSnapshot: Equatable, Hashable {
+    public static func ==(lhs: EmbeddedPlaybackSnapshot, rhs: EmbeddedPlaybackSnapshot) -> Bool {
+        if lhs.generation != rhs.generation {
+            return false
+        }
+        if lhs.trackId != rhs.trackId {
+            return false
+        }
+        if lhs.sourceId != rhs.sourceId {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        if lhs.seekAvailable != rhs.seekAvailable {
+            return false
+        }
+        if lhs.message != rhs.message {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(generation)
+        hasher.combine(trackId)
+        hasher.combine(sourceId)
+        hasher.combine(state)
+        hasher.combine(seekAvailable)
+        hasher.combine(message)
+    }
+}
+
+
+public struct FfiConverterTypeEmbeddedPlaybackSnapshot: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EmbeddedPlaybackSnapshot {
+        return
+            try EmbeddedPlaybackSnapshot(
+                generation: FfiConverterString.read(from: &buf),
+                trackId: FfiConverterInt64.read(from: &buf),
+                sourceId: FfiConverterInt64.read(from: &buf),
+                state: FfiConverterTypeEmbeddedPlaybackState.read(from: &buf),
+                seekAvailable: FfiConverterBool.read(from: &buf),
+                message: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: EmbeddedPlaybackSnapshot, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.generation, into: &buf)
+        FfiConverterInt64.write(value.trackId, into: &buf)
+        FfiConverterInt64.write(value.sourceId, into: &buf)
+        FfiConverterTypeEmbeddedPlaybackState.write(value.state, into: &buf)
+        FfiConverterBool.write(value.seekAvailable, into: &buf)
+        FfiConverterOptionString.write(value.message, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeEmbeddedPlaybackSnapshot_lift(_ buf: RustBuffer) throws -> EmbeddedPlaybackSnapshot {
+    return try FfiConverterTypeEmbeddedPlaybackSnapshot.lift(buf)
+}
+
+public func FfiConverterTypeEmbeddedPlaybackSnapshot_lower(_ value: EmbeddedPlaybackSnapshot) -> RustBuffer {
+    return FfiConverterTypeEmbeddedPlaybackSnapshot.lower(value)
 }
 
 
@@ -14688,6 +15027,255 @@ extension CoreError: Error { }
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum EmbeddedCommandKind {
+
+    case load
+    case play
+    case pause
+    case seek
+    case volume
+    case stop
+}
+
+
+public struct FfiConverterTypeEmbeddedCommandKind: FfiConverterRustBuffer {
+    typealias SwiftType = EmbeddedCommandKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EmbeddedCommandKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .load
+
+        case 2: return .play
+
+        case 3: return .pause
+
+        case 4: return .seek
+
+        case 5: return .volume
+
+        case 6: return .stop
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: EmbeddedCommandKind, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .load:
+            writeInt(&buf, Int32(1))
+
+
+        case .play:
+            writeInt(&buf, Int32(2))
+
+
+        case .pause:
+            writeInt(&buf, Int32(3))
+
+
+        case .seek:
+            writeInt(&buf, Int32(4))
+
+
+        case .volume:
+            writeInt(&buf, Int32(5))
+
+
+        case .stop:
+            writeInt(&buf, Int32(6))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeEmbeddedCommandKind_lift(_ buf: RustBuffer) throws -> EmbeddedCommandKind {
+    return try FfiConverterTypeEmbeddedCommandKind.lift(buf)
+}
+
+public func FfiConverterTypeEmbeddedCommandKind_lower(_ value: EmbeddedCommandKind) -> RustBuffer {
+    return FfiConverterTypeEmbeddedCommandKind.lower(value)
+}
+
+
+
+extension EmbeddedCommandKind: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum EmbeddedEventKind {
+
+    case ready
+    case playing
+    case paused
+    case progress
+    case seeked
+    case ended
+    case failed
+}
+
+
+public struct FfiConverterTypeEmbeddedEventKind: FfiConverterRustBuffer {
+    typealias SwiftType = EmbeddedEventKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EmbeddedEventKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .ready
+
+        case 2: return .playing
+
+        case 3: return .paused
+
+        case 4: return .progress
+
+        case 5: return .seeked
+
+        case 6: return .ended
+
+        case 7: return .failed
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: EmbeddedEventKind, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .ready:
+            writeInt(&buf, Int32(1))
+
+
+        case .playing:
+            writeInt(&buf, Int32(2))
+
+
+        case .paused:
+            writeInt(&buf, Int32(3))
+
+
+        case .progress:
+            writeInt(&buf, Int32(4))
+
+
+        case .seeked:
+            writeInt(&buf, Int32(5))
+
+
+        case .ended:
+            writeInt(&buf, Int32(6))
+
+
+        case .failed:
+            writeInt(&buf, Int32(7))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeEmbeddedEventKind_lift(_ buf: RustBuffer) throws -> EmbeddedEventKind {
+    return try FfiConverterTypeEmbeddedEventKind.lift(buf)
+}
+
+public func FfiConverterTypeEmbeddedEventKind_lower(_ value: EmbeddedEventKind) -> RustBuffer {
+    return FfiConverterTypeEmbeddedEventKind.lower(value)
+}
+
+
+
+extension EmbeddedEventKind: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum EmbeddedPlaybackState {
+
+    case loading
+    case playing
+    case paused
+    case ended
+    case failed
+}
+
+
+public struct FfiConverterTypeEmbeddedPlaybackState: FfiConverterRustBuffer {
+    typealias SwiftType = EmbeddedPlaybackState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> EmbeddedPlaybackState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .loading
+
+        case 2: return .playing
+
+        case 3: return .paused
+
+        case 4: return .ended
+
+        case 5: return .failed
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: EmbeddedPlaybackState, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .loading:
+            writeInt(&buf, Int32(1))
+
+
+        case .playing:
+            writeInt(&buf, Int32(2))
+
+
+        case .paused:
+            writeInt(&buf, Int32(3))
+
+
+        case .ended:
+            writeInt(&buf, Int32(4))
+
+
+        case .failed:
+            writeInt(&buf, Int32(5))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeEmbeddedPlaybackState_lift(_ buf: RustBuffer) throws -> EmbeddedPlaybackState {
+    return try FfiConverterTypeEmbeddedPlaybackState.lift(buf)
+}
+
+public func FfiConverterTypeEmbeddedPlaybackState_lower(_ value: EmbeddedPlaybackState) -> RustBuffer {
+    return FfiConverterTypeEmbeddedPlaybackState.lower(value)
+}
+
+
+
+extension EmbeddedPlaybackState: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum EnrichmentProvider {
 
     case musicBrainz
@@ -15356,6 +15944,97 @@ extension SourceCapability: Equatable, Hashable {}
 
 
 
+
+
+
+/**
+ * Stop must synchronously destroy/silence the old player before returning true.
+ * Other commands acknowledge delivery; only subsequent events confirm playback.
+ */
+public protocol EmbeddedPlaybackHost : AnyObject {
+
+    func execute(command: EmbeddedPlaybackCommand)  -> Bool
+
+}
+
+// Magic number for the Rust proxy to call using the same mechanism as every other method,
+// to free the callback once it's dropped by Rust.
+private let IDX_CALLBACK_FREE: Int32 = 0
+// Callback return codes
+private let UNIFFI_CALLBACK_SUCCESS: Int32 = 0
+private let UNIFFI_CALLBACK_ERROR: Int32 = 1
+private let UNIFFI_CALLBACK_UNEXPECTED_ERROR: Int32 = 2
+
+// Put the implementation in a struct so we don't pollute the top-level namespace
+fileprivate struct UniffiCallbackInterfaceEmbeddedPlaybackHost {
+
+    // Create the VTable using a series of closures.
+    // Swift automatically converts these into C callback functions.
+    static var vtable: UniffiVTableCallbackInterfaceEmbeddedPlaybackHost = UniffiVTableCallbackInterfaceEmbeddedPlaybackHost(
+        execute: { (
+            uniffiHandle: UInt64,
+            command: RustBuffer,
+            uniffiOutReturn: UnsafeMutablePointer<Int8>,
+            uniffiCallStatus: UnsafeMutablePointer<RustCallStatus>
+        ) in
+            let makeCall = {
+                () throws -> Bool in
+                guard let uniffiObj = try? FfiConverterCallbackInterfaceEmbeddedPlaybackHost.handleMap.get(handle: uniffiHandle) else {
+                    throw UniffiInternalError.unexpectedStaleHandle
+                }
+                return uniffiObj.execute(
+                     command: try FfiConverterTypeEmbeddedPlaybackCommand.lift(command)
+                )
+            }
+
+
+            let writeReturn = { uniffiOutReturn.pointee = FfiConverterBool.lower($0) }
+            uniffiTraitInterfaceCall(
+                callStatus: uniffiCallStatus,
+                makeCall: makeCall,
+                writeReturn: writeReturn
+            )
+        },
+        uniffiFree: { (uniffiHandle: UInt64) -> () in
+            let result = try? FfiConverterCallbackInterfaceEmbeddedPlaybackHost.handleMap.remove(handle: uniffiHandle)
+            if result == nil {
+                print("Uniffi callback interface EmbeddedPlaybackHost: handle missing in uniffiFree")
+            }
+        }
+    )
+}
+
+private func uniffiCallbackInitEmbeddedPlaybackHost() {
+    uniffi_durvald_core_fn_init_callback_vtable_embeddedplaybackhost(&UniffiCallbackInterfaceEmbeddedPlaybackHost.vtable)
+}
+
+// FfiConverter protocol for callback interfaces
+fileprivate struct FfiConverterCallbackInterfaceEmbeddedPlaybackHost {
+    fileprivate static var handleMap = UniffiHandleMap<EmbeddedPlaybackHost>()
+}
+
+extension FfiConverterCallbackInterfaceEmbeddedPlaybackHost : FfiConverter {
+    typealias SwiftType = EmbeddedPlaybackHost
+    typealias FfiType = UInt64
+
+    public static func lift(_ handle: UInt64) throws -> SwiftType {
+        try handleMap.get(handle: handle)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        let handle: UInt64 = try readInt(&buf)
+        return try lift(handle)
+    }
+
+    public static func lower(_ v: SwiftType) -> UInt64 {
+        return handleMap.insert(obj: v)
+    }
+
+    public static func write(_ v: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(v))
+    }
+}
+
 fileprivate struct FfiConverterOptionUInt8: FfiConverterRustBuffer {
     typealias SwiftType = UInt8?
 
@@ -15687,6 +16366,27 @@ fileprivate struct FfiConverterOptionTypeCoverRefreshProgress: FfiConverterRustB
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeCoverRefreshProgress.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+fileprivate struct FfiConverterOptionTypeEmbeddedPlaybackSnapshot: FfiConverterRustBuffer {
+    typealias SwiftType = EmbeddedPlaybackSnapshot?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeEmbeddedPlaybackSnapshot.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeEmbeddedPlaybackSnapshot.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -17142,10 +17842,16 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_delete_user_tag() != 9520) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_detach_embedded_playback_host() != 1844) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_disconnect_lastfm() != 15313) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_dismiss_local_recommendation() != 65534) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_embedded_playback() != 38250) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_enrichment_settings() != 18001) {
@@ -17215,6 +17921,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_play_collection() != 43501) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_play_embedded_track_source() != 13702) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_play_queue_item() != 38649) {
@@ -17319,6 +18028,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_replay_preview() != 42912) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_report_embedded_playback_event() != 40246) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_resolve_artist_candidates() != 28873) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -17377,6 +18089,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_classification() != 50398) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_embedded_playback_host() != 25837) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_listen_list_heard() != 31845) {
@@ -17514,7 +18229,11 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_sourcesearchsession_search() != 18767) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_embeddedplaybackhost_execute() != 11678) {
+        return InitializationResult.apiChecksumMismatch
+    }
 
+    uniffiCallbackInitEmbeddedPlaybackHost()
     return InitializationResult.ok
 }
 

@@ -83,6 +83,9 @@ struct SourceManagementView: View {
                                 if source.localPath != nil {
                                     Button("Tocar agora com esta origem") { Task { await presentation.play(source) } }.disabled(!source.enabled || source.capability != .fullAudio)
                                 } else {
+                                    if source.provider == "soundcloud" {
+                                        Button("Ouvir no player integrado") { Task { await store.playEmbeddedSource(source); dismiss() } }.disabled(!source.enabled)
+                                    }
                                     Button("Abrir no serviço") { Task { if let url = await presentation.openURL(source) { NSWorkspace.shared.open(url) } } }.disabled(source.capability != .externalOpen && source.capability != .preview)
                                 }
                                 Button("Remover origem", role: .destructive) { Task { await presentation.remove(source) } }

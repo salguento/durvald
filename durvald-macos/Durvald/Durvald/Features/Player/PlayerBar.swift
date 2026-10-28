@@ -426,8 +426,8 @@ struct PlayerBar: View {
                     transaction.animation = nil
                 }
             }
-            .disabled(snapshot?.currentTrack == nil)
-            .focusable(snapshot?.currentTrack != nil)
+            .disabled(!store.canSeekCurrentPlayback)
+            .focusable(store.canSeekCurrentPlayback)
             .focusEffectDisabled()
             .focusedValue(\.protectsBareCommandKeys, true)
             .onHover { isProgressHovered = $0 }
@@ -451,7 +451,7 @@ struct PlayerBar: View {
                     ),
                     in: 0...duration
                 )
-                .disabled(snapshot?.currentTrack == nil)
+                .disabled(!store.canSeekCurrentPlayback)
                 .accessibilityLabel("Posição da reprodução")
                 .accessibilityValue("\(elapsed) de \(time(duration))")
                 .accessibilityIdentifier("player.progress")

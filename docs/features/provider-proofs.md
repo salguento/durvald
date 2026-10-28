@@ -149,3 +149,15 @@ roteiro, antes de habilitar as ações de escuta.
 Após a configuração do backend, a suíte local foi ampliada e passou em **24
 testes**, incluindo permissões dos arquivos privados, preservação da conta,
 configuração sem compartilhamentos, arquivo de instalação e controle do processo.
+
+## Evolução: coordenação SoundCloud no aplicativo
+
+Em 28/10/2026, a [etapa 9B](embedded-playback.md) integrou o widget visível ao
+core e ao aplicativo macOS. Os testes reais do novo caminho confirmaram
+reprodução, avanço, pausa, retomada, seek e faixa inexistente, sem extrair áudio.
+O FINISH passou inicialmente e depois não chegou em repetições com seek perto
+do fim; a prova isolada original também reproduziu essa limitação. O core
+trata ausência de avanço como falha recuperável, sem fabricar término ou histórico. [Evidência da coordenação](../evidence/provider-probes/soundcloud-coordination-2026-10-28.json).
+A matriz original continua sendo o registro da etapa 5; áudio nativo, acesso
+completo/prévia por item e distribuição notarizada não foram promovidos por
+essa implementação.

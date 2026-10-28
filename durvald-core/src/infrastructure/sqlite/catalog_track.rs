@@ -52,6 +52,19 @@ impl SqliteCatalogTrackQuery {
             })
     }
 
+    pub(crate) async fn embedded_source_url(
+        &self,
+        track: i64,
+        source: i64,
+    ) -> crate::api::CoreResult<String> {
+        let pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let c = pool.get().map_err(|e| crate::api::CoreError::Storage { message: e.to_string() })?;
+            let url: String = c.query_row("SELECT canonical_url FROM track_sources WHERE song_id=?1 AND source_id=?2 AND provider='soundcloud' AND enabled=1", [track, source], |r| r.get(0)).map_err(|_| crate::api::CoreError::InvalidInput { message: "Choose an enabled SoundCloud source belonging to this track".into() })?;
+            crate::infrastructure::service_links::canonical_link(&url).filter(|r| r.entity().provider().as_str() == "soundcloud").map(|r| r.canonical_url().as_str().to_owned()).ok_or_else(|| crate::api::CoreError::InvalidInput { message: "Unsupported SoundCloud track URL".into() })
+        }).await.map_err(|e| crate::api::CoreError::Storage { message: e.to_string() })?
+    }
+
     pub(crate) async fn source_media_path(
         &self,
         track: i64,

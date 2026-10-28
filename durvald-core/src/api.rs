@@ -3,6 +3,9 @@
 //! These are stable, frontend-safe types that can be serialized
 //! and sent across FFI boundaries (UniFFI, Tauri, etc.).
 
+mod embedded;
+pub use embedded::*;
+
 use serde::{Deserialize, Serialize};
 
 mod enrichment;

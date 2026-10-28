@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 28/10/2026.
-Status: implementação incremental; etapas 1–8 concluídas, demais etapas planejadas.
+Status: implementação incremental; etapas 1–8 e 9B concluídas; 9A dispensada no piloto atual, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -331,6 +331,18 @@ quando suportado; reprodução interna depende da etapa seguinte correspondente.
 
 ### 9A. Transporte para áudio nativo
 
+**Status:** não necessário para o piloto atual; decisão revisada em 28/10/2026.
+A [prova da etapa 5](features/provider-proofs.md) escolheu o widget oficial
+visível do SoundCloud em WebKit (`embedded_player`); a próxima etapa de
+reprodução é **9B**, seguida de 10. O transporte nativo permanece pendente,
+condicionado à escolha de um provedor com `native_audio` validado.
+
+O reteste positivo de busca Soulseek não altera essa dependência: resultados
+slskd são ofertas de arquivos para as etapas 11–12, não origens HTTP de streaming.
+Depois de transferidos e importados, arquivos compatíveis usam o transporte
+local existente. Nenhum transporte HTTP, extrator ou dependência adicional foi
+introduzido nesta revisão.
+
 **Dependências:** 7; necessário apenas se o piloto de 5 usar `native_audio`.
 
 - Validar primeiro com servidor HTTP local: leitura progressiva, buffering,
@@ -348,6 +360,19 @@ de rede lenta, desconexão, sem Range e truncamento; sem memória ilimitada ou
 download integral obrigatório para todo formato suportado.
 
 ### 9B. Coordenação de player integrado
+
+**Status:** concluída em 28/10/2026. [Player integrado, coordenação e limites](features/embedded-playback.md).
+Widget SoundCloud visível no macOS, comandos e eventos coordenados pelo core,
+exclusão de áudio simultâneo com confirmação de suspensão, fila seguinte local
+e histórico por avanço observado. Entrada explícita por origem SoundCloud salva;
+seleção automática e fluxo geral por provedor continuam na etapa 10.
+
+**Validação:** 484 testes Rust e 416 testes macOS passaram; smokes externos
+permanecem opt-in. A execução real confirmou reprodução, avanço, pausa, retomada,
+seek e faixa indisponível. O FINISH passou na primeira rodada, mas deixou de
+chegar após seek perto do fim nas repetições, inclusive na prova original da
+etapa 5. Essa limitação está registrada; não há fim ou histórico inferido pelo
+relógio. Handlers de término e timeout passaram nos testes offline. Clippy passou.
 
 **Dependências:** 2, 7 e modo validado em 5; necessário apenas para `embedded_player`.
 

@@ -137,7 +137,7 @@ final class NowPlayingCoordinator {
         commandCenter.togglePlayPauseCommand.isEnabled = hasTrack
         commandCenter.previousTrackCommand.isEnabled = hasTrack
         commandCenter.nextTrackCommand.isEnabled = hasTrack
-        commandCenter.changePlaybackPositionCommand.isEnabled = hasTrack
+        commandCenter.changePlaybackPositionCommand.isEnabled = hasTrack && (store?.canSeekCurrentPlayback ?? false)
     }
 
     private func loadArtwork(for track: Track, using core: DurvaldCore?) {
@@ -166,7 +166,7 @@ final class NowPlayingCoordinator {
     }
 
     private func validDuration(_ playback: PlaybackSnapshot, track: Track) -> Double {
-        let duration = playback.durationSeconds ?? track.durationSeconds
+        let duration = playback.durationSeconds ?? (playback.sourceContext.hasPrefix("embedded:") ? 0 : track.durationSeconds)
         return duration.isFinite ? max(0, duration) : 0
     }
 

@@ -43,11 +43,14 @@ const IDLE_COORDINATION_INTERVAL: Duration = Duration::from_secs(1);
 /// are introduced only if later application boundaries require them.
 #[allow(dead_code)]
 pub(crate) struct PlaybackApplication {
-    track_query: SqliteCatalogTrackQuery,
-    history_repository: SqlitePlaybackHistoryRepository,
+    pub(super) embedded: tokio::sync::Mutex<Option<super::playback_embedded::EmbeddedSession>>,
+    pub(super) embedded_host:
+        tokio::sync::Mutex<Option<Arc<super::playback_embedded::EmbeddedHostDispatcher>>>,
+    pub(super) track_query: SqliteCatalogTrackQuery,
+    pub(super) history_repository: SqlitePlaybackHistoryRepository,
     session_repository: SqlitePlaybackSessionRepository,
-    audio_player: Arc<tokio::sync::Mutex<AudioPlayer>>,
-    playback_transition: tokio::sync::Mutex<()>,
+    pub(super) audio_player: Arc<tokio::sync::Mutex<AudioPlayer>>,
+    pub(super) playback_transition: tokio::sync::Mutex<()>,
     source_override: tokio::sync::Mutex<Option<(String, i64)>>,
     coordination_wakeup: tokio::sync::Notify,
     lastfm: Arc<LastFmClient>,
@@ -63,6 +66,8 @@ impl PlaybackApplication {
         lastfm: Arc<LastFmClient>,
     ) -> Self {
         Self {
+            embedded: Default::default(),
+            embedded_host: Default::default(),
             track_query,
             history_repository,
             session_repository,
@@ -179,6 +184,7 @@ impl PlaybackApplication {
         } else {
             self.prepare_track(track_id).await?
         };
+        self.stop_embedded_locked().await?;
         let state = {
             let mut player = self.audio_player.lock().await;
             player
@@ -272,6 +278,7 @@ impl PlaybackApplication {
         };
         let track_id = items[start].song_id;
         let prepared = self.prepare_track(track_id).await?;
+        self.stop_embedded_locked().await?;
         let state = {
             let mut player = self.audio_player.lock().await;
             player
@@ -300,6 +307,12 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn pause(&self) -> CoreResult<()> {
+        if self
+            .embedded_command(crate::api::EmbeddedCommandKind::Pause, 0.0)
+            .await?
+        {
+            return Ok(());
+        }
         self.audio_player.lock().await.pause();
         self.wake_automatic_coordination();
         self.pause_lastfm().await;
@@ -307,6 +320,12 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn resume(&self) -> CoreResult<()> {
+        if self
+            .embedded_command(crate::api::EmbeddedCommandKind::Play, 0.0)
+            .await?
+        {
+            return Ok(());
+        }
         let _transition = self.playback_transition.lock().await;
         let restored_track = {
             let mut player = self.audio_player.lock().await;
@@ -341,6 +360,7 @@ impl PlaybackApplication {
 
     pub(crate) async fn stop(&self) -> CoreResult<()> {
         let _transition = self.playback_transition.lock().await;
+        self.stop_embedded_locked().await?;
         self.audio_player.lock().await.stop();
         drop(_transition);
         self.wake_automatic_coordination();
@@ -349,6 +369,12 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn seek(&self, seconds: u64) -> CoreResult<()> {
+        if self
+            .embedded_command(crate::api::EmbeddedCommandKind::Seek, seconds as f64)
+            .await?
+        {
+            return Ok(());
+        }
         self.audio_player
             .lock()
             .await
@@ -366,6 +392,11 @@ impl PlaybackApplication {
                 message: "Volume must be a finite number between 0.0 and 1.0".to_string(),
             });
         }
+        self.embedded_command(
+            crate::api::EmbeddedCommandKind::Volume,
+            volume.clamp(0.0, 1.0) as f64,
+        )
+        .await?;
         let volume = {
             let mut player = self.audio_player.lock().await;
             player.set_volume(volume.clamp(0.0, 1.0));
@@ -414,7 +445,8 @@ impl PlaybackApplication {
         let track_id = track_id.get() as i64;
         self.find_track(track_id).await?;
         let _transition = self.playback_transition.lock().await;
-        let starts_playback = self.audio_player.lock().await.should_start_queued_track()
+        let starts_playback = self.embedded.lock().await.is_none()
+            && self.audio_player.lock().await.should_start_queued_track()
             && !self
                 .track_query
                 .local_media_paths(track_id)
@@ -449,6 +481,9 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn next_track(&self) -> CoreResult<PlaybackSnapshot> {
+        if self.embedded.lock().await.is_some() {
+            return self.next_from_embedded().await;
+        }
         let _transition = self.playback_transition.lock().await;
         let plan = {
             let mut player = self.audio_player.lock().await;
@@ -477,15 +512,16 @@ impl PlaybackApplication {
         let plan = {
             let mut player = self.audio_player.lock().await;
             player.cancel_gapless_transition();
-            let upcoming_position = if player.get_current_song_id().is_some() {
-                position
-                    .checked_sub(1)
-                    .ok_or_else(|| CoreError::InvalidInput {
-                        message: "The active track is already playing".to_string(),
-                    })?
-            } else {
-                position
-            };
+            let upcoming_position =
+                if player.get_current_song_id().is_some() || self.embedded.lock().await.is_some() {
+                    position
+                        .checked_sub(1)
+                        .ok_or_else(|| CoreError::InvalidInput {
+                            message: "The active track is already playing".to_string(),
+                        })?
+                } else {
+                    position
+                };
             player
                 .plan_skip(upcoming_position as usize)
                 .map_err(|error| CoreError::InvalidInput {
@@ -498,7 +534,15 @@ impl PlaybackApplication {
     pub(crate) async fn remove_from_queue(&self, position: u64) -> CoreResult<()> {
         let _transition = self.playback_transition.lock().await;
         let mut player = self.audio_player.lock().await;
-        let position = public_to_upcoming_position(&player, position, "removed from the queue")?;
+        let position = if self.embedded.lock().await.is_some() {
+            position
+                .checked_sub(1)
+                .ok_or_else(|| CoreError::InvalidInput {
+                    message: "Cannot remove the active embedded track".into(),
+                })? as usize
+        } else {
+            public_to_upcoming_position(&player, position, "removed from the queue")?
+        };
         player
             .remove_from_queue(position)
             .map_err(|error| CoreError::InvalidInput {
@@ -512,8 +556,21 @@ impl PlaybackApplication {
     pub(crate) async fn move_queue_item(&self, from: u64, to: u64) -> CoreResult<()> {
         let _transition = self.playback_transition.lock().await;
         let mut player = self.audio_player.lock().await;
-        let from = public_to_upcoming_position(&player, from, "moved")?;
-        let to = public_to_upcoming_position(&player, to, "moved")?;
+        let (from, to) = if self.embedded.lock().await.is_some() {
+            (
+                from.checked_sub(1).ok_or_else(|| CoreError::InvalidInput {
+                    message: "Cannot move the active embedded track".into(),
+                })? as usize,
+                to.checked_sub(1).ok_or_else(|| CoreError::InvalidInput {
+                    message: "Cannot move the active embedded track".into(),
+                })? as usize,
+            )
+        } else {
+            (
+                public_to_upcoming_position(&player, from, "moved")?,
+                public_to_upcoming_position(&player, to, "moved")?,
+            )
+        };
         player
             .move_in_queue(from, to)
             .map_err(|error| CoreError::InvalidInput {
@@ -532,25 +589,15 @@ impl PlaybackApplication {
     }
 
     pub(crate) async fn queue(&self) -> CoreResult<Vec<QueueItem>> {
-        let mut player = self.audio_player.lock().await;
-        player.synchronize_gapless();
-        Ok(player
-            .queue_occurrences()
-            .into_iter()
-            .enumerate()
-            .map(|(position, (track_id, occurrence_id))| QueueItem {
-                occurrence_id,
-                track_id,
-                position: position as u64,
-            })
-            .collect())
+        Ok(self.playback().await.queue)
     }
 
-    async fn commit_navigation_plan(
+    pub(super) async fn commit_navigation_plan(
         &self,
         plan: crate::audio::player::PlaybackPlan,
     ) -> CoreResult<PlaybackSnapshot> {
         let prepared = self.prepare_plan(&plan).await?;
+        self.stop_embedded_locked().await?;
         let track_id = plan.song_id();
         let state = {
             let mut player = self.audio_player.lock().await;
@@ -568,7 +615,7 @@ impl PlaybackApplication {
         Ok(snapshot)
     }
 
-    async fn find_track(&self, track_id: i64) -> CoreResult<Track> {
+    pub(super) async fn find_track(&self, track_id: i64) -> CoreResult<Track> {
         let track_id = TrackId::try_from(track_id).map_err(|_| CoreError::InvalidInput {
             message: "Track ID must not be negative".to_string(),
         })?;
@@ -633,6 +680,10 @@ impl PlaybackApplication {
 
     async fn process_automatic_transition(&self) -> Option<(Option<i64>, Option<i64>)> {
         let _transition = self.playback_transition.lock().await;
+        self.check_embedded_timeout_locked().await;
+        if self.embedded.lock().await.is_some() {
+            return None;
+        }
         let gapless_plan = {
             let mut player = self.audio_player.lock().await;
             player.synchronize_gapless();
@@ -795,7 +846,7 @@ impl PlaybackApplication {
         } else {
             None
         };
-        PlaybackSnapshot {
+        let mut snapshot = PlaybackSnapshot {
             source_context: state.source_context,
             current_track,
             position_seconds: state.position_seconds,
@@ -807,7 +858,9 @@ impl PlaybackApplication {
             queue_position: 0,
             shuffle_enabled: state.shuffle_enabled,
             repeat_mode: state.repeat_mode,
-        }
+        };
+        self.overlay_embedded(&mut snapshot).await;
+        snapshot
     }
 
     async fn report_track_started(&self, track_id: i64) {

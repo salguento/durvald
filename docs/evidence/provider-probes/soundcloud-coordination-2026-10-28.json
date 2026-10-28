@@ -1,0 +1,85 @@
+{
+  "captured_at": "2026-10-28T16:39:03.828186+00:00",
+  "provider": "soundcloud",
+  "mode": "app_embedded_transport",
+  "status": "limited",
+  "transport": "official_visible_widget_in_webkit",
+  "sample_url": "https://soundcloud.com/forss/flickermood",
+  "live_smoke_muted": true,
+  "native_audio": false,
+  "full_vs_preview": "not_verified",
+  "download": "not_requested",
+  "entry_point": "explicit_enabled_saved_source_on_macos",
+  "offline_core": {
+    "passed": 484,
+    "ignored_external": 3,
+    "coordination_tests": 8
+  },
+  "offline_macos": {
+    "passed": 416,
+    "skipped_external": 2
+  },
+  "controller_live_tests_latest": [
+    {
+      "test": "testLiveUnavailableSoundCloudWidget",
+      "status": "passed",
+      "duration_seconds": 1.659
+    },
+    {
+      "test": "testPauseIntentDuringPageLoadingIsDeliveredWhenCommandsBecomeReady",
+      "status": "passed",
+      "duration_seconds": 1.091
+    },
+    {
+      "test": "testWebKitEventsCommandsAndAcknowledgedStopThroughRealFFI",
+      "status": "passed",
+      "duration_seconds": 0.228
+    },
+    {
+      "test": "testLiveSoundCloudWidget",
+      "status": "failed",
+      "duration_seconds": 29.453
+    }
+  ],
+  "prior_live_run": "All four controller tests passed before FINISH stopped arriving in subsequent external runs",
+  "external_limitation": {
+    "event": "FINISH",
+    "observed": "not_received_after_seek_near_end_in_repeated_runs",
+    "last_observed_position_seconds": 213.1505286,
+    "reported_duration_seconds": 213.89,
+    "reference_probe_reproduced": true,
+    "reference_report": "soundcloud-widget-retest-2026-10-28.json",
+    "behavior": "Fail and suspend after 30 seconds without progress; never infer ended/history from clock"
+  },
+  "clippy": "passed_all_targets_all_features_warnings_as_errors",
+  "checks_passed": [
+    "observed_playback_progress",
+    "pause",
+    "resume",
+    "observed_seek",
+    "unavailable_item_failure",
+    "no_history_from_seek_to_end",
+    "webkit_stop_acknowledged",
+    "pending_pause_during_page_load",
+    "cancelled_load_cannot_overtake_stop",
+    "ended_handler_offline",
+    "timeout_handler_offline"
+  ],
+  "pending": [
+    "reliable_provider_FINISH_after_seek_near_end",
+    "general_provider_resolution_stage_10",
+    "complete_mixed_queue_cycles_stage_14",
+    "remote_lastfm_scrobbling",
+    "per_item_full_vs_preview",
+    "signed_notarized_distribution"
+  ],
+  "source_sha256": {
+    "durvald-core/src/api/embedded.rs": "b7cb1582532049cdfe016e4fca65d2942c260140e5e6e27bda45afe75ee52ecc",
+    "durvald-core/src/application/playback_embedded.rs": "110d3b115c8e42120163bfff520b6ba556dee84d6b80354ea51d051723b67e96",
+    "durvald-core/src/audio/player.rs": "c2186b77a8b4c91635df4d4284aeeb18b28a5cbcdcc309501533ac70c6ec333a",
+    "durvald-core/src/application/playback.rs": "98629c528cf717d6819dc40d3dc21c0588555e04f7144ab6a02d523ea481a96d",
+    "durvald-core/tests/embedded_playback.rs": "19402542748d1020836449d7861198e50dffc33d057caa6cc1a940d9456bcb0d",
+    "durvald-macos/Durvald/Durvald/Features/Player/EmbeddedPlayerController.swift": "089866fecaf1845d0c1e2fb38391ccedc4207a649c6fde9b727590d25d4b8eba",
+    "durvald-macos/Durvald/DurvaldTests/EmbeddedPlayerControllerTests.swift": "1679c41536a32c0ae6a49b4f8bc20391754b1beecfb7d89e1e8df91a08bd8231"
+  }
+}

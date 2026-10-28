@@ -325,7 +325,10 @@ struct ContentView: View {
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { fullDetailColumnWidth = $0 }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
+                VStack(spacing: 4) {
+                    EmbeddedPlayerPanel()
+                    PlayerBar(onSelectAlbum: showAlbum, onSelectArtist: showArtist)
+                }
                     .padding(.horizontal, Layout.playerHorizontalMargin)
                     .padding(.trailing, pageChrome.queueReservation)
                     .padding(.top, Layout.playerTopMargin)

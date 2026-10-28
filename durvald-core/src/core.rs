@@ -180,6 +180,34 @@ impl DurvaldCore {
         self.library_application.scan_library(paths).await
     }
 
+    pub async fn set_embedded_playback_host(
+        &self,
+        host: Box<dyn EmbeddedPlaybackHost>,
+    ) -> CoreResult<()> {
+        self.playback_application.set_embedded_host(host).await
+    }
+    pub async fn detach_embedded_playback_host(&self) -> CoreResult<()> {
+        self.playback_application.detach_embedded_host().await
+    }
+    pub async fn embedded_playback(&self) -> Option<EmbeddedPlaybackSnapshot> {
+        self.playback_application.embedded_playback().await
+    }
+    pub async fn play_embedded_track_source(
+        &self,
+        track_id: i64,
+        source_id: i64,
+    ) -> CoreResult<PlaybackSnapshot> {
+        self.playback_application
+            .play_embedded_source(track_id, source_id)
+            .await
+    }
+    pub async fn report_embedded_playback_event(
+        &self,
+        event: EmbeddedPlaybackEvent,
+    ) -> CoreResult<()> {
+        self.playback_application.embedded_event(event).await
+    }
+
     pub fn source_search_session(&self) -> Arc<SourceSearchSession> {
         Arc::new(SourceSearchSession {
             application: self.sources.clone(),

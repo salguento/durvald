@@ -18,3 +18,5 @@ pub(crate) mod settings;
 
 pub(crate) mod catalog_details;
 pub(crate) mod sources;
+
+mod playback_embedded;
