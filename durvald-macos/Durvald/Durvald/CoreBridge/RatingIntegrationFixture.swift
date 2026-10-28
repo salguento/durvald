@@ -30,7 +30,7 @@ enum RatingIntegrationFixture {
                     INSERT INTO songs(song_id,title,artist_id,artist_name,release_id,release_title,
                         track_number,disc_number,duration,file_path,rating_half_steps)
                     VALUES(\(id),'Rating track \(String(format: "%03d", id))',1,'Rating fixture',\(id),
-                        'Rating album \(id)',1,1,180,'/rating-fixture/\(id).flac',\(rating));
+                        'Rating album \(id)',1,1,180,NULL,\(rating));
                     """
             }
             sql += "COMMIT;"
@@ -136,6 +136,27 @@ enum RatingIntegrationFixture {
         }
         defer { sqlite3_close(database) }
         sqlite3_busy_timeout(database, 5_000)
+        // SQLite compiles guarded source triggers even for catalog-only inserts.
+        // Keep this isolated test connection compatible with the core's path key.
+        try check(sqlite3_create_function_v2(database, "durvald_local_path_key", 1,
+            SQLITE_UTF8 | SQLITE_DETERMINISTIC, nil, { context, _, arguments in
+                guard let argument = arguments?.pointee,
+                      sqlite3_value_type(argument) != SQLITE_NULL,
+                      let bytes = sqlite3_value_text(argument) else {
+                    sqlite3_result_null(context)
+                    return
+                }
+                let path = String(cString: bytes)
+                let parts = path.split(separator: "/").filter { $0 != "." }
+                guard path.hasPrefix("/"), !path.hasSuffix("/"), !path.contains("\0"), !parts.isEmpty else {
+                    sqlite3_result_error(context, "Invalid local media path", -1)
+                    return
+                }
+                let normalized = "/" + parts.joined(separator: "/")
+                normalized.withCString { value in
+                    sqlite3_result_text(context, value, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                }
+            }, nil, nil, nil), database)
         return try body(database)
     }
 

@@ -190,7 +190,7 @@ struct MusicLibraryView: View {
         }
         .task(id: !isPresented || normalizedSearchText.isEmpty ? nil : presentation.displayRevision) {
             guard isPresented, !normalizedSearchText.isEmpty else { return }
-            let paths = Array(Set(displayedTracks.map(\.filePath)))
+            let paths = Array(Set(displayedTracks.compactMap(\.filePath)))
             guard !paths.isEmpty, let sizes = try? await store.fileSizes(for: paths) else { return }
             guard !Task.isCancelled else { return }
             presentation.fileSizes.merge(sizes, uniquingKeysWith: { _, latest in latest })
@@ -306,7 +306,7 @@ struct MusicLibraryView: View {
         case .artwork:
             ArtworkView(artworkID: track.artworkId, size: CGFloat(artworkSize))
         case .size:
-            Text(fileSizes[track.filePath].flatMap { $0 >= 0 ? ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) : nil } ?? "—")
+            Text(track.filePath.flatMap { fileSizes[$0] }.flatMap { $0 >= 0 ? ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) : nil } ?? "—")
                 .foregroundStyle(.secondary)
         default:
             EmptyView()

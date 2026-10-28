@@ -623,8 +623,8 @@ final class DurvaldCoreStore {
     func importM3U8(from url: URL) async throws -> PlaylistImportReport {
         guard let core else { throw PlaylistTransferError.cannotCreatePlaylist }
         let requestedPaths = try await FileImportService.shared.playlistPaths(from: url)
-        let indexedTracks = try await completeCatalogTracks()
-        let tracksByPath = try await FileImportService.shared.pathIndex(indexedTracks.map(\.filePath))
+        let indexedTracks = try await completeCatalogTracks().filter { $0.filePath != nil }
+        let tracksByPath = try await FileImportService.shared.pathIndex(indexedTracks.compactMap(\.filePath))
         try Task.checkCancellation()
 
         let playlistName = url.deletingPathExtension().lastPathComponent

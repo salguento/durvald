@@ -35,13 +35,14 @@ pub(crate) type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
 pub(crate) struct PlaybackBootstrap {
     source_contexts: Vec<String>,
+    occurrences: Vec<String>,
     source_collection: Option<(
         crate::domain::playback_session::StoredCollection,
-        Vec<String>,
+        Vec<Option<String>>,
     )>,
     pub(crate) volume: f64,
-    pub(crate) current_track: Option<(i64, String)>,
-    pub(crate) upcoming_tracks: Vec<(i64, String)>,
+    pub(crate) current_track: Option<(i64, Option<String>)>,
+    pub(crate) upcoming_tracks: Vec<(i64, Option<String>)>,
     pub(crate) progress_seconds: f64,
     pub(crate) shuffle_enabled: bool,
     pub(crate) repeat_mode: RepeatMode,
@@ -74,12 +75,16 @@ where
     prepare_filesystem(&config)?;
     let db_pool = open_database(&config)?;
     let playback_bootstrap = restore_playback(&db_pool)?;
+    let needs_occurrence_upgrade = playback_bootstrap.occurrences.iter().any(String::is_empty);
     let (audio_player, settings_repository) =
         initialize_audio_player(db_pool.clone(), playback_bootstrap, audio_factory).await?;
     let lastfm = open_lastfm(&config)?;
     let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
     let playback_application =
         build_playback_application(db_pool.clone(), audio_player, lastfm.clone());
+    if needs_occurrence_upgrade {
+        playback_application.persist_session().await?;
+    }
     let library_application = build_library_application(
         db_pool.clone(),
         config.covers_dir.clone(),
@@ -190,7 +195,7 @@ pub(crate) fn restore_playback(pool: &DatabasePool) -> CoreResult<PlaybackBootst
         crate::database::operations::get_song_by_id(&connection, &track_id.to_string())
             .ok()
             .and_then(|tracks| tracks.into_iter().next())
-            .map(|track| (track_id, track.file_path))
+            .map(|_track| (track_id, None::<String>))
     };
     let current_track = saved_session.current_song_id.and_then(track_path);
     let contexts = crate::domain::playback_session::decode_contexts(&saved_session.source_context);
@@ -231,7 +236,14 @@ pub(crate) fn restore_playback(pool: &DatabasePool) -> CoreResult<PlaybackBootst
             .collect();
         paths.map(|paths| (saved, paths))
     });
+    let occurrences =
+        crate::domain::playback_session::decode_occurrences(&saved_session.source_context);
+    let occurrences = retained_indices
+        .iter()
+        .map(|&i| occurrences.get(i).cloned().unwrap_or_default())
+        .collect();
     Ok(PlaybackBootstrap {
+        occurrences,
         source_contexts,
         source_collection,
         volume: saved_session.volume,
@@ -272,6 +284,7 @@ where
         playback.repeat_mode,
     );
     audio_player.restore_contexts(playback.source_contexts);
+    audio_player.restore_occurrences(playback.occurrences);
     if let Some((saved, paths)) = playback.source_collection {
         audio_player.restore_collection(saved, paths);
     }

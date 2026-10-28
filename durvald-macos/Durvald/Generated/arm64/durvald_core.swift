@@ -1170,6 +1170,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func saveCatalogSelection(entry: CatalogEntry) async throws  -> CatalogSelection
 
     /**
+     * Explicit library adoption; catalog discovery alone never creates a song.
+     */
+    func saveRemoteTrack(entry: CatalogEntry) async throws  -> Track
+
+    /**
      * Save or return the existing Replay for this exact calendar period.
      */
     func saveReplay(request: ReplayRequest, name: String, description: String, mode: ReplaySaveMode, closeAutomatically: Bool, artworkBase64: String?) async throws  -> Playlist
@@ -3435,6 +3440,26 @@ open func saveCatalogSelection(entry: CatalogEntry)async throws  -> CatalogSelec
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeCatalogSelection.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Explicit library adoption; catalog discovery alone never creates a song.
+     */
+open func saveRemoteTrack(entry: CatalogEntry)async throws  -> Track {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_save_remote_track(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeCatalogEntry.lower(entry)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeTrack.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -10188,12 +10213,20 @@ public func FfiConverterTypePlaylistTrack_lower(_ value: PlaylistTrack) -> RustB
  * Queue item DTO
  */
 public struct QueueItem {
+    /**
+     * Stable for this insertion, including duplicates, reorder and session restore.
+     */
+    public var occurrenceId: String
     public var trackId: Int64
     public var position: UInt64
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(trackId: Int64, position: UInt64) {
+    public init(
+        /**
+         * Stable for this insertion, including duplicates, reorder and session restore.
+         */occurrenceId: String, trackId: Int64, position: UInt64) {
+        self.occurrenceId = occurrenceId
         self.trackId = trackId
         self.position = position
     }
@@ -10203,6 +10236,9 @@ public struct QueueItem {
 
 extension QueueItem: Equatable, Hashable {
     public static func ==(lhs: QueueItem, rhs: QueueItem) -> Bool {
+        if lhs.occurrenceId != rhs.occurrenceId {
+            return false
+        }
         if lhs.trackId != rhs.trackId {
             return false
         }
@@ -10213,6 +10249,7 @@ extension QueueItem: Equatable, Hashable {
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(occurrenceId)
         hasher.combine(trackId)
         hasher.combine(position)
     }
@@ -10223,12 +10260,14 @@ public struct FfiConverterTypeQueueItem: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QueueItem {
         return
             try QueueItem(
+                occurrenceId: FfiConverterString.read(from: &buf),
                 trackId: FfiConverterInt64.read(from: &buf),
                 position: FfiConverterUInt64.read(from: &buf)
         )
     }
 
     public static func write(_ value: QueueItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.occurrenceId, into: &buf)
         FfiConverterInt64.write(value.trackId, into: &buf)
         FfiConverterUInt64.write(value.position, into: &buf)
     }
@@ -11768,7 +11807,7 @@ public struct Track {
     public var trackNumber: UInt8
     public var discNumber: UInt8
     public var durationSeconds: Double
-    public var filePath: String
+    public var filePath: String?
     public var artworkId: String?
     public var bitrate: UInt32?
     public var sampleRate: UInt32?
@@ -11785,7 +11824,7 @@ public struct Track {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, title: String, artist: String, artistId: Int64, release: String, releaseId: Int64, trackNumber: UInt8, discNumber: UInt8, durationSeconds: Double, filePath: String, artworkId: String?, bitrate: UInt32?, sampleRate: UInt32?, bitDepth: UInt8?, playCount: UInt64, lastPlayed: String?,
+    public init(id: Int64, title: String, artist: String, artistId: Int64, release: String, releaseId: Int64, trackNumber: UInt8, discNumber: UInt8, durationSeconds: Double, filePath: String?, artworkId: String?, bitrate: UInt32?, sampleRate: UInt32?, bitDepth: UInt8?, playCount: UInt64, lastPlayed: String?,
         /**
          * Exact half-star units: 0...10; None is distinct from rated zero.
          */ratingHalfSteps: UInt8?, isFavorite: Bool, isHidden: Bool, suggestLess: Bool) {
@@ -11917,7 +11956,7 @@ public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
                 trackNumber: FfiConverterUInt8.read(from: &buf),
                 discNumber: FfiConverterUInt8.read(from: &buf),
                 durationSeconds: FfiConverterDouble.read(from: &buf),
-                filePath: FfiConverterString.read(from: &buf),
+                filePath: FfiConverterOptionString.read(from: &buf),
                 artworkId: FfiConverterOptionString.read(from: &buf),
                 bitrate: FfiConverterOptionUInt32.read(from: &buf),
                 sampleRate: FfiConverterOptionUInt32.read(from: &buf),
@@ -11941,7 +11980,7 @@ public struct FfiConverterTypeTrack: FfiConverterRustBuffer {
         FfiConverterUInt8.write(value.trackNumber, into: &buf)
         FfiConverterUInt8.write(value.discNumber, into: &buf)
         FfiConverterDouble.write(value.durationSeconds, into: &buf)
-        FfiConverterString.write(value.filePath, into: &buf)
+        FfiConverterOptionString.write(value.filePath, into: &buf)
         FfiConverterOptionString.write(value.artworkId, into: &buf)
         FfiConverterOptionUInt32.write(value.bitrate, into: &buf)
         FfiConverterOptionUInt32.write(value.sampleRate, into: &buf)
@@ -16299,6 +16338,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_save_catalog_selection() != 62796) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_save_remote_track() != 39821) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_save_replay() != 21158) {

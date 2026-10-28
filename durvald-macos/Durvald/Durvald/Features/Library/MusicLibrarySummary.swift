@@ -18,7 +18,7 @@ struct MusicLibrarySummary: Equatable {
         self.query = query
         self.isPending = isPending
         self.onlyFavorites = onlyFavorites
-        let paths = Set(tracks.map(\.filePath))
+        let paths = Set(tracks.compactMap(\.filePath))
         totalBytes = paths.allSatisfy { (fileSizes[$0] ?? -1) >= 0 }
             ? paths.reduce(Int64.zero) { $0 + (fileSizes[$1] ?? 0) }
             : nil

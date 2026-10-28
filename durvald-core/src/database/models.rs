@@ -146,7 +146,7 @@ pub struct SongItem {
     pub is_favorite: bool,
     pub is_hidden: bool,
     pub suggest_less: bool,
-    pub file_path: String,
+    pub file_path: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

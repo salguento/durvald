@@ -62,7 +62,7 @@ final class CatalogRepositoryTests: XCTestCase {
         let store = DurvaldCoreStore(core: fake)
         let tracks = try await store.completeCatalogTracks()
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).m3u8")
-        let document = "#EXTM3U\n\(tracks[1].filePath)\n\(tracks[0].filePath)\n\(tracks[1].filePath)\n/missing/music.flac\n"
+        let document = "#EXTM3U\n\(tracks[1].filePath!)\n\(tracks[0].filePath!)\n\(tracks[1].filePath!)\n/missing/music.flac\n"
         try Data(document.utf8).write(to: url)
         defer { try? FileManager.default.removeItem(at: url) }
         let report = try await store.importM3U8(from: url)

@@ -17,10 +17,24 @@ type SoundHandle = StreamHandle;
 
 #[derive(Debug, Clone)]
 pub struct QueueItem {
+    pub occurrence_id: String,
     pub song_id: i64,
-    pub path: String,
+    pub path: Option<String>,
     pub source_context: String,
     pub collection_position: Option<usize>,
+}
+
+pub(crate) fn new_occurrence_id() -> String {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    format!(
+        "{}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 const MAX_PLAYBACK_HISTORY_ITEMS: usize = 100;
@@ -65,14 +79,26 @@ struct ScheduledNext {
 }
 
 impl PlaybackPlan {
-    pub(crate) fn path(&self) -> &str {
+    #[cfg(test)]
+    pub(crate) fn path(&self) -> Option<&str> {
         match self {
             Self::RepeatCurrent(item)
             | Self::Next { item, .. }
             | Self::RepeatAll(item)
             | Self::Previous(item)
             | Self::Skip { item, .. }
-            | Self::RepeatCollection { item, .. } => &item.path,
+            | Self::RepeatCollection { item, .. } => item.path.as_deref(),
+        }
+    }
+
+    pub(crate) fn occurrence_id(&self) -> &str {
+        match self {
+            Self::RepeatCurrent(item)
+            | Self::Next { item, .. }
+            | Self::RepeatAll(item)
+            | Self::Previous(item)
+            | Self::Skip { item, .. }
+            | Self::RepeatCollection { item, .. } => &item.occurrence_id,
         }
     }
 
@@ -148,6 +174,7 @@ pub struct AudioPlayer {
     queue: VecDeque<QueueItem>,
     history: VecDeque<QueueItem>,
     current_song_id: Option<i64>,
+    current_occurrence_id: Option<String>,
     current_source_context: String,
     current_collection_position: Option<usize>,
     source_collection: Option<SourceCollection>,
@@ -298,6 +325,7 @@ impl AudioPlayer {
             queue: VecDeque::new(),
             history: VecDeque::new(),
             current_song_id: None,
+            current_occurrence_id: None,
             current_source_context: String::new(),
             current_collection_position: None,
             source_collection: None,
@@ -654,6 +682,7 @@ impl AudioPlayer {
     ) -> Result<(), AudioError> {
         self.play_prepared(prepared)?;
         self.current_song_id = Some(song_id);
+        self.current_occurrence_id = Some(new_occurrence_id());
         self.current_source_context.clear();
         Ok(())
     }
@@ -705,6 +734,7 @@ impl AudioPlayer {
     pub fn stop(&mut self) {
         self.stop_sound();
         self.current_song_id = None;
+        self.current_occurrence_id = None;
         self.current_source_context.clear();
         self.current_collection_position = None;
         self.playback_requested = false;
@@ -833,6 +863,7 @@ impl AudioPlayer {
         for (index, item) in items.iter_mut().enumerate() {
             item.collection_position = Some(index);
         }
+        self.current_occurrence_id = Some(items[start].occurrence_id.clone());
         self.current_source_context = items[start].source_context.clone();
         self.current_collection_position = Some(start);
         self.source_collection = Some(SourceCollection {
@@ -892,6 +923,7 @@ impl AudioPlayer {
                 .iter()
                 .map(|item| StoredCollectionItem {
                     track_id: item.song_id,
+                    occurrence_id: item.occurrence_id.clone(),
                     source_context: item.source_context.clone(),
                 })
                 .collect(),
@@ -903,17 +935,31 @@ impl AudioPlayer {
     pub(crate) fn restore_collection(
         &mut self,
         saved: crate::domain::playback_session::StoredCollection,
-        paths: Vec<String>,
+        paths: Vec<Option<String>>,
     ) {
         if saved.items.len() != paths.len() || saved.items.is_empty() {
             return;
         }
+        let existing: std::collections::HashMap<_, _> = saved
+            .positions
+            .iter()
+            .zip(self.queue_occurrences())
+            .filter_map(|(position, (_, id))| position.map(|p| (p, id)))
+            .collect();
         let items: Vec<_> = saved
             .items
             .into_iter()
             .zip(paths)
             .enumerate()
             .map(|(index, (item, path))| QueueItem {
+                occurrence_id: if item.occurrence_id.is_empty() {
+                    existing
+                        .get(&index)
+                        .cloned()
+                        .unwrap_or_else(new_occurrence_id)
+                } else {
+                    item.occurrence_id
+                },
                 song_id: item.track_id,
                 path,
                 source_context: item.source_context,
@@ -951,8 +997,9 @@ impl AudioPlayer {
         } else {
             // Add to queue
             self.queue.push_back(QueueItem {
+                occurrence_id: new_occurrence_id(),
                 song_id,
-                path,
+                path: Some(path),
                 source_context: String::new(),
                 collection_position: None,
             });
@@ -997,8 +1044,12 @@ impl AudioPlayer {
                 .zip(self.current_path.clone())
                 .map(|(song_id, path)| {
                     PlaybackPlan::RepeatCurrent(QueueItem {
+                        occurrence_id: self
+                            .current_occurrence_id
+                            .clone()
+                            .unwrap_or_else(new_occurrence_id),
                         song_id,
-                        path,
+                        path: Some(path),
                         source_context: self.current_source_context.clone(),
                         collection_position: self.current_collection_position,
                     })
@@ -1041,8 +1092,12 @@ impl AudioPlayer {
                     self.current_song_id
                         .zip(self.current_path.clone())
                         .map(|(song_id, path)| QueueItem {
+                            occurrence_id: self
+                                .current_occurrence_id
+                                .clone()
+                                .unwrap_or_else(new_occurrence_id),
                             song_id,
-                            path,
+                            path: Some(path),
                             source_context: self.current_source_context.clone(),
                             collection_position: self.current_collection_position,
                         })
@@ -1074,15 +1129,21 @@ impl AudioPlayer {
             self.current_song_id
                 .zip(self.current_path.clone())
                 .map(|(song_id, path)| QueueItem {
+                    occurrence_id: self
+                        .current_occurrence_id
+                        .clone()
+                        .unwrap_or_else(new_occurrence_id),
                     song_id,
-                    path,
+                    path: Some(path),
                     source_context: self.current_source_context.clone(),
                     collection_position: self.current_collection_position,
                 });
         let next_song_id = plan.song_id();
+        let next_occurrence = plan.occurrence_id().to_owned();
         self.play_prepared(prepared)?;
         self.apply_queue_plan(plan, previous)?;
         self.current_song_id = Some(next_song_id);
+        self.current_occurrence_id = Some(next_occurrence);
         Ok(())
     }
 
@@ -1151,17 +1212,23 @@ impl AudioPlayer {
             .current_song_id
             .zip(self.current_path.take())
             .map(|(song_id, path)| QueueItem {
+                occurrence_id: self
+                    .current_occurrence_id
+                    .clone()
+                    .unwrap_or_else(new_occurrence_id),
                 song_id,
-                path,
+                path: Some(path),
                 source_context: self.current_source_context.clone(),
                 collection_position: self.current_collection_position,
             });
         let next_id = next.plan.song_id();
+        let next_occurrence = next.plan.occurrence_id().to_owned();
         // Queue changes invalidate a pending transition before editing indices.
         self.apply_queue_plan(next.plan, previous)
             .expect("scheduled queue plan remains valid");
         self.current_sound = Some(next.sound);
         self.current_song_id = Some(next_id);
+        self.current_occurrence_id = Some(next_occurrence);
         self.current_path = Some(next.path);
         self.total_duration = Some(next.duration);
         self.current_gain_db = next.gain_db;
@@ -1273,7 +1340,7 @@ impl AudioPlayer {
         self.synchronize_gapless();
         if let Some(plan) = self.gapless_plan() {
             let prepared = Self::prepare_sound(
-                plan.path().to_string(),
+                plan.path().ok_or(AudioError::NoTrackLoaded)?.to_string(),
                 self.normalize_volume,
                 self.equalizer_settings.clone(),
                 self.equalizer_meter.clone(),
@@ -1294,13 +1361,12 @@ impl AudioPlayer {
             .flatten()
     }
 
-    pub(crate) fn restored_track(&self) -> Option<(i64, String, f64)> {
+    pub(crate) fn restored_track(&self) -> Option<(i64, f64)> {
         if self.current_sound.is_some() {
             return None;
         }
         self.current_song_id
-            .zip(self.current_path.clone())
-            .map(|(song_id, path)| (song_id, path, self.paused_position.unwrap_or_default()))
+            .map(|song_id| (song_id, self.paused_position.unwrap_or_default()))
     }
 
     #[cfg(test)]
@@ -1330,14 +1396,19 @@ impl AudioPlayer {
             // current track playing and must not manufacture a history entry.
             if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
                 self.push_history(QueueItem {
+                    occurrence_id: self
+                        .current_occurrence_id
+                        .clone()
+                        .unwrap_or_else(new_occurrence_id),
                     song_id,
-                    path: path.clone(),
+                    path: Some(path.clone()),
                     source_context: self.current_source_context.clone(),
                     collection_position: self.current_collection_position,
                 });
             }
             self.current_song_id = Some(next_item.song_id);
-            self.play(next_item.path).await?;
+            self.play(next_item.path.ok_or(AudioError::NoTrackLoaded)?)
+                .await?;
             Ok(true)
         } else if self.repeat_mode == RepeatMode::All
             && self.current_song_id.is_some()
@@ -1345,8 +1416,12 @@ impl AudioPlayer {
         {
             if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
                 self.push_history(QueueItem {
+                    occurrence_id: self
+                        .current_occurrence_id
+                        .clone()
+                        .unwrap_or_else(new_occurrence_id),
                     song_id,
-                    path: path.clone(),
+                    path: Some(path.clone()),
                     source_context: self.current_source_context.clone(),
                     collection_position: self.current_collection_position,
                 });
@@ -1354,7 +1429,8 @@ impl AudioPlayer {
             let next_item = self.history.pop_front().ok_or(AudioError::FailedToRemove)?;
             self.queue.extend(self.history.drain(..));
             self.current_song_id = Some(next_item.song_id);
-            self.play(next_item.path).await?;
+            self.play(next_item.path.ok_or(AudioError::NoTrackLoaded)?)
+                .await?;
             Ok(true)
         } else {
             Ok(false)
@@ -1384,7 +1460,7 @@ impl AudioPlayer {
         self.discard_collection();
     }
 
-    pub fn get_queue(&self) -> Vec<(i64, String)> {
+    pub fn get_queue(&self) -> Vec<(i64, Option<String>)> {
         self.queue
             .iter()
             .map(|item| (item.song_id, item.path.clone()))
@@ -1394,13 +1470,48 @@ impl AudioPlayer {
     /// Returns the presentation queue: the active track first, followed by
     /// upcoming tracks. The internal queue itself intentionally stores only
     /// upcoming tracks so advancing is an efficient pop from the front.
-    pub fn get_playback_queue(&self) -> Vec<(i64, String)> {
+    pub fn get_playback_queue(&self) -> Vec<(i64, Option<String>)> {
         let mut items = Vec::with_capacity(self.queue.len() + 1);
-        if let (Some(song_id), Some(path)) = (self.current_song_id, &self.current_path) {
-            items.push((song_id, path.clone()));
+        if let Some(song_id) = self.current_song_id {
+            items.push((song_id, self.current_path.clone()));
         }
         items.extend(self.get_queue());
         items
+    }
+
+    pub(crate) fn queue_occurrences(&self) -> Vec<(i64, String)> {
+        let mut entries = Vec::new();
+        if let Some(id) = self.current_song_id {
+            entries.push((
+                id,
+                self.current_occurrence_id
+                    .clone()
+                    .unwrap_or_else(|| format!("legacy-current:{id}")),
+            ));
+        }
+        entries.extend(
+            self.queue
+                .iter()
+                .map(|q| (q.song_id, q.occurrence_id.clone())),
+        );
+        entries
+    }
+
+    pub(crate) fn restore_occurrences(&mut self, ids: Vec<String>) {
+        let mut ids = ids.into_iter();
+        let mut used = std::collections::HashSet::new();
+        let mut next = || {
+            let id = ids
+                .next()
+                .filter(|id| !id.is_empty() && used.insert(id.clone()));
+            id.unwrap_or_else(new_occurrence_id)
+        };
+        if self.current_song_id.is_some() {
+            self.current_occurrence_id = Some(next());
+        }
+        for item in &mut self.queue {
+            item.occurrence_id = next();
+        }
     }
 
     pub(crate) fn source_context(&self) -> &str {
@@ -1416,11 +1527,12 @@ impl AudioPlayer {
     pub(crate) fn enqueue_with_context(
         &mut self,
         song_id: i64,
-        path: String,
+        path: Option<String>,
         source_context: String,
     ) {
         self.prepare_queue_append();
         self.queue.push_back(QueueItem {
+            occurrence_id: new_occurrence_id(),
             song_id,
             path,
             source_context,
@@ -1459,19 +1571,21 @@ impl AudioPlayer {
     /// load the current path and seek to the stored position on user intent.
     pub fn restore_session(
         &mut self,
-        current_track: Option<(i64, String)>,
-        upcoming_tracks: Vec<(i64, String)>,
+        current_track: Option<(i64, Option<String>)>,
+        upcoming_tracks: Vec<(i64, Option<String>)>,
         position_seconds: f64,
         shuffle_enabled: bool,
         repeat_mode: RepeatMode,
     ) {
         self.stop_sound();
         self.current_song_id = current_track.as_ref().map(|(song_id, _)| *song_id);
-        self.current_path = current_track.map(|(_, path)| path);
+        self.current_occurrence_id = self.current_song_id.map(|_| new_occurrence_id());
+        self.current_path = current_track.and_then(|(_, path)| path);
         self.paused_position = self.current_song_id.map(|_| position_seconds.max(0.0));
         self.queue = upcoming_tracks
             .into_iter()
             .map(|(song_id, path)| QueueItem {
+                occurrence_id: new_occurrence_id(),
                 song_id,
                 path,
                 source_context: String::new(),
@@ -1539,7 +1653,9 @@ impl AudioPlayer {
 
 #[cfg(test)]
 mod tests {
-    use super::{AudioPlayer, MAX_PLAYBACK_HISTORY_ITEMS, PlayerBackend, QueueItem};
+    use super::{
+        AudioPlayer, MAX_PLAYBACK_HISTORY_ITEMS, PlayerBackend, QueueItem, new_occurrence_id,
+    };
     use crate::api::{AudioOutputDevice, EqualizerSettings, RepeatMode};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -1686,7 +1802,7 @@ mod tests {
             .await
             .expect("switch with gapless successor scheduled");
         assert_eq!(player.get_current_song_id(), Some(2));
-        assert_eq!(player.get_queue(), vec![(3, paths[2].clone())]);
+        assert_eq!(player.get_queue(), vec![(3, Some(paths[2].clone()))]);
         assert!(player.scheduled_next.is_some());
 
         player.stop();
@@ -1738,8 +1854,8 @@ mod tests {
         player.set_crossfade(true, 5);
         player.set_volume_normalization(true);
         player.restore_session(
-            Some((7, "/library/restored.flac".to_string())),
-            vec![(8, "/library/next.flac".to_string())],
+            Some((7, Some("/library/restored.flac".to_string()))),
+            vec![(8, Some("/library/next.flac".to_string()))],
             42.0,
             true,
             RepeatMode::All,
@@ -1762,8 +1878,9 @@ mod tests {
             .iter()
             .enumerate()
             .map(|(index, path)| QueueItem {
+                occurrence_id: new_occurrence_id(),
                 song_id: index as i64 + 1,
-                path: path.clone(),
+                path: Some(path.clone()),
                 source_context: format!("playlist:7#{index}"),
                 collection_position: None,
             })
@@ -1794,7 +1911,7 @@ mod tests {
         let mut player = AudioPlayer::new_mock().unwrap();
         player.play_song(1, paths[0].clone()).await.unwrap();
         player.set_source_context("playlist:7#0".into());
-        player.enqueue_with_context(1, paths[0].clone(), "playlist:7#1".into());
+        player.enqueue_with_context(1, Some(paths[0].clone()), "playlist:7#1".into());
         player.prepare_gapless_next().await.unwrap();
         tokio::time::sleep(Duration::from_millis(20)).await;
         player.process_mock_audio(80);
@@ -1826,7 +1943,7 @@ mod tests {
         assert_eq!(player.get_current_song_id(), Some(3));
         assert!(!player.is_empty());
         player.synchronize_gapless();
-        assert_eq!(player.get_queue(), vec![(2, paths[1].clone())]);
+        assert_eq!(player.get_queue(), vec![(2, Some(paths[1].clone()))]);
         assert_eq!(player.history.back().map(|item| item.song_id), Some(1));
         player.stop();
         std::fs::remove_dir_all(directory).unwrap();
@@ -1876,8 +1993,9 @@ mod tests {
         let mut player = AudioPlayer::new_mock().expect("create mock player");
         for song_id in 0..=MAX_PLAYBACK_HISTORY_ITEMS as i64 {
             player.push_history(QueueItem {
+                occurrence_id: new_occurrence_id(),
                 song_id,
-                path: format!("/{song_id}.mp3"),
+                path: Some(format!("/{song_id}.mp3")),
                 source_context: String::new(),
                 collection_position: None,
             });
@@ -1919,7 +2037,7 @@ mod tests {
         assert_eq!(player.get_current_song_id(), Some(1));
         assert_eq!(
             player.get_queue(),
-            vec![(2, second.to_string_lossy().into_owned())]
+            vec![(2, Some(second.to_string_lossy().into_owned()))]
         );
         assert!(player.play_next().await.expect("advance queue"));
         assert_eq!(player.get_current_song_id(), Some(2));
@@ -2091,7 +2209,7 @@ mod tests {
         assert_eq!(player.get_current_song_id(), Some(1));
         assert_eq!(
             player.get_queue(),
-            vec![(2, second.to_string_lossy().into_owned())]
+            vec![(2, Some(second.to_string_lossy().into_owned()))]
         );
 
         std::fs::remove_dir_all(directory).expect("remove temporary test directory");

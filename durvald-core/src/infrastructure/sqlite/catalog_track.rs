@@ -26,6 +26,44 @@ impl SqliteCatalogTrackQuery {
         Self { db_pool }
     }
 
+    pub(crate) async fn save_remote(
+        &self,
+        entry: crate::api::CatalogEntry,
+    ) -> crate::api::CoreResult<CatalogTrack> {
+        let pool = self.db_pool.clone();
+        let id = tokio::task::spawn_blocking(move || {
+            let mut conn = pool.get().map_err(|e| crate::api::CoreError::Storage {
+                message: e.to_string(),
+            })?;
+            crate::database::source_catalog::save_remote(&mut conn, &entry).map_err(|e| {
+                crate::api::CoreError::Storage {
+                    message: e.to_string(),
+                }
+            })
+        })
+        .await
+        .map_err(|e| crate::api::CoreError::Storage {
+            message: e.to_string(),
+        })??;
+        self.find(TrackId::from_persisted(id as u64))
+            .await
+            .map_err(|_| crate::api::CoreError::NotFound {
+                message: "Saved track disappeared".into(),
+            })
+    }
+
+    pub(crate) async fn local_media_paths(
+        &self,
+        song_id: i64,
+    ) -> crate::api::CoreResult<Vec<String>> {
+        let pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move || {
+            let conn = pool.get().map_err(|e| crate::api::CoreError::Storage { message:e.to_string() })?;
+            let mut statement = conn.prepare("SELECT s.local_path FROM track_sources s LEFT JOIN playback_source_preferences p ON p.source_id=s.source_id AND p.song_id=s.song_id WHERE s.song_id=?1 AND s.provider='local' AND s.enabled=1 ORDER BY (p.source_id IS NOT NULL) DESC,s.priority DESC,s.is_primary_local DESC,s.source_id").map_err(|e|crate::api::CoreError::Storage {message:e.to_string()})?;
+            statement.query_map([song_id], |r|r.get(0)).map_err(|e|crate::api::CoreError::Storage {message:e.to_string()})?.collect::<Result<Vec<_>,_>>().map_err(|e|crate::api::CoreError::Storage {message:e.to_string()})
+        }).await.map_err(|e|crate::api::CoreError::Storage {message:e.to_string()})?
+    }
+
     pub(crate) async fn find(
         &self,
         track_id: TrackId,

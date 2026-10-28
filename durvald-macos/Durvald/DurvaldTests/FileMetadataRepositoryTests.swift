@@ -3,6 +3,19 @@ import XCTest
 
 @MainActor
 final class FileMetadataRepositoryTests: XCTestCase {
+    func testRemoteTracksCountWithoutRequestingFileMetadata() async throws {
+        let probe = FileSizeProbe()
+        let repository = FileMetadataRepository(reader: { probe.read($0) })
+        var remote = Fixtures.track
+        remote.filePath = nil
+        let store = DurvaldCoreStore(tracks: [remote], fileMetadata: repository)
+        let presentation = MusicLibraryPresentation()
+        await presentation.refreshCatalog(store: store)
+        XCTAssertEqual(probe.count, 0)
+        XCTAssertEqual(presentation.librarySummary?.trackCount, 1)
+        XCTAssertEqual(presentation.librarySummary?.totalBytes, 0)
+    }
+
     func testConcurrentOverlappingCollectionsReuseUniqueReadsOffMainThread() async throws {
         let probe = FileSizeProbe()
         let repository = FileMetadataRepository(reader: { probe.read($0) })

@@ -64,3 +64,10 @@ extension LibraryRepairTrack {
             isMissing: isMissing)
     }
 }
+
+// Convenience for deterministic preview/test queues; live occurrences come from core.
+extension QueueItem {
+    init(trackId: Int64, position: UInt64) {
+        self.init(occurrenceId: "fixture:\(position)", trackId: trackId, position: position)
+    }
+}

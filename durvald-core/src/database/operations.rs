@@ -2774,8 +2774,7 @@ pub(crate) fn prepare_database_update_with_cancel(
     stage_discovered_files(conn, &scan_id, &discovery_batch)?;
 
     let to_process = {
-        let mut statement = conn.prepare(
-            "SELECT discovered.name,
+        let mut sql = "SELECT discovered.name,
                     discovered.file_path,
                     discovered.size,
                     discovered.extension,
@@ -2788,8 +2787,18 @@ pub(crate) fn prepare_database_update_with_cancel(
                     OR songs.file_mtime IS NULL
                     OR songs.file_mtime != discovered.file_mtime
                     OR songs.metadata_version != ?2)
-             ORDER BY discovered.file_path",
-        )?;
+             ORDER BY discovered.file_path"
+            .to_owned();
+        if conn.table_exists(None, "track_sources")? {
+            sql=sql.replace("LEFT JOIN songs ON songs.file_path = discovered.file_path",
+                "LEFT JOIN track_sources media_source ON media_source.provider='local' AND media_source.local_path_key=durvald_local_path_key(discovered.file_path) LEFT JOIN songs ON songs.song_id=media_source.song_id LEFT JOIN track_source_metadata media_metadata ON media_metadata.source_id=media_source.source_id")
+                .replace("songs.file_mtime", "COALESCE(json_extract(media_metadata.metadata,'$.scan_mtime'),CASE WHEN media_source.local_path=songs.file_path THEN songs.file_mtime END)")
+                .replace("songs.metadata_version", "COALESCE(json_extract(media_metadata.metadata,'$.scan_version'),CASE WHEN media_source.local_path=songs.file_path THEN songs.metadata_version ELSE 0 END)");
+        }
+        if conn.table_exists(None, "track_sources")? {
+            sql=sql.replace("songs.song_id IS NULL", "songs.song_id IS NULL OR (media_source.local_path=songs.file_path AND songs.metadata_version != ?2)");
+        }
+        let mut statement = conn.prepare(&sql)?;
         statement
             .query_map(params![scan_id, CURRENT_METADATA_VERSION], |row| {
                 let size = row.get::<_, u64>(2)?;
@@ -2994,7 +3003,11 @@ pub(crate) fn persist_metadata(
         )));
     }
     let existing_song_ids: HashMap<String, i64> = {
-        let mut statement = conn.prepare("SELECT file_path, song_id FROM songs")?;
+        let mut statement = conn.prepare(if conn.table_exists(None, "track_sources")? {
+            "SELECT local_path,song_id FROM track_sources WHERE provider='local'"
+        } else {
+            "SELECT file_path,song_id FROM songs WHERE file_path IS NOT NULL"
+        })?;
         statement
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<_, _>>()?
@@ -3061,10 +3074,37 @@ pub(crate) fn persist_metadata_with_existing_ids(
         }
         let new_release_id = lookup_release_id(&transaction, &md)?;
         let file_path = md.file_path.clone();
+        if transaction.table_exists(None, "track_sources")? {
+            super::source_catalog::cache_scanned_source(
+                &transaction,
+                &md,
+                mtimes[i],
+                CURRENT_METADATA_VERSION,
+            )?;
+            if existing_song_id.is_some()
+                && transaction.query_row(
+                    "SELECT file_path IS NOT ?2 FROM songs WHERE song_id=?1",
+                    params![existing_song_id, file_path],
+                    |r| r.get::<_, bool>(0),
+                )?
+            {
+                updated_tracks += 1;
+                continue;
+            }
+        }
         match add_song(&transaction, md, mtimes[i], existing_song_id)? {
             SongWriteResult::Added => added_tracks += 1,
             SongWriteResult::Updated => updated_tracks += 1,
             SongWriteResult::SkippedDuplicate => {}
+        }
+        if transaction.table_exists(None, "track_sources")? {
+            // New sources are created by the insert trigger, so cache once more.
+            super::source_catalog::cache_scan_time(
+                &transaction,
+                &file_path,
+                mtimes[i],
+                CURRENT_METADATA_VERSION,
+            )?;
         }
         touched_release_ids.insert(new_release_id);
         crate::metadata_edit::cache_scanned(&transaction, &file_path, &cached_metadata)?;
@@ -3114,6 +3154,13 @@ pub(crate) fn remove_missing_songs_in_folder(
         )));
     }
     let transaction = conn.unchecked_transaction()?;
+    if transaction.table_exists(None, "track_sources")? {
+        super::source_catalog::remove_missing_files_with_surviving_sources(
+            &transaction,
+            &root_prefix,
+            &reconciliation.scan_id,
+        )?;
+    }
     transaction.execute(
         "INSERT OR IGNORE INTO missing_tracks(
             original_song_id,title,artist_name,release_title,track_number,disc_number,duration,

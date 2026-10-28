@@ -63,7 +63,7 @@ fn read_albums(c: &Connection, now: i64) -> CoreResult<BTreeMap<i64, Album>> {
         FROM releases r JOIN songs s ON s.release_id=r.release_id
         LEFT JOIN release_library_entries e ON e.release_id=r.release_id
         WHERE NOT r.is_hidden AND NOT r.suggest_less AND (r.rating_half_steps IS NULL OR r.rating_half_steps>=4)
-          AND NOT s.is_hidden AND NOT s.suggest_less AND COALESCE(s.file_path,'')!=''
+          AND NOT s.is_hidden AND NOT s.suggest_less
         GROUP BY r.release_id ORDER BY r.release_id").map_err(storage)?
         .query_map(params![now, now.div_euclid(DAY)-6, now.div_euclid(DAY)], |r| Ok(Album {
             id:r.get(0)?,artist_id:r.get(1)?,artist:r.get(2)?,favorite:r.get(3)?,rating:r.get(4)?,

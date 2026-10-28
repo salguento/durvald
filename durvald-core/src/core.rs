@@ -194,6 +194,11 @@ impl DurvaldCore {
     pub async fn catalog_selections(&self) -> CoreResult<Vec<CatalogSelection>> {
         self.catalog_search.saved_selections().await
     }
+    /// Explicit library adoption; catalog discovery alone never creates a song.
+    pub async fn save_remote_track(&self, entry: CatalogEntry) -> CoreResult<Track> {
+        self.library_application.save_remote_track(entry).await
+    }
+
     pub async fn save_catalog_selection(
         &self,
         entry: CatalogEntry,

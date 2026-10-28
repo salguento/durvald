@@ -871,7 +871,7 @@ private extension MusicLibraryColumn {
         case .lastPlayed: track.lastPlayed ?? "—"
         case .bitrate: track.bitrate.map { "\($0) kbps" } ?? "—"
         case .sampleRate: track.sampleRate.map { "\($0) Hz" } ?? "—"
-        case .kind: URL(fileURLWithPath: track.filePath).pathExtension.uppercased()
+        case .kind: track.filePath.map { URL(fileURLWithPath: $0).pathExtension.uppercased() } ?? "—"
 
         default: nil
         }

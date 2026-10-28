@@ -52,12 +52,31 @@ fn track(row: &rusqlite::Row<'_>, missing: bool) -> rusqlite::Result<LibraryRepa
 }
 
 pub(crate) fn analyze(conn: &Connection) -> CoreResult<LibraryRepairAnalysis> {
-    let live: Vec<LibraryRepairTrack> = conn.prepare(
-        "SELECT song_id,title,artist_name,release_title,file_path,rating_half_steps,is_favorite FROM songs ORDER BY song_id"
-    ).map_err(storage)?.query_map([], |r| track(r, false)).map_err(storage)?
-        .collect::<Result<_, _>>().map_err(storage)?;
+    let local_tracks = if conn
+        .table_exists(None, "catalog_track_references")
+        .map_err(storage)?
+    {
+        "SELECT s.song_id,s.title,s.artist_name,s.release_title,p.local_path,s.rating_half_steps,s.is_favorite FROM songs s JOIN local_track_paths p USING(song_id) ORDER BY s.song_id,p.source_id"
+    } else {
+        "SELECT song_id,title,artist_name,release_title,file_path,rating_half_steps,is_favorite FROM songs WHERE file_path IS NOT NULL ORDER BY song_id"
+    };
+    let live: Vec<LibraryRepairTrack> = conn
+        .prepare(local_tracks)
+        .map_err(storage)?
+        .query_map([], |r| track(r, false))
+        .map_err(storage)?
+        .collect::<Result<_, _>>()
+        .map_err(storage)?;
     for item in &live {
-        if Path::new(&item.file_path).is_file() {
+        if Path::new(&item.file_path).is_file()
+            && conn
+                .query_row(
+                    "SELECT file_path=?2 FROM songs WHERE song_id=?1",
+                    params![item.id, item.file_path],
+                    |r| r.get::<_, bool>(0),
+                )
+                .map_err(storage)?
+        {
             if let Ok((hash, size)) = content_hash(&item.file_path) {
                 conn.execute(
                     "INSERT INTO track_file_identity(song_id,content_hash,file_size) VALUES(?1,?2,?3)
@@ -90,7 +109,7 @@ pub(crate) fn analyze(conn: &Connection) -> CoreResult<LibraryRepairAnalysis> {
             "SELECT s.song_id,i.content_hash FROM songs s LEFT JOIN track_file_identity i USING(song_id)
              WHERE lower(s.title)=lower(?1) AND lower(s.artist_name)=lower(?2)
                AND lower(s.release_title)=lower(?3) AND s.track_number=?4
-               AND s.disc_number=?5 AND abs(s.duration-?6)<=2"
+               AND s.disc_number=?5 AND abs(s.duration-?6)<=2 AND s.file_path IS NOT NULL"
         ).map_err(storage)?;
         for candidate in statement
             .query_map(
@@ -118,7 +137,7 @@ pub(crate) fn analyze(conn: &Connection) -> CoreResult<LibraryRepairAnalysis> {
 
     let mut hash_groups: BTreeMap<String, Vec<i64>> = BTreeMap::new();
     let mut stmt = conn
-        .prepare("SELECT song_id,content_hash FROM track_file_identity ORDER BY song_id")
+        .prepare("SELECT i.song_id,i.content_hash FROM track_file_identity i JOIN songs s USING(song_id) WHERE s.file_path IS NOT NULL ORDER BY i.song_id")
         .map_err(storage)?;
     for row in stmt
         .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))

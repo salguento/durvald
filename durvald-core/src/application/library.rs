@@ -73,6 +73,50 @@ impl LibraryPersistence {
 }
 
 impl LibraryApplication {
+    pub(crate) async fn save_remote_track(&self, mut entry: CatalogEntry) -> CoreResult<Track> {
+        entry.reference = crate::application::catalog_details::validate_reference(entry.reference)?;
+        if !matches!(
+            entry.reference.kind,
+            CatalogItemKind::Recording
+                | CatalogItemKind::Track
+                | CatalogItemKind::ReleaseTrack
+                | CatalogItemKind::AudioTrack
+                | CatalogItemKind::Video
+        ) || entry.reference.provider == "local"
+            || entry.reference.provider == "library"
+            || entry.title.trim().is_empty()
+            || entry.title.len() > 500
+            || entry.title.chars().any(char::is_control)
+            || entry
+                .artist_credit
+                .as_ref()
+                .is_some_and(|a| a.len() > 2000 || a.chars().any(char::is_control))
+            || entry.duration_seconds.is_some_and(|n| n > i64::MAX as u64)
+        {
+            return Err(CoreError::InvalidInput {
+                message: "Invalid remote catalog track".into(),
+            });
+        }
+        entry.title = entry.title.trim().into();
+        if let Some(url) = &entry.canonical_url {
+            if url.len() > 2048 {
+                return Err(CoreError::InvalidInput {
+                    message: "Invalid canonical URL".into(),
+                });
+            }
+            crate::domain::music::sources::CanonicalMediaUrl::new(url).map_err(|_| {
+                CoreError::InvalidInput {
+                    message: "Invalid canonical URL".into(),
+                }
+            })?;
+        }
+        self.persistence
+            .catalog_track_query
+            .save_remote(entry)
+            .await
+            .map(track_from_catalog)
+    }
+
     pub(crate) fn new(
         persistence: LibraryPersistence,
         metadata_extractor: LocalMetadataExtractor,

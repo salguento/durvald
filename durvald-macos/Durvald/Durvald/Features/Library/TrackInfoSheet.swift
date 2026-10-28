@@ -366,9 +366,13 @@ struct TrackInfoSheet: View {
             }
         case .options:
             VStack(alignment: .leading, spacing: 12) {
-                Toggle("Gravar alterações no arquivo", isOn: $writeChangesToFiles)
+                Toggle("Gravar alterações no arquivo", isOn: Binding(
+                    get: { writeChangesToFiles && info.track.filePath != nil },
+                    set: { writeChangesToFiles = $0 }
+                ))
+                    .disabled(info.track.filePath == nil)
                     .toggleStyle(.checkbox)
-                Text(writeChangesToFiles
+                Text(writeChangesToFiles && info.track.filePath != nil
                      ? "As tags serão gravadas no arquivo e a biblioteca será atualizada. Um backup permite desfazer."
                      : "As alterações serão mantidas apenas no Durvald, inclusive após novos scans.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -379,7 +383,7 @@ struct TrackInfoSheet: View {
                 if let bitrate = info.track.bitrate { row("Bitrate") { Text("\(bitrate) kbps") } }
                 if let rate = info.track.sampleRate { row("Amostragem") { Text("\(rate) Hz") } }
                 if let depth = info.track.bitDepth { row("Profundidade") { Text("\(depth) bits") } }
-                row("Localização") { Text(info.track.filePath).textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
+                row("Localização") { Text(info.track.filePath ?? "Sem arquivo local").textSelection(.enabled).fixedSize(horizontal: false, vertical: true) }
             }
         }
     }
@@ -511,7 +515,7 @@ struct TrackInfoSheet: View {
         catch { errorMessage = "Não foi possível salvar: \(error.localizedDescription)"; return }
         guard let ticket = editing.beginSaving() else { return }
         do {
-            let value = try await core.saveTrackMetadata(trackId: trackID, metadata: metadata, writeToFile: writeChangesToFiles)
+            let value = try await core.saveTrackMetadata(trackId: trackID, metadata: metadata, writeToFile: writeChangesToFiles && info?.track.filePath != nil)
             BatchMetadataOperationReceipt.clear()
             guard store.core === core else {
                 editing.fail(ticket, message: "A biblioteca mudou durante a gravação."); return

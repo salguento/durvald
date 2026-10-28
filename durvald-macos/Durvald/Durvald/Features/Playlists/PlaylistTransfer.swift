@@ -64,10 +64,14 @@ enum PlaylistTransferService {
     static func m3u8(tracks: [Track], destination: URL, relativePaths: Bool) -> String {
         var lines = ["#EXTM3U"]
         for track in tracks {
+            guard let path = track.filePath else {
+                lines.append("# Sem arquivo local: \(track.title.replacingOccurrences(of: "\n", with: " "))")
+                continue
+            }
             let seconds = max(0, Int(track.durationSeconds.rounded()))
             let label = track.artist.isEmpty ? track.title : "\(track.artist) - \(track.title)"
             lines.append("#EXTINF:\(seconds),\(label.replacingOccurrences(of: "\n", with: " "))")
-            let fileURL = URL(fileURLWithPath: track.filePath).standardizedFileURL
+            let fileURL = URL(fileURLWithPath: path).standardizedFileURL
             lines.append(relativePaths
                 ? relativePath(from: destination.deletingLastPathComponent(), to: fileURL)
                 : fileURL.path)

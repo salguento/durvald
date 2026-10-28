@@ -57,3 +57,12 @@ XDG_DATA_HOME=/tmp/durvald-dev cargo run --locked --manifest-path durvald-gtk/Ca
 
 Verificação manual: abrir em uma sessão gráfica, conferir o estado da biblioteca,
 atualizar e fechar com `Ctrl+Q`. Erros de inicialização aparecem na janela.
+
+O catálogo também inclui faixas sem arquivo local. `Track.file_path` é
+`Option<String>`: a ausência de caminho não indica erro de importação nem remove
+a faixa da contagem. Use os IDs da API pública para playlists e fila; o core
+resolve a origem apenas perto da reprodução. `save_remote_track` salva uma
+seleção externa por ação explícita, sem iniciar streaming. Até a implementação
+do transporte remoto, tentar reproduzir uma faixa sem áudio local retorna um
+erro de reprodução e preserva a fila. A janela atual já conta todo o catálogo,
+sem filtrar por presença de arquivo.

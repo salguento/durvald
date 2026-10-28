@@ -177,17 +177,24 @@ pub(crate) fn backup_before_migration(
     if !conn.table_exists(None, "songs")? {
         return Ok(());
     }
-    if conn.table_exists(None, "enrichment_migrations")? {
-        let version: i64 = conn.query_row(
+    let version = if conn.table_exists(None, "enrichment_migrations")? {
+        conn.query_row(
             "SELECT COALESCE(MAX(version),0) FROM enrichment_migrations",
             [],
-            |r| r.get(0),
-        )?;
-        if version >= 21 {
-            return Ok(());
-        }
+            |r| r.get::<_, i64>(0),
+        )?
+    } else {
+        0
+    };
+    if version >= 22 {
+        return Ok(());
     }
-    let backup_path = format!("{database_path}.pre-local-sources.sqlite");
+    let suffix = if version < 21 {
+        "pre-local-sources"
+    } else {
+        "pre-optional-local-files"
+    };
+    let backup_path = format!("{database_path}.{suffix}.sqlite");
     if Path::new(&backup_path).exists() {
         return verify_backup(&backup_path);
     }
@@ -207,6 +214,7 @@ pub(crate) fn backup_before_migration(
         }
         options.open(&temporary).map_err(io_error)?;
         let mut destination = Connection::open(&temporary)?;
+        register(&destination)?;
         rusqlite::backup::Backup::new(conn, &mut destination)?.run_to_completion(
             128,
             Duration::from_millis(10),
@@ -285,7 +293,9 @@ pub(crate) fn restore_missing(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::{migrations::migrate_enrichment, operations::create_tables};
+    use crate::database::{
+        migrations::migrate_stage6 as migrate_enrichment, operations::create_tables,
+    };
     use rusqlite::{params, types::Value};
 
     fn legacy() -> Connection {

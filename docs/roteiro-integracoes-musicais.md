@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 27/10/2026.
-Status: implementação incremental; etapas 1–6 concluídas, demais etapas planejadas.
+Status: implementação incremental; etapas 1–7 concluídas, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -287,6 +287,8 @@ a ordem dos provedores é decidida pelas provas, não pela numeração dos plano
 de playlists preservados. Reabrir não duplica origens; falha reverte a transação.
 
 ### 7. Catálogo e fila independentes de arquivo obrigatório
+
+**Status:** concluída. [Migração, fila, API e limites](features/source-independent-catalog.md).
 
 **Dependências:** 6.
 

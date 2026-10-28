@@ -591,38 +591,59 @@ CREATE TABLE catalog_selections (
 );
 "#;
 
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, FOUNDATION),
+    (2, IDENTITY),
+    (3, PROFILE),
+    (4, PROFILE_ASSETS),
+    (5, PROFILE_OVERRIDES),
+    (6, DISCOGRAPHY),
+    (7, RELEASE_IDENTIFIER_BACKFILL),
+    (8, DISCOGRAPHY_TOTALS),
+    (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
+    (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
+    (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
+    (12, PROVIDER_FAILURE_CACHE),
+    (13, LOCAL_RELEASE_METADATA),
+    (14, AGGREGATE_IDENTITY_INVALIDATION),
+    (15, EXTERNAL_RELEASE_DETAILS_CACHE),
+    (16, ARTIST_POPULAR_TRACKS),
+    (17, ARTIST_SIMILAR_ARTISTS),
+    (18, CANONICAL_SIMILAR_ARTISTS),
+    (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
+    (20, CATALOG_SELECTIONS),
+    (21, crate::database::local_sources::SCHEMA),
+    (22, ""),
+];
+
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
     crate::database::local_sources::register(conn)?;
-    apply(
-        conn,
-        &[
-            (1, FOUNDATION),
-            (2, IDENTITY),
-            (3, PROFILE),
-            (4, PROFILE_ASSETS),
-            (5, PROFILE_OVERRIDES),
-            (6, DISCOGRAPHY),
-            (7, RELEASE_IDENTIFIER_BACKFILL),
-            (8, DISCOGRAPHY_TOTALS),
-            (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
-            (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
-            (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
-            (12, PROVIDER_FAILURE_CACHE),
-            (13, LOCAL_RELEASE_METADATA),
-            (14, AGGREGATE_IDENTITY_INVALIDATION),
-            (15, EXTERNAL_RELEASE_DETAILS_CACHE),
-            (16, ARTIST_POPULAR_TRACKS),
-            (17, ARTIST_SIMILAR_ARTISTS),
-            (18, CANONICAL_SIMILAR_ARTISTS),
-            (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
-            (20, CATALOG_SELECTIONS),
-            (21, crate::database::local_sources::SCHEMA),
-        ],
-    )?;
+    apply(conn, MIGRATIONS)?;
     crate::database::identity::backfill_release_external_ids(conn)
 }
 
+#[cfg(test)]
+pub(crate) fn migrate_stage6(conn: &mut Connection) -> rusqlite::Result<()> {
+    crate::database::local_sources::register(conn)?;
+    apply(conn, &MIGRATIONS[..21])
+}
+
 fn apply(conn: &mut Connection, migrations: &[(i64, &str)]) -> rusqlite::Result<()> {
+    let foreign_keys: bool = conn.pragma_query_value(None, "foreign_keys", |r| r.get(0))?;
+    let legacy: bool = conn.pragma_query_value(None, "legacy_alter_table", |r| r.get(0))?;
+    conn.pragma_update(None, "foreign_keys", false)?;
+    conn.pragma_update(None, "legacy_alter_table", true)?;
+    let result = apply_transaction(conn, migrations, foreign_keys);
+    let restore_fk = conn.pragma_update(None, "foreign_keys", foreign_keys);
+    let restore_legacy = conn.pragma_update(None, "legacy_alter_table", legacy);
+    result.and(restore_fk).and(restore_legacy)
+}
+
+fn apply_transaction(
+    conn: &mut Connection,
+    migrations: &[(i64, &str)],
+    check_foreign_keys: bool,
+) -> rusqlite::Result<()> {
     // The version read and DDL share a write transaction, including on first open.
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     tx.execute_batch(
@@ -647,12 +668,21 @@ fn apply(conn: &mut Connection, migrations: &[(i64, &str)]) -> rusqlite::Result<
             if *version == 21 {
                 crate::database::local_sources::preflight(&tx)?;
             }
-            tx.execute_batch(sql)?;
+            if *version == 22 && sql.is_empty() {
+                crate::database::source_catalog::migrate(&tx)?;
+            } else {
+                tx.execute_batch(sql)?;
+            }
             tx.execute(
                 "INSERT INTO enrichment_migrations (version) VALUES (?1)",
                 [version],
             )?;
         }
+    }
+    if check_foreign_keys && tx.prepare("PRAGMA foreign_key_check")?.exists([])? {
+        return Err(rusqlite::Error::InvalidParameterName(
+            "Migration would leave broken foreign keys".into(),
+        ));
     }
     tx.commit()
 }
@@ -690,7 +720,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            21
+            22
         );
     }
 
@@ -911,8 +941,9 @@ mod tests {
                     (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
                     (20, CATALOG_SELECTIONS),
                     (21, crate::database::local_sources::SCHEMA),
+                    (22, ""),
                     (
-                        22,
+                        23,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -925,7 +956,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            21
+            22
         );
     }
 

@@ -147,7 +147,7 @@ impl PlaybackApplication {
         source_context: String,
     ) -> CoreResult<PlaybackSnapshot> {
         validate_source_context(&source_context)?;
-        let track = self
+        let _track = self
             .track_query
             .find(track_id)
             .await
@@ -155,7 +155,7 @@ impl PlaybackApplication {
         let track_id = track_id.get() as i64;
 
         let _transition = self.playback_transition.lock().await;
-        let prepared = self.prepare_sound(track.file_path).await?;
+        let prepared = self.prepare_track(track_id).await?;
         let state = {
             let mut player = self.audio_player.lock().await;
             player
@@ -211,21 +211,21 @@ impl PlaybackApplication {
             .find_many(ids)
             .await
             .map_err(|error| playback_track_error(error, first_id))?;
-        let paths: std::collections::HashMap<_, _> = tracks
+        let identities: std::collections::HashSet<_> = tracks
             .into_iter()
-            .map(|track| (track.id.get() as i64, track.file_path))
+            .map(|track| track.id.get() as i64)
             .collect();
         let mut items = Vec::with_capacity(track_ids.len());
         for (id, context) in track_ids.into_iter().zip(source_contexts) {
-            let path = paths
-                .get(&id)
-                .ok_or_else(|| CoreError::NotFound {
+            if !identities.contains(&id) {
+                return Err(CoreError::NotFound {
                     message: format!("Track {id} not found"),
-                })?
-                .clone();
+                });
+            }
             items.push(crate::audio::player::QueueItem {
                 song_id: id,
-                path,
+                occurrence_id: crate::audio::player::new_occurrence_id(),
+                path: None,
                 source_context: context,
                 collection_position: None,
             });
@@ -242,7 +242,7 @@ impl PlaybackApplication {
             0
         };
         let track_id = items[start].song_id;
-        let prepared = self.prepare_sound(items[start].path.clone()).await?;
+        let prepared = self.prepare_track(track_id).await?;
         let state = {
             let mut player = self.audio_player.lock().await;
             player
@@ -287,8 +287,8 @@ impl PlaybackApplication {
             }
             restored_track
         };
-        if let Some((song_id, path, position)) = restored_track {
-            let prepared = self.prepare_sound(path).await?;
+        if let Some((song_id, position)) = restored_track {
+            let prepared = self.prepare_track(song_id).await?;
             self.audio_player
                 .lock()
                 .await
@@ -383,11 +383,16 @@ impl PlaybackApplication {
     ) -> CoreResult<()> {
         validate_source_context(&source_context)?;
         let track_id = track_id.get() as i64;
-        let track = self.find_track(track_id).await?;
+        self.find_track(track_id).await?;
         let _transition = self.playback_transition.lock().await;
-        let starts_playback = self.audio_player.lock().await.should_start_queued_track();
+        let starts_playback = self.audio_player.lock().await.should_start_queued_track()
+            && !self
+                .track_query
+                .local_media_paths(track_id)
+                .await?
+                .is_empty();
         let prepared = if starts_playback {
-            Some(self.prepare_sound(track.file_path.clone()).await?)
+            Some(self.prepare_track(track_id).await?)
         } else {
             None
         };
@@ -400,7 +405,7 @@ impl PlaybackApplication {
                 })?;
             player.set_source_context(source_context);
         } else {
-            player.enqueue_with_context(track_id, track.file_path, source_context);
+            player.enqueue_with_context(track_id, None, source_context);
         }
         drop(player);
         drop(_transition);
@@ -501,10 +506,11 @@ impl PlaybackApplication {
         let mut player = self.audio_player.lock().await;
         player.synchronize_gapless();
         Ok(player
-            .get_playback_queue()
+            .queue_occurrences()
             .into_iter()
             .enumerate()
-            .map(|(position, (track_id, _))| QueueItem {
+            .map(|(position, (track_id, occurrence_id))| QueueItem {
+                occurrence_id,
                 track_id,
                 position: position as u64,
             })
@@ -515,7 +521,7 @@ impl PlaybackApplication {
         &self,
         plan: crate::audio::player::PlaybackPlan,
     ) -> CoreResult<PlaybackSnapshot> {
-        let prepared = self.prepare_sound(plan.path().to_string()).await?;
+        let prepared = self.prepare_track(plan.song_id()).await?;
         let track_id = plan.song_id();
         let state = {
             let mut player = self.audio_player.lock().await;
@@ -544,6 +550,23 @@ impl PlaybackApplication {
             .map_err(|error| playback_track_error(error, track_id))
     }
 
+    async fn prepare_track(
+        &self,
+        track_id: i64,
+    ) -> CoreResult<crate::audio::player::PreparedSound> {
+        let paths = self.track_query.local_media_paths(track_id).await?;
+        for path in paths {
+            if let Ok(sound) = self.prepare_sound(path).await {
+                return Ok(sound);
+            }
+        }
+        Err(CoreError::Playback {
+            message: format!(
+                "Track {track_id} has no available local audio source; remote playback is not supported yet"
+            ),
+        })
+    }
+
     async fn prepare_sound(&self, path: String) -> CoreResult<crate::audio::player::PreparedSound> {
         let (normalize_volume, equalizer, meter) = {
             let player = self.audio_player.lock().await;
@@ -565,7 +588,7 @@ impl PlaybackApplication {
             player.gapless_plan()
         };
         if let Some(plan) = gapless_plan
-            && let Ok(prepared) = self.prepare_sound(plan.path().to_string()).await
+            && let Ok(prepared) = self.prepare_track(plan.song_id()).await
         {
             let _ = self
                 .audio_player
@@ -585,7 +608,7 @@ impl PlaybackApplication {
             )
         };
         let plan = plan?;
-        let prepared = self.prepare_sound(plan.path().to_string()).await.ok()?;
+        let prepared = self.prepare_track(plan.song_id()).await.ok()?;
         let started_track_id = plan.song_id();
         self.audio_player
             .lock()
@@ -605,6 +628,7 @@ impl PlaybackApplication {
             queue,
             contexts,
             collection,
+            occurrences,
         ) = {
             let mut player = self.audio_player.lock().await;
             player.synchronize_gapless();
@@ -621,6 +645,11 @@ impl PlaybackApplication {
                     .collect::<Vec<_>>(),
                 player.playback_contexts(),
                 player.stored_collection(),
+                player
+                    .queue_occurrences()
+                    .into_iter()
+                    .map(|(_, id)| id)
+                    .collect(),
             )
         };
         let session = PlaybackSessionState {
@@ -631,8 +660,10 @@ impl PlaybackApplication {
             repeat_mode: format!("{repeat_mode:?}").to_lowercase(),
             queue,
             queue_position: 0,
-            source_context: crate::domain::playback_session::encode_collection(
-                contexts, collection,
+            source_context: crate::domain::playback_session::encode_queue(
+                contexts,
+                collection,
+                occurrences,
             ),
             updated_at: String::new(),
         };
@@ -863,10 +894,11 @@ impl PlaybackStateSnapshot {
             is_playing: !is_paused && !player.is_empty(),
             is_paused,
             queue: player
-                .get_playback_queue()
+                .queue_occurrences()
                 .into_iter()
                 .enumerate()
-                .map(|(position, (track_id, _))| QueueItem {
+                .map(|(position, (track_id, occurrence_id))| QueueItem {
+                    occurrence_id,
                     track_id,
                     position: position as u64,
                 })

@@ -134,7 +134,7 @@ final class MusicLibraryPresentation {
                 catalog = tracks
                 catalogVersion &+= 1
             }
-            let paths = Array(Set(tracks.map(\.filePath)))
+            let paths = Array(Set(tracks.compactMap(\.filePath)))
             let sizes = try await store.fileSizes(for: paths)
             guard !Task.isCancelled, generation == catalogGeneration, catalogRequest(for: store) == request else { return }
             fileSizes = sizes

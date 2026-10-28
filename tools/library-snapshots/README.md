@@ -2,6 +2,8 @@
 
 A migração 21 cria automaticamente `<database_path>.pre-local-sources.sqlite` antes de alterar uma biblioteca existente. O snapshot usa a API de backup do SQLite, inclui gravações confirmadas no WAL e não substitui um backup anterior. Se a criação falhar, a abertura da biblioteca é interrompida antes da atualização.
 
+Bibliotecas na versão 21 também recebem `<database_path>.pre-optional-local-files.sqlite` antes da migração 22. Esse snapshot permite recuperar o esquema anterior à aceitação de faixas sem arquivo. Não reabra o banco migrado com builds antigos.
+
 Para exportar uma biblioteca completa, sem rede:
 
 ```sh

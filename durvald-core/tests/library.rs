@@ -35,7 +35,7 @@ async fn scans_one_valid_audio_file() -> Result<(), Box<dyn Error + Send + Sync>
     assert_eq!(tracks.len(), 1);
     assert!(tracks[0].id > 0);
 
-    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+    let indexed_path = std::fs::canonicalize(Path::new(tracks[0].file_path.as_deref().expect("local track path")))?;
     let fixture_path = std::fs::canonicalize(&audio_path)?;
 
     assert_eq!(indexed_path, fixture_path);
@@ -98,7 +98,7 @@ async fn scans_configured_library_path() -> Result<(), Box<dyn Error + Send + Sy
 
     assert_eq!(tracks.len(), 1);
 
-    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+    let indexed_path = std::fs::canonicalize(Path::new(tracks[0].file_path.as_deref().expect("local track path")))?;
 
     let expected_path = std::fs::canonicalize(audio_path)?;
 
@@ -310,7 +310,7 @@ async fn finds_scanned_track_by_id() -> Result<(), Box<dyn Error + Send + Sync>>
     assert_eq!(found.artist, listed_track.artist);
     assert_eq!(found.release, listed_track.release);
 
-    let found_path = std::fs::canonicalize(Path::new(&found.file_path))?;
+    let found_path = std::fs::canonicalize(Path::new(found.file_path.as_deref().expect("local track path")))?;
 
     let expected_path = std::fs::canonicalize(audio_path)?;
 
@@ -447,7 +447,7 @@ async fn complete_rescan_removes_missing_track() -> Result<(), Box<dyn Error + S
 
     let removed_track = initial_tracks
         .iter()
-        .find(|track| track.file_path.ends_with("02-removed.wav"))
+        .find(|track| track.file_path.as_deref().unwrap().ends_with("02-removed.wav"))
         .expect("removed fixture must be indexed");
 
     let removed_track_id = removed_track.id;
@@ -467,7 +467,7 @@ async fn complete_rescan_removes_missing_track() -> Result<(), Box<dyn Error + S
 
     assert_eq!(remaining_tracks.len(), 1);
 
-    let remaining_path = std::fs::canonicalize(Path::new(&remaining_tracks[0].file_path))?;
+    let remaining_path = std::fs::canonicalize(Path::new(remaining_tracks[0].file_path.as_deref().expect("local track path")))?;
 
     let expected_path = std::fs::canonicalize(kept_path)?;
 
@@ -517,7 +517,7 @@ async fn scan_ignores_unsupported_file_extensions() -> Result<(), Box<dyn Error 
 
     assert_eq!(tracks.len(), 1);
 
-    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+    let indexed_path = std::fs::canonicalize(Path::new(tracks[0].file_path.as_deref().expect("local track path")))?;
 
     let expected_path = std::fs::canonicalize(expected_audio)?;
 
@@ -564,7 +564,7 @@ async fn scan_ignores_audio_file_symlink() -> Result<(), Box<dyn Error + Send + 
 
     assert_eq!(tracks.len(), 1);
 
-    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+    let indexed_path = std::fs::canonicalize(Path::new(tracks[0].file_path.as_deref().expect("local track path")))?;
 
     let expected_path = std::fs::canonicalize(real_audio)?;
 
@@ -610,7 +610,7 @@ async fn scan_ignores_directory_symlink() -> Result<(), Box<dyn Error + Send + S
 
     assert_eq!(tracks.len(), 1);
 
-    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+    let indexed_path = std::fs::canonicalize(Path::new(tracks[0].file_path.as_deref().expect("local track path")))?;
 
     let expected_path = std::fs::canonicalize(real_audio)?;
 
@@ -756,7 +756,7 @@ async fn cancelling_active_rescan_preserves_previously_indexed_tracks()
     assert!(
         tracks
             .iter()
-            .any(|track| track.file_path.ends_with("already-indexed.wav")),
+            .any(|track| track.file_path.as_deref().unwrap().ends_with("already-indexed.wav")),
         "a cancelled rescan must not reconcile away prior records",
     );
 
@@ -797,7 +797,7 @@ async fn scan_keeps_valid_track_when_another_file_is_corrupt()
 
     assert_eq!(tracks.len(), 1);
 
-    let indexed_path = std::fs::canonicalize(Path::new(&tracks[0].file_path))?;
+    let indexed_path = std::fs::canonicalize(Path::new(tracks[0].file_path.as_deref().expect("local track path")))?;
 
     let expected_path = std::fs::canonicalize(valid_audio)?;
 
@@ -861,7 +861,7 @@ async fn scans_all_configured_library_roots() -> Result<(), Box<dyn Error + Send
 
     let indexed_paths: Vec<_> = tracks
         .iter()
-        .map(|track| std::fs::canonicalize(Path::new(&track.file_path)))
+        .map(|track| std::fs::canonicalize(Path::new(track.file_path.as_deref().expect("local track path"))))
         .collect::<Result<_, _>>()?;
 
     let first_expected = std::fs::canonicalize(first_audio)?;
@@ -955,7 +955,7 @@ async fn personal_tags_follow_missing_track_repair_without_losing_the_album()
         .await?
         .items
         .into_iter()
-        .find(|t| t.file_path == original.to_string_lossy())
+        .find(|t| t.file_path.as_deref() == Some(original.to_string_lossy().as_ref()))
         .unwrap();
     let tag = test_core.core().create_user_tag("Preservar".into()).await?;
     test_core
@@ -977,7 +977,7 @@ async fn personal_tags_follow_missing_track_repair_without_losing_the_album()
         .await?
         .broken_files
         .into_iter()
-        .find(|t| t.is_missing && t.file_path == track.file_path)
+        .find(|t| t.is_missing && Some(t.file_path.as_str()) == track.file_path.as_deref())
         .unwrap();
     test_core
         .files()
@@ -1014,7 +1014,7 @@ async fn listen_list_survives_rescan_restart_and_missing_local_files() -> Result
     let original = std::fs::canonicalize(original)?;
     let path = test_core.files().library_dir().to_string_lossy().into_owned();
     test_core.core().scan_library(vec![path.clone()]).await?;
-    let track = test_core.core().tracks_page(10, 0).await?.items.into_iter().find(|t| t.file_path == original.to_string_lossy()).unwrap();
+    let track = test_core.core().tracks_page(10, 0).await?.items.into_iter().find(|t| t.file_path.as_deref() == Some(original.to_string_lossy().as_ref())).unwrap();
     let saved = test_core.core().add_release_to_listen_list(track.release_id).await?;
     assert_eq!(test_core.core().add_release_to_listen_list(track.release_id).await?.id, saved.id);
     test_core.core().set_listen_list_heard(saved.id, true).await?;
@@ -1041,7 +1041,7 @@ async fn classification_decisions_survive_rescan_restart_and_explicit_missing_re
     let original=std::fs::canonicalize(original)?;
     let path=test_core.files().library_dir().to_string_lossy().into_owned();
     test_core.core().scan_library(vec![path.clone()]).await?;
-    let track=test_core.core().tracks_page(10,0).await?.items.into_iter().find(|t|t.file_path==original.to_string_lossy()).unwrap();
+    let track=test_core.core().tracks_page(10,0).await?.items.into_iter().find(|t|t.file_path.as_deref()==Some(original.to_string_lossy().as_ref())).unwrap();
     test_core.core().set_classification(T::Release,track.release_id,K::Genre,Some(vec!["Electronic".into()])).await?;
     test_core.core().set_classification(T::Track,track.id,K::Style,Some(vec!["Ambient".into()])).await?;
     test_core.core().scan_library(vec![path.clone()]).await?;
@@ -1051,7 +1051,7 @@ async fn classification_decisions_survive_rescan_restart_and_explicit_missing_re
     test_core.core().scan_library(vec![path.clone()]).await?;
     let test_core=test_core.restart().await?;
     assert_eq!(test_core.core().classification_links(T::Release,track.release_id).await?.len(),1);
-    let missing=test_core.core().analyze_library_repairs().await?.broken_files.into_iter().find(|t|t.is_missing && t.file_path==track.file_path).unwrap();
+    let missing=test_core.core().analyze_library_repairs().await?.broken_files.into_iter().find(|t|t.is_missing && Some(t.file_path.as_str())==track.file_path.as_deref()).unwrap();
     test_core.files().write_silent_wav("Artist/Album/01 - Classified.wav")?;
     test_core.core().scan_library(vec![path]).await?;
     let target=test_core.core().tracks_page(10,0).await?.items.into_iter().find(|t|t.file_path==track.file_path).unwrap();

@@ -1,4 +1,5 @@
-//! Future mixed-queue references; the current persisted/local queue is unchanged.
+//! Provider-neutral queue references. Adopted remote tracks use catalog IDs;
+//! external entries remain a separate contract for future provider playback.
 
 use super::{
     ContractError,

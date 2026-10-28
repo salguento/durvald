@@ -20,7 +20,7 @@ pub(crate) fn create_tables(conn: &Connection) -> rusqlite::Result<()> {
         change_id INTEGER PRIMARY KEY, song_id INTEGER NOT NULL,
         before_payload TEXT NOT NULL, after_payload TEXT NOT NULL,
         before_override INTEGER NOT NULL, write_to_file INTEGER NOT NULL,
-        file_path TEXT NOT NULL, backup_path TEXT, file_hash_after TEXT,
+        file_path TEXT, backup_path TEXT, file_hash_after TEXT,
         status TEXT NOT NULL, error TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
         CREATE INDEX IF NOT EXISTS idx_track_metadata_changes
@@ -184,8 +184,13 @@ pub(crate) fn ensure_cached(conn: &Connection, id: i64) -> CoreResult<()> {
         let current = info(conn, id)?;
         // A disconnected/read-only library can still use database-only edits.
         // File-backed saves will report the actual I/O error later.
-        let metadata = read_editable_tags(&current.track.file_path).unwrap_or(current.metadata);
-        cache_scanned(conn, &current.track.file_path, &metadata).map_err(storage)?;
+        let metadata = current
+            .track
+            .file_path
+            .as_deref()
+            .and_then(|p| read_editable_tags(p).ok())
+            .unwrap_or(current.metadata);
+        conn.execute("INSERT INTO track_metadata_cache(song_id,payload,is_override) VALUES(?1,?2,0) ON CONFLICT(song_id) DO NOTHING",params![id,serde_json::to_string(&metadata).map_err(storage)?]).map_err(storage)?;
     }
     Ok(())
 }
@@ -521,7 +526,14 @@ pub(crate) fn save(
     let mut target = None;
     let result = (|| {
         if write_file {
-            let path = fs::canonicalize(&before.track.file_path).map_err(storage)?;
+            let path = fs::canonicalize(
+                before
+                    .track
+                    .file_path
+                    .as_deref()
+                    .ok_or_else(|| storage("Track has no local file"))?,
+            )
+            .map_err(storage)?;
             if fs::metadata(&path)
                 .map_err(storage)?
                 .permissions()
@@ -569,7 +581,7 @@ pub(crate) fn save(
 }
 
 pub(crate) fn undo(conn: &Connection, id: i64) -> CoreResult<TrackInfo> {
-    let (change_id, payload, is_override, write_file, path, backup, expected_hash): (i64,String,bool,bool,String,Option<String>,Option<String>) = conn.query_row(
+    let (change_id, payload, is_override, write_file, path, backup, expected_hash): (i64,String,bool,bool,Option<String>,Option<String>,Option<String>) = conn.query_row(
         "SELECT change_id,before_payload,before_override,write_to_file,file_path,backup_path,file_hash_after
          FROM track_metadata_changes WHERE song_id=?1 AND status='applied' ORDER BY change_id DESC LIMIT 1",
         [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))).map_err(storage)?;
@@ -577,7 +589,8 @@ pub(crate) fn undo(conn: &Connection, id: i64) -> CoreResult<TrackInfo> {
     let mut rollback = None;
     if write_file {
         let backup = backup.ok_or_else(|| storage("Backup de metadados ausente"))?;
-        let target = fs::canonicalize(path).map_err(storage)?;
+        let target = fs::canonicalize(path.ok_or_else(|| storage("Track has no local file"))?)
+            .map_err(storage)?;
         if expected_hash.as_deref() != Some(file_hash(&target)?.as_str()) {
             return Err(storage(
                 "O arquivo foi alterado fora do Durvald. Desfazer foi bloqueado para preservar essas alterações.",

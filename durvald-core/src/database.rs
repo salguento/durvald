@@ -7,6 +7,7 @@ pub mod models;
 pub mod operations;
 pub(crate) mod replay_description;
 pub(crate) mod retrospective_playlists;
+pub(crate) mod source_catalog;
 
 pub mod identity;
 

@@ -138,7 +138,7 @@ pub struct Track {
     pub track_number: u8,
     pub disc_number: u8,
     pub duration_seconds: f64,
-    pub file_path: String,
+    pub file_path: Option<String>,
     pub artwork_id: Option<String>, // Relative asset identifier
     pub bitrate: Option<u32>,
     pub sample_rate: Option<u32>,
@@ -414,6 +414,8 @@ pub struct PlaylistTrack {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct QueueItem {
+    /// Stable for this insertion, including duplicates, reorder and session restore.
+    pub occurrence_id: String,
     pub track_id: i64,
     pub position: u64,
 }

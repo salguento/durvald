@@ -20,20 +20,24 @@ struct SessionContexts {
     contexts: Vec<String>,
     #[serde(default)]
     collection: Option<StoredCollection>,
+    #[serde(default)]
+    occurrences: Vec<String>,
 }
 
+#[cfg(test)]
 pub(crate) fn encode_contexts(contexts: Vec<String>) -> String {
     serde_json::to_string(&SessionContexts {
         version: 1,
         contexts,
         collection: None,
+        occurrences: Vec::new(),
     })
     .unwrap_or_default()
 }
 
 pub(crate) fn decode_contexts(value: &str) -> Vec<String> {
     match serde_json::from_str::<SessionContexts>(value) {
-        Ok(saved) if saved.version == 1 || saved.version == 2 => saved.contexts,
+        Ok(saved) if (1..=3).contains(&saved.version) => saved.contexts,
         _ if value.starts_with('{') => Vec::new(),
         _ => vec![value.to_string()],
     }
@@ -51,12 +55,14 @@ mod tests {
             contexts
         );
         assert_eq!(decode_contexts("release:8"), vec!["release:8"]);
-        assert!(decode_contexts(r#"{"version":3,"contexts":["release:8"]}"#).is_empty());
+        assert!(decode_contexts(r#"{"version":4,"contexts":["release:8"]}"#).is_empty());
     }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct StoredCollectionItem {
+    #[serde(default)]
+    pub(crate) occurrence_id: String,
     pub(crate) track_id: i64,
     pub(crate) source_context: String,
 }
@@ -68,26 +74,32 @@ pub(crate) struct StoredCollection {
     pub(crate) positions: Vec<Option<usize>>,
 }
 
-pub(crate) fn encode_collection(
-    contexts: Vec<String>,
-    collection: Option<StoredCollection>,
-) -> String {
-    if collection.is_none() {
-        return encode_contexts(contexts);
-    }
-    serde_json::to_string(&SessionContexts {
-        version: 2,
-        contexts,
-        collection,
-    })
-    .unwrap_or_default()
-}
-
 pub(crate) fn decode_collection(value: &str) -> Option<StoredCollection> {
     let saved: SessionContexts = serde_json::from_str(value).ok()?;
-    if saved.version == 2 {
+    if saved.version == 2 || saved.version == 3 {
         saved.collection
     } else {
         None
     }
+}
+
+pub(crate) fn encode_queue(
+    contexts: Vec<String>,
+    collection: Option<StoredCollection>,
+    occurrences: Vec<String>,
+) -> String {
+    serde_json::to_string(&SessionContexts {
+        version: 3,
+        contexts,
+        collection,
+        occurrences,
+    })
+    .unwrap_or_default()
+}
+pub(crate) fn decode_occurrences(value: &str) -> Vec<String> {
+    serde_json::from_str::<SessionContexts>(value)
+        .ok()
+        .filter(|s| s.version == 3)
+        .map(|s| s.occurrences)
+        .unwrap_or_default()
 }

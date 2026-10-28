@@ -340,7 +340,8 @@ struct AlbumView: View {
 
     private var fileQualityText: String {
         let tracksByFormat = Dictionary(grouping: tracks) { track -> String in
-            let fileExtension = URL(fileURLWithPath: track.filePath).pathExtension
+            guard let path = track.filePath else { return "" }
+            let fileExtension = URL(fileURLWithPath: path).pathExtension
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return fileExtension.uppercased()
         }

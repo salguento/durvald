@@ -27,7 +27,7 @@ pub(crate) struct CatalogTrack {
     pub(crate) is_favorite: bool,
     pub(crate) is_hidden: bool,
     pub(crate) suggest_less: bool,
-    pub(crate) file_path: String,
+    pub(crate) file_path: Option<String>,
 }
 
 pub(crate) struct CatalogRelease {

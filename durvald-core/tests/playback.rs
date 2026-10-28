@@ -1905,7 +1905,7 @@ async fn collection_decoder_failure_preserves_previous_queue() -> TestResult<()>
         Some(false),
     )
     .await?;
-    std::fs::remove_file(&tracks[1].file_path)?;
+    std::fs::remove_file(tracks[1].file_path.as_deref().expect("local track path"))?;
     assert!(
         core.play_collection(
             ids.clone(),

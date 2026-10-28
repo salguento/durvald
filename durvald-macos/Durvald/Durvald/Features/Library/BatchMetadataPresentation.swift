@@ -195,7 +195,7 @@ final class BatchMetadataPresentation {
                 let value = try await core.saveTrackMetadata(
                     trackId: info.track.id,
                     metadata: metadata,
-                    writeToFile: writeChangesToFiles
+                    writeToFile: writeChangesToFiles && info.track.filePath != nil
                 )
                 refreshed.append(value)
                 lastOperationTrackIDs.append(info.track.id)
