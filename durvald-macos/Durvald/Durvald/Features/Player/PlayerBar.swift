@@ -14,6 +14,7 @@ struct PlayerBar: View {
     @State private var isProgressHovered = false
     @State private var availableWidth: CGFloat = 360
     @State private var lyricsTrack: Track?
+    @State private var showPlaybackSources = false
     private var isNarrow: Bool { availableWidth < 600 }
 
     let onSelectAlbum: (Release) -> Void
@@ -21,6 +22,16 @@ struct PlayerBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let source = store.embeddedPlayer.sourceStatus, store.playback?.currentTrack != nil {
+                HStack(spacing: 8) {
+                    Button { showPlaybackSources = true } label: {
+                        Label(source.provider == "local" ? "Arquivo local" : source.provider == "youtube" ? "YouTube" : source.provider == "soundcloud" ? "SoundCloud" : "Origem indisponível", systemImage: "waveform")
+                    }.buttonStyle(.plain).help("Ver origem ativa, preferência e diagnóstico")
+                    if source.sourceId != nil && source.sourceId == source.preferredSourceId { Text("Preferida").foregroundStyle(.secondary) }
+                    else if source.preferredSourceId != nil { Text("Preferência salva em outra origem").foregroundStyle(.secondary) }
+                    Spacer()
+                }.font(.caption2).padding(.bottom, 4).accessibilityIdentifier("player.source")
+            }
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 16) {
                     trackInformation
@@ -64,6 +75,9 @@ struct PlayerBar: View {
             .regular,
             in: .rect(cornerRadius: 20)
         )
+        .sheet(isPresented: $showPlaybackSources) {
+            if let track = store.playback?.currentTrack { SourceManagementView(entry: .sourceEntry(track)) }
+        }
         .onGeometryChange(for: CGFloat.self) { geometry in
             geometry.size.width
         } action: { availableWidth = $0 }

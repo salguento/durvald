@@ -1,5 +1,9 @@
 # Play no hover e reprodução da coleção de origem
 
+> Evolução na etapa 14: histórico por origem/tentativa, sessão remota recuperável
+> e navegação unificada da fila mista foram consolidados. Veja
+> [Histórico e sessão consolidados](consolidated-playback.md).
+
 Implementado em 19/10/2026 no core e no cliente macOS.
 
 ## Comportamento

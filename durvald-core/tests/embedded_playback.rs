@@ -273,7 +273,9 @@ async fn actual_observed_duration_is_recorded_once_and_finish_advances_to_local(
     );
     let history = app.core().playback_history_page(20, 0).await?;
     assert_eq!(history.items.len(), 1);
-    assert_eq!(history.items[0].duration_seconds, 2);
+    assert_eq!(history.items[0].duration_seconds, 1);
+    assert_eq!(history.items[0].effective_duration_seconds, Some(2));
+    assert_eq!(history.items[0].source_id, Some(source.source_id));
     Ok(())
 }
 #[tokio::test]

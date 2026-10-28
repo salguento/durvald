@@ -305,6 +305,9 @@ mod tests {
             let after = rows(&c, t);
             if *t == "track_sources" {
                 assert_eq!(before[i][0], after[0][..11]);
+            } else if *t == "play_history" {
+                assert_eq!(before[i][0],after[0][..4]);
+                assert!(after[0][4..].iter().all(|v| *v == Value::Null));
             } else {
                 assert_eq!(before[i], after, "{t}");
             }

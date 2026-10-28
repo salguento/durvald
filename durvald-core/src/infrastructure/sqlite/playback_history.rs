@@ -66,17 +66,23 @@ impl SqlitePlaybackHistoryRepository {
     pub(crate) async fn record_completed(
         &self,
         track_id: TrackId,
-        duration_seconds: u64,
+        source_id: Option<i64>,
+        session_id: String,
+        heard_seconds: u64,
+        effective_duration_seconds: u64,
     ) -> Result<bool, String> {
         self.run(move |conn| {
-            crate::database::operations::record_completed_playback(
-                conn,
-                track_id.get(),
-                duration_seconds,
-            )
-            .map_err(|error| error.to_string())
-        })
-        .await
+            let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+            let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM songs WHERE song_id=?1)", [track_id.get()], |r| r.get(0)).map_err(|e| e.to_string())?;
+            if !exists { return Ok(false); }
+            let inserted = tx.execute("INSERT OR IGNORE INTO playback_completion_receipts(session_id,song_id) VALUES(?1,?2)", rusqlite::params![session_id,track_id.get()]).map_err(|e|e.to_string())?;
+            if inserted == 0 { return Ok(false); }
+            let source_id = if let Some(id) = source_id { tx.query_row("SELECT source_id FROM track_sources WHERE source_id=?1 AND song_id=?2",rusqlite::params![id,track_id.get()],|r|r.get::<_,i64>(0)).ok() } else { None };
+            tx.execute("INSERT INTO play_history(song_id,played_at,play_duration,source_id,effective_duration_seconds,session_id) VALUES(?1,?2,?3,?4,?5,?6)",rusqlite::params![track_id.get(),chrono::Utc::now().to_rfc3339(),heard_seconds,source_id,effective_duration_seconds,session_id]).map_err(|e|e.to_string())?;
+            tx.execute("UPDATE songs SET play_count=play_count+1,last_played=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE song_id=?1",[track_id.get()]).map_err(|e|e.to_string())?;
+            tx.commit().map_err(|e|e.to_string())?;
+            Ok(true)
+        }).await
     }
 
     async fn run<T, F>(&self, operation: F) -> Result<T, String>
@@ -96,9 +102,19 @@ impl SqlitePlaybackHistoryRepository {
 
 fn entry_from_row(row: crate::database::models::PlayHistory) -> PlaybackHistoryEntry {
     PlaybackHistoryEntry {
+        source_id: row.source_id,
+        effective_duration_seconds: row.effective_duration_seconds,
         id: PlaybackHistoryId::from_persisted(row.history_id),
         track_id: TrackId::from_persisted(row.song_id),
         played_at: row.played_at,
         duration_seconds: row.duration,
     }
 }
+
+pub(crate) const SCHEMA: &str = r#"
+ALTER TABLE play_history ADD COLUMN source_id INTEGER;
+ALTER TABLE play_history ADD COLUMN effective_duration_seconds INTEGER;
+ALTER TABLE play_history ADD COLUMN session_id TEXT;
+CREATE UNIQUE INDEX play_history_session ON play_history(session_id) WHERE session_id IS NOT NULL;
+CREATE TABLE playback_completion_receipts(session_id TEXT PRIMARY KEY,song_id INTEGER NOT NULL REFERENCES songs(song_id) ON DELETE CASCADE);
+"#;

@@ -69,6 +69,7 @@ struct SourceManagementView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
                                 Text(source.provider == "local" ? "Arquivo local" : source.provider).font(.headline)
+                                if source.sourceId == presentation.activeSourceID { Label("Em uso", systemImage: "speaker.wave.2.fill").font(.caption) }
                                 if source.preferred { Label("Preferida", systemImage: "star.fill").font(.caption) }
                                 Spacer()
                                 Toggle("Ativa", isOn: Binding(get: { source.enabled }, set: { value in Task { await presentation.enabled(source, value: value) } })).toggleStyle(.checkbox)

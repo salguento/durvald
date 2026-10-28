@@ -202,6 +202,7 @@ impl PlaybackApplication {
     }
     pub(super) async fn source_selected(&self, source: &TrackSource, fallback: bool) {
         *self.source_status.lock().await = Some(PlaybackSourceStatus {
+            preferred_source_id: None,
             source_id: Some(source.source_id),
             provider: source.provider.clone(),
             message: fallback.then(|| {
@@ -219,7 +220,23 @@ impl PlaybackApplication {
         });
     }
     pub(crate) async fn playback_source_status(&self) -> Option<PlaybackSourceStatus> {
-        self.source_status.lock().await.clone()
+        let current = self.audio_player.lock().await.get_current_song_id();
+        let Some(track) = current else {
+            return self.source_status.lock().await.clone();
+        };
+        let sources = self.track_query.sources(track).await.unwrap_or_default();
+        let preferred = sources.iter().find(|s| s.preferred).map(|s| s.source_id);
+        let mut status = self.source_status.lock().await.clone();
+        if status.is_none() {
+            if let Some(a) = self.restored_attempt.lock().await.as_ref() {
+                let source = sources.iter().find(|s| Some(s.source_id) == a.source_id);
+                status=Some(PlaybackSourceStatus{source_id:a.source_id,preferred_source_id:preferred,provider:source.map(|s|s.provider.clone()).unwrap_or_else(||"unavailable".into()),message:Some("Sessão restaurada e pausada. A origem será verificada ao retomar; a fila foi preservada.".into())});
+            }
+        }
+        if let Some(s) = status.as_mut() {
+            s.preferred_source_id = preferred;
+        }
+        status
     }
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn start_embedded_selection_locked(
@@ -275,7 +292,9 @@ impl PlaybackApplication {
                     player.set_current_occurrence(previous.occurrence.clone());
                     drop(player);
                     self.source_selected(&source, true).await;
+                    self.begin_native_attempt(previous.stored_attempt()).await;
                     self.persist_session().await?;
+                    self.wake_automatic_coordination();
                     self.report_track_started(track_id).await;
                     return Ok(true);
                 }
@@ -294,6 +313,9 @@ impl PlaybackApplication {
                         .await
                         .is_ok()
                     {
+                        if let Some(s) = self.embedded.lock().await.as_mut() {
+                            s.logical_id = previous.logical_id.clone();
+                        }
                         return Ok(true);
                     }
                 }

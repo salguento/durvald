@@ -57,6 +57,8 @@ pub(super) struct EmbeddedStart {
 }
 #[derive(Clone)]
 pub(super) struct EmbeddedSession {
+    pub logical_id: String,
+    pub resume_position: Option<f64>,
     pub snapshot: EmbeddedPlaybackSnapshot,
     pub track: Option<Track>,
     pub entry: CatalogEntry,
@@ -74,6 +76,39 @@ pub(super) struct EmbeddedSession {
     last_event: Instant,
     last_progress: Instant,
 }
+impl EmbeddedSession {
+    pub(super) fn position(&self) -> f64 {
+        self.position
+    }
+    pub(super) fn stored_attempt(&self) -> Option<crate::domain::playback_session::StoredAttempt> {
+        Some(crate::domain::playback_session::StoredAttempt {
+            id: self.logical_id.clone(),
+            track_id: self.snapshot.track_id?,
+            occurrence_id: self.occurrence.clone(),
+            source_id: self.snapshot.source_id,
+            exclusive: false,
+            heard_seconds: self.heard,
+            duration_seconds: self.duration,
+            history_allowed: self.history_allowed,
+        })
+    }
+    pub(super) fn restore_attempt(
+        &mut self,
+        a: crate::domain::playback_session::StoredAttempt,
+        position: f64,
+    ) {
+        if a.source_id == self.snapshot.source_id || a.heard_seconds == 0.0 {
+            self.logical_id = a.id;
+            self.heard = a.heard_seconds;
+        }
+        if a.source_id == self.snapshot.source_id {
+            self.history_allowed &= a.history_allowed;
+            self.resume_position = (position > 0.0
+                && a.duration_seconds.is_none_or(|d| position < d))
+            .then_some(position);
+        }
+    }
+}
 impl PlaybackApplication {
     pub(crate) async fn set_embedded_host(
         &self,
@@ -82,13 +117,13 @@ impl PlaybackApplication {
         let _transition = self.playback_transition.lock().await;
         self.stop_embedded_locked().await?;
         *self.embedded_host.lock().await = Some(EmbeddedHostDispatcher::new(host));
-        Ok(())
+        self.persist_session().await
     }
     pub(crate) async fn detach_embedded_host(&self) -> CoreResult<()> {
         let _transition = self.playback_transition.lock().await;
         self.stop_embedded_locked().await?;
         *self.embedded_host.lock().await = None;
-        Ok(())
+        self.persist_session().await
     }
     async fn deliver_embedded(&self, command: EmbeddedPlaybackCommand) -> CoreResult<()> {
         let host =
@@ -123,6 +158,21 @@ impl PlaybackApplication {
         else {
             return Err(failure("Esta origem não oferece player integrado."));
         };
+        let (occurrence, context) = {
+            let p = self.audio_player.lock().await;
+            if p.get_current_song_id() == Some(track_id) {
+                (
+                    p.queue_occurrences()
+                        .first()
+                        .map(|i| i.1.clone())
+                        .unwrap_or_else(crate::audio::player::new_occurrence_id),
+                    p.source_context().to_owned(),
+                )
+            } else {
+                (crate::audio::player::new_occurrence_id(), String::new())
+            }
+        };
+        *self.source_override.lock().await = Some((occurrence.clone(), source_id));
         self.source_selected(&selected, false).await;
         self.begin_embedded_locked(EmbeddedStart {
             entry: super::playback_sources::track_entry(&track),
@@ -131,8 +181,8 @@ impl PlaybackApplication {
             source_id: Some(source_id),
             url,
             remaining: vec![],
-            context: String::new(),
-            occurrence: None,
+            context,
+            occurrence: Some(occurrence),
         })
         .await?;
         Ok(self.playback().await)
@@ -142,13 +192,23 @@ impl PlaybackApplication {
             return Err(failure("This platform has no visible embedded player"));
         }
         self.stop_embedded_locked().await?;
+        let generation = crate::audio::player::new_occurrence_id();
+        let occurrence = start
+            .occurrence
+            .clone()
+            .unwrap_or_else(|| generation.clone());
         self.audio_player
             .lock()
             .await
-            .stop_for_embedded()
+            .begin_external(
+                start.track.as_ref().map(|t| t.id),
+                occurrence.clone(),
+                start.context.clone(),
+            )
             .map_err(|e| failure(&e.to_string()))?;
+        *self.native_attempt.lock().await = None;
+        *self.restored_attempt.lock().await = None;
         self.clear_lastfm_tracking().await;
-        let generation = crate::audio::player::new_occurrence_id();
         let preview_only = self.track_query.known_preview(start.url.clone()).await?
             || if let (Some(track), Some(source)) = (start.track.as_ref(), start.source_id) {
                 self.track_query
@@ -175,12 +235,14 @@ impl PlaybackApplication {
         };
         let url = start.url.clone();
         *self.embedded.lock().await = Some(EmbeddedSession {
+            logical_id: crate::audio::player::new_occurrence_id(),
+            resume_position: None,
             snapshot,
             track: start.track,
             entry: start.entry,
             candidate: start.candidate,
             url: start.url,
-            occurrence: start.occurrence.unwrap_or_else(|| generation.clone()),
+            occurrence,
             remaining: start.remaining,
             context: start.context,
             started: false,
@@ -216,6 +278,7 @@ impl PlaybackApplication {
         let _transition = self.playback_transition.lock().await;
         let url = self.resolve_embedded(&candidate.canonical_url).await?;
         *self.source_status.lock().await = Some(PlaybackSourceStatus {
+            preferred_source_id: None,
             source_id: None,
             provider: entry.reference.provider.clone(),
             message: Some(
@@ -287,19 +350,45 @@ impl PlaybackApplication {
             s.track = Some(track);
             s.candidate = None;
         }
+        if let Some(s) = self.embedded.lock().await.as_ref() {
+            self.audio_player
+                .lock()
+                .await
+                .begin_external(
+                    Some(saved.track_id),
+                    s.occurrence.clone(),
+                    s.context.clone(),
+                )
+                .map_err(|e| failure(&e.to_string()))?;
+        }
         self.source_selected(&saved, false).await;
+        self.persist_session().await?;
         Ok(saved)
     }
     pub(super) async fn stop_embedded_locked(&self) -> CoreResult<()> {
         let current = self.embedded.lock().await.clone();
         if let Some(s) = current {
             self.deliver_embedded(EmbeddedPlaybackCommand {
-                generation: s.snapshot.generation,
+                generation: s.snapshot.generation.clone(),
                 kind: EmbeddedCommandKind::Stop,
                 url: None,
                 value: 0.0,
             })
             .await?;
+            self.audio_player
+                .lock()
+                .await
+                .park_external_position(s.position);
+            let mut attempt = s.stored_attempt();
+            if let Some(a) = attempt.as_mut() {
+                a.exclusive = self
+                    .source_override
+                    .lock()
+                    .await
+                    .as_ref()
+                    .is_some_and(|(id, _)| id == &a.occurrence_id);
+            }
+            *self.restored_attempt.lock().await = attempt;
             *self.embedded.lock().await = None;
         }
         Ok(())
@@ -329,7 +418,7 @@ impl PlaybackApplication {
             EmbeddedPlaybackState::Ended | EmbeddedPlaybackState::Failed
         ) {
             self.deliver_embedded(EmbeddedPlaybackCommand {
-                generation: s.snapshot.generation,
+                generation: s.snapshot.generation.clone(),
                 kind,
                 url: None,
                 value,
@@ -352,7 +441,6 @@ impl PlaybackApplication {
         s.position = 0.0;
         s.duration = None;
         s.sequence = 0;
-        s.heard = 0.0;
         s.started = false;
         s.remaining.clear();
         s.last_event = Instant::now();
@@ -421,6 +509,7 @@ impl PlaybackApplication {
         }
         let _transition = self.playback_transition.lock().await;
         let mut finished = None;
+        let mut restore_seek = None;
         {
             let mut state = self.embedded.lock().await;
             let Some(s) = state.as_mut() else {
@@ -460,6 +549,14 @@ impl PlaybackApplication {
             match event.kind {
                 EmbeddedEventKind::Ready => {
                     s.snapshot.seek_available = s.duration.is_some();
+                    if let Some(target) = s
+                        .resume_position
+                        .take()
+                        .zip(s.duration)
+                        .map(|(p, d)| p.min(d))
+                    {
+                        restore_seek = Some((s.snapshot.generation.clone(), target));
+                    }
                 }
                 EmbeddedEventKind::Playing => {
                     s.snapshot.state = EmbeddedPlaybackState::Playing;
@@ -472,20 +569,11 @@ impl PlaybackApplication {
                 }
                 EmbeddedEventKind::Ended => {
                     s.snapshot.state = EmbeddedPlaybackState::Ended;
-                    if let Some(d) = s
-                        .duration
-                        .filter(|d| *d >= 1.0 && s.heard >= (d / 2.0).min(240.0))
-                    {
-                        finished = s
-                            .snapshot
-                            .track_id
-                            .filter(|_| s.history_allowed)
-                            .map(|id| (id, d as u64));
-                    }
+                    finished = s.stored_attempt();
                 }
                 EmbeddedEventKind::Failed => {
                     s.snapshot.state = EmbeddedPlaybackState::Failed;
-                    s.snapshot.message = Some("O serviço não conseguiu reproduzir esta faixa. Confira o acesso no SoundCloud.".into());
+                    s.snapshot.message = Some("O serviço não conseguiu reproduzir esta faixa. Confira o acesso no serviço.".into());
                 }
                 _ => {}
             }
@@ -495,36 +583,38 @@ impl PlaybackApplication {
                 .await;
             self.fallback_before_audio_locked().await?;
         }
-        if let Some((id, duration)) = finished {
-            self.history_repository
-                .record_completed(
-                    crate::domain::ids::TrackId::try_from(id)
-                        .map_err(|_| failure("Invalid track"))?,
-                    duration,
-                )
-                .await
-                .map_err(|message| CoreError::Storage { message })?;
+        if let Some((generation, target)) = restore_seek {
+            self.deliver_embedded(EmbeddedPlaybackCommand {
+                generation,
+                kind: EmbeddedCommandKind::Seek,
+                url: None,
+                value: target,
+            })
+            .await?;
+        }
+        if let Some(attempt) = finished {
+            self.record_attempt(&attempt).await?;
         }
         if event.kind == EmbeddedEventKind::Ended {
-            // Completion is terminal before history/advance, making repeated FINISH idempotent.
-            let mode = self.audio_player.lock().await.repeat_mode();
-            let queued = !self.audio_player.lock().await.get_queue().is_empty();
-            if mode == RepeatMode::One || (mode == RepeatMode::All && !queued) {
-                let current = self.embedded.lock().await.clone();
-                if let Some(s) = current {
-                    self.restart_embedded_locked(s).await?;
-                }
-            } else if queued {
-                let plan = self.audio_player.lock().await.plan_next();
-                if let Some(plan) = plan {
-                    if self.commit_navigation_plan(plan).await.is_err() {
-                        if let Some(s) = self.embedded.lock().await.as_mut() {
-                            s.snapshot.message = Some("A próxima faixa não possui uma origem local disponível. Escolha uma origem para continuar.".into());
-                        }
+            // The canonical queue owns repeat/shuffle/duplicates for every transport.
+            let plan = self.audio_player.lock().await.plan_next();
+            if let Some(plan) = plan {
+                if self.commit_navigation_plan(plan).await.is_err() {
+                    if let Some(s) = self.embedded.lock().await.as_mut() {
+                        s.snapshot.message=Some("A próxima origem está indisponível. A fila foi preservada para nova tentativa.".into());
                     }
                 }
             }
+            self.persist_session().await?;
+        } else if matches!(
+            event.kind,
+            EmbeddedEventKind::Paused | EmbeddedEventKind::Seeked | EmbeddedEventKind::Failed
+        ) {
+            self.persist_session().await?;
+        } else if event.kind == EmbeddedEventKind::Progress {
+            self.persist_active_progress().await;
         }
+
         Ok(())
     }
     pub(super) async fn next_from_embedded(&self) -> CoreResult<PlaybackSnapshot> {
@@ -534,7 +624,7 @@ impl PlaybackApplication {
             .lock()
             .await
             .plan_next()
-            .ok_or_else(|| failure("No upcoming local track"))?;
+            .ok_or_else(|| failure("Nenhuma próxima faixa na fila"))?;
         self.commit_navigation_plan(plan).await
     }
     pub(super) async fn check_embedded_timeout_locked(&self) {

@@ -1,0 +1,113 @@
+{
+  "stage": 14,
+  "date": "2026-10-28",
+  "base_commit": "ab2cd4d",
+  "core_version": "0.1.0",
+  "migration": {
+    "version": 26,
+    "history_columns": [
+      "source_id",
+      "effective_duration_seconds",
+      "session_id"
+    ],
+    "receipt_table": "playback_completion_receipts",
+    "legacy_rows": "existing values preserved; new fields NULL; legacy reads supported",
+    "completion_transaction": [
+      "unique logical attempt receipt",
+      "history row",
+      "play count",
+      "last played"
+    ]
+  },
+  "session": {
+    "envelope_version": 4,
+    "reads_versions": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "stores": [
+      "canonical track and source IDs",
+      "exclusive source choice",
+      "logical attempt identity",
+      "observed listening evidence",
+      "current position",
+      "queue occurrence IDs and contexts",
+      "frozen collection and exclusions",
+      "previous navigation"
+    ],
+    "restore": "paused, no network until explicit resume; fresh source validation/resolution; SDK seek after Ready",
+    "unavailable_collection_members": "preserve recoverable IDs/occurrences/contexts and previous navigation; discard invalid full-cycle reconstruction",
+    "progress_checkpoint_seconds": 1,
+    "never_stores": [
+      "resolved media URL",
+      "cookies",
+      "authorization headers",
+      "host generation"
+    ]
+  },
+  "history": {
+    "duration": "effective decoded/SDK duration; canonical metadata unchanged",
+    "listening_time": "observed renderer clock or SDK advancing time; rounded seconds",
+    "eligibility": "natural end; observed duration at least 1 second; heard at least min(duration/2,240 seconds); known preview excluded",
+    "retry": "same logical attempt; durable receipt prevents duplicate play/history, including after history deletion and restart",
+    "repeat": "new logical attempt per completed repeat cycle",
+    "source_changes_on_restore": "before audio only; reset position/evidence when changing origin; no union of versions"
+  },
+  "native_clock": {
+    "implementation": "per-voice accumulated advancing renderer position, excluding pending seek discontinuities and successor priming",
+    "callback": "scalar state and atomic publication; no new allocations or database access in audio callback"
+  },
+  "interface": [
+    "active source and saved preference distinguished",
+    "source management marks source in use",
+    "fallback/restored-session diagnostics",
+    "history shows observed listening time and media duration",
+    "Replay uses observed duration; remote tracks remain eligible for smart playlists and statistics"
+  ],
+  "validation": {
+    "rust": {
+      "passed": 538,
+      "failed": 0,
+      "ignored_external": 4,
+      "command": "cargo test --manifest-path durvald-core/Cargo.toml --all-features"
+    },
+    "macos": {
+      "passed": 435,
+      "failed": 0,
+      "skipped_external": 5,
+      "selection": "DurvaldTests"
+    },
+    "clippy": "all targets/features; warnings denied; passed",
+    "uniffi_smoke": "passed",
+    "generated_sources_release_embedded_and_tested_app_libraries_match": true,
+    "new_end_to_end_cases": [
+      "mixed collection repeat/shuffle/previous with duplicate occurrences and stable contexts",
+      "offline paused remote restore; source disable; seek only after Ready",
+      "logical retry receipt survives deletion/restart; repeat creates another play",
+      "last native track records without a successor; seek does not create a play",
+      "legacy history preserved; missing collection member; previous after restart",
+      "pre-audio fallback from known preview to actual local origin; saved preference preserved"
+    ],
+    "external_network": "No live service requests needed for this stage. Host protocol fixtures, local SQLite and real WAV decoding/rendering; external smokes skipped by default."
+  },
+  "limits": [
+    "active progress may lose the last unflushed interval on abrupt termination",
+    "fallback during audio/union of segments remains a separate increment",
+    "remote scrobbling not expanded; official player capabilities remain as documented in stage 13"
+  ],
+  "sha256": {
+    "durvald-core/src/application/playback.rs": "21f4612200a0d0ebebdf3f0c1080a474fb2ea798016a75a5a57de38641b6833f",
+    "durvald-core/src/application/playback_attempts.rs": "f02bcb6ac5c278be32b6dae750ba0f32b2d734373b7f20e7e17d5a775f0de99a",
+    "durvald-core/src/application/playback_embedded.rs": "1dd65f01ab1cdba4363d1a0d44adccf7393e52c8741cbe54cc840ae6b7ff1a44",
+    "durvald-core/src/audio/gapless.rs": "3b0182b07c6f7a50c802d8cc48a3676f4655bc4b51981fb2cc6077115597daad",
+    "durvald-core/src/domain/playback_session.rs": "7009c7aa6a37f51bcebdbfbda53de2b52bf11655f071d259b3cc6751a94ab39c",
+    "durvald-core/src/infrastructure/sqlite/playback_history.rs": "0845ceb260e3c355ab60a06852698af7fb3134db1d3f4c2196228b9df8cefadc",
+    "durvald-core/tests/consolidated_playback.rs": "f0ebdacc80a970b1c8799accb72e87ec388bb42422a217c8d9953bb06e4f5b11",
+    "durvald-macos/Durvald/DurvaldTests/ConsolidatedPlaybackTests.swift": "11fd178b4ed702b877917d7efb342427befbdf35f4047865a9ceb9e5931c24cf",
+    "durvald-macos/Durvald/Durvald/CoreBridge/PlaybackHistoryCompatibility.swift": "3455892061f0869780be215c28f1583eb5d45017b926540de10c5ed0a5b2e431",
+    "durvald-macos/Durvald/Generated/arm64/durvald_core.swift": "7b95c61837e5c395d6524a48575df8b44a4e46370bf2dd3023c6ff8b8b9e65b4",
+    "durvald-macos/Durvald/Frameworks/libdurvald_core.dylib": "e1f09e05845e332e614ff90402bf727e6d675e67c158b6bbfca6e54883366ba5"
+  }
+}

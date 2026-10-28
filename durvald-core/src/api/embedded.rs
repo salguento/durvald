@@ -71,6 +71,8 @@ pub struct EmbeddedPlaybackSnapshot {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PlaybackSourceStatus {
+    #[serde(default)]
+    pub preferred_source_id: Option<i64>,
     pub source_id: Option<i64>,
     pub provider: String,
     pub message: Option<String>,

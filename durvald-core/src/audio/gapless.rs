@@ -28,11 +28,15 @@ pub(super) struct Voice {
     prefix_frames: usize,
     sample_rate: u32,
     priming: bool,
+    listening: bool,
+    listen_position: f64,
+    pending_seek: Option<(f64, f64)>,
 }
 
 struct Control {
     state: AtomicU64,
     position: AtomicU64,
+    listened: AtomicU64,
     volume: AtomicU64,
     seek: AtomicU64,
     action: AtomicU64,
@@ -56,6 +60,9 @@ impl StreamHandle {
             5 => PlaybackState::Stopping,
             _ => PlaybackState::Stopped,
         }
+    }
+    pub fn listened_seconds(&self) -> f64 {
+        f64::from_bits(self.control.listened.load(Ordering::Acquire))
     }
     pub fn position(&self) -> f64 {
         f64::from_bits(self.control.position.load(Ordering::Acquire))
@@ -104,6 +111,7 @@ impl Voice {
         let control = Arc::new(Control {
             state: AtomicU64::new(0),
             position: AtomicU64::new(initial_position.to_bits()),
+            listened: AtomicU64::new(0.0_f64.to_bits()),
             volume: AtomicU64::new(f64::NAN.to_bits()),
             seek: AtomicU64::new(f64::NAN.to_bits()),
             action: AtomicU64::new(0),
@@ -121,6 +129,9 @@ impl Voice {
                 prefix_frames,
                 sample_rate,
                 priming: false,
+                listening: false,
+                listen_position: 0.0,
+                pending_seek: None,
             },
             StreamHandle { control },
         ))
@@ -140,7 +151,8 @@ impl Voice {
         }
         let seek = f64::from_bits(self.control.seek.swap(f64::NAN.to_bits(), Ordering::AcqRel));
         if seek.is_finite() {
-            self.handle.seek_to(seek);
+            self.handle
+                .seek_to(seek + self.prefix_frames as f64 / self.sample_rate as f64);
         }
         match self.control.action.swap(0, Ordering::AcqRel) {
             1 => self.handle.pause(immediate),
@@ -154,7 +166,37 @@ impl Voice {
             _ => {}
         }
         self.sound.on_start_processing();
+        self.account_listening(seek.is_finite().then_some(seek));
         self.publish();
+    }
+    fn account_listening(&mut self, seek: Option<f64>) {
+        let position = self.position();
+        if let Some(target) = seek {
+            self.pending_seek = Some((target, self.listen_position));
+        }
+        if let Some((target, from)) = self.pending_seek {
+            // Kira acknowledges a seek on a later processing block. Do not count
+            // the discontinuity before its new clock is observed.
+            let settled = if target >= from {
+                position >= target
+            } else {
+                position < from
+            };
+            if !settled {
+                self.listen_position = position;
+                return;
+            }
+            self.listen_position = target;
+            self.pending_seek = None;
+        }
+        if self.listening {
+            let heard = f64::from_bits(self.control.listened.load(Ordering::Relaxed));
+            self.control.listened.store(
+                (heard + (position - self.listen_position).max(0.0)).to_bits(),
+                Ordering::Release,
+            );
+        }
+        self.listen_position = position;
     }
     fn publish(&self) {
         self.control
@@ -176,6 +218,9 @@ impl Voice {
         self.publish();
     }
     fn activate(&mut self) {
+        self.listening = true;
+        self.pending_seek = None;
+        self.listen_position = self.position();
         let volume = f64::from_bits(self.control.target_volume.load(Ordering::Acquire));
         self.handle.set_volume(
             volume as f32,
@@ -249,7 +294,9 @@ impl GaplessData {
         Self::with_analyzer(first, Arc::new(AtomicBool::new(false)))
     }
 
-    pub fn with_analyzer(first: Voice, analyzer_enabled: Arc<AtomicBool>) -> Self {
+    pub fn with_analyzer(mut first: Voice, analyzer_enabled: Arc<AtomicBool>) -> Self {
+        first.listening = true;
+        first.listen_position = first.position();
         let (incoming, receiver) = RingBuffer::new(4);
         let (retired, collector) = RingBuffer::new(8);
         let (analyzer, samples) = RingBuffer::new(2048);

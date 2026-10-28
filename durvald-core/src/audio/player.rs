@@ -67,6 +67,12 @@ pub(crate) enum PlaybackPlan {
     },
 }
 
+impl PreparedSound {
+    pub(crate) fn duration_seconds(&self) -> f64 {
+        self.duration.as_secs_f64()
+    }
+}
+
 struct ScheduledNext {
     plan: PlaybackPlan,
     sound: SoundHandle,
@@ -185,7 +191,7 @@ pub struct AudioPlayer {
     gapless: Option<Transport>,
     scheduled_next: Option<ScheduledNext>,
     next_token: u64,
-    completed_transitions: VecDeque<(Option<i64>, i64)>,
+    completed_transitions: VecDeque<(Option<i64>, i64, f64)>,
     current_tail: Vec<kira::Frame>,
     current_sample_rate: u32,
     preferred_output_device_id: Option<String>,
@@ -761,11 +767,46 @@ impl AudioPlayer {
         Ok(())
     }
 
+    pub(crate) fn current_media_path(&self) -> Option<String> {
+        self.activated_next()
+            .map(|n| n.path.clone())
+            .or(self.current_path.clone())
+    }
+    pub(crate) fn park_external_position(&mut self, position: f64) {
+        self.paused_position = Some(position);
+    }
     pub(crate) fn set_current_occurrence(&mut self, occurrence: String) {
         self.current_occurrence_id = Some(occurrence);
     }
+    /// Park a canonical occurrence while the platform owns the audio transport.
+    pub(crate) fn begin_external(
+        &mut self,
+        track: Option<i64>,
+        occurrence: String,
+        context: String,
+    ) -> Result<(), AudioError> {
+        let position = (self.current_occurrence_id.as_deref() == Some(&occurrence))
+            .then_some(self.current_collection_position)
+            .flatten();
+        self.stop_for_embedded()?;
+        self.current_song_id = track;
+        self.current_occurrence_id = track.map(|_| occurrence);
+        self.current_source_context = context;
+        self.current_collection_position = position;
+        Ok(())
+    }
     pub(crate) fn commit_external_plan(&mut self, plan: PlaybackPlan) -> Result<(), AudioError> {
-        let previous = self.current_song_id.map(|song_id| QueueItem {
+        let previous = self.current_item();
+        let id = plan.song_id();
+        let occurrence = plan.occurrence_id().to_owned();
+        self.stop_for_embedded()?;
+        self.apply_queue_plan(plan, previous)?;
+        self.current_song_id = Some(id);
+        self.current_occurrence_id = Some(occurrence);
+        Ok(())
+    }
+    fn current_item(&self) -> Option<QueueItem> {
+        self.current_song_id.map(|song_id| QueueItem {
             song_id,
             path: self.current_path.clone(),
             occurrence_id: self
@@ -774,9 +815,7 @@ impl AudioPlayer {
                 .unwrap_or_else(new_occurrence_id),
             source_context: self.current_source_context.clone(),
             collection_position: self.current_collection_position,
-        });
-        self.stop_for_embedded()?;
-        self.apply_queue_plan(plan, previous)
+        })
     }
 
     pub fn stop(&mut self) {
@@ -980,6 +1019,45 @@ impl AudioPlayer {
         })
     }
 
+    pub(crate) fn stored_navigation(
+        &self,
+    ) -> Vec<crate::domain::playback_session::StoredNavigationItem> {
+        self.history
+            .iter()
+            .map(|q| crate::domain::playback_session::StoredNavigationItem {
+                track_id: q.song_id,
+                occurrence_id: q.occurrence_id.clone(),
+                source_context: q.source_context.clone(),
+                collection_position: q.collection_position,
+            })
+            .collect()
+    }
+    pub(crate) fn restore_navigation(
+        &mut self,
+        items: Vec<crate::domain::playback_session::StoredNavigationItem>,
+    ) {
+        self.history = items
+            .into_iter()
+            .filter(|q| {
+                !q.occurrence_id.is_empty()
+                    && q.source_context.len() <= 2048
+                    && !q.source_context.chars().any(char::is_control)
+            })
+            .map(|q| QueueItem {
+                song_id: q.track_id,
+                occurrence_id: q.occurrence_id,
+                path: None,
+                source_context: q.source_context,
+                collection_position: q.collection_position.filter(|i| {
+                    self.source_collection.as_ref().is_some_and(|c| {
+                        c.items
+                            .get(*i)
+                            .is_some_and(|item| item.song_id == q.track_id)
+                    })
+                }),
+            })
+            .collect();
+    }
     pub(crate) fn restore_collection(
         &mut self,
         saved: crate::domain::playback_session::StoredCollection,
@@ -1087,21 +1165,7 @@ impl AudioPlayer {
 
     pub(crate) fn plan_next(&self) -> Option<PlaybackPlan> {
         if self.repeat_mode == RepeatMode::One {
-            return self
-                .current_song_id
-                .zip(self.current_path.clone())
-                .map(|(song_id, path)| {
-                    PlaybackPlan::RepeatCurrent(QueueItem {
-                        occurrence_id: self
-                            .current_occurrence_id
-                            .clone()
-                            .unwrap_or_else(new_occurrence_id),
-                        song_id,
-                        path: Some(path),
-                        source_context: self.current_source_context.clone(),
-                        collection_position: self.current_collection_position,
-                    })
-                });
+            return self.current_item().map(PlaybackPlan::RepeatCurrent);
         }
 
         if !self.queue.is_empty() {
@@ -1136,20 +1200,7 @@ impl AudioPlayer {
                 .history
                 .front()
                 .cloned()
-                .or_else(|| {
-                    self.current_song_id
-                        .zip(self.current_path.clone())
-                        .map(|(song_id, path)| QueueItem {
-                            occurrence_id: self
-                                .current_occurrence_id
-                                .clone()
-                                .unwrap_or_else(new_occurrence_id),
-                            song_id,
-                            path: Some(path),
-                            source_context: self.current_source_context.clone(),
-                            collection_position: self.current_collection_position,
-                        })
-                })
+                .or_else(|| self.current_item())
                 .map(PlaybackPlan::RepeatAll);
         }
         None
@@ -1173,19 +1224,7 @@ impl AudioPlayer {
         prepared: PreparedSound,
     ) -> Result<(), AudioError> {
         self.synchronize_gapless();
-        let previous =
-            self.current_song_id
-                .zip(self.current_path.clone())
-                .map(|(song_id, path)| QueueItem {
-                    occurrence_id: self
-                        .current_occurrence_id
-                        .clone()
-                        .unwrap_or_else(new_occurrence_id),
-                    song_id,
-                    path: Some(path),
-                    source_context: self.current_source_context.clone(),
-                    collection_position: self.current_collection_position,
-                });
+        let previous = self.current_item();
         let next_song_id = plan.song_id();
         let next_occurrence = plan.occurrence_id().to_owned();
         self.play_prepared(prepared)?;
@@ -1274,6 +1313,11 @@ impl AudioPlayer {
         // Queue changes invalidate a pending transition before editing indices.
         self.apply_queue_plan(next.plan, previous)
             .expect("scheduled queue plan remains valid");
+        let listened = self
+            .current_sound
+            .as_ref()
+            .map(|s| s.listened_seconds())
+            .unwrap_or(0.0);
         self.current_sound = Some(next.sound);
         self.current_song_id = Some(next_id);
         self.current_occurrence_id = Some(next_occurrence);
@@ -1283,7 +1327,8 @@ impl AudioPlayer {
         self.current_tail = next.tail;
         self.current_sample_rate = next.sample_rate;
         self.paused_position = None;
-        self.completed_transitions.push_back((previous_id, next_id));
+        self.completed_transitions
+            .push_back((previous_id, next_id, listened));
     }
 
     fn invalidate_gapless(&mut self) {
@@ -1399,10 +1444,18 @@ impl AudioPlayer {
         Ok(())
     }
 
-    pub(crate) fn pop_completed_transition(&mut self) -> Option<(Option<i64>, i64)> {
+    pub(crate) fn pop_completed_transition(&mut self) -> Option<(Option<i64>, i64, f64)> {
         self.completed_transitions.pop_front()
     }
 
+    pub(crate) fn listened_seconds(&self) -> f64 {
+        self.active_sound()
+            .map(|s| s.listened_seconds())
+            .unwrap_or(0.0)
+    }
+    pub(crate) fn native_finished(&self) -> bool {
+        self.playback_requested && self.is_empty()
+    }
     pub(crate) fn completed_playback_plan(&self) -> Option<PlaybackPlan> {
         (self.playback_requested && self.is_empty())
             .then(|| self.plan_next())
@@ -1410,11 +1463,19 @@ impl AudioPlayer {
     }
 
     pub(crate) fn restored_track(&self) -> Option<(i64, f64)> {
-        if self.current_sound.is_some() {
+        if self.current_sound.is_some() && !self.native_finished() {
             return None;
         }
-        self.current_song_id
-            .map(|song_id| (song_id, self.paused_position.unwrap_or_default()))
+        self.current_song_id.map(|song_id| {
+            (
+                song_id,
+                if self.native_finished() {
+                    0.0
+                } else {
+                    self.paused_position.unwrap_or_default()
+                },
+            )
+        })
     }
 
     #[cfg(test)]
@@ -2012,7 +2073,10 @@ mod tests {
             assert_eq!(player.get_current_song_id(), Some(1));
             player.synchronize_gapless();
             assert_eq!(player.source_context(), "release:7");
-            assert_eq!(player.pop_completed_transition(), Some((Some(1), 1)));
+            assert_eq!(
+                player.pop_completed_transition().map(|(a, b, _)| (a, b)),
+                Some((Some(1), 1))
+            );
             assert!(player.queue_is_empty());
             player.stop();
         }

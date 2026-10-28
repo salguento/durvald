@@ -620,6 +620,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
     ),
     (24,crate::infrastructure::sqlite::download_transfers::SCHEMA),
     (25,crate::infrastructure::sqlite::service_collections::SCHEMA),
+    (26,crate::infrastructure::sqlite::playback_history::SCHEMA),
 ];
 
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
@@ -726,7 +727,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            25
+            26
         );
     }
 
@@ -928,7 +929,7 @@ mod tests {
                 &[
                     MIGRATIONS,
                     &[(
-                        26,
+                        27,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )]
                 ]
@@ -942,7 +943,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            25
+            26
         );
     }
 

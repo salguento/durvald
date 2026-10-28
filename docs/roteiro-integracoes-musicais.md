@@ -493,6 +493,13 @@ reimportação não duplica origens e falhas parciais preservam itens concluído
 
 ### 14. Histórico, sessão e experiência consolidados
 
+**Implementada em 28/10/2026:** origem opcional e duração observada no histórico,
+recibo transacional por tentativa, sessão v4 restaurada pausada e sem rede, fila
+mista com contexto/ocorrências e navegação anterior persistidos. Replay usa a
+duração observada; a interface distingue origem em uso e preferência. Fallback
+durante áudio permanece fora deste incremento. Veja
+[Histórico e sessão consolidados](features/consolidated-playback.md).
+
 **Dependências:** 10; ampliar validação conforme 12–13 forem entregues.
 
 - Acrescentar `source_id` opcional ao histórico, preservando eventos legados.

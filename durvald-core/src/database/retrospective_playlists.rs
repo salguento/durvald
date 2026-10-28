@@ -225,12 +225,17 @@ pub(crate) fn tracks(
     let config = config(definition)
         .map_err(DatabaseError::Custom)?
         .ok_or_else(|| DatabaseError::Custom("Missing retrospective rule".into()))?;
-    let mut statement = conn.prepare(
-        "SELECT h.song_id,s.duration,h.play_duration,unixepoch(h.played_at)
+    let observed = if operations::history_source_projection(conn)? == "NULL, NULL" {
+        "s.duration"
+    } else {
+        "COALESCE(h.effective_duration_seconds,s.duration)"
+    };
+    let mut statement = conn.prepare(&format!(
+        "SELECT h.song_id,{observed},h.play_duration,unixepoch(h.played_at)
          FROM play_history h JOIN songs s USING(song_id)
          WHERE unixepoch(h.played_at)>=?1 AND unixepoch(h.played_at)<?2
-            AND unixepoch(h.played_at)<=?3 AND s.is_hidden=0 ORDER BY h.history_id",
-    )?;
+            AND unixepoch(h.played_at)<=?3 AND s.is_hidden=0 ORDER BY h.history_id"
+    ))?;
     let mut scores = HashMap::<u64, (f64, i64)>::new();
     let rows = statement.query_map(params![config.start_at, config.end_at, now], |row| {
         Ok((

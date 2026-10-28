@@ -1,5 +1,9 @@
 # Etapa 13 — Demais serviços e importação de coleções
 
+> Evolução na etapa 14: histórico por origem/tentativa, sessão remota recuperável
+> e navegação unificada da fila mista foram consolidados. Veja
+> [Histórico e sessão consolidados](consolidated-playback.md).
+
 Implementada em 28/10/2026 sobre as etapas 10–12. A seção **Serviços e coleções**
 da biblioteca e o botão **Importar link ou coleção…** em Explorar recebem links
 públicos de Bandcamp, SoundCloud e YouTube. Consultar o link apenas captura

@@ -304,7 +304,7 @@ private struct RetrospectiveTrackRow: View {
 
     private func label(_ title: String) -> some View {
         TrackRowText(model: TrackRowModel(trackID: item.trackId, title: title),
-                     subtitle: playbackDate, spacing: nil, lineLimit: nil)
+                     subtitle: [playbackDate, item.observedListeningSummary].compactMap { $0 }.joined(separator: " · "), spacing: nil, lineLimit: nil)
             .environment(\.playbackSourceContext, PlaybackSourceContext.history(item.id))
     }
 

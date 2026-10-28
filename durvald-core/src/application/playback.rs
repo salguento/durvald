@@ -55,7 +55,12 @@ pub(crate) struct PlaybackApplication {
     session_repository: SqlitePlaybackSessionRepository,
     pub(super) audio_player: Arc<tokio::sync::Mutex<AudioPlayer>>,
     pub(super) playback_transition: tokio::sync::Mutex<()>,
-    source_override: tokio::sync::Mutex<Option<(String, i64)>>,
+    pub(super) source_override: tokio::sync::Mutex<Option<(String, i64)>>,
+    pub(super) native_attempt: tokio::sync::Mutex<Option<super::playback_attempts::NativeAttempt>>,
+    pub(super) restored_attempt:
+        tokio::sync::Mutex<Option<crate::domain::playback_session::StoredAttempt>>,
+    pub(super) last_session_write: tokio::sync::Mutex<tokio::time::Instant>,
+    session_write: tokio::sync::Mutex<()>,
     coordination_wakeup: tokio::sync::Notify,
     lastfm: Arc<LastFmClient>,
     lastfm_playback: tokio::sync::Mutex<Option<LastFmPlayback>>,
@@ -81,6 +86,10 @@ impl PlaybackApplication {
             audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
             playback_transition: tokio::sync::Mutex::new(()),
             source_override: tokio::sync::Mutex::new(None),
+            native_attempt: Default::default(),
+            restored_attempt: Default::default(),
+            last_session_write: tokio::sync::Mutex::new(tokio::time::Instant::now()),
+            session_write: Default::default(),
             coordination_wakeup: tokio::sync::Notify::new(),
             lastfm,
             lastfm_playback: tokio::sync::Mutex::new(None),
@@ -105,7 +114,6 @@ impl PlaybackApplication {
                     break;
                 };
                 if let Some(track_id) = event.completed_track_id {
-                    application.record_completed_playback(track_id).await;
                     application.report_track_completed(track_id).await;
                 }
                 if let Some(track_id) = event.started_track_id {
@@ -147,7 +155,7 @@ impl PlaybackApplication {
         }
     }
 
-    fn wake_automatic_coordination(&self) {
+    pub(super) fn wake_automatic_coordination(&self) {
         self.coordination_wakeup.notify_one();
     }
 
@@ -209,6 +217,12 @@ impl PlaybackApplication {
                         return Err(error);
                     }
                 }
+                if let Some(id) = source {
+                    if let Some(s) = self.embedded.lock().await.as_ref() {
+                        *self.source_override.lock().await = Some((s.occurrence.clone(), id));
+                    }
+                }
+                self.persist_session().await?;
                 return Ok(self.playback().await);
             }
         };
@@ -230,6 +244,7 @@ impl PlaybackApplication {
                 .first()
                 .map(|q| (q.occurrence_id.clone(), source))
         });
+        self.begin_native_attempt(None).await;
         drop(_transition);
         self.wake_automatic_coordination();
 
@@ -350,6 +365,7 @@ impl PlaybackApplication {
             player.start_collection(items, start, shuffle);
             PlaybackStateSnapshot::from_player(&player)
         };
+        self.begin_native_attempt(None).await;
         drop(transition);
         self.wake_automatic_coordination();
         let snapshot = self.snapshot_from_state(state).await;
@@ -374,6 +390,7 @@ impl PlaybackApplication {
         {
             return Ok(());
         }
+        self.observe_native().await;
         self.audio_player.lock().await.pause();
         self.wake_automatic_coordination();
         self.pause_lastfm().await;
@@ -397,14 +414,72 @@ impl PlaybackApplication {
             restored_track
         };
         if let Some((song_id, position)) = restored_track {
-            let prepared = self.prepare_track(song_id).await?;
-            self.audio_player
-                .lock()
+            let saved = self
+                .durable_attempt()
                 .await
-                .play_song_prepared_from(song_id, prepared, position)
-                .map_err(|error| CoreError::Playback {
-                    message: error.to_string(),
-                })?;
+                .filter(|a| a.track_id == song_id);
+            let selected = saved.as_ref().and_then(|a| a.source_id);
+            let prepared = match self.prepare_selection(song_id, selected).await {
+                Ok(p) => p,
+                Err(_) if saved.as_ref().is_none_or(|a| !a.exclusive) => {
+                    let (prepared, remaining, _) = self.prepare_selection(song_id, None).await?;
+                    (prepared, remaining, true)
+                }
+                Err(error) => return Err(error),
+            };
+            let (prepared, remaining, fallback) = prepared;
+            match prepared {
+                super::playback_sources::PreparedSource::Local(sound, source) => {
+                    let position = if saved
+                        .as_ref()
+                        .is_none_or(|s| s.source_id == Some(source.source_id))
+                    {
+                        position
+                    } else {
+                        0.0
+                    };
+                    let position = if position >= sound.duration_seconds() {
+                        0.0
+                    } else {
+                        position
+                    };
+                    self.source_selected(&source, fallback).await;
+                    self.audio_player
+                        .lock()
+                        .await
+                        .play_song_prepared_from(song_id, *sound, position)
+                        .map_err(|e| CoreError::Playback {
+                            message: e.to_string(),
+                        })?;
+                    self.begin_native_attempt(saved).await;
+                }
+                super::playback_sources::PreparedSource::Embedded(url, source) => {
+                    let (occurrence, context) = {
+                        let p = self.audio_player.lock().await;
+                        (
+                            p.queue_occurrences().first().map(|i| i.1.clone()),
+                            p.source_context().to_owned(),
+                        )
+                    };
+                    self.start_embedded_selection_locked(
+                        self.find_track(song_id).await?,
+                        source,
+                        url,
+                        remaining,
+                        context,
+                        occurrence,
+                        fallback,
+                    )
+                    .await?;
+                    if let Some(a) = saved {
+                        if let Some(s) = self.embedded.lock().await.as_mut() {
+                            s.restore_attempt(a, position);
+                        }
+                    }
+                    self.persist_session().await?;
+                    return Ok(());
+                }
+            }
         }
         let current_track_id = self.audio_player.lock().await.get_current_song_id();
         drop(_transition);
@@ -423,6 +498,8 @@ impl PlaybackApplication {
         let _transition = self.playback_transition.lock().await;
         self.stop_embedded_locked().await?;
         *self.source_status.lock().await = None;
+        *self.native_attempt.lock().await = None;
+        *self.restored_attempt.lock().await = None;
         self.audio_player.lock().await.stop();
         drop(_transition);
         self.wake_automatic_coordination();
@@ -437,6 +514,8 @@ impl PlaybackApplication {
         {
             return Ok(());
         }
+        let _transition = self.playback_transition.lock().await;
+        self.observe_native().await;
         self.audio_player
             .lock()
             .await
@@ -445,7 +524,7 @@ impl PlaybackApplication {
             .map_err(|error| CoreError::Playback {
                 message: error.to_string(),
             })?;
-        self.persist_progress(seconds as f64).await
+        self.persist_session().await
     }
 
     pub(crate) async fn set_volume(&self, volume: f32) -> CoreResult<()> {
@@ -533,6 +612,7 @@ impl PlaybackApplication {
         drop(player);
         drop(_transition);
         if starts_playback {
+            self.begin_native_attempt(None).await;
             self.wake_automatic_coordination();
         }
         self.persist_session().await?;
@@ -733,6 +813,7 @@ impl PlaybackApplication {
                 })?;
             PlaybackStateSnapshot::from_player(&player)
         };
+        self.begin_native_attempt(None).await;
         let snapshot = self.snapshot_from_state(state).await;
         self.wake_automatic_coordination();
         self.persist_session().await?;
@@ -832,8 +913,26 @@ impl PlaybackApplication {
                 .await
                 .schedule_gapless(plan, prepared);
         }
-        if let Some((previous, next)) = self.audio_player.lock().await.pop_completed_transition() {
+        let completed = self.audio_player.lock().await.pop_completed_transition();
+        if let Some((previous, next, rendered)) = completed {
+            self.finish_native_attempt(Some(rendered)).await;
+            self.begin_native_attempt(None).await;
             return Some((previous, Some(next)));
+        }
+        self.observe_native().await;
+        let ended = {
+            let p = self.audio_player.lock().await;
+            p.native_finished()
+        };
+        if ended {
+            self.finish_native_attempt(None).await;
+        }
+        let active = {
+            let p = self.audio_player.lock().await;
+            !p.is_paused() && !p.is_empty()
+        };
+        if active {
+            self.persist_active_progress().await;
         }
 
         let (completed_track_id, plan) = {
@@ -860,10 +959,12 @@ impl PlaybackApplication {
             .await
             .commit_plan(plan, prepared)
             .ok()?;
+        self.begin_native_attempt(None).await;
         Some((completed_track_id, Some(started_track_id)))
     }
 
     pub(crate) async fn persist_session(&self) -> CoreResult<()> {
+        let _write = self.session_write.lock().await;
         let (
             current_song_id,
             progress_seconds,
@@ -874,6 +975,7 @@ impl PlaybackApplication {
             contexts,
             collection,
             occurrences,
+            navigation,
         ) = {
             let mut player = self.audio_player.lock().await;
             player.synchronize_gapless();
@@ -894,9 +996,20 @@ impl PlaybackApplication {
                     .queue_occurrences()
                     .into_iter()
                     .map(|(_, id)| id)
-                    .collect(),
+                    .collect::<Vec<_>>(),
+                player.stored_navigation(),
             )
         };
+        let progress_seconds = self
+            .embedded
+            .lock()
+            .await
+            .as_ref()
+            .map(|s| s.position())
+            .unwrap_or(progress_seconds);
+        let attempt = self.durable_attempt().await.filter(|a| {
+            Some(a.track_id) == current_song_id && occurrences.first() == Some(&a.occurrence_id)
+        });
         let session = PlaybackSessionState {
             current_track_id: current_song_id,
             progress_seconds,
@@ -905,22 +1018,17 @@ impl PlaybackApplication {
             repeat_mode: format!("{repeat_mode:?}").to_lowercase(),
             queue,
             queue_position: 0,
-            source_context: crate::domain::playback_session::encode_queue(
+            source_context: crate::domain::playback_session::encode_session(
                 contexts,
                 collection,
                 occurrences,
+                attempt,
+                navigation,
             ),
             updated_at: String::new(),
         };
         self.session_repository
             .save(session)
-            .await
-            .map_err(|message| CoreError::Storage { message })
-    }
-
-    async fn persist_progress(&self, progress_seconds: f64) -> CoreResult<()> {
-        self.session_repository
-            .update_progress(progress_seconds)
             .await
             .map_err(|message| CoreError::Storage { message })
     }
@@ -1062,21 +1170,6 @@ impl PlaybackApplication {
                 (!playback.release.is_empty()).then_some(playback.release),
                 playback.started_at,
             )
-            .await;
-    }
-
-    async fn record_completed_playback(&self, track_id: i64) {
-        let Ok(typed_track_id) = TrackId::try_from(track_id) else {
-            return;
-        };
-        let duration = match self.track_query.find(typed_track_id).await {
-            Ok(track) => track.duration_seconds,
-            Err(CatalogTrackLookupError::NotFound) => 0,
-            Err(CatalogTrackLookupError::Storage(_)) => return,
-        };
-        let _ = self
-            .history_repository
-            .record_completed(typed_track_id, duration)
             .await;
     }
 

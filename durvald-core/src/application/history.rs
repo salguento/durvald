@@ -92,6 +92,8 @@ fn finish_page<T>(mut items: Vec<T>, page_size: usize, offset: u64) -> (Vec<T>, 
 
 fn history_to_api(item: PlaybackHistoryEntry) -> PlaybackHistoryItem {
     PlaybackHistoryItem {
+        source_id: item.source_id,
+        effective_duration_seconds: item.effective_duration_seconds,
         id: item.id.get() as i64,
         track_id: item.track_id.get() as i64,
         played_at: item.played_at,

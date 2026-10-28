@@ -6,6 +6,7 @@ protocol SourceManaging: AnyObject {
     func providers() async throws -> [SourceProvider]
     func setProvider(_ id: String, enabled: Bool) async throws
     func search(provider: String, entry: CatalogEntry, link: String?, generation: UInt64) async throws -> SourceSearchPage
+    func activeSource() async -> Int64?
     func sources(_ track: Int64) async throws -> [TrackSource]
     func matches(_ query: String) async throws -> [Track]
     func track(_ id: Int64) async throws -> Track
@@ -24,6 +25,7 @@ protocol SourceManaging: AnyObject {
     func close() async
 }
 extension SourceManaging {
+    func activeSource() async -> Int64? { nil }
     func preview(_ candidate: String) async throws { throw CocoaError(.featureUnsupported) }
     func playbackEnabled() async throws -> Bool { false }
     func youtubePlaybackEnabled() async throws -> Bool { false }
@@ -39,6 +41,7 @@ final class NativeSourceManager: SourceManaging {
     init(core: DurvaldCore, changed: @escaping () async -> Void, playbackChanged: @escaping () async -> Void) {
         self.core = core; session = core.sourceSearchSession(); self.changed = changed; self.playbackChanged = playbackChanged
     }
+    func activeSource() async -> Int64? { await core.playbackSourceStatus()?.sourceId }
     func providers() async throws -> [SourceProvider] { try await core.sourceProviders() }
     func setProvider(_ id: String, enabled: Bool) async throws { try await core.setSourceProviderEnabled(provider: id, enabled: enabled) }
     func search(provider: String, entry: CatalogEntry, link: String?, generation: UInt64) async throws -> SourceSearchPage {
@@ -73,6 +76,7 @@ final class NativeSourceManager: SourceManaging {
 
 @MainActor @Observable
 final class SourceManagementPresentation {
+    private(set) var activeSourceID: Int64?
     private(set) var playbackEnabled = false
     private(set) var youtubePlaybackEnabled = false
     private(set) var providers: [SourceProvider] = []
@@ -97,6 +101,7 @@ final class SourceManagementPresentation {
         cancel(); self.loader = loader; self.entry = entry; error = nil; message = nil
         providers = []; pages = [:]; providerErrors = [:]; sources = []; currentTrack = nil; matches = []; reviewing = nil; associationTrackID = nil; busy = false
         let current = generation
+        activeSourceID = await loader.activeSource()
         playbackEnabled = (try? await loader.playbackEnabled()) ?? false
         youtubePlaybackEnabled = (try? await loader.youtubePlaybackEnabled()) ?? false
         guard generation == current, !Task.isCancelled else { return }

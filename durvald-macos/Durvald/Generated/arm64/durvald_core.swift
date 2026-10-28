@@ -12199,6 +12199,8 @@ public func FfiConverterTypeLocalRecommendations_lower(_ value: LocalRecommendat
  * One completed playback event.
  */
 public struct PlaybackHistoryItem {
+    public var sourceId: Int64?
+    public var effectiveDurationSeconds: UInt64?
     public var id: Int64
     public var trackId: Int64
     public var playedAt: String
@@ -12206,7 +12208,9 @@ public struct PlaybackHistoryItem {
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(id: Int64, trackId: Int64, playedAt: String, durationSeconds: UInt64) {
+    public init(sourceId: Int64?, effectiveDurationSeconds: UInt64?, id: Int64, trackId: Int64, playedAt: String, durationSeconds: UInt64) {
+        self.sourceId = sourceId
+        self.effectiveDurationSeconds = effectiveDurationSeconds
         self.id = id
         self.trackId = trackId
         self.playedAt = playedAt
@@ -12218,6 +12222,12 @@ public struct PlaybackHistoryItem {
 
 extension PlaybackHistoryItem: Equatable, Hashable {
     public static func ==(lhs: PlaybackHistoryItem, rhs: PlaybackHistoryItem) -> Bool {
+        if lhs.sourceId != rhs.sourceId {
+            return false
+        }
+        if lhs.effectiveDurationSeconds != rhs.effectiveDurationSeconds {
+            return false
+        }
         if lhs.id != rhs.id {
             return false
         }
@@ -12234,6 +12244,8 @@ extension PlaybackHistoryItem: Equatable, Hashable {
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(sourceId)
+        hasher.combine(effectiveDurationSeconds)
         hasher.combine(id)
         hasher.combine(trackId)
         hasher.combine(playedAt)
@@ -12246,6 +12258,8 @@ public struct FfiConverterTypePlaybackHistoryItem: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaybackHistoryItem {
         return
             try PlaybackHistoryItem(
+                sourceId: FfiConverterOptionInt64.read(from: &buf),
+                effectiveDurationSeconds: FfiConverterOptionUInt64.read(from: &buf),
                 id: FfiConverterInt64.read(from: &buf),
                 trackId: FfiConverterInt64.read(from: &buf),
                 playedAt: FfiConverterString.read(from: &buf),
@@ -12254,6 +12268,8 @@ public struct FfiConverterTypePlaybackHistoryItem: FfiConverterRustBuffer {
     }
 
     public static func write(_ value: PlaybackHistoryItem, into buf: inout [UInt8]) {
+        FfiConverterOptionInt64.write(value.sourceId, into: &buf)
+        FfiConverterOptionUInt64.write(value.effectiveDurationSeconds, into: &buf)
         FfiConverterInt64.write(value.id, into: &buf)
         FfiConverterInt64.write(value.trackId, into: &buf)
         FfiConverterString.write(value.playedAt, into: &buf)
@@ -12473,13 +12489,15 @@ public func FfiConverterTypePlaybackSnapshot_lower(_ value: PlaybackSnapshot) ->
  * Current source selection, including a visible pre-playback fallback notice.
  */
 public struct PlaybackSourceStatus {
+    public var preferredSourceId: Int64?
     public var sourceId: Int64?
     public var provider: String
     public var message: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(sourceId: Int64?, provider: String, message: String?) {
+    public init(preferredSourceId: Int64?, sourceId: Int64?, provider: String, message: String?) {
+        self.preferredSourceId = preferredSourceId
         self.sourceId = sourceId
         self.provider = provider
         self.message = message
@@ -12490,6 +12508,9 @@ public struct PlaybackSourceStatus {
 
 extension PlaybackSourceStatus: Equatable, Hashable {
     public static func ==(lhs: PlaybackSourceStatus, rhs: PlaybackSourceStatus) -> Bool {
+        if lhs.preferredSourceId != rhs.preferredSourceId {
+            return false
+        }
         if lhs.sourceId != rhs.sourceId {
             return false
         }
@@ -12503,6 +12524,7 @@ extension PlaybackSourceStatus: Equatable, Hashable {
     }
 
     public func hash(into hasher: inout Hasher) {
+        hasher.combine(preferredSourceId)
         hasher.combine(sourceId)
         hasher.combine(provider)
         hasher.combine(message)
@@ -12514,6 +12536,7 @@ public struct FfiConverterTypePlaybackSourceStatus: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlaybackSourceStatus {
         return
             try PlaybackSourceStatus(
+                preferredSourceId: FfiConverterOptionInt64.read(from: &buf),
                 sourceId: FfiConverterOptionInt64.read(from: &buf),
                 provider: FfiConverterString.read(from: &buf),
                 message: FfiConverterOptionString.read(from: &buf)
@@ -12521,6 +12544,7 @@ public struct FfiConverterTypePlaybackSourceStatus: FfiConverterRustBuffer {
     }
 
     public static func write(_ value: PlaybackSourceStatus, into buf: inout [UInt8]) {
+        FfiConverterOptionInt64.write(value.preferredSourceId, into: &buf)
         FfiConverterOptionInt64.write(value.sourceId, into: &buf)
         FfiConverterString.write(value.provider, into: &buf)
         FfiConverterOptionString.write(value.message, into: &buf)

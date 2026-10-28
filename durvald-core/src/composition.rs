@@ -34,6 +34,8 @@ use std::sync::Arc;
 pub(crate) type DatabasePool = r2d2::Pool<r2d2_sqlite::SqliteConnectionManager>;
 
 pub(crate) struct PlaybackBootstrap {
+    navigation: Vec<crate::domain::playback_session::StoredNavigationItem>,
+    attempt: Option<crate::domain::playback_session::StoredAttempt>,
     source_contexts: Vec<String>,
     occurrences: Vec<String>,
     source_collection: Option<(
@@ -81,6 +83,7 @@ where
     prepare_filesystem(&config)?;
     let db_pool = open_database(&config)?;
     let playback_bootstrap = restore_playback(&db_pool)?;
+    let attempt = playback_bootstrap.attempt.clone();
     let needs_occurrence_upgrade = playback_bootstrap.occurrences.iter().any(String::is_empty);
     let (audio_player, settings_repository) =
         initialize_audio_player(db_pool.clone(), playback_bootstrap, audio_factory).await?;
@@ -88,6 +91,7 @@ where
     let metadata_edit_queue = Arc::new(tokio::sync::Mutex::new(()));
     let playback_application =
         build_playback_application(db_pool.clone(), audio_player, lastfm.clone());
+    playback_application.restore_attempt(attempt).await;
     if needs_occurrence_upgrade {
         playback_application.persist_session().await?;
     }
@@ -285,7 +289,14 @@ pub(crate) fn restore_playback(pool: &DatabasePool) -> CoreResult<PlaybackBootst
         .iter()
         .map(|&i| occurrences.get(i).cloned().unwrap_or_default())
         .collect();
+    let navigation =
+        crate::domain::playback_session::decode_navigation(&saved_session.source_context)
+            .into_iter()
+            .filter(|q| track_path(q.track_id).is_some())
+            .collect();
     Ok(PlaybackBootstrap {
+        navigation,
+        attempt: crate::domain::playback_session::decode_attempt(&saved_session.source_context),
         occurrences,
         source_contexts,
         source_collection,
@@ -332,6 +343,7 @@ where
         audio_player.restore_collection(saved, paths);
     }
 
+    audio_player.restore_navigation(playback.navigation);
     Ok((audio_player, settings_repository))
 }
 

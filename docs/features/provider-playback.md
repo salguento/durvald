@@ -1,5 +1,9 @@
 # Etapa 10 — SoundCloud de ponta a ponta
 
+> Evolução na etapa 14: histórico por origem/tentativa, sessão remota recuperável
+> e navegação unificada da fila mista foram consolidados. Veja
+> [Histórico e sessão consolidados](consolidated-playback.md).
+
 > Evolução na etapa 13: YouTube passou a ter player oficial visível para vídeos
 > finitos verificados, com flag independente. Bandcamp permanece com abertura no
 > serviço. Os limites abaixo descrevem o incremento original; veja

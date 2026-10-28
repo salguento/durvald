@@ -54,6 +54,8 @@ pub struct ArtistItem {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct PlayHistory {
+    pub source_id: Option<i64>,
+    pub effective_duration_seconds: Option<u64>,
     pub history_id: u64,
     pub song_id: u64,
     pub played_at: String,

@@ -264,6 +264,10 @@ pub struct LibraryRepairAnalysis {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PlaybackHistoryItem {
+    #[serde(default)]
+    pub source_id: Option<i64>,
+    #[serde(default)]
+    pub effective_duration_seconds: Option<u64>,
     pub id: i64,
     pub track_id: i64,
     pub played_at: String,

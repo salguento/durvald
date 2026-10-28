@@ -229,6 +229,8 @@ fn json_string_list(row: &Row<'_>, index: usize) -> rusqlite::Result<Vec<String>
 
 fn play_history_from_row(row: &Row<'_>) -> rusqlite::Result<PlayHistory> {
     Ok(PlayHistory {
+        source_id: row.get(4)?,
+        effective_duration_seconds: row.get(5)?,
         history_id: row.get(0)?,
         song_id: row.get(1)?,
         played_at: row.get(2)?,
@@ -1238,6 +1240,7 @@ pub fn add_song_to_history(conn: &Connection, song_id: u64, duration: u64) -> Da
 
 /// Records a naturally completed track. The counter, timestamp, and history
 /// entry share one transaction so playback statistics cannot drift apart.
+#[cfg(test)]
 pub fn record_completed_playback(
     conn: &Connection,
     song_id: u64,
@@ -1264,8 +1267,7 @@ pub fn record_completed_playback(
 
 pub fn get_play_history(conn: &Connection) -> DatabaseResult<Vec<PlayHistory>> {
     let mut stmt = conn.prepare(
-        "SELECT history_id, song_id, played_at, play_duration
-         FROM play_history ORDER BY played_at DESC, history_id DESC",
+        &format!("SELECT history_id, song_id, played_at, play_duration, {} FROM play_history ORDER BY played_at DESC, history_id DESC", history_source_projection(conn)?),
     )?;
     Ok(stmt
         .query_map([], play_history_from_row)?
@@ -1278,9 +1280,7 @@ pub fn get_play_history_page(
     offset: u64,
 ) -> DatabaseResult<Vec<PlayHistory>> {
     let mut stmt = conn.prepare(
-        "SELECT history_id, song_id, played_at, play_duration
-         FROM play_history ORDER BY played_at DESC, history_id DESC
-         LIMIT ?1 OFFSET ?2",
+        &format!("SELECT history_id, song_id, played_at, play_duration, {} FROM play_history ORDER BY played_at DESC, history_id DESC LIMIT ?1 OFFSET ?2", history_source_projection(conn)?),
     )?;
     Ok(stmt
         .query_map(params![limit, offset], play_history_from_row)?
@@ -2443,6 +2443,7 @@ pub fn save_last_session(conn: &Connection, session: &LastSession) -> DatabaseRe
 
 /// Convenience command: update only the playback position (called on seek / every N seconds).
 /// Avoids having to pass the full session state on every progress tick.
+#[cfg(test)]
 pub fn update_session_progress(conn: &Connection, progress_seconds: f64) -> DatabaseResult<()> {
     let updated_at = Utc::now().to_rfc3339();
 
@@ -3284,6 +3285,12 @@ fn normalize_metadata(mut metadata: AudioMetadata) -> AudioMetadata {
         metadata.release = Some("Unknown Album".to_string());
     }
     metadata
+}
+
+/// Standalone legacy database callers remain readable before migration 26.
+pub(crate) fn history_source_projection(conn: &Connection) -> rusqlite::Result<&'static str> {
+    let available = conn.prepare("PRAGMA table_info(play_history)")?.query_map([], |r| r.get::<_, String>(1))?.collect::<Result<Vec<_>, _>>()?.iter().any(|c| c == "source_id");
+    Ok(if available { "source_id, effective_duration_seconds" } else { "NULL, NULL" })
 }
 
 #[cfg(test)]

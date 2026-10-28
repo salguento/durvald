@@ -22,6 +22,10 @@ struct SessionContexts {
     collection: Option<StoredCollection>,
     #[serde(default)]
     occurrences: Vec<String>,
+    #[serde(default)]
+    attempt: Option<StoredAttempt>,
+    #[serde(default)]
+    navigation: Vec<StoredNavigationItem>,
 }
 
 #[cfg(test)]
@@ -31,13 +35,15 @@ pub(crate) fn encode_contexts(contexts: Vec<String>) -> String {
         contexts,
         collection: None,
         occurrences: Vec::new(),
+        attempt: None,
+        navigation: Vec::new(),
     })
     .unwrap_or_default()
 }
 
 pub(crate) fn decode_contexts(value: &str) -> Vec<String> {
     match serde_json::from_str::<SessionContexts>(value) {
-        Ok(saved) if (1..=3).contains(&saved.version) => saved.contexts,
+        Ok(saved) if (1..=4).contains(&saved.version) => saved.contexts,
         _ if value.starts_with('{') => Vec::new(),
         _ => vec![value.to_string()],
     }
@@ -55,7 +61,7 @@ mod tests {
             contexts
         );
         assert_eq!(decode_contexts("release:8"), vec!["release:8"]);
-        assert!(decode_contexts(r#"{"version":4,"contexts":["release:8"]}"#).is_empty());
+        assert!(decode_contexts(r#"{"version":5,"contexts":["release:8"]}"#).is_empty());
     }
 }
 
@@ -76,30 +82,75 @@ pub(crate) struct StoredCollection {
 
 pub(crate) fn decode_collection(value: &str) -> Option<StoredCollection> {
     let saved: SessionContexts = serde_json::from_str(value).ok()?;
-    if saved.version == 2 || saved.version == 3 {
+    if (2..=4).contains(&saved.version) {
         saved.collection
     } else {
         None
     }
 }
 
-pub(crate) fn encode_queue(
+pub(crate) fn encode_session(
     contexts: Vec<String>,
     collection: Option<StoredCollection>,
     occurrences: Vec<String>,
+    attempt: Option<StoredAttempt>,
+    navigation: Vec<StoredNavigationItem>,
 ) -> String {
     serde_json::to_string(&SessionContexts {
-        version: 3,
+        version: 4,
         contexts,
         collection,
         occurrences,
+        attempt,
+        navigation,
     })
     .unwrap_or_default()
 }
 pub(crate) fn decode_occurrences(value: &str) -> Vec<String> {
     serde_json::from_str::<SessionContexts>(value)
         .ok()
-        .filter(|s| s.version == 3)
+        .filter(|s| (3..=4).contains(&s.version))
         .map(|s| s.occurrences)
+        .unwrap_or_default()
+}
+
+/// Durable identity and listening evidence; never stores media URLs or host generations.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct StoredAttempt {
+    pub id: String,
+    pub track_id: i64,
+    pub occurrence_id: String,
+    pub source_id: Option<i64>,
+    pub exclusive: bool,
+    pub heard_seconds: f64,
+    pub duration_seconds: Option<f64>,
+    pub history_allowed: bool,
+}
+pub(crate) fn decode_attempt(value: &str) -> Option<StoredAttempt> {
+    let state: SessionContexts = serde_json::from_str(value).ok()?;
+    let a = state.attempt?;
+    (state.version == 4
+        && !a.id.is_empty()
+        && a.id.len() <= 200
+        && !a.occurrence_id.is_empty()
+        && a.heard_seconds.is_finite()
+        && (0.0..=604800.0).contains(&a.heard_seconds)
+        && a.duration_seconds
+            .is_none_or(|d| d.is_finite() && d > 0.0 && d <= 604800.0))
+    .then_some(a)
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct StoredNavigationItem {
+    pub track_id: i64,
+    pub occurrence_id: String,
+    pub source_context: String,
+    pub collection_position: Option<usize>,
+}
+pub(crate) fn decode_navigation(value: &str) -> Vec<StoredNavigationItem> {
+    serde_json::from_str::<SessionContexts>(value)
+        .ok()
+        .filter(|s| s.version == 4)
+        .map(|s| s.navigation.into_iter().take(10000).collect())
         .unwrap_or_default()
 }
