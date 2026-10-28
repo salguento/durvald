@@ -240,6 +240,7 @@ fn play_history_from_row(row: &Row<'_>) -> rusqlite::Result<PlayHistory> {
 
 /// Creates all tables and indexes. Idempotent.
 pub fn create_tables(conn: &Connection) -> DatabaseResult<()> {
+    crate::database::local_sources::register(conn)?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS library_paths (
             path_id   INTEGER PRIMARY KEY,

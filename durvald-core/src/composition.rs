@@ -158,6 +158,7 @@ pub(crate) fn prepare_filesystem(config: &CoreConfig) -> CoreResult<()> {
 pub(crate) fn open_database(config: &CoreConfig) -> CoreResult<Arc<DatabasePool>> {
     let manager = r2d2_sqlite::SqliteConnectionManager::file(&config.database_path).with_init(
         |connection: &mut rusqlite::Connection| {
+            crate::database::local_sources::register(connection)?;
             connection.execute_batch(
                 "PRAGMA journal_mode = WAL;\n PRAGMA busy_timeout = 5000;\n PRAGMA foreign_keys = ON;",
             )?;
@@ -168,6 +169,8 @@ pub(crate) fn open_database(config: &CoreConfig) -> CoreResult<Arc<DatabasePool>
 
     {
         let mut connection = pool.get().map_err(storage_error)?;
+        crate::database::local_sources::backup_before_migration(&connection, &config.database_path)
+            .map_err(storage_error)?;
         crate::database::operations::create_tables(&connection).map_err(storage_error)?;
         crate::database::migrations::migrate_enrichment(&mut connection).map_err(storage_error)?;
         crate::database::operations::initiate_settings(&connection).map_err(storage_error)?;

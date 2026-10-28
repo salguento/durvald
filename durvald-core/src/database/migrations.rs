@@ -592,6 +592,7 @@ CREATE TABLE catalog_selections (
 "#;
 
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
+    crate::database::local_sources::register(conn)?;
     apply(
         conn,
         &[
@@ -615,6 +616,7 @@ pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
             (18, CANONICAL_SIMILAR_ARTISTS),
             (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
             (20, CATALOG_SELECTIONS),
+            (21, crate::database::local_sources::SCHEMA),
         ],
     )?;
     crate::database::identity::backfill_release_external_ids(conn)
@@ -642,6 +644,9 @@ fn apply(conn: &mut Connection, migrations: &[(i64, &str)]) -> rusqlite::Result<
     }
     for (version, sql) in migrations {
         if *version > current {
+            if *version == 21 {
+                crate::database::local_sources::preflight(&tx)?;
+            }
             tx.execute_batch(sql)?;
             tx.execute(
                 "INSERT INTO enrichment_migrations (version) VALUES (?1)",
@@ -685,7 +690,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            20
+            21
         );
     }
 
@@ -905,8 +910,9 @@ mod tests {
                     (18, CANONICAL_SIMILAR_ARTISTS),
                     (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
                     (20, CATALOG_SELECTIONS),
+                    (21, crate::database::local_sources::SCHEMA),
                     (
-                        21,
+                        22,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )
                 ]
@@ -919,7 +925,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            20
+            21
         );
     }
 

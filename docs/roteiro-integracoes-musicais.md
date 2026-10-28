@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 27/10/2026.
-Status: implementação incremental; etapas 1–5 concluídas, demais etapas planejadas.
+Status: implementação incremental; etapas 1–6 concluídas, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -269,6 +269,8 @@ Serviços sem caminho validado ficam desabilitados ou oferecem abrir no serviço
 a ordem dos provedores é decidida pelas provas, não pela numeração dos planos antigos.
 
 ### 6. Migração aditiva das origens locais
+
+**Status:** concluída em 27/10/2026. [Migração, compatibilidade e recuperação](features/local-sources.md).
 
 **Dependências:** 1; independente das provas externas.
 

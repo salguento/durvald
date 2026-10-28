@@ -1,6 +1,7 @@
 //! Database module - core data models and operations without Tauri dependencies
 
 pub mod enrichment;
+pub(crate) mod local_sources;
 pub mod migrations;
 pub mod models;
 pub mod operations;
