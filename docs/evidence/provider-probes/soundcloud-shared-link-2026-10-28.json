@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-28",
+  "issue": "Filled SoundCloud link form rejected on.soundcloud.com sharing URLs as missing fields",
+  "input": "https://on.soundcloud.com/ZSZsO6wnA78EIUvH3i",
+  "canonical_url": "https://soundcloud.com/goldlip/snooze-this-on",
+  "user_title": "Snooze This On",
+  "user_artist": "Gold Lip",
+  "verification": {
+    "live_swift_uniffi_test": "ProviderPlaybackFlowTests.testLiveSharedSoundCloudLinkFromTheReportedForm",
+    "result": "passed",
+    "duration_seconds": 0.347,
+    "checked": [
+      "canonical permalink and reference",
+      "preserved user title and artist",
+      "same short link accepted by source search",
+      "library remains empty"
+    ],
+    "rust_all_features_passed": 497,
+    "rust_external_tests_ignored": 3,
+    "clippy_all_targets_all_features": "passed with -D warnings",
+    "uniffi_smoke": "passed",
+    "release_and_embedded_library_sha256": "b3390ecafba7c6d08a62275bd2827a833d11cc3e9fd7ff9e6413b4d50fdafb0a"
+  },
+  "scope": "Resolution and source search only; this test does not verify audio playback or complete-track availability."
+}

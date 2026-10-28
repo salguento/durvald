@@ -37,6 +37,12 @@ final class NowPlayingCoordinator {
     func update(_ playback: PlaybackSnapshot?, core: DurvaldCore?) {
         guard isActive else { return }
         guard let playback, let track = playback.currentTrack else {
+            if let playback, let preview = store?.embeddedPlayer.status, preview.trackId == nil {
+                infoCenter.nowPlayingInfo = [MPMediaItemPropertyTitle: preview.title, MPMediaItemPropertyArtist: preview.artist ?? "", MPMediaItemPropertyPlaybackDuration: playback.durationSeconds ?? 0, MPNowPlayingInfoPropertyElapsedPlaybackTime: validPosition(playback), MPNowPlayingInfoPropertyPlaybackRate: playback.isPlaying ? 1.0 : 0.0]
+                infoCenter.playbackState = playback.isPlaying ? .playing : .paused
+                updateCommandAvailability(for: playback)
+                return
+            }
             clear()
             return
         }
@@ -81,7 +87,7 @@ final class NowPlayingCoordinator {
         commandCenter.playCommand.addTarget { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let store = self?.store else { return }
-                guard store.playback?.currentTrack != nil,
+                guard store.hasCurrentPlayback,
                       store.playback?.isPaused == true else { return }
                 await store.togglePause()
             }
@@ -90,7 +96,7 @@ final class NowPlayingCoordinator {
         commandCenter.pauseCommand.addTarget { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let store = self?.store else { return }
-                guard store.playback?.currentTrack != nil,
+                guard store.hasCurrentPlayback,
                       store.playback?.isPaused == false else { return }
                 await store.togglePause()
             }
@@ -131,7 +137,7 @@ final class NowPlayingCoordinator {
     }
 
     private func updateCommandAvailability(for playback: PlaybackSnapshot) {
-        let hasTrack = playback.currentTrack != nil
+        let hasTrack = playback.currentTrack != nil || store?.embeddedPlayer.status != nil
         commandCenter.playCommand.isEnabled = hasTrack && playback.isPaused
         commandCenter.pauseCommand.isEnabled = hasTrack && !playback.isPaused
         commandCenter.togglePlayPauseCommand.isEnabled = hasTrack

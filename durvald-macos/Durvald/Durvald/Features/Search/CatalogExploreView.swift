@@ -10,6 +10,7 @@ struct CatalogExploreView: View {
     @State private var providerRevision: UInt64 = 0
     @State private var configurationError: String?
     @State private var showSavedCatalog = false
+    @State private var showSoundCloudLink = false
     @State private var detailDestination: CatalogDetailDestination?
 
     private var request: SearchRequest {
@@ -20,7 +21,7 @@ struct CatalogExploreView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
-                HStack { Spacer(); Button("Itens salvos") { showSavedCatalog = true } }
+                HStack { Button("Ouvir link SoundCloud…") { showSoundCloudLink = true }; Spacer(); Button("Itens salvos") { showSavedCatalog = true } }
                 providerSection(.library, title: "Sua biblioteca")
                 providerSection(.musicBrainz, title: "MusicBrainz")
             }
@@ -35,6 +36,7 @@ struct CatalogExploreView: View {
                                    loader: loader)
         }
         .onDisappear { presentation.cancel() }
+        .sheet(isPresented: $showSoundCloudLink) { SoundCloudLinkView() }
         .sheet(isPresented: $showSavedCatalog) { CatalogSavedView().frame(width: 760, height: 560) }
         .sheet(item: $detailDestination) { destination in
             NavigationStack { CatalogDetailsView(seed: destination.entry)

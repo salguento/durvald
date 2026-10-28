@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-10-28T18:02:21.466456+00:00",
+  "stage": 10,
+  "provider": "soundcloud",
+  "transport": "official_visible_widget_in_webkit",
+  "status": "passed",
+  "scope": "individual_source_search_preview_explicit_save_default_saved_playback_disable",
+  "public_sample": "https://soundcloud.com/forss/flickermood",
+  "muted_live_test": true,
+  "native_audio": false,
+  "full_vs_preview": "not_verified",
+  "temporary_stream_urls_persisted": false,
+  "downloads": "not_requested",
+  "core_tests": {
+    "passed": 492,
+    "ignored_external": 3,
+    "new_provider_tests": 8
+  },
+  "macos_tests": {
+    "passed": 419,
+    "skipped_external": 3
+  },
+  "release_flow_tests": [
+    {
+      "test": "testListenSaveAndDefaultPlaybackThroughRealWebKitAndFFI",
+      "status": "passed",
+      "seconds": 0.53
+    },
+    {
+      "test": "testLiveSoundCloudListenThenSave",
+      "status": "passed",
+      "seconds": 4.492
+    }
+  ],
+  "checks": [
+    "preview_has_session_identity_and_no_fake_track_id",
+    "search_and_preview_do_not_adopt_library_items",
+    "explicit_confirmation_and_generation_required_for_save",
+    "idempotent_save_without_restarting_audio",
+    "saved_preference_and_personal_values_survive_restart",
+    "explicit_source_has_no_automatic_fallback",
+    "pre_audio_fallback_is_bounded_and_informed",
+    "playing_or_progress_disables_fallback",
+    "remote_source_resolved_only_for_selected_occurrence",
+    "native_to_remote_queue_transition",
+    "source_plugin_disable_stops_widget_and_persists",
+    "no_history_from_resolution_retry_or_short_preview"
+  ],
+  "checks_tools": {
+    "clippy_all_targets_all_features_warnings_as_errors": "passed",
+    "release_core_and_regenerated_bindings": "passed",
+    "uniffi_async_config_error_checksum_smoke": "passed"
+  },
+  "known_limits": [
+    "FINISH_after_seek_near_end_remains_unreliable_see_stage_9B_evidence",
+    "no_general_SoundCloud_text_search",
+    "no_persistent_library_history_for_unsaved_previews",
+    "complete_mixed_queue_cycle_navigation_is_stage_14",
+    "remote_Lastfm_scrobbling_not_enabled",
+    "per_item_full_vs_preview_not_verified",
+    "signed_notarized_distribution_not_validated"
+  ],
+  "library_sha256": "68f65b908416d540ca826a65e37b1452ca5145024766cf0d58e316678d461931",
+  "source_sha256": {
+    "durvald-core/src/application/playback_sources.rs": "63f94be1a6cbf3f698bcd186a2d1649986cf66b1c142b82ac4ed122adb11707a",
+    "durvald-core/src/application/playback_embedded.rs": "29e9db3922fc60be491fcf395ed2fb49dc8c55b061a65f035cd8a807191d06ad",
+    "durvald-core/src/application/playback.rs": "884127f891090933e3c1f39a174117777777cc626a5ef31e97ee54c064ee522b",
+    "durvald-core/src/application/sources.rs": "cc1fda0684159feea0891ed3530e37727a2e75f65066fbe685ebec3bbe84f1f8",
+    "durvald-core/src/infrastructure/soundcloud_playback.rs": "2dbdb2f482f697b35fd8ca183ab7a3b65f03eb4352c120b66f0e2133c51322b5",
+    "durvald-core/src/core.rs": "b9c7eb317e495fd14dd8322d99123f9f33448e6a26422a1f628d6c7527bf76d6",
+    "durvald-core/src/api/embedded.rs": "28253ae5dec478a0a9cdaeae2858e22feebf4835c3ba7bf23cce91e641a8a5e6",
+    "durvald-core/tests/provider_playback.rs": "8c5618ea0bf46afc3243fc77e8ef219e89745e07429c4292ee1b6fd17a7dc6d1",
+    "durvald-macos/Durvald/Durvald/Features/Sources/SourceManagementPresentation.swift": "ea44b3b9a13cbe65b672cda27038700b57d409dbdb2143bec0681bcf07d5e1c2",
+    "durvald-macos/Durvald/Durvald/Features/Sources/SourceManagementView.swift": "88a931bd5d41f6fb1138d1e9ba65b2df5f8ce469c4b285a0006eb901a08472f1",
+    "durvald-macos/Durvald/Durvald/Features/Sources/ListeningSourceSaveView.swift": "04ad885cb9bd125738cba3af40b09994a45accc9a46135593258190e76772575",
+    "durvald-macos/Durvald/Durvald/Features/Player/EmbeddedPlayerController.swift": "9f50ce368d5a74e90e1662123b066e6a691ca6a62d2189a28c4411b6f5296210",
+    "durvald-macos/Durvald/DurvaldTests/ProviderPlaybackFlowTests.swift": "7baabf9a2110129ca886b5f487b3935137422d083b467e35f36f59ff65a842f4"
+  }
+}

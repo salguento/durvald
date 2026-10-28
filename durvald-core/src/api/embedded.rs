@@ -57,9 +57,21 @@ pub struct EmbeddedPlaybackEvent {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct EmbeddedPlaybackSnapshot {
     pub generation: String,
-    pub track_id: i64,
-    pub source_id: i64,
+    pub track_id: Option<i64>,
+    pub source_id: Option<i64>,
+    pub canonical_url: String,
+    pub title: String,
+    pub artist: Option<String>,
     pub state: EmbeddedPlaybackState,
     pub seek_available: bool,
+    pub message: Option<String>,
+}
+
+/// Current source selection, including a visible pre-playback fallback notice.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PlaybackSourceStatus {
+    pub source_id: Option<i64>,
+    pub provider: String,
     pub message: Option<String>,
 }

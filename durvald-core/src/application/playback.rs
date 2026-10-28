@@ -43,6 +43,10 @@ const IDLE_COORDINATION_INTERVAL: Duration = Duration::from_secs(1);
 /// are introduced only if later application boundaries require them.
 #[allow(dead_code)]
 pub(crate) struct PlaybackApplication {
+    pub(super) integration_runtime:
+        tokio::sync::Mutex<Option<Arc<super::music_plugins::PluginRuntime>>>,
+    pub(super) source_status: tokio::sync::Mutex<Option<crate::api::PlaybackSourceStatus>>,
+    pub(super) gapless_skip: tokio::sync::Mutex<Option<String>>,
     pub(super) embedded: tokio::sync::Mutex<Option<super::playback_embedded::EmbeddedSession>>,
     pub(super) embedded_host:
         tokio::sync::Mutex<Option<Arc<super::playback_embedded::EmbeddedHostDispatcher>>>,
@@ -66,6 +70,9 @@ impl PlaybackApplication {
         lastfm: Arc<LastFmClient>,
     ) -> Self {
         Self {
+            integration_runtime: Default::default(),
+            source_status: Default::default(),
+            gapless_skip: Default::default(),
             embedded: Default::default(),
             embedded_host: Default::default(),
             track_query,
@@ -170,7 +177,7 @@ impl PlaybackApplication {
         source: Option<i64>,
     ) -> CoreResult<PlaybackSnapshot> {
         validate_source_context(&source_context)?;
-        let _track = self
+        let selected_track = self
             .track_query
             .find(track_id)
             .await
@@ -178,11 +185,32 @@ impl PlaybackApplication {
         let track_id = track_id.get() as i64;
 
         let _transition = self.playback_transition.lock().await;
-        let prepared = if let Some(source) = source {
-            let path = self.track_query.source_media_path(track_id, source).await?;
-            self.prepare_sound(path).await?
-        } else {
-            self.prepare_track(track_id).await?
+        let (prepared, remaining, fallback) = self.prepare_selection(track_id, source).await?;
+        let prepared = match prepared {
+            super::playback_sources::PreparedSource::Local(sound, selected) => {
+                self.source_selected(&selected, fallback).await;
+                *sound
+            }
+            super::playback_sources::PreparedSource::Embedded(url, selected) => {
+                self.audio_player.lock().await.discard_collection();
+                let result = self
+                    .start_embedded_selection_locked(
+                        crate::application::library::track_from_catalog(selected_track),
+                        selected,
+                        url,
+                        remaining,
+                        source_context,
+                        None,
+                        fallback,
+                    )
+                    .await;
+                if let Err(error) = result {
+                    if !self.fallback_before_audio_locked().await? {
+                        return Err(error);
+                    }
+                }
+                return Ok(self.playback().await);
+            }
         };
         self.stop_embedded_locked().await?;
         let state = {
@@ -277,7 +305,40 @@ impl PlaybackApplication {
             0
         };
         let track_id = items[start].song_id;
-        let prepared = self.prepare_track(track_id).await?;
+        let (prepared, remaining, fallback) = self.prepare_selection(track_id, None).await?;
+        let prepared = match prepared {
+            super::playback_sources::PreparedSource::Local(sound, selected) => {
+                self.source_selected(&selected, fallback).await;
+                *sound
+            }
+            super::playback_sources::PreparedSource::Embedded(url, selected) => {
+                let track = self.find_track(track_id).await?;
+                let occurrence = items[start].occurrence_id.clone();
+                let context = items[start].source_context.clone();
+                let result = self
+                    .start_embedded_selection_locked(
+                        track,
+                        selected,
+                        url,
+                        remaining,
+                        context,
+                        Some(occurrence),
+                        fallback,
+                    )
+                    .await;
+                if let Err(error) = result {
+                    if !self.fallback_before_audio_locked().await? {
+                        return Err(error);
+                    }
+                }
+                self.audio_player
+                    .lock()
+                    .await
+                    .start_collection(items, start, shuffle);
+                self.persist_session().await?;
+                return Ok(self.playback().await);
+            }
+        };
         self.stop_embedded_locked().await?;
         let state = {
             let mut player = self.audio_player.lock().await;
@@ -361,6 +422,7 @@ impl PlaybackApplication {
     pub(crate) async fn stop(&self) -> CoreResult<()> {
         let _transition = self.playback_transition.lock().await;
         self.stop_embedded_locked().await?;
+        *self.source_status.lock().await = None;
         self.audio_player.lock().await.stop();
         drop(_transition);
         self.wake_automatic_coordination();
@@ -512,16 +574,22 @@ impl PlaybackApplication {
         let plan = {
             let mut player = self.audio_player.lock().await;
             player.cancel_gapless_transition();
-            let upcoming_position =
-                if player.get_current_song_id().is_some() || self.embedded.lock().await.is_some() {
-                    position
-                        .checked_sub(1)
-                        .ok_or_else(|| CoreError::InvalidInput {
-                            message: "The active track is already playing".to_string(),
-                        })?
-                } else {
-                    position
-                };
+            let upcoming_position = if player.get_current_song_id().is_some()
+                || self
+                    .embedded
+                    .lock()
+                    .await
+                    .as_ref()
+                    .is_some_and(|s| s.snapshot.track_id.is_some())
+            {
+                position
+                    .checked_sub(1)
+                    .ok_or_else(|| CoreError::InvalidInput {
+                        message: "The active track is already playing".to_string(),
+                    })?
+            } else {
+                position
+            };
             player
                 .plan_skip(upcoming_position as usize)
                 .map_err(|error| CoreError::InvalidInput {
@@ -534,7 +602,13 @@ impl PlaybackApplication {
     pub(crate) async fn remove_from_queue(&self, position: u64) -> CoreResult<()> {
         let _transition = self.playback_transition.lock().await;
         let mut player = self.audio_player.lock().await;
-        let position = if self.embedded.lock().await.is_some() {
+        let position = if self
+            .embedded
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|s| s.snapshot.track_id.is_some())
+        {
             position
                 .checked_sub(1)
                 .ok_or_else(|| CoreError::InvalidInput {
@@ -556,7 +630,13 @@ impl PlaybackApplication {
     pub(crate) async fn move_queue_item(&self, from: u64, to: u64) -> CoreResult<()> {
         let _transition = self.playback_transition.lock().await;
         let mut player = self.audio_player.lock().await;
-        let (from, to) = if self.embedded.lock().await.is_some() {
+        let (from, to) = if self
+            .embedded
+            .lock()
+            .await
+            .as_ref()
+            .is_some_and(|s| s.snapshot.track_id.is_some())
+        {
             (
                 from.checked_sub(1).ok_or_else(|| CoreError::InvalidInput {
                     message: "Cannot move the active embedded track".into(),
@@ -596,7 +676,52 @@ impl PlaybackApplication {
         &self,
         plan: crate::audio::player::PlaybackPlan,
     ) -> CoreResult<PlaybackSnapshot> {
-        let prepared = self.prepare_plan(&plan).await?;
+        let explicit = self
+            .source_override
+            .lock()
+            .await
+            .as_ref()
+            .filter(|(occurrence, _)| occurrence == plan.occurrence_id())
+            .map(|(_, source)| *source);
+        let (prepared, remaining, fallback) =
+            self.prepare_selection(plan.song_id(), explicit).await?;
+        let prepared = match prepared {
+            super::playback_sources::PreparedSource::Local(sound, selected) => {
+                self.source_selected(&selected, fallback).await;
+                *sound
+            }
+            super::playback_sources::PreparedSource::Embedded(url, selected) => {
+                let track = self.find_track(plan.song_id()).await?;
+                let occurrence = plan.occurrence_id().to_owned();
+                let context = plan.source_context().to_owned();
+                self.stop_embedded_locked().await?;
+                self.audio_player
+                    .lock()
+                    .await
+                    .commit_external_plan(plan)
+                    .map_err(|e| CoreError::Playback {
+                        message: e.to_string(),
+                    })?;
+                let result = self
+                    .start_embedded_selection_locked(
+                        track,
+                        selected,
+                        url,
+                        remaining,
+                        context,
+                        Some(occurrence),
+                        fallback,
+                    )
+                    .await;
+                if let Err(error) = result {
+                    if !self.fallback_before_audio_locked().await? {
+                        return Err(error);
+                    }
+                }
+                self.persist_session().await?;
+                return Ok(self.playback().await);
+            }
+        };
         self.stop_embedded_locked().await?;
         let track_id = plan.song_id();
         let state = {
@@ -630,6 +755,11 @@ impl PlaybackApplication {
         &self,
         plan: &crate::audio::player::PlaybackPlan,
     ) -> CoreResult<crate::audio::player::PreparedSound> {
+        if self.gapless_skip.lock().await.as_deref() == Some(plan.occurrence_id()) {
+            return Err(CoreError::Playback {
+                message: "Integrated source requires a normal transition".into(),
+            });
+        }
         let source = self
             .source_override
             .lock()
@@ -637,18 +767,19 @@ impl PlaybackApplication {
             .as_ref()
             .filter(|(occurrence, _)| occurrence == plan.occurrence_id())
             .map(|(_, id)| *id);
-        if let Some(source) = source {
-            let path = self
-                .track_query
-                .source_media_path(plan.song_id(), source)
-                .await?;
-            self.prepare_sound(path).await
-        } else {
-            self.prepare_track(plan.song_id()).await
+        let (prepared, _, _) = self.prepare_selection(plan.song_id(), source).await?;
+        match prepared {
+            super::playback_sources::PreparedSource::Local(sound, _) => Ok(*sound),
+            super::playback_sources::PreparedSource::Embedded(_, _) => {
+                *self.gapless_skip.lock().await = Some(plan.occurrence_id().to_owned());
+                Err(CoreError::Playback {
+                    message: "Integrated source requires a normal transition".into(),
+                })
+            }
         }
     }
 
-    async fn prepare_track(
+    pub(super) async fn prepare_track(
         &self,
         track_id: i64,
     ) -> CoreResult<crate::audio::player::PreparedSound> {
@@ -665,7 +796,10 @@ impl PlaybackApplication {
         })
     }
 
-    async fn prepare_sound(&self, path: String) -> CoreResult<crate::audio::player::PreparedSound> {
+    pub(super) async fn prepare_sound(
+        &self,
+        path: String,
+    ) -> CoreResult<crate::audio::player::PreparedSound> {
         let (normalize_volume, equalizer, meter) = {
             let player = self.audio_player.lock().await;
             let (equalizer, meter) = player.equalizer_processing();
@@ -710,7 +844,16 @@ impl PlaybackApplication {
             )
         };
         let plan = plan?;
-        let prepared = self.prepare_plan(&plan).await.ok()?;
+        let prepared = match self.prepare_plan(&plan).await {
+            Ok(sound) => sound,
+            Err(_) => {
+                if let Some(track) = completed_track_id {
+                    self.report_track_completed(track).await;
+                }
+                self.commit_navigation_plan(plan).await.ok()?;
+                return Some((completed_track_id, None));
+            }
+        };
         let started_track_id = plan.song_id();
         self.audio_player
             .lock()
@@ -863,7 +1006,7 @@ impl PlaybackApplication {
         snapshot
     }
 
-    async fn report_track_started(&self, track_id: i64) {
+    pub(super) async fn report_track_started(&self, track_id: i64) {
         if !self.lastfm.is_connected().await {
             return;
         }

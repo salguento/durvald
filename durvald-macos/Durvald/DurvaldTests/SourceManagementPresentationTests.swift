@@ -6,6 +6,9 @@ final class SourceManagementPresentationTests: XCTestCase {
     final class Loader: SourceManaging {
         var searches = 0
         var closed = false
+        var previews = 0
+        var attachments = 0
+        var previewHandler: (() async -> Void)?
         var searchHandler: ((String, CatalogEntry, UInt64) async throws -> SourceSearchPage)?
         func providers() async throws -> [SourceProvider] {
             [SourceProvider(id: "one", name: "One", enabled: true), SourceProvider(id: "two", name: "Two", enabled: true)]
@@ -18,7 +21,7 @@ final class SourceManagementPresentationTests: XCTestCase {
         func sources(_ track: Int64) async throws -> [TrackSource] { [] }
         func matches(_ query: String) async throws -> [Track] { [] }
         func track(_ id: Int64) async throws -> Track { throw CocoaError(.fileNoSuchFile) }
-        func attach(_ candidate: String, track: Int64?) async throws -> TrackSource { throw CocoaError(.fileNoSuchFile) }
+        func attach(_ candidate: String, track: Int64?) async throws -> TrackSource { attachments += 1; throw CocoaError(.fileNoSuchFile) }
         func attachLocal(_ path: String, track: Int64) async throws -> TrackSource { throw CocoaError(.fileNoSuchFile) }
         func enabled(_ source: TrackSource, value: Bool) async throws {}
         func remove(_ source: TrackSource) async throws {}
@@ -26,6 +29,8 @@ final class SourceManagementPresentationTests: XCTestCase {
         func test(_ source: TrackSource) async throws -> SourceTestResult { throw CocoaError(.fileNoSuchFile) }
         func openURL(_ source: TrackSource) async throws -> String { "https://example.org" }
         func play(_ source: TrackSource) async throws {}
+        func preview(_ candidate: String) async throws { previews += 1; await previewHandler?() }
+        func playbackEnabled() async throws -> Bool { true }
         func close() async { closed = true }
     }
     private func entry(_ id: String) -> CatalogEntry {
@@ -69,4 +74,34 @@ final class SourceManagementPresentationTests: XCTestCase {
         XCTAssertEqual(fresh.searches, 0)
         model.cancel()
     }
+    private func candidate() -> SourceCandidate {
+        SourceCandidate(candidateId: "selected", provider: "soundcloud", externalId: "artist/track", canonicalUrl: "https://soundcloud.com/artist/track", title: "Track", uploader: nil, versionLabel: nil, durationSeconds: nil, capability: .externalOpen)
+    }
+    func testPreviewDoesNotAttachAndAllowsSavingAsASeparateAction() async {
+        let model = SourceManagementPresentation(), loader = Loader()
+        await model.load(entry: entry("selected"), loader: loader)
+        let played = await model.preview(candidate())
+        XCTAssertTrue(played)
+        XCTAssertEqual(loader.previews, 1)
+        XCTAssertEqual(loader.attachments, 0)
+        XCTAssertNil(model.currentTrack)
+        XCTAssertFalse(model.busy)
+        model.cancel()
+    }
+    func testOldPreviewCompletionDoesNotDismissANewSelection() async {
+        let model = SourceManagementPresentation(), old = Loader(), fresh = Loader()
+        var pending: CheckedContinuation<Void, Never>?
+        old.previewHandler = { await withCheckedContinuation { pending = $0 } }
+        await model.load(entry: entry("old"), loader: old)
+        let preview = Task { await model.preview(candidate()) }
+        for _ in 0..<1000 where pending == nil { await Task.yield() }
+        await model.load(entry: entry("new"), loader: fresh)
+        pending?.resume()
+        let shouldDismiss = await preview.value
+        XCTAssertFalse(shouldDismiss)
+        XCTAssertFalse(model.busy)
+        XCTAssertEqual(fresh.previews, 0)
+        model.cancel()
+    }
+
 }

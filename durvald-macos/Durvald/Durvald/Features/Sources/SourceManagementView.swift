@@ -19,6 +19,7 @@ struct SourceManagementView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if let message = presentation.message { Text(message).foregroundStyle(.secondary).textSelection(.enabled) }
                     if let error = presentation.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+                    Toggle("Reprodução SoundCloud no player integrado", isOn: Binding(get: { presentation.playbackEnabled }, set: { value in Task { await presentation.setPlaybackEnabled(value) } }))
                     savedSources
                     GroupBox("Buscar fontes para este item") {
                         VStack(alignment: .leading, spacing: 12) {
@@ -84,7 +85,7 @@ struct SourceManagementView: View {
                                     Button("Tocar agora com esta origem") { Task { await presentation.play(source) } }.disabled(!source.enabled || source.capability != .fullAudio)
                                 } else {
                                     if source.provider == "soundcloud" {
-                                        Button("Ouvir no player integrado") { Task { await store.playEmbeddedSource(source); dismiss() } }.disabled(!source.enabled)
+                                        Button("Ouvir no player integrado") { Task { await store.playEmbeddedSource(source); dismiss() } }.disabled(!source.enabled || !presentation.playbackEnabled)
                                     }
                                     Button("Abrir no serviço") { Task { if let url = await presentation.openURL(source) { NSWorkspace.shared.open(url) } } }.disabled(source.capability != .externalOpen && source.capability != .preview)
                                 }
@@ -105,6 +106,11 @@ struct SourceManagementView: View {
             Text(candidate.provider).font(.caption).foregroundStyle(.secondary)
             metadata(uploader: candidate.uploader, version: candidate.versionLabel, duration: candidate.durationSeconds, capability: candidate.capability)
             if let url = URL(string: candidate.canonicalUrl) { Link("Abrir no serviço", destination: url) }
+            if candidate.provider == "soundcloud" {
+                Button("Ouvir antes de salvar") { Task { if await presentation.preview(candidate) { dismiss() } } }.disabled(presentation.busy || !presentation.playbackEnabled)
+                    .accessibilityIdentifier("sources.preview")
+                Text("A audição é temporária. Salve ou associe a origem somente depois de conferir a versão.").font(.caption).foregroundStyle(.secondary)
+            }
             Button("Revisar associação…") { presentation.review(candidate); matchQuery = "" }.disabled(presentation.busy)
         }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
     }

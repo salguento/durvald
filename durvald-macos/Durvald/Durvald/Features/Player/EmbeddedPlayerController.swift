@@ -22,6 +22,7 @@ final class EmbeddedPlaybackBridge: EmbeddedPlaybackHost {
 @MainActor @Observable
 final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     private(set) var webView: WKWebView?
+    private(set) var sourceStatus: PlaybackSourceStatus?
     private(set) var status: EmbeddedPlaybackSnapshot?
     @ObservationIgnored weak var core: DurvaldCore?
     @ObservationIgnored private var generation: String?
@@ -41,6 +42,7 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
     func refresh() async {
         guard let core else { return }
         status = await core.embeddedPlayback()
+        sourceStatus = await core.playbackSourceStatus()
     }
     func execute(_ command: EmbeddedPlaybackCommand, completion: @escaping (Bool) -> Void) {
         if command.kind == .stop {
@@ -194,6 +196,7 @@ private struct SoundCloudWidgetView: NSViewRepresentable {
     func updateNSView(_ nsView: WKWebView, context: Context) {}
 }
 struct EmbeddedPlayerPanel: View {
+    @State private var savingGeneration: String?
     @Environment(DurvaldCoreStore.self) private var store
     var body: some View {
         let player = store.embeddedPlayer
@@ -203,6 +206,9 @@ struct EmbeddedPlayerPanel: View {
                     Text("SoundCloud · player integrado").font(.caption)
                     if player.status?.state == .loading { ProgressView().controlSize(.small); Text("Carregando…").font(.caption) }
                     Spacer()
+                    if let status = player.status, status.trackId == nil {
+                        Button("Salvar / associar…") { savingGeneration = status.generation }
+                    }
                     Button("Encerrar") { Task { try? await store.core?.stop(); await player.refresh(); await store.refreshPlayback() } }
                 }
                 SoundCloudWidgetView(webView: view).id(ObjectIdentifier(view)).frame(height: 166)
@@ -213,7 +219,11 @@ struct EmbeddedPlayerPanel: View {
                     }
                 Text("Equalizador, normalização e transições sem intervalo não se aplicam a este player.").font(.caption2).foregroundStyle(.secondary)
             }.padding(8).accessibilityIdentifier("player.soundcloud")
+                .sheet(isPresented: Binding(get: { savingGeneration != nil }, set: { if !$0 { savingGeneration = nil } })) {
+                    if let generation = savingGeneration { ListeningSourceSaveView(generation: generation) }
+                }
         }
+        if let notice = player.sourceStatus?.message, player.status != nil || store.playback?.currentTrack != nil { Text(notice).font(.caption).foregroundStyle(.secondary).padding(8) }
         if let status = player.status, let message = status.message {
             HStack { Text(message).font(.caption); Button("Tentar novamente") { Task { await store.togglePause(); await player.refresh() } } }.padding(8)
         }

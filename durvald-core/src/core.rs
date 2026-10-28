@@ -208,8 +208,48 @@ impl DurvaldCore {
         self.playback_application.embedded_event(event).await
     }
 
+    pub async fn resolve_soundcloud_link_entry(
+        &self,
+        url: String,
+        title: String,
+        artist: Option<String>,
+    ) -> CoreResult<CatalogEntry> {
+        self.sources
+            .resolve_soundcloud_link_entry(url, title, artist)
+            .await
+    }
+    pub fn soundcloud_link_entry(
+        &self,
+        url: String,
+        title: String,
+        artist: Option<String>,
+    ) -> CoreResult<CatalogEntry> {
+        self.sources.soundcloud_link_entry(url, title, artist)
+    }
+    pub async fn soundcloud_playback_enabled(&self) -> bool {
+        self.playback_application.soundcloud_enabled().await
+    }
+    pub async fn set_soundcloud_playback_enabled(&self, enabled: bool) -> CoreResult<()> {
+        self.playback_application
+            .set_soundcloud_enabled(enabled)
+            .await
+    }
+    pub async fn playback_source_status(&self) -> Option<PlaybackSourceStatus> {
+        self.playback_application.playback_source_status().await
+    }
+    pub async fn save_listening_source(
+        &self,
+        generation: String,
+        track_id: Option<i64>,
+        confirmed: bool,
+    ) -> CoreResult<TrackSource> {
+        self.playback_application
+            .save_listening_source(generation, track_id, confirmed)
+            .await
+    }
     pub fn source_search_session(&self) -> Arc<SourceSearchSession> {
         Arc::new(SourceSearchSession {
+            playback: Arc::downgrade(&self.playback_application),
             application: self.sources.clone(),
             state: Default::default(),
         })
@@ -1464,11 +1504,25 @@ pub async fn open(config: CoreConfig) -> CoreResult<Arc<DurvaldCore>> {
 /// Candidate tokens belong to one selected item and generation.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct SourceSearchSession {
+    playback: std::sync::Weak<crate::application::playback::PlaybackApplication>,
     application: Arc<crate::application::sources::SourcesApplication>,
     state: crate::application::sources::SourceSession,
 }
 #[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 impl SourceSearchSession {
+    pub async fn preview_candidate(&self, candidate_id: String) -> CoreResult<PlaybackSnapshot> {
+        let (entry, candidate) = self
+            .application
+            .listening_candidate(&self.state, candidate_id)
+            .await?;
+        self.playback
+            .upgrade()
+            .ok_or_else(|| CoreError::InvalidInput {
+                message: "Playback core is closed".into(),
+            })?
+            .preview_candidate(entry, candidate)
+            .await
+    }
     pub async fn search(
         &self,
         provider: String,

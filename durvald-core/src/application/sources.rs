@@ -59,6 +59,87 @@ impl SourcesApplication {
             runtime,
         }
     }
+    pub(crate) async fn resolve_soundcloud_link_entry(
+        &self,
+        url: String,
+        title: String,
+        artist: Option<String>,
+    ) -> CoreResult<CatalogEntry> {
+        if title.trim().is_empty() {
+            return Err(invalid("Informe o nome da faixa."));
+        }
+        if title.trim().len() > 500
+            || title.chars().any(char::is_control)
+            || artist
+                .as_ref()
+                .is_some_and(|a| a.len() > 2000 || a.chars().any(char::is_control))
+        {
+            return Err(invalid(
+                "O nome ou artista contém caracteres inválidos ou é muito longo.",
+            ));
+        }
+        let url = url.trim().to_owned();
+        if !crate::infrastructure::soundcloud_links::is_short_link(&url) {
+            return self.soundcloud_link_entry(url, title, artist);
+        }
+        let scope = RequestScope::default();
+        // A user-supplied URL is a provisional reference only for this request.
+        // The resolver supplies the real permalink identity before any save.
+        let target = CatalogEntityRef::External(
+            ExternalEntityRef::new(
+                ProviderId::new("soundcloud").unwrap(),
+                ExternalEntityKind::AudioTrack,
+                &url,
+            )
+            .map_err(|_| invalid("Link SoundCloud inválido."))?,
+        );
+        let candidates = self.runtime.find_sources(&ProviderId::new("service-links").unwrap(), scope.begin(), SourceSearchRequest {target, link:Some(url)}).await.map_err(|e| {
+            use crate::domain::music::{plugins::PluginError as P, IntegrationError as I};
+            match e {
+                P::Disabled | P::NotRegistered => invalid("A busca por links está desativada. Ative-a nas origens da faixa."),
+                P::Adapter(I::InvalidInput(_)) => invalid("O link compartilhado não aponta para uma faixa individual SoundCloud. Links de perfis e álbuns não são aceitos."),
+                P::Adapter(I::NotFound) => invalid("O link compartilhado não foi encontrado ou expirou. Copie novamente o link da faixa."),
+                P::Timeout | P::Adapter(I::Timeout) => CoreError::Network {message:"O SoundCloud demorou para resolver o link curto. Tente novamente ou copie o endereço completo da faixa.".into()},
+                P::Adapter(I::RateLimited {..}) => CoreError::Network {message:"O SoundCloud pediu para aguardar. Tente novamente mais tarde.".into()},
+                _ => CoreError::Network {message:"Não foi possível expandir o link curto SoundCloud. Verifique a conexão ou abra o link no navegador e copie o endereço completo da faixa.".into()},
+            }
+        })?;
+        let candidate = candidates
+            .into_iter()
+            .find(|c| c.reference.entity().provider().as_str() == "soundcloud")
+            .ok_or_else(|| invalid("O link não aponta para uma faixa SoundCloud."))?;
+        self.soundcloud_link_entry(
+            candidate.reference.canonical_url().as_str().into(),
+            title,
+            artist,
+        )
+    }
+    pub(crate) fn soundcloud_link_entry(
+        &self,
+        url: String,
+        title: String,
+        artist: Option<String>,
+    ) -> CoreResult<CatalogEntry> {
+        let media = crate::infrastructure::service_links::canonical_link(url.trim())
+            .filter(|m| m.entity().provider().as_str() == "soundcloud")
+            .ok_or_else(|| invalid("Informe um link de faixa individual SoundCloud."))?;
+        let mut entry = CatalogEntry {
+            reference: CatalogReference {
+                provider: "soundcloud".into(),
+                kind: CatalogItemKind::AudioTrack,
+                id: media.entity().external_id().into(),
+            },
+            title: title.trim().into(),
+            artist_credit: artist
+                .map(|a| a.trim().to_owned())
+                .filter(|a| !a.is_empty()),
+            version_label: None,
+            duration_seconds: None,
+            canonical_url: Some(media.canonical_url().as_str().into()),
+        };
+        validate_entry(&mut entry)?;
+        Ok(entry)
+    }
     pub(crate) async fn list(&self, track: i64) -> CoreResult<Vec<TrackSource>> {
         self.repository.list(track).await
     }
@@ -235,6 +316,39 @@ impl SourcesApplication {
             candidates: output,
             failure: None,
         })
+    }
+    pub(crate) async fn listening_candidate(
+        &self,
+        session: &SourceSession,
+        id: String,
+    ) -> CoreResult<(CatalogEntry, SourceCandidate)> {
+        let (entry, candidate, provider) = {
+            let s = session.state.lock().await;
+            if s.closed {
+                return Err(invalid("Closed source search"));
+            }
+            let (c, p) = s
+                .candidates
+                .get(&id)
+                .ok_or_else(|| invalid("Candidate expired; search again"))?;
+            (
+                s.entry.clone().ok_or_else(|| invalid("No selected item"))?,
+                c.clone(),
+                p.clone(),
+            )
+        };
+        if !self
+            .providers()
+            .await?
+            .iter()
+            .any(|p| p.id == provider && p.enabled)
+        {
+            return Err(invalid("Source provider is disabled"));
+        }
+        if candidate.provider != "soundcloud" {
+            return Err(invalid("This source supports external open only"));
+        }
+        Ok((entry, candidate))
     }
     pub(crate) async fn attach(
         &self,

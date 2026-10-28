@@ -110,6 +110,9 @@ where
             message: "Invalid music integration runtime limits".into(),
         })?,
     );
+    playback_application
+        .initialize_soundcloud(music_plugins.clone())
+        .await;
     let (enrichment_application, lastfm_application) = build_enrichment_applications(
         db_pool.clone(),
         config.covers_dir.clone(),

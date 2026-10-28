@@ -10,8 +10,10 @@ A busca consulta somente os provedores habilitados, com resultados e falhas
 independentes. MusicBrainz consulta relações de streaming/vídeo da gravação
 selecionada; uma faixa local pode reutilizar sua referência MusicBrainz, quando
 identificada sem ambiguidade. Sem essa identidade, não há busca por aproximação
-de título. O adaptador `service-links`, habilitado inicialmente e sem acesso à
-rede, reconhece links individuais de SoundCloud, YouTube e Bandcamp. Ele não
+de título. O adaptador `service-links`, habilitado inicialmente, reconhece links individuais
+de SoundCloud, YouTube e Bandcamp sem consultar a rede. Links curtos explícitos
+`https://on.soundcloud.com/…` usam uma consulta limitada aos redirecionamentos
+do SoundCloud, preservando somente o permalink canônico da faixa. Ele não
 pesquisa o catálogo desses serviços. Links de álbuns e playlists ficam fora deste
 recorte.
 
@@ -76,3 +78,10 @@ A [etapa 9B](embedded-playback.md), concluída em 28/10/2026, acrescenta
 A escolha é explícita; candidatos continuam como links até a associação, e
 YouTube/Bandcamp mantêm somente abertura externa. A capacidade real de cada
 item é observada ao carregar o widget, sem inferir áudio completo ou prévia.
+
+## Atualização: fluxo de ponta a ponta
+
+A [etapa 10](provider-playback.md) acrescenta ouvir um candidato SoundCloud antes
+de salvar, associar durante a audição e usar a preferência no botão normal de
+reprodução. A audição temporária não cria itens na biblioteca ou no histórico.
+O controle do player SoundCloud é separado dos provedores de busca de fontes.

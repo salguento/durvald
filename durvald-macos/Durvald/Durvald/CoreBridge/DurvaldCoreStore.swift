@@ -1072,10 +1072,11 @@ final class DurvaldCoreStore {
         catch { errorMessage = String(describing: error) }
     }
 
+    var hasCurrentPlayback: Bool { playback?.currentTrack != nil || embeddedPlayer.status != nil }
     var canSeekCurrentPlayback: Bool {
-        guard playback?.currentTrack != nil else { return false }
-        if playback?.sourceContext.hasPrefix("embedded:") == true {
-            return embeddedPlayer.status?.seekAvailable == true && embeddedPlayer.status?.state != .failed && embeddedPlayer.status?.state != .ended
+        guard hasCurrentPlayback else { return false }
+        if let status = embeddedPlayer.status {
+            return status.seekAvailable && status.state != .failed && status.state != .ended
         }
         return true
     }
@@ -1481,7 +1482,7 @@ final class DurvaldCoreStore {
     }
 
     func togglePause() async {
-        guard let core, let playback, playback.currentTrack != nil else { return }
+        guard let core, let playback, hasCurrentPlayback else { return }
 
         do {
             if playback.isPaused {
@@ -1506,6 +1507,12 @@ final class DurvaldCoreStore {
 
     func seek(to seconds: Double) {
         guard canSeekCurrentPlayback else { return }
+        if playback?.currentTrack == nil, let core, seconds.isFinite, seconds >= 0,
+           let duration = playback?.durationSeconds {
+            let target = UInt64(min(seconds, duration).rounded(.down))
+            Task { do { try await core.seek(seconds: target); await refreshPlayback() } catch { errorMessage = String(describing: error) } }
+            return
+        }
         guard let core, !isChangingTrack, seconds.isFinite,
               var optimisticSnapshot = playback,
               let trackID = optimisticSnapshot.currentTrack?.id,
@@ -1603,6 +1610,7 @@ final class DurvaldCoreStore {
         guard let core else { return }
         let revision = seekRequestID
         let snapshot = await core.playback()
+        await embeddedPlayer.refresh()
         publishPlayback(snapshot, revision: revision)
     }
 

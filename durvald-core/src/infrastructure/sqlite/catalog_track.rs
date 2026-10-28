@@ -52,6 +52,30 @@ impl SqliteCatalogTrackQuery {
             })
     }
 
+    pub(crate) async fn sources(
+        &self,
+        track: i64,
+    ) -> crate::api::CoreResult<Vec<crate::api::TrackSource>> {
+        super::sources::SqliteSources::new(self.db_pool.clone())
+            .list(track)
+            .await
+    }
+    pub(crate) async fn attach_candidate(
+        &self,
+        entry: crate::api::CatalogEntry,
+        candidate: crate::api::SourceCandidate,
+        target: Option<i64>,
+    ) -> crate::api::CoreResult<crate::api::TrackSource> {
+        super::sources::SqliteSources::new(self.db_pool.clone())
+            .attach(
+                target,
+                entry,
+                candidate,
+                "explicit_save_after_listening".into(),
+            )
+            .await
+    }
+
     pub(crate) async fn embedded_source_url(
         &self,
         track: i64,

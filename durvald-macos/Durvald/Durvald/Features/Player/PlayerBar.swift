@@ -151,7 +151,7 @@ struct PlayerBar: View {
                 )
             } else {
                 PlayerMetadataLink(
-                    title: "Nada tocando",
+                    title: store.embeddedPlayer.status?.title ?? "Nada tocando",
                     destinationLabel: nil,
                     isAnimating: false,
                     action: {}
@@ -161,7 +161,7 @@ struct PlayerBar: View {
             }
 
             PlayerMetadataLink(
-                title: track?.artist ?? "",
+                title: track?.artist ?? store.embeddedPlayer.status?.artist ?? "",
                 destinationLabel: artist.map { "Abrir artista \($0.name)" },
                 isAnimating: store.playback?.isPlaying == true,
                 action: { if let artist { onSelectArtist(artist) } }
@@ -331,7 +331,7 @@ struct PlayerBar: View {
                     Image(systemName: "backward.fill")
                         .contentShape(Rectangle())
                 }
-                .disabled(store.playback?.currentTrack == nil || store.isChangingTrack)
+                .disabled(!store.hasCurrentPlayback || store.isChangingTrack)
                 .help("Faixa anterior")
                 .accessibilityLabel("Faixa anterior")
                 .accessibilityHint("Volta para a faixa anterior")
@@ -354,7 +354,7 @@ struct PlayerBar: View {
                 .font(.system(size: 28))
                 .contentShape(Rectangle())
             }
-            .disabled(store.playback?.currentTrack == nil || changingPlaybackState || store.isChangingTrack)
+            .disabled(!store.hasCurrentPlayback || changingPlaybackState || store.isChangingTrack)
             .accessibilityHint("Alterna entre reproduzir e pausar a faixa atual")
             .accessibilityLabel(
                 store.playback?.isPaused == true ? "Reproduzir" : "Pausar"
@@ -367,7 +367,7 @@ struct PlayerBar: View {
                 Image(systemName: "forward.fill")
                     .contentShape(Rectangle())
             }
-            .disabled(store.playback?.currentTrack == nil || store.isChangingTrack)
+            .disabled(!store.hasCurrentPlayback || store.isChangingTrack)
             .help("Próxima faixa")
             .accessibilityLabel("Próxima faixa")
             .accessibilityHint("Avança para a próxima faixa")
@@ -396,7 +396,7 @@ struct PlayerBar: View {
                 .accessibilityIdentifier("player.repeat")
             }
         }
-        .disabled(store.activeTrackID == nil || store.isChangingTrack)
+        .disabled(!store.hasCurrentPlayback || store.isChangingTrack)
         .buttonStyle(.plain)
         .font(.system(size: 14))
     }

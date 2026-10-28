@@ -761,6 +761,24 @@ impl AudioPlayer {
         Ok(())
     }
 
+    pub(crate) fn set_current_occurrence(&mut self, occurrence: String) {
+        self.current_occurrence_id = Some(occurrence);
+    }
+    pub(crate) fn commit_external_plan(&mut self, plan: PlaybackPlan) -> Result<(), AudioError> {
+        let previous = self.current_song_id.map(|song_id| QueueItem {
+            song_id,
+            path: self.current_path.clone(),
+            occurrence_id: self
+                .current_occurrence_id
+                .clone()
+                .unwrap_or_else(new_occurrence_id),
+            source_context: self.current_source_context.clone(),
+            collection_position: self.current_collection_position,
+        });
+        self.stop_for_embedded()?;
+        self.apply_queue_plan(plan, previous)
+    }
+
     pub fn stop(&mut self) {
         self.stop_sound();
         self.current_song_id = None;

@@ -1,6 +1,8 @@
 # Etapa 9B — Coordenação de player integrado
 
-Implementação em 28/10/2026, com SoundCloud como piloto. A opção **Ouvir no
+Implementação em 28/10/2026, com SoundCloud como piloto. Este documento registra
+o recorte original da etapa 9B; a [etapa 10](provider-playback.md) acrescenta
+audição antes de salvar, seleção padrão de origem e fallback antes do áudio. A opção **Ouvir no
 player integrado**, nas origens salvas de uma faixa, abre o widget oficial
 visível na parte inferior da janela. O painel permanece disponível após fechar
 a gestão de origens. Os controles do Durvald e os controles de mídia do macOS

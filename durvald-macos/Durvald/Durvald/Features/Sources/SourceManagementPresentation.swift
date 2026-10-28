@@ -17,7 +17,15 @@ protocol SourceManaging: AnyObject {
     func test(_ source: TrackSource) async throws -> SourceTestResult
     func openURL(_ source: TrackSource) async throws -> String
     func play(_ source: TrackSource) async throws
+    func preview(_ candidate: String) async throws
+    func playbackEnabled() async throws -> Bool
+    func setPlaybackEnabled(_ enabled: Bool) async throws
     func close() async
+}
+extension SourceManaging {
+    func preview(_ candidate: String) async throws { throw CocoaError(.featureUnsupported) }
+    func playbackEnabled() async throws -> Bool { false }
+    func setPlaybackEnabled(_ enabled: Bool) async throws {}
 }
 
 @MainActor
@@ -54,11 +62,15 @@ final class NativeSourceManager: SourceManaging {
     func test(_ source: TrackSource) async throws -> SourceTestResult { try await core.testTrackSource(trackId: source.trackId, sourceId: source.sourceId) }
     func openURL(_ source: TrackSource) async throws -> String { try await core.trackSourceOpenUrl(trackId: source.trackId, sourceId: source.sourceId) }
     func play(_ source: TrackSource) async throws { _ = try await core.playTrackSource(trackId: source.trackId, sourceId: source.sourceId); await playbackChanged() }
+    func preview(_ candidate: String) async throws { _ = try await session.previewCandidate(candidateId: candidate); await playbackChanged() }
+    func playbackEnabled() async throws -> Bool { await core.soundcloudPlaybackEnabled() }
+    func setPlaybackEnabled(_ enabled: Bool) async throws { try await core.setSoundcloudPlaybackEnabled(enabled: enabled); await playbackChanged() }
     func close() async { await session.close() }
 }
 
 @MainActor @Observable
 final class SourceManagementPresentation {
+    private(set) var playbackEnabled = false
     private(set) var providers: [SourceProvider] = []
     private(set) var pages: [String: SourceSearchPage] = [:]
     private(set) var loading: Set<String> = []
@@ -81,6 +93,8 @@ final class SourceManagementPresentation {
         cancel(); self.loader = loader; self.entry = entry; error = nil; message = nil
         providers = []; pages = [:]; providerErrors = [:]; sources = []; currentTrack = nil; matches = []; reviewing = nil; associationTrackID = nil; busy = false
         let current = generation
+        playbackEnabled = (try? await loader.playbackEnabled()) ?? false
+        guard generation == current, !Task.isCancelled else { return }
         if entry.reference.provider == "library", let id = Int64(entry.reference.id) {
             do {
                 let track = try await loader.track(id)
@@ -122,6 +136,18 @@ final class SourceManagementPresentation {
             if let index = providers.firstIndex(where: { $0.id == provider.id }) { providers[index].enabled = enabled }
             if !enabled { pages[provider.id] = nil; reviewing = nil }
         } catch { self.error = "Não foi possível alterar o serviço." }
+    }
+    func setPlaybackEnabled(_ enabled: Bool) async {
+        guard let loader else { return }; let current = generation
+        do { try await loader.setPlaybackEnabled(enabled); guard current == generation else { return }; playbackEnabled = enabled }
+        catch { guard current == generation else { return }; self.error = "Não foi possível alterar a reprodução SoundCloud." }
+    }
+    func preview(_ candidate: SourceCandidate) async -> Bool {
+        guard let loader, !busy else { return false }
+        busy = true; error = nil; let current = generation
+        defer { if current == generation { busy = false } }
+        do { try await loader.preview(candidate.candidateId); return current == generation }
+        catch { if current == generation { self.error = "Não foi possível ouvir esta origem. \(error.localizedDescription)" }; return false }
     }
     func findMatches(_ query: String) async {
         guard let loader else { return }; matchRevision &+= 1; let revision = matchRevision

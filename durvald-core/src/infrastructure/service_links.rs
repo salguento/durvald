@@ -1,4 +1,5 @@
-//! Canonical service pages only. No scraping, extraction, embed or media promises.
+//! Canonical service pages; expand only explicit SoundCloud sharing links.
+//! No scraping, extraction, embed or media promises.
 use crate::{
     application::{
         music_catalog::{IntegrationFuture, SourceFinder},
@@ -117,13 +118,13 @@ impl MusicPlugin for ServiceLinks {
             id: ProviderId::new("service-links").unwrap(),
             version: PluginVersion {
                 major: 1,
-                minor: 0,
+                minor: 1,
                 patch: 0,
             },
             api_version: PLUGIN_API_VERSION,
             capabilities: [PluginCapability::SourceSearch].into(),
-            permissions: Default::default(),
-            primary_host: None,
+            permissions: [PluginPermission::Network].into(),
+            primary_host: Some("on.soundcloud.com".into()),
             settings: BTreeMap::new(),
             flags: Default::default(),
             credentials: Default::default(),
@@ -142,11 +143,11 @@ impl SourceFinder for ServiceLinks {
         Box::pin(async move {
             match request.link {
                 None => Ok(vec![]),
-                Some(link) => canonical_link(&link).map(|m| vec![candidate(m)]).ok_or(
-                    IntegrationError::InvalidInput(
+                Some(link) => canonical_link(&super::soundcloud_links::expand(&link).await?)
+                    .map(|m| vec![candidate(m)])
+                    .ok_or(IntegrationError::InvalidInput(
                         crate::domain::music::ContractError::InvalidCanonicalUrl,
-                    ),
-                ),
+                    )),
             }
         })
     }

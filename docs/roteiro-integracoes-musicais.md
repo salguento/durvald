@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 28/10/2026.
-Status: implementação incremental; etapas 1–8 e 9B concluídas; 9A dispensada no piloto atual, demais etapas planejadas.
+Status: implementação incremental; etapas 1–8, 9B e 10 concluídas; 9A dispensada no piloto atual, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -388,6 +388,15 @@ sem exigir transporte de áudio nativo ou extrator. `external_open` continua um
 modo distinto e não simula eventos de escuta que o app não consegue observar.
 
 ### 10. Primeiro provedor de reprodução de ponta a ponta
+
+**Status:** concluída em 28/10/2026. [SoundCloud de ponta a ponta](features/provider-playback.md).
+Link individual / fontes do item → escolher → ouvir sem salvar → associação
+revisada; reprodução padrão por preferência, local e SoundCloud. Fallback
+informado e limitado ao período anterior ao áudio. Adaptador opcional no runtime,
+sem URLs temporárias persistidas; a limitação externa de FINISH continua registrada.
+
+**Validação:** 492 testes Rust e 419 testes macOS passaram; fluxo real SoundCloud,
+fixture WebKit/UniFFI, Clippy e biblioteca Release com bindings foram verificados.
 
 **Dependências:** 8 e 9A ou 9B, conforme o piloto; abertura externa pode sair em 8.
 

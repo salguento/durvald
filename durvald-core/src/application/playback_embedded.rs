@@ -45,12 +45,27 @@ impl EmbeddedHostDispatcher {
     }
 }
 
+pub(super) struct EmbeddedStart {
+    pub track: Option<Track>,
+    pub entry: CatalogEntry,
+    pub candidate: Option<SourceCandidate>,
+    pub source_id: Option<i64>,
+    pub url: String,
+    pub remaining: Vec<i64>,
+    pub context: String,
+    pub occurrence: Option<String>,
+}
 #[derive(Clone)]
 pub(super) struct EmbeddedSession {
-    snapshot: EmbeddedPlaybackSnapshot,
-    track: Track,
-    url: String,
-    occurrence: String,
+    pub snapshot: EmbeddedPlaybackSnapshot,
+    pub track: Option<Track>,
+    pub entry: CatalogEntry,
+    pub candidate: Option<SourceCandidate>,
+    pub url: String,
+    pub occurrence: String,
+    pub remaining: Vec<i64>,
+    pub context: String,
+    pub started: bool,
     position: f64,
     duration: Option<f64>,
     sequence: u64,
@@ -94,44 +109,72 @@ impl PlaybackApplication {
         source_id: i64,
     ) -> CoreResult<PlaybackSnapshot> {
         let track = self.find_track(track_id).await?;
-        let url = self
-            .track_query
-            .embedded_source_url(track_id, source_id)
-            .await?;
         let _transition = self.playback_transition.lock().await;
+        let mut candidates = self.ordered_sources(track_id, Some(source_id)).await?;
+        let selected = candidates.remove(0);
+        if selected.provider != "soundcloud" {
+            return Err(failure("Escolha uma origem SoundCloud habilitada."));
+        }
+        let super::playback_sources::PreparedSource::Embedded(url, selected) =
+            self.prepare_source(selected).await?
+        else {
+            return Err(failure("Esta origem não oferece player integrado."));
+        };
+        self.source_selected(&selected, false).await;
+        self.begin_embedded_locked(EmbeddedStart {
+            entry: super::playback_sources::track_entry(&track),
+            track: Some(track),
+            candidate: None,
+            source_id: Some(source_id),
+            url,
+            remaining: vec![],
+            context: String::new(),
+            occurrence: None,
+        })
+        .await?;
+        Ok(self.playback().await)
+    }
+    pub(super) async fn begin_embedded_locked(&self, start: EmbeddedStart) -> CoreResult<()> {
         if self.embedded_host.lock().await.is_none() {
             return Err(failure("This platform has no visible embedded player"));
         }
         self.stop_embedded_locked().await?;
-        {
-            let mut native = self.audio_player.lock().await;
-            // An immediate stop, including scheduled/crossfading voices, precedes Load.
-            native
-                .stop_for_embedded()
-                .map_err(|e| failure(&e.to_string()))?;
-        }
+        self.audio_player
+            .lock()
+            .await
+            .stop_for_embedded()
+            .map_err(|e| failure(&e.to_string()))?;
         self.clear_lastfm_tracking().await;
         let generation = crate::audio::player::new_occurrence_id();
-        let session = EmbeddedSession {
-            snapshot: EmbeddedPlaybackSnapshot {
-                generation: generation.clone(),
-                track_id,
-                source_id,
-                state: EmbeddedPlaybackState::Loading,
-                seek_available: false,
-                message: None,
-            },
-            track,
-            url: url.clone(),
-            occurrence: generation.clone(),
+        let snapshot = EmbeddedPlaybackSnapshot {
+            generation: generation.clone(),
+            track_id: start.track.as_ref().map(|t| t.id),
+            source_id: start.source_id,
+            canonical_url: start.url.clone(),
+            title: start.entry.title.clone(),
+            artist: start.entry.artist_credit.clone(),
+            state: EmbeddedPlaybackState::Loading,
+            seek_available: false,
+            message: None,
+        };
+        let url = start.url.clone();
+        *self.embedded.lock().await = Some(EmbeddedSession {
+            snapshot,
+            track: start.track,
+            entry: start.entry,
+            candidate: start.candidate,
+            url: start.url,
+            occurrence: start.occurrence.unwrap_or_else(|| generation.clone()),
+            remaining: start.remaining,
+            context: start.context,
+            started: false,
             position: 0.0,
             duration: None,
             sequence: 0,
             heard: 0.0,
             last_event: Instant::now(),
             last_progress: Instant::now(),
-        };
-        *self.embedded.lock().await = Some(session);
+        });
         let volume = self.audio_player.lock().await.volume();
         if let Err(error) = self
             .deliver_embedded(EmbeddedPlaybackCommand {
@@ -146,8 +189,89 @@ impl PlaybackApplication {
                 .await;
             return Err(error);
         }
-        self.persist_session().await?;
+        self.persist_session().await
+    }
+    pub(crate) async fn preview_candidate(
+        &self,
+        entry: CatalogEntry,
+        candidate: SourceCandidate,
+    ) -> CoreResult<PlaybackSnapshot> {
+        let _transition = self.playback_transition.lock().await;
+        let url = self.resolve_soundcloud(&candidate.canonical_url).await?;
+        *self.source_status.lock().await = Some(PlaybackSourceStatus {
+            source_id: None,
+            provider: "soundcloud".into(),
+            message: Some(
+                "Audição temporária: a faixa ainda não foi salva na biblioteca ou no histórico."
+                    .into(),
+            ),
+        });
+        self.begin_embedded_locked(EmbeddedStart {
+            track: None,
+            entry,
+            candidate: Some(candidate),
+            source_id: None,
+            url,
+            remaining: vec![],
+            context: "preview:soundcloud".into(),
+            occurrence: None,
+        })
+        .await?;
         Ok(self.playback().await)
+    }
+    pub(crate) async fn save_listening_source(
+        &self,
+        generation: String,
+        target: Option<i64>,
+        confirmed: bool,
+    ) -> CoreResult<TrackSource> {
+        if !confirmed {
+            return Err(CoreError::InvalidInput {
+                message: "Revise artista e versão antes de associar a origem.".into(),
+            });
+        }
+        let _transition = self.playback_transition.lock().await;
+        let current = self
+            .embedded
+            .lock()
+            .await
+            .clone()
+            .filter(|s| s.snapshot.generation == generation)
+            .ok_or_else(|| failure("A audição mudou. Revise a origem atual."))?;
+        if let (Some(track), Some(source)) = (current.snapshot.track_id, current.snapshot.source_id)
+        {
+            if target.is_some_and(|id| id != track) {
+                return Err(failure("A origem já está associada a outra faixa."));
+            }
+            return self
+                .track_query
+                .sources(track)
+                .await?
+                .into_iter()
+                .find(|s| s.source_id == source)
+                .ok_or_else(|| failure("Origem removida."));
+        }
+        let candidate = current
+            .candidate
+            .ok_or_else(|| failure("Nenhum candidato em reprodução."))?;
+        let target = target.or_else(|| {
+            (current.entry.reference.provider == "library")
+                .then(|| current.entry.reference.id.parse().ok())
+                .flatten()
+        });
+        let saved = self
+            .track_query
+            .attach_candidate(current.entry, candidate, target)
+            .await?;
+        let track = self.find_track(saved.track_id).await?;
+        if let Some(s) = self.embedded.lock().await.as_mut() {
+            s.snapshot.track_id = Some(saved.track_id);
+            s.snapshot.source_id = Some(saved.source_id);
+            s.track = Some(track);
+            s.candidate = None;
+        }
+        self.source_selected(&saved, false).await;
+        Ok(saved)
     }
     pub(super) async fn stop_embedded_locked(&self) -> CoreResult<()> {
         let current = self.embedded.lock().await.clone();
@@ -198,10 +322,10 @@ impl PlaybackApplication {
         Ok(true)
     }
     async fn restart_embedded_locked(&self, mut s: EmbeddedSession) -> CoreResult<()> {
-        s.url = self
-            .track_query
-            .embedded_source_url(s.snapshot.track_id, s.snapshot.source_id)
-            .await?;
+        if let (Some(track), Some(source)) = (s.snapshot.track_id, s.snapshot.source_id) {
+            s.url = self.track_query.embedded_source_url(track, source).await?;
+        }
+        s.url = self.resolve_soundcloud(&s.url).await?;
         self.stop_embedded_locked().await?;
         s.snapshot.generation = crate::audio::player::new_occurrence_id();
         s.snapshot.state = EmbeddedPlaybackState::Loading;
@@ -211,6 +335,8 @@ impl PlaybackApplication {
         s.duration = None;
         s.sequence = 0;
         s.heard = 0.0;
+        s.started = false;
+        s.remaining.clear();
         s.last_event = Instant::now();
         s.last_progress = Instant::now();
         let command = EmbeddedPlaybackCommand {
@@ -234,20 +360,32 @@ impl PlaybackApplication {
         if snapshot.current_track.is_some() && !snapshot.queue.is_empty() {
             snapshot.queue.remove(0);
         }
-        snapshot.current_track = Some(s.track);
-        snapshot.source_context = format!("embedded:soundcloud:{}", s.snapshot.source_id);
+        // Personal values may change while WebKit owns the transport. Read the
+        // canonical row as native playback does; never freeze favorite/rating UI.
+        snapshot.current_track = if let Some(track) = s.track {
+            self.find_track(track.id).await.ok().or(Some(track))
+        } else {
+            None
+        };
+        snapshot.source_context = if s.context.is_empty() {
+            "embedded:soundcloud".into()
+        } else {
+            s.context
+        };
         snapshot.position_seconds = s.position;
         snapshot.duration_seconds = s.duration;
         snapshot.is_playing = s.snapshot.state == EmbeddedPlaybackState::Playing;
         snapshot.is_paused = s.snapshot.state != EmbeddedPlaybackState::Playing;
-        snapshot.queue.insert(
-            0,
-            QueueItem {
-                track_id: s.snapshot.track_id,
-                occurrence_id: s.occurrence,
-                position: 0,
-            },
-        );
+        if let Some(track_id) = s.snapshot.track_id {
+            snapshot.queue.insert(
+                0,
+                QueueItem {
+                    track_id,
+                    occurrence_id: s.occurrence,
+                    position: 0,
+                },
+            );
+        }
         for (i, item) in snapshot.queue.iter_mut().enumerate() {
             item.position = i as u64;
         }
@@ -284,6 +422,12 @@ impl PlaybackApplication {
             if let Some(duration) = event.duration_seconds {
                 s.duration = Some(duration);
             }
+            if event.kind == EmbeddedEventKind::Progress && event.position_seconds > 0.0 {
+                // An observed advancing clock also rules out a pre-audio fallback
+                // if a provider ever drops its PLAY notification.
+                s.started = true;
+                s.remaining.clear();
+            }
             if event.kind == EmbeddedEventKind::Progress
                 && s.snapshot.state == EmbeddedPlaybackState::Playing
             {
@@ -301,6 +445,8 @@ impl PlaybackApplication {
                 }
                 EmbeddedEventKind::Playing => {
                     s.snapshot.state = EmbeddedPlaybackState::Playing;
+                    s.started = true;
+                    s.remaining.clear();
                     s.last_progress = now;
                 }
                 EmbeddedEventKind::Paused => {
@@ -312,7 +458,7 @@ impl PlaybackApplication {
                         .duration
                         .filter(|d| *d >= 1.0 && s.heard >= (d / 2.0).min(240.0))
                     {
-                        finished = Some((s.snapshot.track_id, d as u64));
+                        finished = s.snapshot.track_id.map(|id| (id, d as u64));
                     }
                 }
                 EmbeddedEventKind::Failed => {
@@ -325,6 +471,7 @@ impl PlaybackApplication {
         if event.kind == EmbeddedEventKind::Failed {
             self.fail_embedded_locked("O serviço não conseguiu reproduzir esta faixa.")
                 .await;
+            self.fallback_before_audio_locked().await?;
         }
         if let Some((id, duration)) = finished {
             self.history_repository
@@ -380,6 +527,7 @@ impl PlaybackApplication {
                 "O player não respondeu ou a reprodução parou de avançar. Tente novamente.",
             )
             .await;
+            let _ = self.fallback_before_audio_locked().await;
         }
     }
     async fn fail_embedded_locked(&self, message: &str) {
