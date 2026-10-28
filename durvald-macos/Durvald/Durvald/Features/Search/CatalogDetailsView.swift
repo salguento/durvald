@@ -4,6 +4,7 @@ struct CatalogDetailsView: View {
     @Environment(DurvaldCoreStore.self) private var store
     let seed: CatalogEntry
     @State private var presentation = CatalogDetailPresentation()
+    @State private var showingSources = false
     private var entry: CatalogEntry { presentation.entry ?? seed }
     var body: some View {
         ScrollView {
@@ -36,6 +37,7 @@ struct CatalogDetailsView: View {
             guard let loader = store.makeCatalogDetailLoader() else { return }
             await presentation.run(entry: seed, language: Locale.current.language.languageCode?.identifier ?? "und", loader: loader)
         }
+        .sheet(isPresented: $showingSources) { SourceManagementView(entry: entry) }
         .onDisappear { presentation.cancel() }
     }
     private var actions: some View {
@@ -54,9 +56,9 @@ struct CatalogDetailsView: View {
                 if presentation.saving { ProgressView().controlSize(.small) }
             }
             HStack {
-                Button("Onde ouvir") {}.disabled(true)
+                Button("Onde ouvir / origens") { showingSources = true }.disabled(!entry.supportsSources)
                 Button("Onde baixar") {}.disabled(true)
-            }.help("Estas ações estarão disponíveis quando houver serviços de reprodução e download conectados.")
+            }.help(entry.supportsSources ? "Buscar links e gerenciar origens para esta faixa. Downloads serão implementados em outra etapa." : "Selecione uma faixa individual para buscar origens.")
             if let value = entry.canonicalUrl, let url = URL(string: value) { Link("Abrir no serviço", destination: url) }
         }
     }

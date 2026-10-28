@@ -464,6 +464,17 @@ impl AudioPlayer {
         Ok(())
     }
 
+    pub(crate) async fn verify_local_file(path: String) -> Result<(), AudioError> {
+        Self::prepare_sound(
+            path,
+            false,
+            crate::api::EqualizerSettings::default(),
+            Arc::new(super::equalizer::EqualizerMeter::default()),
+        )
+        .await
+        .map(|_| ())
+    }
+
     pub(crate) async fn prepare_sound(
         path: String,
         normalize_volume: bool,

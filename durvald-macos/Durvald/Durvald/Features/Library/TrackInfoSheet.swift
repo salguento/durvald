@@ -109,6 +109,7 @@ struct TrackInfoSheet: View {
     var onSelectTrack: (Int64) -> Void = { _ in }
 
     @State private var info: TrackInfo?
+    @State private var showingSources = false
     @State private var editing = EditingState<TrackMetadataDraft?>(nil)
     private var draft: TrackMetadataDraft? {
         get { editing.value }
@@ -171,6 +172,9 @@ struct TrackInfoSheet: View {
             guard store.ratingScaleRevision > 0, !store.isChangingRatingScale,
                   let refreshed = try? await store.core?.trackInfo(trackId: trackID), info?.track.id == trackID else { return }
             info?.track.ratingHalfSteps = refreshed.track.ratingHalfSteps
+        }
+        .sheet(isPresented: $showingSources) {
+            if let info { SourceManagementView(entry: .sourceEntry(info.track)) }
         }
         .onDisappear { artworkImport.cancel() }
         .onChange(of: artworkImport.errorMessage) { _, message in
@@ -253,6 +257,8 @@ struct TrackInfoSheet: View {
             }
             Spacer(minLength: 0)
             if let info {
+                Button("Origens…") { showingSources = true }.disabled(isSaving)
+                    .accessibilityIdentifier("trackInfo.sources")
                 Button {
                     Task {
                         await store.setTrackFavorite(trackID: trackID, favorite: !info.track.isFavorite, fallbackTrack: info.track)

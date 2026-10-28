@@ -184,11 +184,20 @@ pub(crate) fn save_remote(
     conn: &mut Connection,
     entry: &crate::api::CatalogEntry,
 ) -> rusqlite::Result<i64> {
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    let id = save_remote_inner(&tx, entry, true)?;
+    tx.commit()?;
+    Ok(id)
+}
+pub(crate) fn save_remote_inner(
+    conn: &Connection,
+    entry: &crate::api::CatalogEntry,
+    include_source: bool,
+) -> rusqlite::Result<i64> {
     use rusqlite::{OptionalExtension, params};
     let kind = serde_json::to_string(&entry.reference.kind)
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-    if let Some(id)=tx.query_row("SELECT song_id FROM catalog_track_references WHERE provider=?1 AND entity_kind=?2 AND external_id=?3",params![entry.reference.provider,kind,entry.reference.id],|r|r.get::<_,i64>(0)).optional()? { return Ok(id); }
+    if let Some(id)=conn.query_row("SELECT song_id FROM catalog_track_references WHERE provider=?1 AND entity_kind=?2 AND external_id=?3",params![entry.reference.provider,kind,entry.reference.id],|r|r.get::<_,i64>(0)).optional()? { return Ok(id); }
     // A recording is a catalog identity, not proof of playable audio.
     let artist = entry
         .artist_credit
@@ -198,27 +207,28 @@ pub(crate) fn save_remote(
         .unwrap_or("Artista desconhecido");
     // A display credit cannot establish artist identity. Keep it provisional
     // rather than attaching this track to an unrelated homonym by name.
-    tx.execute("INSERT INTO artists(name) VALUES(?1)", [artist])?;
-    let artist_id = tx.last_insert_rowid();
-    tx.execute("INSERT INTO artist_enrichment_state(artist_id,identity_origin) VALUES(?1,'remote_track_credit')",[artist_id])?;
-    tx.execute("INSERT INTO releases(title,artist_id,artist_name,total_tracks,total_discs,duration) VALUES(?1,?2,?3,1,1,?4)",params![entry.title,artist_id,artist,entry.duration_seconds.unwrap_or(0)])?;
-    let release = tx.last_insert_rowid();
-    tx.execute("INSERT INTO songs(title,artist_id,artist_name,release_id,release_title,track_number,disc_number,duration,file_path) VALUES(?1,?2,?3,?4,?1,1,1,?5,NULL)",params![entry.title,artist_id,artist,release,entry.duration_seconds.unwrap_or(0)])?;
-    let id = tx.last_insert_rowid();
-    tx.execute(
+    conn.execute("INSERT INTO artists(name) VALUES(?1)", [artist])?;
+    let artist_id = conn.last_insert_rowid();
+    conn.execute("INSERT INTO artist_enrichment_state(artist_id,identity_origin) VALUES(?1,'remote_track_credit')",[artist_id])?;
+    conn.execute("INSERT INTO releases(title,artist_id,artist_name,total_tracks,total_discs,duration) VALUES(?1,?2,?3,1,1,?4)",params![entry.title,artist_id,artist,entry.duration_seconds.unwrap_or(0)])?;
+    let release = conn.last_insert_rowid();
+    conn.execute("INSERT INTO songs(title,artist_id,artist_name,release_id,release_title,track_number,disc_number,duration,file_path) VALUES(?1,?2,?3,?4,?1,1,1,?5,NULL)",params![entry.title,artist_id,artist,release,entry.duration_seconds.unwrap_or(0)])?;
+    let id = conn.last_insert_rowid();
+    conn.execute(
         "INSERT INTO song_artists(song_id,artist_id,position) VALUES(?1,?2,0)",
         params![id, artist_id],
     )?;
-    tx.execute("INSERT INTO catalog_track_references(provider,entity_kind,external_id,song_id) VALUES(?1,?2,?3,?4)",params![entry.reference.provider,kind,entry.reference.id,id])?;
-    if matches!(
-        entry.reference.kind,
-        crate::api::CatalogItemKind::AudioTrack | crate::api::CatalogItemKind::Video
-    ) {
+    conn.execute("INSERT INTO catalog_track_references(provider,entity_kind,external_id,song_id) VALUES(?1,?2,?3,?4)",params![entry.reference.provider,kind,entry.reference.id,id])?;
+    if include_source
+        && matches!(
+            entry.reference.kind,
+            crate::api::CatalogItemKind::AudioTrack | crate::api::CatalogItemKind::Video
+        )
+    {
         if let Some(url) = &entry.canonical_url {
-            tx.execute("INSERT INTO track_sources(song_id,provider,external_id,canonical_url,association_origin) VALUES(?1,?2,?3,?4,'explicit_catalog_save')",params![id,entry.reference.provider,entry.reference.id,url])?;
+            conn.execute("INSERT INTO track_sources(song_id,provider,external_id,canonical_url,association_origin) VALUES(?1,?2,?3,?4,'explicit_catalog_save')",params![id,entry.reference.provider,entry.reference.id,url])?;
         }
     }
-    tx.commit()?;
     Ok(id)
 }
 

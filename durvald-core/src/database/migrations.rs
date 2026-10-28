@@ -614,6 +614,10 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (20, CATALOG_SELECTIONS),
     (21, crate::database::local_sources::SCHEMA),
     (22, ""),
+    (
+        23,
+        "CREATE TABLE track_source_observations(source_id INTEGER PRIMARY KEY REFERENCES track_sources(source_id) ON DELETE CASCADE, payload TEXT NOT NULL CHECK(json_valid(payload)));",
+    ),
 ];
 
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
@@ -720,7 +724,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            22
+            23
         );
     }
 
@@ -920,33 +924,13 @@ mod tests {
             apply(
                 &mut conn,
                 &[
-                    (1, FOUNDATION),
-                    (2, IDENTITY),
-                    (3, PROFILE),
-                    (4, PROFILE_ASSETS),
-                    (5, PROFILE_OVERRIDES),
-                    (6, DISCOGRAPHY,),
-                    (7, RELEASE_IDENTIFIER_BACKFILL),
-                    (8, DISCOGRAPHY_TOTALS),
-                    (9, TRANSACTIONAL_DISCOGRAPHY_SNAPSHOTS),
-                    (10, EXTERNAL_ARTWORK_NEGATIVE_RESULTS),
-                    (11, PERSISTENT_EXTERNAL_ARTWORK_QUEUE),
-                    (12, PROVIDER_FAILURE_CACHE),
-                    (13, LOCAL_RELEASE_METADATA),
-                    (14, AGGREGATE_IDENTITY_INVALIDATION),
-                    (15, EXTERNAL_RELEASE_DETAILS_CACHE),
-                    (16, ARTIST_POPULAR_TRACKS),
-                    (17, ARTIST_SIMILAR_ARTISTS),
-                    (18, CANONICAL_SIMILAR_ARTISTS),
-                    (19, NORMALIZED_SIMILAR_ARTIST_SNAPSHOTS),
-                    (20, CATALOG_SELECTIONS),
-                    (21, crate::database::local_sources::SCHEMA),
-                    (22, ""),
-                    (
-                        23,
+                    MIGRATIONS,
+                    &[(
+                        24,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
-                    )
+                    )]
                 ]
+                .concat()
             )
             .is_err()
         );
@@ -956,7 +940,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            22
+            23
         );
     }
 

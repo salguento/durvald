@@ -56,6 +56,7 @@ pub(crate) struct PersistenceApplications {
 }
 
 pub(crate) struct CoreComponents {
+    pub(crate) sources: Arc<crate::application::sources::SourcesApplication>,
     pub(crate) catalog_search: Arc<CatalogSearchApplication>,
     pub(crate) music_plugins: Arc<PluginRuntime>,
     pub(crate) enrichment_application: EnrichmentApplication,
@@ -140,7 +141,15 @@ where
         &playback_application,
     );
 
+    let sources = Arc::new(
+        crate::application::sources::SourcesApplication::new(
+            crate::infrastructure::sqlite::sources::SqliteSources::new(db_pool.clone()),
+            music_plugins.clone(),
+        )
+        .await,
+    );
     Ok(CoreComponents {
+        sources,
         catalog_search,
         music_plugins,
         enrichment_application,

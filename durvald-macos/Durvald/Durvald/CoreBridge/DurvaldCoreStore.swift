@@ -345,6 +345,12 @@ final class DurvaldCoreStore {
         artists = result.2
     }
 
+    func sourcesDidChange() async {
+        invalidateCatalog()
+        await refreshLibraryCatalog()
+        await refreshPlayback()
+    }
+
     func refreshLibraryCatalog() async {
         guard let core else { return }
         do { try await reloadPrimaryLibrary(using: core) }

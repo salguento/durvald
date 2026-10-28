@@ -27,7 +27,7 @@ mod secure_store;
 
 // Re-export public API types
 pub use crate::api::*;
-pub use crate::core::{CatalogSearchSession, DurvaldCore};
+pub use crate::core::{CatalogSearchSession, DurvaldCore, SourceSearchSession};
 
 #[cfg(feature = "test-support")]
 #[doc(hidden)]

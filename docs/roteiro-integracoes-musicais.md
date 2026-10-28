@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
-Data: 26/10/2026. Revisão: 27/10/2026.
-Status: implementação incremental; etapas 1–7 concluídas, demais etapas planejadas.
+Data: 26/10/2026. Revisão: 28/10/2026.
+Status: implementação incremental; etapas 1–8 concluídas, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -308,6 +308,11 @@ de playlists preservados. Reabrir não duplica origens; falha reverte a transaç
 scan/reparo/reinício não a removem. Reprodução local e fila continuam funcionando.
 
 ### 8. Busca e gestão mínima de fontes
+
+**Status:** concluída em 28/10/2026. [Busca, associação e gestão de origens](features/source-management.md).
+Busca por relações da gravação MusicBrainz e reconhecimento de links individuais;
+associação revisada, gestão persistente e escolha local para a reprodução atual.
+Links externos oferecem abrir no serviço; streaming interno segue nas etapas 9–10.
 
 **Dependências:** 4–5 e 7 para associação persistente.
 

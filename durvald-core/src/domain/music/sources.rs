@@ -147,6 +147,7 @@ pub(crate) struct SourceCapabilities {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SourceSearchRequest {
+    pub(crate) link: Option<String>,
     pub(crate) target: CatalogEntityRef,
 }
 

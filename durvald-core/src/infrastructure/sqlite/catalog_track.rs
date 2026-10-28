@@ -52,6 +52,20 @@ impl SqliteCatalogTrackQuery {
             })
     }
 
+    pub(crate) async fn source_media_path(
+        &self,
+        track: i64,
+        source: i64,
+    ) -> crate::api::CoreResult<String> {
+        let pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move||{
+            let c=pool.get().map_err(|e|crate::api::CoreError::Storage{message:e.to_string()})?;
+            let (path,provider,enabled)=c.query_row("SELECT local_path,provider,enabled FROM track_sources WHERE source_id=?1 AND song_id=?2",[source,track],|r|Ok((r.get::<_,Option<String>>(0)?,r.get::<_,String>(1)?,r.get::<_,bool>(2)?))).map_err(|_|crate::api::CoreError::NotFound{message:"Source does not belong to this track".into()})?;
+            if provider!="local" || !enabled {return Err(crate::api::CoreError::Playback{message:"This source cannot play as native audio; open its service page instead".into()});}
+            path.ok_or_else(||crate::api::CoreError::Playback{message:"Source has no local file".into()})
+        }).await.map_err(|e|crate::api::CoreError::Storage{message:e.to_string()})?
+    }
+
     pub(crate) async fn local_media_paths(
         &self,
         song_id: i64,

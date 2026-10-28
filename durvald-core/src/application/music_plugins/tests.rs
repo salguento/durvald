@@ -1036,7 +1036,7 @@ async fn detail_and_source_ports_dispatch_without_starting_playback_or_adopting_
             .find_sources(
                 &fake.manifest.id,
                 scope.begin(),
-                SourceSearchRequest { target }
+                SourceSearchRequest { link: None, target }
             )
             .await
             .unwrap()

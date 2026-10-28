@@ -17,3 +17,4 @@ pub(crate) mod wal;
 pub(crate) mod personal_library;
 
 pub(crate) mod catalog_selections;
+pub(crate) mod sources;

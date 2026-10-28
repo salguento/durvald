@@ -48,6 +48,7 @@ pub(crate) struct PlaybackApplication {
     session_repository: SqlitePlaybackSessionRepository,
     audio_player: Arc<tokio::sync::Mutex<AudioPlayer>>,
     playback_transition: tokio::sync::Mutex<()>,
+    source_override: tokio::sync::Mutex<Option<(String, i64)>>,
     coordination_wakeup: tokio::sync::Notify,
     lastfm: Arc<LastFmClient>,
     lastfm_playback: tokio::sync::Mutex<Option<LastFmPlayback>>,
@@ -67,6 +68,7 @@ impl PlaybackApplication {
             session_repository,
             audio_player: Arc::new(tokio::sync::Mutex::new(audio_player)),
             playback_transition: tokio::sync::Mutex::new(()),
+            source_override: tokio::sync::Mutex::new(None),
             coordination_wakeup: tokio::sync::Notify::new(),
             lastfm,
             lastfm_playback: tokio::sync::Mutex::new(None),
@@ -146,6 +148,22 @@ impl PlaybackApplication {
         track_id: TrackId,
         source_context: String,
     ) -> CoreResult<PlaybackSnapshot> {
+        self.play_selection(track_id, source_context, None).await
+    }
+    pub(crate) async fn play_source(
+        &self,
+        track_id: TrackId,
+        source: i64,
+    ) -> CoreResult<PlaybackSnapshot> {
+        self.play_selection(track_id, String::new(), Some(source))
+            .await
+    }
+    async fn play_selection(
+        &self,
+        track_id: TrackId,
+        source_context: String,
+        source: Option<i64>,
+    ) -> CoreResult<PlaybackSnapshot> {
         validate_source_context(&source_context)?;
         let _track = self
             .track_query
@@ -155,7 +173,12 @@ impl PlaybackApplication {
         let track_id = track_id.get() as i64;
 
         let _transition = self.playback_transition.lock().await;
-        let prepared = self.prepare_track(track_id).await?;
+        let prepared = if let Some(source) = source {
+            let path = self.track_query.source_media_path(track_id, source).await?;
+            self.prepare_sound(path).await?
+        } else {
+            self.prepare_track(track_id).await?
+        };
         let state = {
             let mut player = self.audio_player.lock().await;
             player
@@ -167,6 +190,12 @@ impl PlaybackApplication {
             player.set_source_context(source_context);
             PlaybackStateSnapshot::from_player(&player)
         };
+        *self.source_override.lock().await = source.and_then(|source| {
+            state
+                .queue
+                .first()
+                .map(|q| (q.occurrence_id.clone(), source))
+        });
         drop(_transition);
         self.wake_automatic_coordination();
 
@@ -521,7 +550,7 @@ impl PlaybackApplication {
         &self,
         plan: crate::audio::player::PlaybackPlan,
     ) -> CoreResult<PlaybackSnapshot> {
-        let prepared = self.prepare_track(plan.song_id()).await?;
+        let prepared = self.prepare_plan(&plan).await?;
         let track_id = plan.song_id();
         let state = {
             let mut player = self.audio_player.lock().await;
@@ -548,6 +577,28 @@ impl PlaybackApplication {
             .await
             .map(track_from_catalog)
             .map_err(|error| playback_track_error(error, track_id))
+    }
+
+    async fn prepare_plan(
+        &self,
+        plan: &crate::audio::player::PlaybackPlan,
+    ) -> CoreResult<crate::audio::player::PreparedSound> {
+        let source = self
+            .source_override
+            .lock()
+            .await
+            .as_ref()
+            .filter(|(occurrence, _)| occurrence == plan.occurrence_id())
+            .map(|(_, id)| *id);
+        if let Some(source) = source {
+            let path = self
+                .track_query
+                .source_media_path(plan.song_id(), source)
+                .await?;
+            self.prepare_sound(path).await
+        } else {
+            self.prepare_track(plan.song_id()).await
+        }
     }
 
     async fn prepare_track(
@@ -588,7 +639,7 @@ impl PlaybackApplication {
             player.gapless_plan()
         };
         if let Some(plan) = gapless_plan
-            && let Ok(prepared) = self.prepare_track(plan.song_id()).await
+            && let Ok(prepared) = self.prepare_plan(&plan).await
         {
             let _ = self
                 .audio_player
@@ -608,7 +659,7 @@ impl PlaybackApplication {
             )
         };
         let plan = plan?;
-        let prepared = self.prepare_track(plan.song_id()).await.ok()?;
+        let prepared = self.prepare_plan(&plan).await.ok()?;
         let started_track_id = plan.song_id();
         self.audio_player
             .lock()

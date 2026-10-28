@@ -52,13 +52,21 @@ impl MusicPlugin for MusicBrainzCatalog {
                 patch: 0,
             },
             api_version: PLUGIN_API_VERSION,
-            capabilities: [PluginCapability::CatalogSearch, PluginCapability::Metadata].into(),
+            capabilities: [
+                PluginCapability::CatalogSearch,
+                PluginCapability::Metadata,
+                PluginCapability::SourceSearch,
+            ]
+            .into(),
             permissions: [PluginPermission::Network].into(),
             primary_host: Some("musicbrainz.org".into()),
             settings: BTreeMap::new(),
             flags: Default::default(),
             credentials: BTreeMap::new(),
         }
+    }
+    fn sources(&self) -> Option<&dyn crate::application::music_catalog::SourceFinder> {
+        Some(self)
     }
     fn catalog(&self) -> Option<&dyn CatalogReader> {
         Some(self)
@@ -473,3 +481,5 @@ impl CachedPage {
 mod tests;
 
 mod details;
+
+mod sources;

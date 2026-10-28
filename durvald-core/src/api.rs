@@ -9,6 +9,8 @@ mod enrichment;
 pub use enrichment::*;
 mod catalog;
 pub use catalog::*;
+mod sources;
+pub use sources::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

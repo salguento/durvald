@@ -362,3 +362,72 @@ async fn mismatched_entity_response_is_rejected() {
     let h = Harness::new(vec![ok(&body)]).await;
     assert!(section(&h, detail(S::Basic, K::Artist)).await.is_err());
 }
+
+#[tokio::test]
+async fn source_links_are_recording_scoped_deduplicated_cached_and_external_only() {
+    use crate::domain::music::sources::{PlaybackMode, SourceAvailability, SourceSearchRequest};
+    let h = Harness::new(vec![ok(&format!(r#"{{"id":"{FIRST}","relations":[
+        {{"type":"free streaming","url":{{"resource":"https://soundcloud.com/artist/song?tracking=discard"}}}},
+        {{"type":"streaming","url":{{"resource":"https://soundcloud.com/artist/song"}}}},
+        {{"type":"video","url":{{"resource":"https://youtu.be/abcdefghijk"}}}},
+        {{"type":"streaming","ended":true,"url":{{"resource":"https://soundcloud.com/artist/old"}}}},
+        {{"type":"discogs","url":{{"resource":"https://example.org/metadata"}}}},
+        {{"type":"streaming","url":{{"resource":"https://artist.bandcamp.com/album/collection"}}}}
+    ]}}"#))]).await;
+    let request = SourceSearchRequest {
+        target: CatalogEntityRef::External(
+            ExternalEntityRef::new(
+                ProviderId::new("musicbrainz").unwrap(),
+                ExternalEntityKind::Recording,
+                FIRST,
+            )
+            .unwrap(),
+        ),
+        link: None,
+    };
+    let scope = RequestScope::default();
+    for _ in 0..2 {
+        let result = h
+            .runtime
+            .find_sources(
+                &ProviderId::new("musicbrainz").unwrap(),
+                scope.begin(),
+                request.clone(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(
+            result
+                .iter()
+                .all(|s| s.availability == SourceAvailability::Unknown
+                    && s.capabilities.playback[0].mode == PlaybackMode::ExternalOpen)
+        );
+        assert!(
+            !result[0]
+                .reference
+                .canonical_url()
+                .as_str()
+                .contains("discard")
+        );
+    }
+    assert_eq!(h.mock.calls(), 1);
+    let local = SourceSearchRequest {
+        target: CatalogEntityRef::Local(LocalEntityRef::Track(
+            crate::domain::ids::TrackId::try_from(1_i64).unwrap(),
+        )),
+        link: None,
+    };
+    assert!(
+        h.runtime
+            .find_sources(
+                &ProviderId::new("musicbrainz").unwrap(),
+                scope.begin(),
+                local
+            )
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(h.mock.calls(), 1);
+}

@@ -31,6 +31,7 @@ use std::sync::Arc;
 /// the public API. All state is encapsulated behind this facade.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
+    sources: Arc<crate::application::sources::SourcesApplication>,
     catalog_search: Arc<crate::application::catalog_search::CatalogSearchApplication>,
     // Owned from startup; native catalog commands will consume it in stage 3.
     #[allow(dead_code)]
@@ -151,6 +152,7 @@ impl DurvaldCore {
     {
         let components = compose(config, create_audio_player).await?;
         let core = Self {
+            sources: components.sources,
             catalog_search: components.catalog_search,
             music_plugins: components.music_plugins,
             enrichment_application: components.enrichment_application,
@@ -176,6 +178,70 @@ impl DurvaldCore {
     /// Scans the library at the given paths.
     pub async fn scan_library(&self, paths: Vec<String>) -> CoreResult<ScanResult> {
         self.library_application.scan_library(paths).await
+    }
+
+    pub fn source_search_session(&self) -> Arc<SourceSearchSession> {
+        Arc::new(SourceSearchSession {
+            application: self.sources.clone(),
+            state: Default::default(),
+        })
+    }
+    pub async fn source_providers(&self) -> CoreResult<Vec<SourceProvider>> {
+        self.sources.providers().await
+    }
+    pub async fn set_source_provider_enabled(
+        &self,
+        provider: String,
+        enabled: bool,
+    ) -> CoreResult<()> {
+        self.sources.set_enabled(provider, enabled).await
+    }
+    pub async fn track_sources(&self, track_id: i64) -> CoreResult<Vec<TrackSource>> {
+        self.sources.list(track_id).await
+    }
+    pub async fn test_track_source(
+        &self,
+        track_id: i64,
+        source_id: i64,
+    ) -> CoreResult<SourceTestResult> {
+        self.sources.test(track_id, source_id).await
+    }
+    pub async fn set_track_source_enabled(
+        &self,
+        track_id: i64,
+        source_id: i64,
+        enabled: bool,
+    ) -> CoreResult<TrackSource> {
+        self.sources.enabled(track_id, source_id, enabled).await
+    }
+    pub async fn remove_track_source(&self, track_id: i64, source_id: i64) -> CoreResult<()> {
+        self.sources.remove(track_id, source_id).await
+    }
+    pub async fn prefer_track_source(
+        &self,
+        track_id: i64,
+        source_id: Option<i64>,
+    ) -> CoreResult<()> {
+        self.sources.prefer(track_id, source_id).await
+    }
+    pub async fn attach_local_track_source(
+        &self,
+        track_id: i64,
+        path: String,
+    ) -> CoreResult<TrackSource> {
+        self.sources.attach_local(track_id, path).await
+    }
+    pub async fn track_source_open_url(&self, track_id: i64, source_id: i64) -> CoreResult<String> {
+        self.sources.open_url(track_id, source_id).await
+    }
+    pub async fn play_track_source(
+        &self,
+        track_id: i64,
+        source_id: i64,
+    ) -> CoreResult<PlaybackSnapshot> {
+        self.playback_application
+            .play_source(track_id_from_api(track_id)?, source_id)
+            .await
     }
 
     pub fn catalog_search_session(&self) -> Arc<CatalogSearchSession> {
@@ -1365,6 +1431,40 @@ impl DurvaldCore {
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn open(config: CoreConfig) -> CoreResult<Arc<DurvaldCore>> {
     DurvaldCore::open(config).await
+}
+
+/// Candidate tokens belong to one selected item and generation.
+#[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
+pub struct SourceSearchSession {
+    application: Arc<crate::application::sources::SourcesApplication>,
+    state: crate::application::sources::SourceSession,
+}
+#[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
+impl SourceSearchSession {
+    pub async fn search(
+        &self,
+        provider: String,
+        entry: CatalogEntry,
+        link: Option<String>,
+        generation: u64,
+    ) -> CoreResult<SourceSearchPage> {
+        self.application
+            .search(&self.state, provider, entry, link, generation)
+            .await
+    }
+    pub async fn attach_candidate(
+        &self,
+        candidate_id: String,
+        track_id: Option<i64>,
+        confirmed: bool,
+    ) -> CoreResult<TrackSource> {
+        self.application
+            .attach(&self.state, candidate_id, track_id, confirmed)
+            .await
+    }
+    pub async fn close(&self) {
+        self.state.close().await
+    }
 }
 
 /// One independent search surface; dropping it cancels its outstanding request scope.
