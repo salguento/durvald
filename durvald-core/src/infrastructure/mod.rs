@@ -15,3 +15,7 @@ pub(crate) mod slskd_search;
 pub(crate) mod slskd_transfers;
 
 pub(crate) mod acquisition_files;
+
+pub(crate) mod public_services;
+
+pub(crate) mod youtube_playback;

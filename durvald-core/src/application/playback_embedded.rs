@@ -66,6 +66,7 @@ pub(super) struct EmbeddedSession {
     pub remaining: Vec<i64>,
     pub context: String,
     pub started: bool,
+    history_allowed: bool,
     position: f64,
     duration: Option<f64>,
     sequence: u64,
@@ -112,8 +113,10 @@ impl PlaybackApplication {
         let _transition = self.playback_transition.lock().await;
         let mut candidates = self.ordered_sources(track_id, Some(source_id)).await?;
         let selected = candidates.remove(0);
-        if selected.provider != "soundcloud" {
-            return Err(failure("Escolha uma origem SoundCloud habilitada."));
+        if !["soundcloud", "youtube"].contains(&selected.provider.as_str()) {
+            return Err(failure(
+                "Escolha uma origem SoundCloud ou YouTube habilitada.",
+            ));
         }
         let super::playback_sources::PreparedSource::Embedded(url, selected) =
             self.prepare_source(selected).await?
@@ -146,6 +149,19 @@ impl PlaybackApplication {
             .map_err(|e| failure(&e.to_string()))?;
         self.clear_lastfm_tracking().await;
         let generation = crate::audio::player::new_occurrence_id();
+        let preview_only = self.track_query.known_preview(start.url.clone()).await?
+            || if let (Some(track), Some(source)) = (start.track.as_ref(), start.source_id) {
+                self.track_query
+                    .sources(track.id)
+                    .await?
+                    .iter()
+                    .any(|s| s.source_id == source && s.capability == SourceCapability::Preview)
+            } else {
+                start
+                    .candidate
+                    .as_ref()
+                    .is_some_and(|c| c.capability == SourceCapability::Preview)
+            };
         let snapshot = EmbeddedPlaybackSnapshot {
             generation: generation.clone(),
             track_id: start.track.as_ref().map(|t| t.id),
@@ -168,6 +184,7 @@ impl PlaybackApplication {
             remaining: start.remaining,
             context: start.context,
             started: false,
+            history_allowed: !preview_only,
             position: 0.0,
             duration: None,
             sequence: 0,
@@ -197,10 +214,10 @@ impl PlaybackApplication {
         candidate: SourceCandidate,
     ) -> CoreResult<PlaybackSnapshot> {
         let _transition = self.playback_transition.lock().await;
-        let url = self.resolve_soundcloud(&candidate.canonical_url).await?;
+        let url = self.resolve_embedded(&candidate.canonical_url).await?;
         *self.source_status.lock().await = Some(PlaybackSourceStatus {
             source_id: None,
-            provider: "soundcloud".into(),
+            provider: entry.reference.provider.clone(),
             message: Some(
                 "Audição temporária: a faixa ainda não foi salva na biblioteca ou no histórico."
                     .into(),
@@ -213,7 +230,7 @@ impl PlaybackApplication {
             source_id: None,
             url,
             remaining: vec![],
-            context: "preview:soundcloud".into(),
+            context: "preview:service".into(),
             occurrence: None,
         })
         .await?;
@@ -325,7 +342,8 @@ impl PlaybackApplication {
         if let (Some(track), Some(source)) = (s.snapshot.track_id, s.snapshot.source_id) {
             s.url = self.track_query.embedded_source_url(track, source).await?;
         }
-        s.url = self.resolve_soundcloud(&s.url).await?;
+        s.url = self.resolve_embedded(&s.url).await?;
+        s.history_allowed &= !self.track_query.known_preview(s.url.clone()).await?;
         self.stop_embedded_locked().await?;
         s.snapshot.generation = crate::audio::player::new_occurrence_id();
         s.snapshot.state = EmbeddedPlaybackState::Loading;
@@ -368,7 +386,7 @@ impl PlaybackApplication {
             None
         };
         snapshot.source_context = if s.context.is_empty() {
-            "embedded:soundcloud".into()
+            "embedded:service".into()
         } else {
             s.context
         };
@@ -458,7 +476,11 @@ impl PlaybackApplication {
                         .duration
                         .filter(|d| *d >= 1.0 && s.heard >= (d / 2.0).min(240.0))
                     {
-                        finished = s.snapshot.track_id.map(|id| (id, d as u64));
+                        finished = s
+                            .snapshot
+                            .track_id
+                            .filter(|_| s.history_allowed)
+                            .map(|id| (id, d as u64));
                     }
                 }
                 EmbeddedEventKind::Failed => {

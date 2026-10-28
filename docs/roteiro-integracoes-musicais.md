@@ -465,6 +465,15 @@ lote parcial; cancelamento e reinício não importam arquivos incompletos nem du
 
 ### 13. Demais serviços e importação de coleções
 
+**Implementada em 28/10/2026:** captura pública e importação revisada por serviço,
+com flags independentes, ordem/ocorrências, paginação limitada, recibos por item
+e retomada persistida. Bandcamp abre no serviço; SoundCloud usa o widget;
+YouTube usa IFrame visível, com verificação de vídeo finito. Coleções autenticadas
+Bandcamp e arquivos de compra continuam fora do incremento, exigindo prova própria.
+Consulta real Bandcamp e controles reais do IFrame YouTube validados; consultas
+SoundCloud OAuth/YouTube Data API dependem de credenciais e foram verificadas
+com fixtures. Detalhes e limites em [Serviços e coleções](features/service-collections.md).
+
 **Dependências:** 10 e prova de cada provedor; listas dependem do adaptador individual.
 
 Entregar cada linha separadamente, com flag, cache, erros e testes próprios:

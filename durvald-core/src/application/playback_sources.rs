@@ -24,53 +24,91 @@ impl PlaybackApplication {
                 true,
             )
             .await;
+        let _ = runtime
+            .register_builtin_with_default(
+                Arc::new(crate::infrastructure::youtube_playback::YouTubePlayback),
+                false,
+            )
+            .await;
         *self.integration_runtime.lock().await = Some(runtime);
     }
-    pub(crate) async fn soundcloud_enabled(&self) -> bool {
+    pub(crate) async fn embedded_provider_enabled(&self, provider: &str) -> bool {
         let runtime = self.integration_runtime.lock().await.clone();
         if let Some(runtime) = runtime {
             runtime.list().await.is_ok_and(|list| {
                 list.iter()
-                    .any(|s| s.manifest.id.as_str() == "soundcloud" && s.enabled)
+                    .any(|s| s.manifest.id.as_str() == provider && s.enabled)
             })
         } else {
             false
         }
     }
+    pub(crate) async fn soundcloud_enabled(&self) -> bool {
+        self.embedded_provider_enabled("soundcloud").await
+    }
     pub(crate) async fn set_soundcloud_enabled(&self, enabled: bool) -> CoreResult<()> {
+        self.set_embedded_provider_enabled("soundcloud", enabled)
+            .await
+    }
+    pub(crate) async fn set_embedded_provider_enabled(
+        &self,
+        provider: &str,
+        enabled: bool,
+    ) -> CoreResult<()> {
+        if !["soundcloud", "youtube"].contains(&provider) {
+            return Err(error("Player não suportado."));
+        }
         let _transition = self.playback_transition.lock().await;
         let runtime = self
             .integration_runtime
             .lock()
             .await
             .clone()
-            .ok_or_else(|| error("Playback integration unavailable"))?;
-        if !enabled {
+            .ok_or_else(|| error("Integração indisponível."))?;
+        let active = self
+            .embedded
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|s| crate::infrastructure::service_links::canonical_link(&s.url))
+            .is_some_and(|m| m.entity().provider().as_str() == provider);
+        if !enabled && active {
             self.stop_embedded_locked().await?;
         }
         runtime
-            .set_enabled(&ProviderId::new("soundcloud").unwrap(), enabled)
+            .set_enabled(&ProviderId::new(provider).unwrap(), enabled)
             .await
-            .map_err(|_| error("Could not change SoundCloud playback setting"))?;
+            .map_err(|_| error("Não foi possível alterar este player."))?;
         Ok(())
     }
-    pub(super) async fn resolve_soundcloud(&self, url: &str) -> CoreResult<String> {
+    pub(super) async fn resolve_embedded(&self, url: &str) -> CoreResult<String> {
         if self.embedded_host.lock().await.is_none() {
             return Err(error(
                 "O player integrado não está disponível nesta plataforma.",
             ));
         }
         let media = crate::infrastructure::service_links::canonical_link(url)
-            .filter(|m| m.entity().provider().as_str() == "soundcloud")
-            .ok_or_else(|| error("Escolha um link de faixa individual SoundCloud."))?;
+            .filter(|m| ["soundcloud", "youtube"].contains(&m.entity().provider().as_str()))
+            .ok_or_else(|| error("Selecione uma faixa SoundCloud ou um vídeo YouTube."))?;
+        let provider = media.entity().provider().clone();
+        if provider.as_str() == "youtube"
+            && !self
+                .track_query
+                .youtube_finite_verified(media.entity().external_id().into())
+                .await?
+        {
+            return Err(error(
+                "Verifique este vídeo na importação de serviços antes de reproduzir. Lives, estreias e vídeos sem metadados finitos verificados não são suportados.",
+            ));
+        }
         let runtime = self
             .integration_runtime
             .lock()
             .await
             .clone()
-            .ok_or_else(|| error("SoundCloud indisponível."))?;
+            .ok_or_else(|| error("Integração indisponível."))?;
         let scope = RequestScope::default();
-        let resolved = runtime.resolve(&ProviderId::new("soundcloud").unwrap(), scope.begin(), SourceReference::Remote(media)).await.map_err(|_| error("SoundCloud desativado ou indisponível. Habilite o player nas origens da faixa."))?;
+        let resolved=runtime.resolve(&provider,scope.begin(),SourceReference::Remote(media)).await.map_err(|_|error("O player deste serviço está desativado ou indisponível. Confira os Ajustes de serviços."))?;
         match resolved.location {
             ResolvedLocation::EmbeddedPlayer(url) => Ok(url.as_str().into()),
             _ => Err(error("Modo de reprodução não suportado.")),
@@ -92,7 +130,11 @@ impl PlaybackApplication {
                 });
         }
         sources.retain(|s| {
-            s.enabled && (s.provider == "local" || s.provider == "soundcloud" || s.preferred)
+            s.enabled
+                && (s.provider == "local"
+                    || s.provider == "soundcloud"
+                    || s.provider == "youtube"
+                    || s.preferred)
         });
         sources.sort_by_key(|s| {
             (
@@ -115,7 +157,7 @@ impl PlaybackApplication {
                 Box::new(self.prepare_sound(path).await?),
                 source,
             ))
-        } else if source.provider == "soundcloud" {
+        } else if ["soundcloud", "youtube"].contains(&source.provider.as_str()) {
             let url = self
                 .track_query
                 .embedded_source_url(source.track_id, source.source_id)
@@ -126,7 +168,7 @@ impl PlaybackApplication {
                 return Err(error("A identidade da origem não corresponde ao link."));
             }
             Ok(PreparedSource::Embedded(
-                self.resolve_soundcloud(&url).await?,
+                self.resolve_embedded(&url).await?,
                 source,
             ))
         } else {
@@ -167,6 +209,8 @@ impl PlaybackApplication {
                     "A origem anterior não estava disponível; usando {}.",
                     if source.provider == "local" {
                         "arquivo local"
+                    } else if source.provider == "youtube" {
+                        "YouTube"
                     } else {
                         "SoundCloud"
                     }

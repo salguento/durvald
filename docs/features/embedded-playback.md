@@ -1,5 +1,10 @@
 # Etapa 9B — Coordenação de player integrado
 
+> Evolução na etapa 13: YouTube passou a ter player oficial visível para vídeos
+> finitos verificados, com flag independente. Bandcamp permanece com abertura no
+> serviço. Os limites abaixo descrevem o incremento original; veja
+> [Serviços e coleções](service-collections.md) para o estado ampliado.
+
 Implementação em 28/10/2026, com SoundCloud como piloto. Este documento registra
 o recorte original da etapa 9B; a [etapa 10](provider-playback.md) acrescenta
 audição antes de salvar, seleção padrão de origem e fallback antes do áudio. A opção **Ouvir no

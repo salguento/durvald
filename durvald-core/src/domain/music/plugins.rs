@@ -13,6 +13,7 @@ pub(crate) enum PluginCapability {
     Playback,
     DownloadSearch,
     DownloadTransfer,
+    CollectionRead,
     ArtistNews,
     ExtraCommands,
 }

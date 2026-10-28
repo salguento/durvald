@@ -19,6 +19,11 @@ pub(crate) type PluginFuture<'a, T> =
 /// Only compiled-in trusted adapters. No dynamic code loading or detached workers.
 pub(crate) trait MusicPlugin: Send + Sync {
     fn manifest(&self) -> PluginManifest;
+    fn collection_reader(
+        &self,
+    ) -> Option<&dyn crate::application::service_collection_ports::ServiceCollectionReader> {
+        None
+    }
     fn validate_configuration(
         &self,
         _configuration: &PluginConfiguration,

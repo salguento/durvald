@@ -19,12 +19,14 @@ protocol SourceManaging: AnyObject {
     func play(_ source: TrackSource) async throws
     func preview(_ candidate: String) async throws
     func playbackEnabled() async throws -> Bool
+    func youtubePlaybackEnabled() async throws -> Bool
     func setPlaybackEnabled(_ enabled: Bool) async throws
     func close() async
 }
 extension SourceManaging {
     func preview(_ candidate: String) async throws { throw CocoaError(.featureUnsupported) }
     func playbackEnabled() async throws -> Bool { false }
+    func youtubePlaybackEnabled() async throws -> Bool { false }
     func setPlaybackEnabled(_ enabled: Bool) async throws {}
 }
 
@@ -64,6 +66,7 @@ final class NativeSourceManager: SourceManaging {
     func play(_ source: TrackSource) async throws { _ = try await core.playTrackSource(trackId: source.trackId, sourceId: source.sourceId); await playbackChanged() }
     func preview(_ candidate: String) async throws { _ = try await session.previewCandidate(candidateId: candidate); await playbackChanged() }
     func playbackEnabled() async throws -> Bool { await core.soundcloudPlaybackEnabled() }
+    func youtubePlaybackEnabled() async throws -> Bool { await core.youtubePlaybackEnabled() }
     func setPlaybackEnabled(_ enabled: Bool) async throws { try await core.setSoundcloudPlaybackEnabled(enabled: enabled); await playbackChanged() }
     func close() async { await session.close() }
 }
@@ -71,6 +74,7 @@ final class NativeSourceManager: SourceManaging {
 @MainActor @Observable
 final class SourceManagementPresentation {
     private(set) var playbackEnabled = false
+    private(set) var youtubePlaybackEnabled = false
     private(set) var providers: [SourceProvider] = []
     private(set) var pages: [String: SourceSearchPage] = [:]
     private(set) var loading: Set<String> = []
@@ -94,6 +98,7 @@ final class SourceManagementPresentation {
         providers = []; pages = [:]; providerErrors = [:]; sources = []; currentTrack = nil; matches = []; reviewing = nil; associationTrackID = nil; busy = false
         let current = generation
         playbackEnabled = (try? await loader.playbackEnabled()) ?? false
+        youtubePlaybackEnabled = (try? await loader.youtubePlaybackEnabled()) ?? false
         guard generation == current, !Task.isCancelled else { return }
         if entry.reference.provider == "library", let id = Int64(entry.reference.id) {
             do {

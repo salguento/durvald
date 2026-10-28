@@ -1085,6 +1085,8 @@ struct ContentView: View {
             NewsView(onSelectArtists: { shell.navigationHistory.navigate(to: .artists) })
         case .listenList:
             ListenListView(searchText: $listenListSearchText)
+        case .serviceImports:
+            ServiceCollectionsView()
         case .downloads:
             DownloadTransfersView()
         case .home:

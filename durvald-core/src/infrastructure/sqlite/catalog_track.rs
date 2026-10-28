@@ -84,11 +84,27 @@ impl SqliteCatalogTrackQuery {
         let pool = self.db_pool.clone();
         tokio::task::spawn_blocking(move || {
             let c = pool.get().map_err(|e| crate::api::CoreError::Storage { message: e.to_string() })?;
-            let url: String = c.query_row("SELECT canonical_url FROM track_sources WHERE song_id=?1 AND source_id=?2 AND provider='soundcloud' AND enabled=1", [track, source], |r| r.get(0)).map_err(|_| crate::api::CoreError::InvalidInput { message: "Choose an enabled SoundCloud source belonging to this track".into() })?;
-            crate::infrastructure::service_links::canonical_link(&url).filter(|r| r.entity().provider().as_str() == "soundcloud").map(|r| r.canonical_url().as_str().to_owned()).ok_or_else(|| crate::api::CoreError::InvalidInput { message: "Unsupported SoundCloud track URL".into() })
+            let url: String = c.query_row("SELECT canonical_url FROM track_sources WHERE song_id=?1 AND source_id=?2 AND provider IN ('soundcloud','youtube') AND enabled=1", [track, source], |r| r.get(0)).map_err(|_| crate::api::CoreError::InvalidInput { message: "Choose an enabled SoundCloud source belonging to this track".into() })?;
+            crate::infrastructure::service_links::canonical_link(&url).filter(|r| ["soundcloud","youtube"].contains(&r.entity().provider().as_str())).map(|r| r.canonical_url().as_str().to_owned()).ok_or_else(|| crate::api::CoreError::InvalidInput { message: "Unsupported SoundCloud track URL".into() })
         }).await.map_err(|e| crate::api::CoreError::Storage { message: e.to_string() })?
     }
 
+    pub(crate) async fn youtube_finite_verified(&self, id: String) -> crate::api::CoreResult<bool> {
+        let pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move||{
+            let c=pool.get().map_err(|_|crate::api::CoreError::Storage{message:"Biblioteca indisponível.".into()})?;
+            c.query_row("SELECT EXISTS(SELECT 1 FROM service_media_policy WHERE provider='youtube' AND external_id=?1 AND finite_video=1 AND verified_at>=?2)",rusqlite::params![id,chrono::Utc::now().timestamp()-86400],|r|r.get::<_,bool>(0)).map_err(|_|crate::api::CoreError::Storage{message:"Não foi possível verificar o vídeo.".into()})
+        }).await.map_err(|_|crate::api::CoreError::Storage{message:"Verificação de vídeo interrompida.".into()})?
+    }
+    pub(crate) async fn known_preview(&self, url: String) -> crate::api::CoreResult<bool> {
+        let Some(media) = crate::infrastructure::service_links::canonical_link(&url) else {
+            return Ok(false);
+        };
+        let provider = media.entity().provider().as_str().to_owned();
+        let id = media.entity().external_id().to_owned();
+        let pool = self.db_pool.clone();
+        tokio::task::spawn_blocking(move||{let c=pool.get().map_err(|_|crate::api::CoreError::Storage{message:"Biblioteca indisponível.".into()})?;c.query_row("SELECT EXISTS(SELECT 1 FROM service_media_policy WHERE provider=?1 AND external_id=?2 AND preview_only=1)",rusqlite::params![provider,id],|r|r.get::<_,bool>(0)).map_err(|_|crate::api::CoreError::Storage{message:"Não foi possível verificar a prévia.".into()})}).await.map_err(|_|crate::api::CoreError::Storage{message:"Verificação interrompida.".into()})?
+    }
     pub(crate) async fn source_media_path(
         &self,
         track: i64,

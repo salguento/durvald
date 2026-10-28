@@ -255,6 +255,7 @@ impl PluginRuntime {
                 PluginCapability::Playback => adapter.resolver().is_some(),
                 PluginCapability::DownloadSearch => adapter.download_search().is_some(),
                 PluginCapability::DownloadTransfer => adapter.download_transfer().is_some(),
+                PluginCapability::CollectionRead => adapter.collection_reader().is_some(),
                 _ => false, // Reserved capabilities gain ports in their own roadmap stages.
             };
             if !implemented {
@@ -678,6 +679,27 @@ impl PluginRuntime {
                         .map_err(|_| IntegrationError::TemporarilyUnavailable)?;
                 }
                 Ok(receipt)
+            },
+        )
+        .await
+    }
+    pub(crate) async fn read_service_collection(
+        &self,
+        id: &ProviderId,
+        ticket: RequestTicket,
+        request: crate::application::service_collection_ports::ServicePageRequest,
+    ) -> Result<crate::application::service_collection_ports::ServicePage, PluginError> {
+        self.execute(
+            id,
+            PluginCapability::CollectionRead,
+            ticket,
+            true,
+            move |adapter, context| async move {
+                adapter
+                    .collection_reader()
+                    .ok_or(IntegrationError::UnsupportedCapability)?
+                    .read(context, request)
+                    .await
             },
         )
         .await

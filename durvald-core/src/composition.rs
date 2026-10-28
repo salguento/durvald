@@ -56,6 +56,8 @@ pub(crate) struct PersistenceApplications {
 }
 
 pub(crate) struct CoreComponents {
+    pub(crate) service_collections:
+        Arc<crate::application::service_collections::ServiceCollectionsApplication>,
     pub(crate) download_transfers:
         Arc<crate::application::download_transfers::DownloadTransfersApplication>,
     pub(crate) download_search: Arc<crate::application::download_search::DownloadSearchApplication>,
@@ -168,7 +170,17 @@ where
             config.covers_dir.clone(),
         ),
     );
+    let service_collections = Arc::new(
+        crate::application::service_collections::ServiceCollectionsApplication::new(
+            music_plugins.clone(),
+            crate::infrastructure::sqlite::service_collections::ServiceCollectionRepository::new(
+                db_pool.clone(),
+            ),
+        )
+        .await,
+    );
     Ok(CoreComponents {
+        service_collections,
         download_transfers,
         download_search,
         sources,

@@ -726,3 +726,6 @@ pub struct ClassificationPage {
 
 mod download_transfers;
 pub use download_transfers::*;
+
+mod service_collections;
+pub use service_collections::*;

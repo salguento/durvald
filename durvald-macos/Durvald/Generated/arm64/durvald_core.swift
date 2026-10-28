@@ -1038,12 +1038,16 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func audioOutputState() async throws  -> AudioOutputState
 
+    func beginServiceCollectionImport(url: String) async throws  -> ServiceCollectionJob
+
     func cancelDownloadTransfer(jobId: String) async throws  -> DownloadTransferJob
 
     /**
      * Requests cancellation of the active library scan.
      */
     func cancelLibraryScan() throws
+
+    func cancelServiceCollectionImport(jobId: String) async throws  -> ServiceCollectionJob
 
     func catalogSearchSession()  -> CatalogSearchSession
 
@@ -1100,6 +1104,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Stores Last.fm API credentials in the secure store.
      */
     func configureLastfm(apiKey: String, apiSecret: String) async throws
+
+    func configureServiceImport(provider: ServiceProvider, enabled: Bool, credential: String?) async throws  -> [ServiceImportSettings]
 
     func confirmArtistIdentity(artistId: Int64, musicbrainzId: String) async throws  -> ArtistIdentity
 
@@ -1176,6 +1182,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     func importFollowedArtists(artistIds: [Int64]) async throws
 
+    func importServiceCollectionItems(jobId: String, occurrenceIds: [String], confirmed: Bool) async throws  -> ServiceCollectionJob
+
     func inspectDownloadFile(jobId: String, fileIndex: UInt32, path: String) async throws  -> DownloadImportPreview
 
     /**
@@ -1202,6 +1210,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Saved releases to listen to, including metadata-only external references.
      */
     func listenList() async throws  -> [ListenListEntry]
+
+    func loadServiceCollectionPage(jobId: String, refresh: Bool) async throws  -> ServiceCollectionJob
 
     /**
      * Offline album suggestions, with transparent reasons and bounded diversity.
@@ -1403,7 +1413,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func resume() async throws
 
+    func resumeServiceCollectionImport(jobId: String) async throws  -> ServiceCollectionJob
+
     func retryDownloadTransfer(jobId: String) async throws  -> DownloadTransferJob
+
+    func retryServiceCollectionPage(jobId: String, pageIndex: UInt32) async throws  -> ServiceCollectionJob
 
     func saveAlbumCollection(collectionId: Int64?, name: String, description: String, definition: AlbumCollectionDefinition?) async throws  -> AlbumCollection
 
@@ -1457,6 +1471,12 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Selects an output device, or the system default when `None`.
      */
     func selectAudioOutputDevice(deviceId: String?) async throws  -> AudioOutputState
+
+    func serviceCollectionImport(jobId: String) async throws  -> ServiceCollectionJob
+
+    func serviceCollectionImports() async throws  -> [ServiceCollectionJob]
+
+    func serviceImportSettings() async throws  -> [ServiceImportSettings]
 
     func setArtistFollowed(artistId: Int64, followed: Bool) async throws
 
@@ -1560,6 +1580,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func setVolume(volume: Float) async throws
 
+    func setYoutubePlaybackEnabled(enabled: Bool) async throws
+
     /**
      * Returns application settings.
      */
@@ -1650,6 +1672,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Snapshot of personal categories and their explicit associations.
      */
     func userTagLibrary() async throws  -> UserTagLibrary
+
+    func youtubePlaybackEnabled() async  -> Bool
 
 }
 
@@ -2155,6 +2179,23 @@ open func audioOutputState()async throws  -> AudioOutputState {
         )
 }
 
+open func beginServiceCollectionImport(url: String)async throws  -> ServiceCollectionJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_begin_service_collection_import(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(url)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeServiceCollectionJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func cancelDownloadTransfer(jobId: String)async throws  -> DownloadTransferJob {
     return
         try  await uniffiRustCallAsync(
@@ -2179,6 +2220,23 @@ open func cancelLibraryScan()throws  {try rustCallWithError(FfiConverterTypeCore
     uniffi_durvald_core_fn_method_durvaldcore_cancel_library_scan(self.uniffiClonePointer(),$0
     )
 }
+}
+
+open func cancelServiceCollectionImport(jobId: String)async throws  -> ServiceCollectionJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_cancel_service_collection_import(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeServiceCollectionJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
 }
 
 open func catalogSearchSession() -> CatalogSearchSession {
@@ -2478,6 +2536,23 @@ open func configureLastfm(apiKey: String, apiSecret: String)async throws  {
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func configureServiceImport(provider: ServiceProvider, enabled: Bool, credential: String?)async throws  -> [ServiceImportSettings] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_configure_service_import(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeServiceProvider.lower(provider),FfiConverterBool.lower(enabled),FfiConverterOptionString.lower(credential)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeServiceImportSettings.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -2924,6 +2999,23 @@ open func importFollowedArtists(artistIds: [Int64])async throws  {
         )
 }
 
+open func importServiceCollectionItems(jobId: String, occurrenceIds: [String], confirmed: Bool)async throws  -> ServiceCollectionJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_import_service_collection_items(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId),FfiConverterSequenceString.lower(occurrenceIds),FfiConverterBool.lower(confirmed)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeServiceCollectionJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func inspectDownloadFile(jobId: String, fileIndex: UInt32, path: String)async throws  -> DownloadImportPreview {
     return
         try  await uniffiRustCallAsync(
@@ -3037,6 +3129,23 @@ open func listenList()async throws  -> [ListenListEntry] {
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeListenListEntry.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func loadServiceCollectionPage(jobId: String, refresh: Bool)async throws  -> ServiceCollectionJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_load_service_collection_page(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId),FfiConverterBool.lower(refresh)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeServiceCollectionJob.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -4023,6 +4132,23 @@ open func resume()async throws  {
         )
 }
 
+open func resumeServiceCollectionImport(jobId: String)async throws  -> ServiceCollectionJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_resume_service_collection_import(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeServiceCollectionJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func retryDownloadTransfer(jobId: String)async throws  -> DownloadTransferJob {
     return
         try  await uniffiRustCallAsync(
@@ -4036,6 +4162,23 @@ open func retryDownloadTransfer(jobId: String)async throws  -> DownloadTransferJ
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeDownloadTransferJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func retryServiceCollectionPage(jobId: String, pageIndex: UInt32)async throws  -> ServiceCollectionJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_retry_service_collection_page(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId),FfiConverterUInt32.lower(pageIndex)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeServiceCollectionJob.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -4274,6 +4417,57 @@ open func selectAudioOutputDevice(deviceId: String?)async throws  -> AudioOutput
             completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeAudioOutputState.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func serviceCollectionImport(jobId: String)async throws  -> ServiceCollectionJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_service_collection_import(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeServiceCollectionJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func serviceCollectionImports()async throws  -> [ServiceCollectionJob] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_service_collection_imports(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeServiceCollectionJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func serviceImportSettings()async throws  -> [ServiceImportSettings] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_service_import_settings(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeServiceImportSettings.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -4786,6 +4980,23 @@ open func setVolume(volume: Float)async throws  {
         )
 }
 
+open func setYoutubePlaybackEnabled(enabled: Bool)async throws  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_set_youtube_playback_enabled(
+                    self.uniffiClonePointer(),
+                    FfiConverterBool.lower(enabled)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Returns application settings.
      */
@@ -5219,6 +5430,24 @@ open func userTagLibrary()async throws  -> UserTagLibrary {
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeUserTagLibrary.lift,
             errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func youtubePlaybackEnabled()async  -> Bool {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_youtube_playback_enabled(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_i8,
+            completeFunc: ffi_durvald_core_rust_future_complete_i8,
+            freeFunc: ffi_durvald_core_rust_future_free_i8,
+            liftFunc: FfiConverterBool.lift,
+            errorHandler: nil
+
         )
 }
 
@@ -13582,6 +13811,313 @@ public func FfiConverterTypeSearchResults_lower(_ value: SearchResults) -> RustB
 }
 
 
+public struct ServiceCollectionItem {
+    public var occurrenceId: String
+    public var position: UInt32
+    public var entry: CatalogEntry?
+    public var access: ServiceMediaAccess
+    public var savedTrackId: Int64?
+    public var failure: ServiceImportFailure?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(occurrenceId: String, position: UInt32, entry: CatalogEntry?, access: ServiceMediaAccess, savedTrackId: Int64?, failure: ServiceImportFailure?) {
+        self.occurrenceId = occurrenceId
+        self.position = position
+        self.entry = entry
+        self.access = access
+        self.savedTrackId = savedTrackId
+        self.failure = failure
+    }
+}
+
+
+
+extension ServiceCollectionItem: Equatable, Hashable {
+    public static func ==(lhs: ServiceCollectionItem, rhs: ServiceCollectionItem) -> Bool {
+        if lhs.occurrenceId != rhs.occurrenceId {
+            return false
+        }
+        if lhs.position != rhs.position {
+            return false
+        }
+        if lhs.entry != rhs.entry {
+            return false
+        }
+        if lhs.access != rhs.access {
+            return false
+        }
+        if lhs.savedTrackId != rhs.savedTrackId {
+            return false
+        }
+        if lhs.failure != rhs.failure {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(occurrenceId)
+        hasher.combine(position)
+        hasher.combine(entry)
+        hasher.combine(access)
+        hasher.combine(savedTrackId)
+        hasher.combine(failure)
+    }
+}
+
+
+public struct FfiConverterTypeServiceCollectionItem: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ServiceCollectionItem {
+        return
+            try ServiceCollectionItem(
+                occurrenceId: FfiConverterString.read(from: &buf),
+                position: FfiConverterUInt32.read(from: &buf),
+                entry: FfiConverterOptionTypeCatalogEntry.read(from: &buf),
+                access: FfiConverterTypeServiceMediaAccess.read(from: &buf),
+                savedTrackId: FfiConverterOptionInt64.read(from: &buf),
+                failure: FfiConverterOptionTypeServiceImportFailure.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ServiceCollectionItem, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.occurrenceId, into: &buf)
+        FfiConverterUInt32.write(value.position, into: &buf)
+        FfiConverterOptionTypeCatalogEntry.write(value.entry, into: &buf)
+        FfiConverterTypeServiceMediaAccess.write(value.access, into: &buf)
+        FfiConverterOptionInt64.write(value.savedTrackId, into: &buf)
+        FfiConverterOptionTypeServiceImportFailure.write(value.failure, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeServiceCollectionItem_lift(_ buf: RustBuffer) throws -> ServiceCollectionItem {
+    return try FfiConverterTypeServiceCollectionItem.lift(buf)
+}
+
+public func FfiConverterTypeServiceCollectionItem_lower(_ value: ServiceCollectionItem) -> RustBuffer {
+    return FfiConverterTypeServiceCollectionItem.lower(value)
+}
+
+
+public struct ServiceCollectionJob {
+    public var jobId: String
+    public var provider: ServiceProvider
+    public var canonicalUrl: String
+    public var title: String
+    public var isCollection: Bool
+    public var items: [ServiceCollectionItem]
+    public var nextCursor: String?
+    public var loadedPages: UInt32
+    public var complete: Bool
+    public var truncated: Bool
+    public var fromCache: Bool
+    public var cancelled: Bool
+    public var playlistId: Int64?
+    public var failure: ServiceImportFailure?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(jobId: String, provider: ServiceProvider, canonicalUrl: String, title: String, isCollection: Bool, items: [ServiceCollectionItem], nextCursor: String?, loadedPages: UInt32, complete: Bool, truncated: Bool, fromCache: Bool, cancelled: Bool, playlistId: Int64?, failure: ServiceImportFailure?) {
+        self.jobId = jobId
+        self.provider = provider
+        self.canonicalUrl = canonicalUrl
+        self.title = title
+        self.isCollection = isCollection
+        self.items = items
+        self.nextCursor = nextCursor
+        self.loadedPages = loadedPages
+        self.complete = complete
+        self.truncated = truncated
+        self.fromCache = fromCache
+        self.cancelled = cancelled
+        self.playlistId = playlistId
+        self.failure = failure
+    }
+}
+
+
+
+extension ServiceCollectionJob: Equatable, Hashable {
+    public static func ==(lhs: ServiceCollectionJob, rhs: ServiceCollectionJob) -> Bool {
+        if lhs.jobId != rhs.jobId {
+            return false
+        }
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.canonicalUrl != rhs.canonicalUrl {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.isCollection != rhs.isCollection {
+            return false
+        }
+        if lhs.items != rhs.items {
+            return false
+        }
+        if lhs.nextCursor != rhs.nextCursor {
+            return false
+        }
+        if lhs.loadedPages != rhs.loadedPages {
+            return false
+        }
+        if lhs.complete != rhs.complete {
+            return false
+        }
+        if lhs.truncated != rhs.truncated {
+            return false
+        }
+        if lhs.fromCache != rhs.fromCache {
+            return false
+        }
+        if lhs.cancelled != rhs.cancelled {
+            return false
+        }
+        if lhs.playlistId != rhs.playlistId {
+            return false
+        }
+        if lhs.failure != rhs.failure {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(jobId)
+        hasher.combine(provider)
+        hasher.combine(canonicalUrl)
+        hasher.combine(title)
+        hasher.combine(isCollection)
+        hasher.combine(items)
+        hasher.combine(nextCursor)
+        hasher.combine(loadedPages)
+        hasher.combine(complete)
+        hasher.combine(truncated)
+        hasher.combine(fromCache)
+        hasher.combine(cancelled)
+        hasher.combine(playlistId)
+        hasher.combine(failure)
+    }
+}
+
+
+public struct FfiConverterTypeServiceCollectionJob: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ServiceCollectionJob {
+        return
+            try ServiceCollectionJob(
+                jobId: FfiConverterString.read(from: &buf),
+                provider: FfiConverterTypeServiceProvider.read(from: &buf),
+                canonicalUrl: FfiConverterString.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                isCollection: FfiConverterBool.read(from: &buf),
+                items: FfiConverterSequenceTypeServiceCollectionItem.read(from: &buf),
+                nextCursor: FfiConverterOptionString.read(from: &buf),
+                loadedPages: FfiConverterUInt32.read(from: &buf),
+                complete: FfiConverterBool.read(from: &buf),
+                truncated: FfiConverterBool.read(from: &buf),
+                fromCache: FfiConverterBool.read(from: &buf),
+                cancelled: FfiConverterBool.read(from: &buf),
+                playlistId: FfiConverterOptionInt64.read(from: &buf),
+                failure: FfiConverterOptionTypeServiceImportFailure.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ServiceCollectionJob, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.jobId, into: &buf)
+        FfiConverterTypeServiceProvider.write(value.provider, into: &buf)
+        FfiConverterString.write(value.canonicalUrl, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterBool.write(value.isCollection, into: &buf)
+        FfiConverterSequenceTypeServiceCollectionItem.write(value.items, into: &buf)
+        FfiConverterOptionString.write(value.nextCursor, into: &buf)
+        FfiConverterUInt32.write(value.loadedPages, into: &buf)
+        FfiConverterBool.write(value.complete, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+        FfiConverterBool.write(value.fromCache, into: &buf)
+        FfiConverterBool.write(value.cancelled, into: &buf)
+        FfiConverterOptionInt64.write(value.playlistId, into: &buf)
+        FfiConverterOptionTypeServiceImportFailure.write(value.failure, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeServiceCollectionJob_lift(_ buf: RustBuffer) throws -> ServiceCollectionJob {
+    return try FfiConverterTypeServiceCollectionJob.lift(buf)
+}
+
+public func FfiConverterTypeServiceCollectionJob_lower(_ value: ServiceCollectionJob) -> RustBuffer {
+    return FfiConverterTypeServiceCollectionJob.lower(value)
+}
+
+
+public struct ServiceImportSettings {
+    public var provider: ServiceProvider
+    public var enabled: Bool
+    public var hasCredential: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(provider: ServiceProvider, enabled: Bool, hasCredential: Bool) {
+        self.provider = provider
+        self.enabled = enabled
+        self.hasCredential = hasCredential
+    }
+}
+
+
+
+extension ServiceImportSettings: Equatable, Hashable {
+    public static func ==(lhs: ServiceImportSettings, rhs: ServiceImportSettings) -> Bool {
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.enabled != rhs.enabled {
+            return false
+        }
+        if lhs.hasCredential != rhs.hasCredential {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(provider)
+        hasher.combine(enabled)
+        hasher.combine(hasCredential)
+    }
+}
+
+
+public struct FfiConverterTypeServiceImportSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ServiceImportSettings {
+        return
+            try ServiceImportSettings(
+                provider: FfiConverterTypeServiceProvider.read(from: &buf),
+                enabled: FfiConverterBool.read(from: &buf),
+                hasCredential: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ServiceImportSettings, into buf: inout [UInt8]) {
+        FfiConverterTypeServiceProvider.write(value.provider, into: &buf)
+        FfiConverterBool.write(value.enabled, into: &buf)
+        FfiConverterBool.write(value.hasCredential, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeServiceImportSettings_lift(_ buf: RustBuffer) throws -> ServiceImportSettings {
+    return try FfiConverterTypeServiceImportSettings.lift(buf)
+}
+
+public func FfiConverterTypeServiceImportSettings_lower(_ value: ServiceImportSettings) -> RustBuffer {
+    return FfiConverterTypeServiceImportSettings.lower(value)
+}
+
+
 /**
  * Last.fm session response
  */
@@ -17753,6 +18289,269 @@ extension ScanPhase: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum ServiceImportFailure {
+
+    case disabled
+    case authentication
+    case restricted
+    case notFound
+    case timedOut
+    case rateLimited
+    case unavailable
+    case invalidResponse
+    case changedCollection
+    case cancelled
+    case limitReached
+}
+
+
+public struct FfiConverterTypeServiceImportFailure: FfiConverterRustBuffer {
+    typealias SwiftType = ServiceImportFailure
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ServiceImportFailure {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .disabled
+
+        case 2: return .authentication
+
+        case 3: return .restricted
+
+        case 4: return .notFound
+
+        case 5: return .timedOut
+
+        case 6: return .rateLimited
+
+        case 7: return .unavailable
+
+        case 8: return .invalidResponse
+
+        case 9: return .changedCollection
+
+        case 10: return .cancelled
+
+        case 11: return .limitReached
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ServiceImportFailure, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .disabled:
+            writeInt(&buf, Int32(1))
+
+
+        case .authentication:
+            writeInt(&buf, Int32(2))
+
+
+        case .restricted:
+            writeInt(&buf, Int32(3))
+
+
+        case .notFound:
+            writeInt(&buf, Int32(4))
+
+
+        case .timedOut:
+            writeInt(&buf, Int32(5))
+
+
+        case .rateLimited:
+            writeInt(&buf, Int32(6))
+
+
+        case .unavailable:
+            writeInt(&buf, Int32(7))
+
+
+        case .invalidResponse:
+            writeInt(&buf, Int32(8))
+
+
+        case .changedCollection:
+            writeInt(&buf, Int32(9))
+
+
+        case .cancelled:
+            writeInt(&buf, Int32(10))
+
+
+        case .limitReached:
+            writeInt(&buf, Int32(11))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeServiceImportFailure_lift(_ buf: RustBuffer) throws -> ServiceImportFailure {
+    return try FfiConverterTypeServiceImportFailure.lift(buf)
+}
+
+public func FfiConverterTypeServiceImportFailure_lower(_ value: ServiceImportFailure) -> RustBuffer {
+    return FfiConverterTypeServiceImportFailure.lower(value)
+}
+
+
+
+extension ServiceImportFailure: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum ServiceMediaAccess {
+
+    case unknown
+    case streamObserved
+    case preview
+    case restricted
+    case unavailable
+    case unsupportedLive
+}
+
+
+public struct FfiConverterTypeServiceMediaAccess: FfiConverterRustBuffer {
+    typealias SwiftType = ServiceMediaAccess
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ServiceMediaAccess {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .unknown
+
+        case 2: return .streamObserved
+
+        case 3: return .preview
+
+        case 4: return .restricted
+
+        case 5: return .unavailable
+
+        case 6: return .unsupportedLive
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ServiceMediaAccess, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .unknown:
+            writeInt(&buf, Int32(1))
+
+
+        case .streamObserved:
+            writeInt(&buf, Int32(2))
+
+
+        case .preview:
+            writeInt(&buf, Int32(3))
+
+
+        case .restricted:
+            writeInt(&buf, Int32(4))
+
+
+        case .unavailable:
+            writeInt(&buf, Int32(5))
+
+
+        case .unsupportedLive:
+            writeInt(&buf, Int32(6))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeServiceMediaAccess_lift(_ buf: RustBuffer) throws -> ServiceMediaAccess {
+    return try FfiConverterTypeServiceMediaAccess.lift(buf)
+}
+
+public func FfiConverterTypeServiceMediaAccess_lower(_ value: ServiceMediaAccess) -> RustBuffer {
+    return FfiConverterTypeServiceMediaAccess.lower(value)
+}
+
+
+
+extension ServiceMediaAccess: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum ServiceProvider {
+
+    case bandcamp
+    case soundCloud
+    case youTube
+}
+
+
+public struct FfiConverterTypeServiceProvider: FfiConverterRustBuffer {
+    typealias SwiftType = ServiceProvider
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ServiceProvider {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .bandcamp
+
+        case 2: return .soundCloud
+
+        case 3: return .youTube
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: ServiceProvider, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .bandcamp:
+            writeInt(&buf, Int32(1))
+
+
+        case .soundCloud:
+            writeInt(&buf, Int32(2))
+
+
+        case .youTube:
+            writeInt(&buf, Int32(3))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeServiceProvider_lift(_ buf: RustBuffer) throws -> ServiceProvider {
+    return try FfiConverterTypeServiceProvider.lift(buf)
+}
+
+public func FfiConverterTypeServiceProvider_lower(_ value: ServiceProvider) -> RustBuffer {
+    return FfiConverterTypeServiceProvider.lower(value)
+}
+
+
+
+extension ServiceProvider: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum SourceCapability {
 
     case unknown
@@ -18218,6 +19017,27 @@ fileprivate struct FfiConverterOptionTypeArtistProfile: FfiConverterRustBuffer {
     }
 }
 
+fileprivate struct FfiConverterOptionTypeCatalogEntry: FfiConverterRustBuffer {
+    typealias SwiftType = CatalogEntry?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeCatalogEntry.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeCatalogEntry.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionTypeCatalogSelection: FfiConverterRustBuffer {
     typealias SwiftType = CatalogSelection?
 
@@ -18633,6 +19453,27 @@ fileprivate struct FfiConverterOptionTypeRatingRounding: FfiConverterRustBuffer 
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeRatingRounding.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+fileprivate struct FfiConverterOptionTypeServiceImportFailure: FfiConverterRustBuffer {
+    typealias SwiftType = ServiceImportFailure?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeServiceImportFailure.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeServiceImportFailure.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -19451,6 +20292,72 @@ fileprivate struct FfiConverterSequenceTypeRelease: FfiConverterRustBuffer {
     }
 }
 
+fileprivate struct FfiConverterSequenceTypeServiceCollectionItem: FfiConverterRustBuffer {
+    typealias SwiftType = [ServiceCollectionItem]
+
+    public static func write(_ value: [ServiceCollectionItem], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeServiceCollectionItem.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ServiceCollectionItem] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ServiceCollectionItem]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeServiceCollectionItem.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeServiceCollectionJob: FfiConverterRustBuffer {
+    typealias SwiftType = [ServiceCollectionJob]
+
+    public static func write(_ value: [ServiceCollectionJob], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeServiceCollectionJob.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ServiceCollectionJob] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ServiceCollectionJob]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeServiceCollectionJob.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeServiceImportSettings: FfiConverterRustBuffer {
+    typealias SwiftType = [ServiceImportSettings]
+
+    public static func write(_ value: [ServiceImportSettings], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeServiceImportSettings.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [ServiceImportSettings] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [ServiceImportSettings]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeServiceImportSettings.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 fileprivate struct FfiConverterSequenceTypeSimilarArtist: FfiConverterRustBuffer {
     typealias SwiftType = [SimilarArtist]
 
@@ -19829,10 +20736,16 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_audio_output_state() != 6925) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_begin_service_collection_import() != 51599) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_download_transfer() != 59941) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_library_scan() != 54997) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_service_collection_import() != 57586) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_catalog_search_session() != 36474) {
@@ -19884,6 +20797,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_configure_lastfm() != 5984) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_configure_service_import() != 32605) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_confirm_artist_identity() != 8791) {
@@ -19961,6 +20877,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_import_followed_artists() != 32866) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_import_service_collection_items() != 20111) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_inspect_download_file() != 57306) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -19977,6 +20896,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_listen_list() != 19819) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_load_service_collection_page() != 35140) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_local_recommendations() != 35090) {
@@ -20135,7 +21057,13 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_resume() != 18016) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_resume_service_collection_import() != 12180) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_retry_download_transfer() != 12903) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_retry_service_collection_page() != 45957) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_save_album_collection() != 32282) {
@@ -20175,6 +21103,15 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_select_audio_output_device() != 57614) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_service_collection_import() != 1682) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_service_collection_imports() != 6058) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_service_import_settings() != 21486) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_artist_followed() != 43274) {
@@ -20258,6 +21195,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_set_volume() != 25591) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_set_youtube_playback_enabled() != 11311) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_settings() != 922) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -20328,6 +21268,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_user_tag_library() != 58670) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_youtube_playback_enabled() != 654) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_sourcesearchsession_attach_candidate() != 3631) {

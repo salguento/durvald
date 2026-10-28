@@ -3,6 +3,7 @@ import SwiftUI
 enum LibraryDestination: String, CaseIterable, Identifiable {
     case home
     case downloads
+    case serviceImports
     case news
     case genres
     case albumCollections
@@ -18,6 +19,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
 
     static let navigationItems: [LibraryDestination] = [
         .downloads,
+        .serviceImports,
         .news,
         .listenList,
         .genres,
@@ -34,6 +36,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
         case .genres: "Gêneros"
         case .albumCollections: "Coleções"
         case .news: "Novidades"
+        case .serviceImports: "Serviços e coleções"
         case .downloads: "Transferências"
         case .home: "Início"
         case .listenList: "Ouvir depois"
@@ -51,6 +54,7 @@ enum LibraryDestination: String, CaseIterable, Identifiable {
         case .genres: "square.grid.2x2"
         case .albumCollections: "sparkles.rectangle.stack"
         case .news: "bell"
+        case .serviceImports: "link"
         case .downloads: "arrow.down.circle"
         case .home: "house"
         case .listenList: "bookmark"

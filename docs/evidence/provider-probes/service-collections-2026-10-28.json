@@ -1,0 +1,146 @@
+{
+  "stage": 13,
+  "date": "2026-10-28",
+  "core_version": "0.1.0",
+  "base_commit": "cfb3bf6",
+  "scope": "Public metadata capture and explicitly reviewed imports; no media extraction or purchases",
+  "providers": {
+    "bandcamp": {
+      "enabled_by_default": false,
+      "inputs": [
+        "public track",
+        "public album"
+      ],
+      "media_mode": "external_open",
+      "live_adapter_probe": {
+        "result": "passed",
+        "url": "https://benprunty.bandcamp.com/track/civil-explore",
+        "checks": [
+          "single canonical track",
+          "title includes Civil",
+          "no library adoption from metadata lookup"
+        ]
+      }
+    },
+    "soundcloud": {
+      "enabled_by_default": false,
+      "inputs": [
+        "public track",
+        "shared short link",
+        "public playlist"
+      ],
+      "credential": "manually supplied OAuth token stored by protected plugin credential store",
+      "media_mode": "official visible widget; playback flag independent from metadata flag",
+      "live_api_probe": "not run: no OAuth credential",
+      "fixtures": [
+        "302 resolve on fixed API host",
+        "reject forwarding credentials to foreign redirects",
+        "playable/preview/blocked",
+        "duplicate occurrences",
+        "missing playlist item hydration"
+      ]
+    },
+    "youtube": {
+      "enabled_by_default": false,
+      "inputs": [
+        "finite public video",
+        "finite public playlist"
+      ],
+      "credential": "YouTube Data API key stored by protected plugin credential store; sent as sensitive x-goog-api-key header",
+      "live_data_api_probe": "not run: no API key",
+      "media_mode": "official visible IFrame; independent playback flag; finite verified metadata less than 24 hours old required",
+      "live_iframe_probe": {
+        "result": "passed",
+        "video_id": "M7lc1UVf-VE",
+        "test": "YouTubePlayerTests.testLiveOfficialYouTubeVideoControlsAndProgress",
+        "checks": [
+          "playing",
+          "positive progress",
+          "pause",
+          "resume",
+          "seek",
+          "stop destroys WebView"
+        ],
+        "opt_in": "TEST_RUNNER_DURVALD_YOUTUBE_LIVE_SMOKE=1"
+      },
+      "fixtures": [
+        "paginated playlistItems + batched videos",
+        "duplicate video occurrences",
+        "missing/deleted placeholder",
+        "timeout and retry",
+        "live/upcoming/restricted rejected",
+        "finite policy expiry",
+        "cursor cycles and empty page cap"
+      ]
+    }
+  },
+  "persistence": {
+    "migration": 25,
+    "tables": [
+      "service_collection_jobs",
+      "service_collection_cache",
+      "service_media_policy"
+    ],
+    "per_item_transaction": [
+      "canonical track",
+      "source",
+      "playlist occurrence",
+      "import receipt"
+    ],
+    "preserves": [
+      "personal values",
+      "renamed playlists",
+      "manually occupied positions",
+      "confirmed items across cancel/restart/retry"
+    ],
+    "cache_contents": "normalized public metadata only; no raw HTML, credentials, headers or media URLs"
+  },
+  "limits": {
+    "jobs": 100,
+    "items_per_job": 1000,
+    "pages_per_job": 40,
+    "items_per_page": 50,
+    "cache_ttl_seconds": 3600,
+    "youtube_verification_ttl_seconds": 86400,
+    "http_response_bytes": 8388608,
+    "http_connect_timeout_seconds": 3,
+    "http_request_timeout_seconds": 8
+  },
+  "validation": {
+    "rust": {
+      "passed": 532,
+      "failed": 0,
+      "ignored_external": 4,
+      "command": "cargo test --manifest-path durvald-core/Cargo.toml --all-features"
+    },
+    "macos": {
+      "passed": 433,
+      "failed": 0,
+      "skipped_external": 5,
+      "selection": "DurvaldTests"
+    },
+    "clippy": "all targets and features; warnings denied; passed",
+    "uniffi_smoke": "passed",
+    "bindings_and_embedded_library_hashes_match": true
+  },
+  "deferred": [
+    "authenticated Bandcamp collections and purchased files require a separate proof",
+    "interactive OAuth login and automatic token renewal",
+    "live credential-backed SoundCloud and YouTube Data API verification",
+    "audio downloads/extraction from these services",
+    "mixed queue session consolidation from stage 14"
+  ],
+  "sha256": {
+    "durvald-core/src/application/service_collections.rs": "2d5372f9f29f958474f032b6e5abd9869a199a5c861d6362ed508cd76fd54bec",
+    "durvald-core/src/infrastructure/sqlite/service_collections.rs": "db0d8e5ce4519e7162dc3d2014d0957d4e039fa27bade0361909551f381ea3ae",
+    "durvald-core/src/infrastructure/public_services/tests.rs": "9e08270ace7f0b5fef3bcd277f907736944429ac56bc612449eca35a79c071f3",
+    "durvald-core/tests/service_playback.rs": "fd681b39b4aada91be738ddd2286fead71a986ce3e9b2bcfd5fbfa9ef7a82639",
+    "durvald-macos/Durvald/Durvald/Features/Player/EmbeddedPlayerController.swift": "c18925cf300eb5e5be1c749a7aeec7c60babb9df8d0ac08a213eea1354e46f9d",
+    "durvald-macos/Durvald/Durvald/Features/Player/YouTubePageServer.swift": "408c0a460af95c851aeb4f3795c6ac823ac2b432b4e674c11799bf85e6150d20",
+    "durvald-macos/Durvald/Durvald/Features/Player/YouTubePlayerHTML.swift": "d2cbf08f61b8776ecfd8430e7167488b2084bd5d10a2662757ec2722e144e169",
+    "durvald-macos/Durvald/DurvaldTests/YouTubePlayerTests.swift": "5d2a49581a6973627cdb596f897c73a3bdc7eb622e3e9996d79b7d232525aa79",
+    "durvald-macos/Durvald/DurvaldTests/ServiceCollectionsPresentationTests.swift": "5881f2ccf31667b9cd3b53fb2a6bc4bdd135c75778e98d259a583b6d43f53aa3",
+    "durvald-macos/Durvald/Frameworks/libdurvald_core.dylib": "3b0e824790a22c7d00b50bb0e6cebec4609e4715c5d9832082deff15c750e221",
+    "durvald-macos/Durvald/Generated/arm64/durvald_core.swift": "b7aeb6d00e0c75fd933b51ae84f76dde5f07ddad938ab59b08ef11a2fbfbbc83"
+  }
+}

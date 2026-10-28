@@ -27,3 +27,6 @@ pub(crate) mod download_search;
 
 pub(crate) mod transfer_ports;
 pub(crate) mod download_transfers;
+
+pub(crate) mod service_collections;
+pub(crate) mod service_collection_ports;

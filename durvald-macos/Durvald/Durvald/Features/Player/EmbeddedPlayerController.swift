@@ -26,11 +26,15 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
     private(set) var status: EmbeddedPlaybackSnapshot?
     @ObservationIgnored weak var core: DurvaldCore?
     @ObservationIgnored private var generation: String?
+    @ObservationIgnored private var youtubeServer: YouTubePageServer?
+    @ObservationIgnored private var youtubePageURL: URL?
+    @ObservationIgnored private let eventObserver: ((EmbeddedEventKind, Double, Double?) -> Void)?
     @ObservationIgnored private var pendingCommands: [EmbeddedPlaybackCommand] = []
     @ObservationIgnored private var sequence: UInt64 = 0
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private let pageBuilder: (String, Double) -> String
-    init(pageBuilder: @escaping (String, Double) -> String = EmbeddedPlayerController.html) {
+    init(eventObserver: ((EmbeddedEventKind, Double, Double?) -> Void)? = nil, pageBuilder: @escaping (String, Double) -> String = EmbeddedPlayerController.html) {
+        self.eventObserver = eventObserver
         self.pageBuilder = pageBuilder
         super.init()
     }
@@ -53,6 +57,7 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
                     view?.stopLoading()
                     view?.configuration.userContentController.removeScriptMessageHandler(forName: "durvaldPlayback")
                     self.webView = nil; self.generation = nil; self.pendingCommands = []
+                    self.youtubeServer?.stop(); self.youtubeServer = nil; self.youtubePageURL = nil
                 }
                 completion(true)
             }
@@ -60,7 +65,7 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
         }
         if command.kind == .load {
             guard webView == nil, let url = command.url,
-                  let parsed = URL(string: url), parsed.scheme == "https", parsed.host == "soundcloud.com" else { completion(false); return }
+                  let parsed = URL(string: url), parsed.scheme == "https", ["soundcloud.com", "www.youtube.com"].contains(parsed.host ?? "") else { completion(false); return }
             generation = command.generation; sequence = 0; pendingCommands = []
             let configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = .nonPersistent()
@@ -69,8 +74,18 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
             let view = WKWebView(frame: .zero, configuration: configuration)
             view.navigationDelegate = self
             webView = view
-            view.loadHTMLString(pageBuilder(url, command.value), baseURL: URL(string: "https://w.soundcloud.com"))
-            completion(true)
+            let html = pageBuilder(url, command.value)
+            if parsed.host == "www.youtube.com" {
+                do {
+                    let server = try YouTubePageServer(html: html); youtubeServer = server
+                    server.start { [weak self, weak view] pageURL in
+                        guard let self, let view, self.webView === view, self.generation == command.generation, let pageURL else { completion(false); return }
+                        self.youtubePageURL = pageURL; view.load(URLRequest(url: pageURL)); completion(true)
+                    }
+                } catch { webView = nil; generation = nil; completion(false) }
+            } else {
+                view.loadHTMLString(html, baseURL: URL(string: "https://w.soundcloud.com")); completion(true)
+            }
             return
         }
         guard generation == command.generation, let view = webView else { completion(false); return }
@@ -130,6 +145,7 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
         publish(kind: kind, position: (body["position"] as? Double) ?? 0, duration: body["duration"] as? Double)
     }
     private func publish(kind: EmbeddedEventKind, position: Double, duration: Double?) {
+        eventObserver?(kind, position, duration)
         guard let generation, let core, position.isFinite, position >= 0 else { return }
         sequence &+= 1
         let event = EmbeddedPlaybackEvent(generation: generation, sequence: sequence, kind: kind, positionSeconds: position, durationSeconds: duration)
@@ -152,11 +168,12 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
             if let url = navigationAction.request.url, url.scheme == "https" { NSWorkspace.shared.open(url) }
             decisionHandler(.cancel)
         } else if navigationAction.targetFrame?.isMainFrame == true,
-                  let url = navigationAction.request.url, url.scheme != "about", url.host != "w.soundcloud.com" {
+                  let url = navigationAction.request.url, url.scheme != "about", url.host != "w.soundcloud.com", url != youtubePageURL {
             decisionHandler(.cancel)
         } else { decisionHandler(.allow) }
     }
     nonisolated static func html(url: String, volume: Double) -> String {
+        if URL(string: url)?.host == "www.youtube.com" { return youtubeHTML(url: url, volume: volume) }
         // Encode as JSON rather than interpolating a service link into JavaScript/HTML.
         let data = try! JSONSerialization.data(withJSONObject: [url])
         let encoded = String(data: data, encoding: .utf8)!.replacingOccurrences(of: "<", with: "\\u003c")
@@ -203,7 +220,7 @@ struct EmbeddedPlayerPanel: View {
         if let view = player.webView {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("SoundCloud · player integrado").font(.caption)
+                    Text(player.status?.canonicalUrl.contains("youtube.com") == true ? "YouTube · vídeo integrado" : "SoundCloud · player integrado").font(.caption)
                     if player.status?.state == .loading { ProgressView().controlSize(.small); Text("Carregando…").font(.caption) }
                     Spacer()
                     if let status = player.status, status.trackId == nil {
@@ -211,14 +228,14 @@ struct EmbeddedPlayerPanel: View {
                     }
                     Button("Encerrar") { Task { try? await store.core?.stop(); await player.refresh(); await store.refreshPlayback() } }
                 }
-                SoundCloudWidgetView(webView: view).id(ObjectIdentifier(view)).frame(height: 166)
+                SoundCloudWidgetView(webView: view).id(ObjectIdentifier(view)).frame(height: player.status?.canonicalUrl.contains("youtube.com") == true ? 270 : 166)
                     .onDisappear {
                         if player.webView === view {
                             Task { try? await store.core?.stop(); await player.refresh() }
                         }
                     }
                 Text("Equalizador, normalização e transições sem intervalo não se aplicam a este player.").font(.caption2).foregroundStyle(.secondary)
-            }.padding(8).accessibilityIdentifier("player.soundcloud")
+            }.padding(8).accessibilityIdentifier(player.status?.canonicalUrl.contains("youtube.com") == true ? "player.youtube" : "player.soundcloud")
                 .sheet(isPresented: Binding(get: { savingGeneration != nil }, set: { if !$0 { savingGeneration = nil } })) {
                     if let generation = savingGeneration { ListeningSourceSaveView(generation: generation) }
                 }

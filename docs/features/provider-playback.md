@@ -1,5 +1,10 @@
 # Etapa 10 — SoundCloud de ponta a ponta
 
+> Evolução na etapa 13: YouTube passou a ter player oficial visível para vídeos
+> finitos verificados, com flag independente. Bandcamp permanece com abertura no
+> serviço. Os limites abaixo descrevem o incremento original; veja
+> [Serviços e coleções](service-collections.md) para o estado ampliado.
+
 Concluída em 28/10/2026. O primeiro provedor é SoundCloud pelo widget oficial
 visível, usando o transporte da etapa 9B. Não há extração de áudio nem transporte
 HTTP nativo. YouTube e Bandcamp continuam oferecendo abrir no serviço.

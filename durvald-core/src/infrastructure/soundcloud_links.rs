@@ -37,6 +37,12 @@ pub(crate) fn is_short_link(value: &str) -> bool {
     short_url(value).is_some()
 }
 pub(crate) async fn expand(value: &str) -> Result<String, IntegrationError> {
+    expand_mode(value, false).await
+}
+pub(crate) async fn expand_service_link(value: &str) -> Result<String, IntegrationError> {
+    expand_mode(value, true).await
+}
+async fn expand_mode(value: &str, allow_collections: bool) -> Result<String, IntegrationError> {
     // Ordinary complete links remain entirely offline.
     if !is_short_link(value) {
         return Ok(value.to_owned());
@@ -57,34 +63,42 @@ pub(crate) async fn expand(value: &str) -> Result<String, IntegrationError> {
         .map_err(|e| *e)?;
     tokio::time::timeout(
         Duration::from_secs(15),
-        expand_with(value, |url| async move {
-            let response = client.head(url).send().await.map_err(|e| {
-                if e.is_timeout() {
-                    IntegrationError::Timeout
-                } else {
-                    IntegrationError::TemporarilyUnavailable
-                }
-            })?;
-            Ok(Redirect {
-                status: response.status().as_u16(),
-                location: response
-                    .headers()
-                    .get(reqwest::header::LOCATION)
-                    .and_then(|h| h.to_str().ok())
-                    .map(str::to_owned),
-                retry_after: response
-                    .headers()
-                    .get(reqwest::header::RETRY_AFTER)
-                    .and_then(|h| h.to_str().ok())
-                    .and_then(|h| h.parse::<u64>().ok())
-                    .map(|s| s.min(3600)),
-            })
-        }),
+        expand_with_allowed(
+            value,
+            |url| async move {
+                let response = client.head(url).send().await.map_err(|e| {
+                    if e.is_timeout() {
+                        IntegrationError::Timeout
+                    } else {
+                        IntegrationError::TemporarilyUnavailable
+                    }
+                })?;
+                Ok(Redirect {
+                    status: response.status().as_u16(),
+                    location: response
+                        .headers()
+                        .get(reqwest::header::LOCATION)
+                        .and_then(|h| h.to_str().ok())
+                        .map(str::to_owned),
+                    retry_after: response
+                        .headers()
+                        .get(reqwest::header::RETRY_AFTER)
+                        .and_then(|h| h.to_str().ok())
+                        .and_then(|h| h.parse::<u64>().ok())
+                        .map(|s| s.min(3600)),
+                })
+            },
+            allow_collections,
+        ),
     )
     .await
     .map_err(|_| IntegrationError::Timeout)?
 }
-async fn expand_with<F, Fut>(value: &str, mut head: F) -> Result<String, IntegrationError>
+async fn expand_with_allowed<F, Fut>(
+    value: &str,
+    mut head: F,
+    allow_collections: bool,
+) -> Result<String, IntegrationError>
 where
     F: FnMut(Url) -> Fut,
     Fut: Future<Output = Result<Redirect, IntegrationError>>,
@@ -117,11 +131,28 @@ where
         {
             return Ok(media.canonical_url().as_str().to_owned());
         }
+        if allow_collections {
+            if let Ok(location) = super::public_services::locate(next.as_str()) {
+                if location.provider == crate::api::ServiceProvider::SoundCloud
+                    && location.collection
+                {
+                    return Ok(location.url);
+                }
+            }
+        }
         // Validate before following: never request arbitrary hosts, downgrade TLS,
         // or follow redirects to media/CDNs. A final track page isn't downloaded.
         current = short_url(next.as_str()).ok_or_else(invalid)?;
     }
     Err(IntegrationError::InvalidResponse)
+}
+#[cfg(test)]
+async fn expand_with<F, Fut>(value: &str, head: F) -> Result<String, IntegrationError>
+where
+    F: FnMut(Url) -> Fut,
+    Fut: Future<Output = Result<Redirect, IntegrationError>>,
+{
+    expand_with_allowed(value, head, false).await
 }
 fn invalid() -> IntegrationError {
     IntegrationError::InvalidInput(ContractError::InvalidCanonicalUrl)
@@ -245,6 +276,36 @@ mod tests {
             ))
             .await,
             Err(IntegrationError::NotFound)
+        );
+    }
+    #[tokio::test]
+    async fn collection_expansion_accepts_only_public_soundcloud_playlists_when_requested() {
+        let result = expand_with_allowed(
+            "https://on.soundcloud.com/shared",
+            |_| {
+                std::future::ready(Ok(Redirect {
+                    status: 302,
+                    location: Some("https://soundcloud.com/artist/sets/album?si=discard".into()),
+                    retry_after: None,
+                }))
+            },
+            true,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, "https://soundcloud.com/artist/sets/album");
+        assert!(
+            expand_with_allowed(
+                "https://on.soundcloud.com/shared",
+                |_| std::future::ready(Ok(Redirect {
+                    status: 302,
+                    location: Some("https://soundcloud.com/artist".into()),
+                    retry_after: None
+                })),
+                true
+            )
+            .await
+            .is_err()
         );
     }
 }

@@ -31,6 +31,8 @@ use std::sync::Arc;
 /// the public API. All state is encapsulated behind this facade.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
+    service_collections:
+        Arc<crate::application::service_collections::ServiceCollectionsApplication>,
     download_transfers: Arc<crate::application::download_transfers::DownloadTransfersApplication>,
     download_search: Arc<crate::application::download_search::DownloadSearchApplication>,
     sources: Arc<crate::application::sources::SourcesApplication>,
@@ -154,6 +156,7 @@ impl DurvaldCore {
     {
         let components = compose(config, create_audio_player).await?;
         let core = Self {
+            service_collections: components.service_collections,
             download_transfers: components.download_transfers,
             download_search: components.download_search,
             sources: components.sources,
@@ -212,6 +215,77 @@ impl DurvaldCore {
         self.playback_application.embedded_event(event).await
     }
 
+    pub async fn youtube_playback_enabled(&self) -> bool {
+        self.playback_application
+            .embedded_provider_enabled("youtube")
+            .await
+    }
+    pub async fn set_youtube_playback_enabled(&self, enabled: bool) -> CoreResult<()> {
+        self.playback_application
+            .set_embedded_provider_enabled("youtube", enabled)
+            .await
+    }
+    pub async fn service_import_settings(&self) -> CoreResult<Vec<ServiceImportSettings>> {
+        self.service_collections.settings().await
+    }
+    pub async fn configure_service_import(
+        &self,
+        provider: ServiceProvider,
+        enabled: bool,
+        credential: Option<String>,
+    ) -> CoreResult<Vec<ServiceImportSettings>> {
+        self.service_collections
+            .configure(provider, enabled, credential)
+            .await
+    }
+    pub async fn service_collection_import(&self,job_id:String)->CoreResult<ServiceCollectionJob>{self.service_collections.repository.get(job_id).await.map(|j|j.job)}
+    pub async fn service_collection_imports(&self) -> CoreResult<Vec<ServiceCollectionJob>> {
+        self.service_collections.list().await
+    }
+    pub async fn begin_service_collection_import(
+        &self,
+        url: String,
+    ) -> CoreResult<ServiceCollectionJob> {
+        self.service_collections.begin(url).await
+    }
+    pub async fn load_service_collection_page(
+        &self,
+        job_id: String,
+        refresh: bool,
+    ) -> CoreResult<ServiceCollectionJob> {
+        self.service_collections.load(job_id, refresh, None).await
+    }
+    pub async fn retry_service_collection_page(
+        &self,
+        job_id: String,
+        page_index: u32,
+    ) -> CoreResult<ServiceCollectionJob> {
+        self.service_collections
+            .load(job_id, true, Some(page_index))
+            .await
+    }
+    pub async fn import_service_collection_items(
+        &self,
+        job_id: String,
+        occurrence_ids: Vec<String>,
+        confirmed: bool,
+    ) -> CoreResult<ServiceCollectionJob> {
+        self.service_collections
+            .apply(job_id, occurrence_ids, confirmed)
+            .await
+    }
+    pub async fn cancel_service_collection_import(
+        &self,
+        job_id: String,
+    ) -> CoreResult<ServiceCollectionJob> {
+        self.service_collections.cancel(job_id).await
+    }
+    pub async fn resume_service_collection_import(
+        &self,
+        job_id: String,
+    ) -> CoreResult<ServiceCollectionJob> {
+        self.service_collections.resume(job_id).await
+    }
     pub async fn download_transfer_settings(&self) -> CoreResult<DownloadTransferSettings> {
         self.download_transfers.settings().await
     }

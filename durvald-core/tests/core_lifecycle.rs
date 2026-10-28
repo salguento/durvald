@@ -29,7 +29,7 @@ async fn catalog_plugin_registers_without_credentials_or_remote_work()
     let core = TestCore::open().await?;
     assert_eq!(
         durvald_core::test_support::registered_music_plugin_count(core.core()).await?,
-        4
+        8
     );
     assert!(
         !core
@@ -48,7 +48,7 @@ async fn catalog_plugin_registers_without_credentials_or_remote_work()
     let core = core.restart().await?;
     assert_eq!(
         durvald_core::test_support::registered_music_plugin_count(core.core()).await?,
-        4
+        8
     );
     Ok(())
 }

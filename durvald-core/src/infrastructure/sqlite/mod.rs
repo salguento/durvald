@@ -20,3 +20,5 @@ pub(crate) mod catalog_selections;
 pub(crate) mod sources;
 
 pub(crate) mod download_transfers;
+
+pub(crate) mod service_collections;
