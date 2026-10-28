@@ -158,6 +158,8 @@ struct LibrarySidebarView: View {
                         accessibilityIdentifier: "sidebar.retrospective"
                     )
 
+                    SidebarNavigationButton(item: .downloads, selection: $destination, accessibilityIdentifier: "sidebar.downloads")
+
                     navigationSectionHeader("Biblioteca")
 
                     ForEach([LibraryDestination.artists, .albums, .songs, .genres, .albumCollections]) { item in

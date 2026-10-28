@@ -7,6 +7,10 @@ struct SoulseekSearchView: View {
     var expectedTracks: [DownloadExpectedTrack] = []
     @State private var query = ""
     @State private var presentation = SoulseekSearchPresentation()
+    @State private var offerToDownload: DownloadOfferGroup?
+    @State private var showDownloadSelection = false
+    @State private var showTransfers = false
+    @State private var queuedJobID: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -58,6 +62,7 @@ struct SoulseekSearchView: View {
                             Text(group.peer).font(.headline)
                             Text(group.folder).textSelection(.enabled)
                             Text(group.comparison).font(.caption).foregroundStyle(.secondary)
+                            Button("Selecionar arquivos para download…") { offerToDownload = group; showDownloadSelection = true }
                             ForEach(group.files, id: \.filename) { file in
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(file.filename.replacingOccurrences(of: "\\", with: "/").split(separator: "/").last.map(String.init) ?? file.filename)
@@ -75,6 +80,13 @@ struct SoulseekSearchView: View {
             if let core = store.core { await presentation.prepare(SoulseekSearchLoader(session: core.downloadSearchSession())) }
         }
         .onDisappear { Task { await presentation.close() } }
+        .sheet(isPresented: $showDownloadSelection, onDismiss: { if queuedJobID != nil { showTransfers = true } }) {
+            if let offer = offerToDownload { DownloadSelectionView(group: offer) { filenames in
+                let job = try await presentation.enqueue(offerID: offer.offerId, filenames: filenames)
+                queuedJobID = job.jobId
+            } }
+        }
+        .sheet(isPresented: $showTransfers) { DownloadTransfersView(initialJobID: queuedJobID, isSheet: true) }
     }
     private func search() { presentation.start(query: query, expected: expectedTracks) }
     private func size(_ bytes: UInt64) -> String { ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file) }

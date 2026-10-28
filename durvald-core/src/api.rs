@@ -723,3 +723,6 @@ pub struct ClassificationPage {
     pub well_rated: Vec<Release>,
     pub contains_tracks_release_ids: Vec<i64>,
 }
+
+mod download_transfers;
+pub use download_transfers::*;

@@ -24,3 +24,6 @@ mod playback_embedded;
 mod playback_sources;
 
 pub(crate) mod download_search;
+
+pub(crate) mod transfer_ports;
+pub(crate) mod download_transfers;

@@ -748,6 +748,8 @@ public protocol DownloadSearchSessionProtocol : AnyObject {
 
     func close() async
 
+    func enqueueDownload(offerId: String, filenames: [String], confirmed: Bool) async throws  -> DownloadTransferJob
+
     func poll(generation: UInt64) async throws  -> DownloadSearchPage
 
     func search(request: DownloadSearchRequest, generation: UInt64) async throws  -> DownloadSearchPage
@@ -831,6 +833,23 @@ open func close()async  {
             liftFunc: { $0 },
             errorHandler: nil
 
+        )
+}
+
+open func enqueueDownload(offerId: String, filenames: [String], confirmed: Bool)async throws  -> DownloadTransferJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_downloadsearchsession_enqueue_download(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(offerId),FfiConverterSequenceString.lower(filenames),FfiConverterBool.lower(confirmed)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadTransferJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
         )
 }
 
@@ -1019,6 +1038,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func audioOutputState() async throws  -> AudioOutputState
 
+    func cancelDownloadTransfer(jobId: String) async throws  -> DownloadTransferJob
+
     /**
      * Requests cancellation of the active library scan.
      */
@@ -1068,6 +1089,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     func configureDownloadSearch(endpoint: String, apiKey: String?, enabled: Bool, sharingAcknowledged: Bool) async throws  -> DownloadSearchSettings
 
+    func configureDownloadTransfers(settings: DownloadTransferSettings) async throws  -> DownloadTransferSettings
+
     /**
      * Persists optional enrichment preferences; does not start network work.
      */
@@ -1115,6 +1138,10 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     func downloadSearchSettings() async throws  -> DownloadSearchSettings
 
+    func downloadTransferSettings() async throws  -> DownloadTransferSettings
+
+    func downloadTransfers() async throws  -> [DownloadTransferJob]
+
     func embeddedPlayback() async  -> EmbeddedPlaybackSnapshot?
 
     func enrichmentSettings() async throws  -> EnrichmentSettings
@@ -1145,7 +1172,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func homeLibrary(limit: UInt64) async throws  -> HomeLibrary
 
+    func importDownloadFile(jobId: String, fileIndex: UInt32, reviewToken: String, targetTrackId: Int64?, confirmed: Bool) async throws  -> DownloadTransferJob
+
     func importFollowedArtists(artistIds: [Int64]) async throws
+
+    func inspectDownloadFile(jobId: String, fileIndex: UInt32, path: String) async throws  -> DownloadImportPreview
 
     /**
      * Returns the last session state.
@@ -1204,6 +1235,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Pauses playback.
      */
     func pause() async throws
+
+    func pendingDownloadImport(jobId: String, fileIndex: UInt32) async throws  -> DownloadImportPreview
 
     /**
      * Starts playback of a track.
@@ -1300,6 +1333,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
 
     func refreshArtistNews(artistId: Int64, force: Bool) async throws  -> ArtistRefreshResult
 
+    func refreshDownloadTransfer(jobId: String) async throws  -> DownloadTransferJob
+
     /**
      * Gets a release by ID.
      */
@@ -1367,6 +1402,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      * Resumes playback.
      */
     func resume() async throws
+
+    func retryDownloadTransfer(jobId: String) async throws  -> DownloadTransferJob
 
     func saveAlbumCollection(collectionId: Int64?, name: String, description: String, definition: AlbumCollectionDefinition?) async throws  -> AlbumCollection
 
@@ -2118,6 +2155,23 @@ open func audioOutputState()async throws  -> AudioOutputState {
         )
 }
 
+open func cancelDownloadTransfer(jobId: String)async throws  -> DownloadTransferJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_cancel_download_transfer(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadTransferJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Requests cancellation of the active library scan.
      */
@@ -2371,6 +2425,23 @@ open func configureDownloadSearch(endpoint: String, apiKey: String?, enabled: Bo
         )
 }
 
+open func configureDownloadTransfers(settings: DownloadTransferSettings)async throws  -> DownloadTransferSettings {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_configure_download_transfers(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeDownloadTransferSettings.lower(settings)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadTransferSettings.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Persists optional enrichment preferences; does not start network work.
      */
@@ -2618,6 +2689,40 @@ open func downloadSearchSettings()async throws  -> DownloadSearchSettings {
         )
 }
 
+open func downloadTransferSettings()async throws  -> DownloadTransferSettings {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_download_transfer_settings(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadTransferSettings.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func downloadTransfers()async throws  -> [DownloadTransferJob] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_download_transfers(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeDownloadTransferJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func embeddedPlayback()async  -> EmbeddedPlaybackSnapshot? {
     return
         try!  await uniffiRustCallAsync(
@@ -2785,6 +2890,23 @@ open func homeLibrary(limit: UInt64)async throws  -> HomeLibrary {
         )
 }
 
+open func importDownloadFile(jobId: String, fileIndex: UInt32, reviewToken: String, targetTrackId: Int64?, confirmed: Bool)async throws  -> DownloadTransferJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_import_download_file(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId),FfiConverterUInt32.lower(fileIndex),FfiConverterString.lower(reviewToken),FfiConverterOptionInt64.lower(targetTrackId),FfiConverterBool.lower(confirmed)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadTransferJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
 open func importFollowedArtists(artistIds: [Int64])async throws  {
     return
         try  await uniffiRustCallAsync(
@@ -2798,6 +2920,23 @@ open func importFollowedArtists(artistIds: [Int64])async throws  {
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func inspectDownloadFile(jobId: String, fileIndex: UInt32, path: String)async throws  -> DownloadImportPreview {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_inspect_download_file(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId),FfiConverterUInt32.lower(fileIndex),FfiConverterString.lower(path)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadImportPreview.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -3036,6 +3175,23 @@ open func pause()async throws  {
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func pendingDownloadImport(jobId: String, fileIndex: UInt32)async throws  -> DownloadImportPreview {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_pending_download_import(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId),FfiConverterUInt32.lower(fileIndex)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadImportPreview.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -3497,6 +3653,23 @@ open func refreshArtistNews(artistId: Int64, force: Bool)async throws  -> Artist
         )
 }
 
+open func refreshDownloadTransfer(jobId: String)async throws  -> DownloadTransferJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_refresh_download_transfer(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadTransferJob.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Gets a release by ID.
      */
@@ -3846,6 +4019,23 @@ open func resume()async throws  {
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func retryDownloadTransfer(jobId: String)async throws  -> DownloadTransferJob {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_retry_download_transfer(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(jobId)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadTransferJob.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -8949,6 +9139,135 @@ public func FfiConverterTypeDownloadExpectedTrack_lower(_ value: DownloadExpecte
 }
 
 
+public struct DownloadImportPreview {
+    public var targetTrackId: Int64?
+    public var resuming: Bool
+    public var reviewToken: String
+    public var jobId: String
+    public var fileIndex: UInt32
+    public var title: String
+    public var artist: String
+    public var release: String
+    public var durationSeconds: Double
+    public var sizeBytes: UInt64
+    public var destination: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(targetTrackId: Int64?, resuming: Bool, reviewToken: String, jobId: String, fileIndex: UInt32, title: String, artist: String, release: String, durationSeconds: Double, sizeBytes: UInt64, destination: String) {
+        self.targetTrackId = targetTrackId
+        self.resuming = resuming
+        self.reviewToken = reviewToken
+        self.jobId = jobId
+        self.fileIndex = fileIndex
+        self.title = title
+        self.artist = artist
+        self.release = release
+        self.durationSeconds = durationSeconds
+        self.sizeBytes = sizeBytes
+        self.destination = destination
+    }
+}
+
+
+
+extension DownloadImportPreview: Equatable, Hashable {
+    public static func ==(lhs: DownloadImportPreview, rhs: DownloadImportPreview) -> Bool {
+        if lhs.targetTrackId != rhs.targetTrackId {
+            return false
+        }
+        if lhs.resuming != rhs.resuming {
+            return false
+        }
+        if lhs.reviewToken != rhs.reviewToken {
+            return false
+        }
+        if lhs.jobId != rhs.jobId {
+            return false
+        }
+        if lhs.fileIndex != rhs.fileIndex {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.release != rhs.release {
+            return false
+        }
+        if lhs.durationSeconds != rhs.durationSeconds {
+            return false
+        }
+        if lhs.sizeBytes != rhs.sizeBytes {
+            return false
+        }
+        if lhs.destination != rhs.destination {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(targetTrackId)
+        hasher.combine(resuming)
+        hasher.combine(reviewToken)
+        hasher.combine(jobId)
+        hasher.combine(fileIndex)
+        hasher.combine(title)
+        hasher.combine(artist)
+        hasher.combine(release)
+        hasher.combine(durationSeconds)
+        hasher.combine(sizeBytes)
+        hasher.combine(destination)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadImportPreview: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadImportPreview {
+        return
+            try DownloadImportPreview(
+                targetTrackId: FfiConverterOptionInt64.read(from: &buf),
+                resuming: FfiConverterBool.read(from: &buf),
+                reviewToken: FfiConverterString.read(from: &buf),
+                jobId: FfiConverterString.read(from: &buf),
+                fileIndex: FfiConverterUInt32.read(from: &buf),
+                title: FfiConverterString.read(from: &buf),
+                artist: FfiConverterString.read(from: &buf),
+                release: FfiConverterString.read(from: &buf),
+                durationSeconds: FfiConverterDouble.read(from: &buf),
+                sizeBytes: FfiConverterUInt64.read(from: &buf),
+                destination: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadImportPreview, into buf: inout [UInt8]) {
+        FfiConverterOptionInt64.write(value.targetTrackId, into: &buf)
+        FfiConverterBool.write(value.resuming, into: &buf)
+        FfiConverterString.write(value.reviewToken, into: &buf)
+        FfiConverterString.write(value.jobId, into: &buf)
+        FfiConverterUInt32.write(value.fileIndex, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artist, into: &buf)
+        FfiConverterString.write(value.release, into: &buf)
+        FfiConverterDouble.write(value.durationSeconds, into: &buf)
+        FfiConverterUInt64.write(value.sizeBytes, into: &buf)
+        FfiConverterString.write(value.destination, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadImportPreview_lift(_ buf: RustBuffer) throws -> DownloadImportPreview {
+    return try FfiConverterTypeDownloadImportPreview.lift(buf)
+}
+
+public func FfiConverterTypeDownloadImportPreview_lower(_ value: DownloadImportPreview) -> RustBuffer {
+    return FfiConverterTypeDownloadImportPreview.lower(value)
+}
+
+
 public struct DownloadOfferFile {
     public var filename: String
     public var sizeBytes: UInt64
@@ -9399,6 +9718,329 @@ public func FfiConverterTypeDownloadSearchSettings_lift(_ buf: RustBuffer) throw
 
 public func FfiConverterTypeDownloadSearchSettings_lower(_ value: DownloadSearchSettings) -> RustBuffer {
     return FfiConverterTypeDownloadSearchSettings.lower(value)
+}
+
+
+public struct DownloadTransferFile {
+    public var index: UInt32
+    public var filename: String
+    public var sizeBytes: UInt64
+    public var bytesTransferred: UInt64
+    public var state: DownloadFileState
+    public var queuePosition: UInt32?
+    public var importedTrackId: Int64?
+    public var importedPath: String?
+    public var message: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(index: UInt32, filename: String, sizeBytes: UInt64, bytesTransferred: UInt64, state: DownloadFileState, queuePosition: UInt32?, importedTrackId: Int64?, importedPath: String?, message: String?) {
+        self.index = index
+        self.filename = filename
+        self.sizeBytes = sizeBytes
+        self.bytesTransferred = bytesTransferred
+        self.state = state
+        self.queuePosition = queuePosition
+        self.importedTrackId = importedTrackId
+        self.importedPath = importedPath
+        self.message = message
+    }
+}
+
+
+
+extension DownloadTransferFile: Equatable, Hashable {
+    public static func ==(lhs: DownloadTransferFile, rhs: DownloadTransferFile) -> Bool {
+        if lhs.index != rhs.index {
+            return false
+        }
+        if lhs.filename != rhs.filename {
+            return false
+        }
+        if lhs.sizeBytes != rhs.sizeBytes {
+            return false
+        }
+        if lhs.bytesTransferred != rhs.bytesTransferred {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        if lhs.queuePosition != rhs.queuePosition {
+            return false
+        }
+        if lhs.importedTrackId != rhs.importedTrackId {
+            return false
+        }
+        if lhs.importedPath != rhs.importedPath {
+            return false
+        }
+        if lhs.message != rhs.message {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(index)
+        hasher.combine(filename)
+        hasher.combine(sizeBytes)
+        hasher.combine(bytesTransferred)
+        hasher.combine(state)
+        hasher.combine(queuePosition)
+        hasher.combine(importedTrackId)
+        hasher.combine(importedPath)
+        hasher.combine(message)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadTransferFile: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadTransferFile {
+        return
+            try DownloadTransferFile(
+                index: FfiConverterUInt32.read(from: &buf),
+                filename: FfiConverterString.read(from: &buf),
+                sizeBytes: FfiConverterUInt64.read(from: &buf),
+                bytesTransferred: FfiConverterUInt64.read(from: &buf),
+                state: FfiConverterTypeDownloadFileState.read(from: &buf),
+                queuePosition: FfiConverterOptionUInt32.read(from: &buf),
+                importedTrackId: FfiConverterOptionInt64.read(from: &buf),
+                importedPath: FfiConverterOptionString.read(from: &buf),
+                message: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadTransferFile, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.index, into: &buf)
+        FfiConverterString.write(value.filename, into: &buf)
+        FfiConverterUInt64.write(value.sizeBytes, into: &buf)
+        FfiConverterUInt64.write(value.bytesTransferred, into: &buf)
+        FfiConverterTypeDownloadFileState.write(value.state, into: &buf)
+        FfiConverterOptionUInt32.write(value.queuePosition, into: &buf)
+        FfiConverterOptionInt64.write(value.importedTrackId, into: &buf)
+        FfiConverterOptionString.write(value.importedPath, into: &buf)
+        FfiConverterOptionString.write(value.message, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadTransferFile_lift(_ buf: RustBuffer) throws -> DownloadTransferFile {
+    return try FfiConverterTypeDownloadTransferFile.lift(buf)
+}
+
+public func FfiConverterTypeDownloadTransferFile_lower(_ value: DownloadTransferFile) -> RustBuffer {
+    return FfiConverterTypeDownloadTransferFile.lower(value)
+}
+
+
+public struct DownloadTransferJob {
+    public var jobId: String
+    public var peer: String
+    public var folder: String
+    public var createdAt: Int64
+    public var relativeDestination: String
+    public var remoteDownloadRoot: String
+    public var mappedDownloadRoot: String
+    public var libraryDestination: String
+    public var files: [DownloadTransferFile]
+    public var cancelRequested: Bool
+    public var message: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(jobId: String, peer: String, folder: String, createdAt: Int64, relativeDestination: String, remoteDownloadRoot: String, mappedDownloadRoot: String, libraryDestination: String, files: [DownloadTransferFile], cancelRequested: Bool, message: String?) {
+        self.jobId = jobId
+        self.peer = peer
+        self.folder = folder
+        self.createdAt = createdAt
+        self.relativeDestination = relativeDestination
+        self.remoteDownloadRoot = remoteDownloadRoot
+        self.mappedDownloadRoot = mappedDownloadRoot
+        self.libraryDestination = libraryDestination
+        self.files = files
+        self.cancelRequested = cancelRequested
+        self.message = message
+    }
+}
+
+
+
+extension DownloadTransferJob: Equatable, Hashable {
+    public static func ==(lhs: DownloadTransferJob, rhs: DownloadTransferJob) -> Bool {
+        if lhs.jobId != rhs.jobId {
+            return false
+        }
+        if lhs.peer != rhs.peer {
+            return false
+        }
+        if lhs.folder != rhs.folder {
+            return false
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return false
+        }
+        if lhs.relativeDestination != rhs.relativeDestination {
+            return false
+        }
+        if lhs.remoteDownloadRoot != rhs.remoteDownloadRoot {
+            return false
+        }
+        if lhs.mappedDownloadRoot != rhs.mappedDownloadRoot {
+            return false
+        }
+        if lhs.libraryDestination != rhs.libraryDestination {
+            return false
+        }
+        if lhs.files != rhs.files {
+            return false
+        }
+        if lhs.cancelRequested != rhs.cancelRequested {
+            return false
+        }
+        if lhs.message != rhs.message {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(jobId)
+        hasher.combine(peer)
+        hasher.combine(folder)
+        hasher.combine(createdAt)
+        hasher.combine(relativeDestination)
+        hasher.combine(remoteDownloadRoot)
+        hasher.combine(mappedDownloadRoot)
+        hasher.combine(libraryDestination)
+        hasher.combine(files)
+        hasher.combine(cancelRequested)
+        hasher.combine(message)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadTransferJob: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadTransferJob {
+        return
+            try DownloadTransferJob(
+                jobId: FfiConverterString.read(from: &buf),
+                peer: FfiConverterString.read(from: &buf),
+                folder: FfiConverterString.read(from: &buf),
+                createdAt: FfiConverterInt64.read(from: &buf),
+                relativeDestination: FfiConverterString.read(from: &buf),
+                remoteDownloadRoot: FfiConverterString.read(from: &buf),
+                mappedDownloadRoot: FfiConverterString.read(from: &buf),
+                libraryDestination: FfiConverterString.read(from: &buf),
+                files: FfiConverterSequenceTypeDownloadTransferFile.read(from: &buf),
+                cancelRequested: FfiConverterBool.read(from: &buf),
+                message: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadTransferJob, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.jobId, into: &buf)
+        FfiConverterString.write(value.peer, into: &buf)
+        FfiConverterString.write(value.folder, into: &buf)
+        FfiConverterInt64.write(value.createdAt, into: &buf)
+        FfiConverterString.write(value.relativeDestination, into: &buf)
+        FfiConverterString.write(value.remoteDownloadRoot, into: &buf)
+        FfiConverterString.write(value.mappedDownloadRoot, into: &buf)
+        FfiConverterString.write(value.libraryDestination, into: &buf)
+        FfiConverterSequenceTypeDownloadTransferFile.write(value.files, into: &buf)
+        FfiConverterBool.write(value.cancelRequested, into: &buf)
+        FfiConverterOptionString.write(value.message, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadTransferJob_lift(_ buf: RustBuffer) throws -> DownloadTransferJob {
+    return try FfiConverterTypeDownloadTransferJob.lift(buf)
+}
+
+public func FfiConverterTypeDownloadTransferJob_lower(_ value: DownloadTransferJob) -> RustBuffer {
+    return FfiConverterTypeDownloadTransferJob.lower(value)
+}
+
+
+public struct DownloadTransferSettings {
+    public var enabled: Bool
+    public var remoteDownloadRoot: String
+    public var mappedDownloadRoot: String
+    public var libraryDestination: String
+    public var mappingConfirmed: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(enabled: Bool, remoteDownloadRoot: String, mappedDownloadRoot: String, libraryDestination: String, mappingConfirmed: Bool) {
+        self.enabled = enabled
+        self.remoteDownloadRoot = remoteDownloadRoot
+        self.mappedDownloadRoot = mappedDownloadRoot
+        self.libraryDestination = libraryDestination
+        self.mappingConfirmed = mappingConfirmed
+    }
+}
+
+
+
+extension DownloadTransferSettings: Equatable, Hashable {
+    public static func ==(lhs: DownloadTransferSettings, rhs: DownloadTransferSettings) -> Bool {
+        if lhs.enabled != rhs.enabled {
+            return false
+        }
+        if lhs.remoteDownloadRoot != rhs.remoteDownloadRoot {
+            return false
+        }
+        if lhs.mappedDownloadRoot != rhs.mappedDownloadRoot {
+            return false
+        }
+        if lhs.libraryDestination != rhs.libraryDestination {
+            return false
+        }
+        if lhs.mappingConfirmed != rhs.mappingConfirmed {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(enabled)
+        hasher.combine(remoteDownloadRoot)
+        hasher.combine(mappedDownloadRoot)
+        hasher.combine(libraryDestination)
+        hasher.combine(mappingConfirmed)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadTransferSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadTransferSettings {
+        return
+            try DownloadTransferSettings(
+                enabled: FfiConverterBool.read(from: &buf),
+                remoteDownloadRoot: FfiConverterString.read(from: &buf),
+                mappedDownloadRoot: FfiConverterString.read(from: &buf),
+                libraryDestination: FfiConverterString.read(from: &buf),
+                mappingConfirmed: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadTransferSettings, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.enabled, into: &buf)
+        FfiConverterString.write(value.remoteDownloadRoot, into: &buf)
+        FfiConverterString.write(value.mappedDownloadRoot, into: &buf)
+        FfiConverterString.write(value.libraryDestination, into: &buf)
+        FfiConverterBool.write(value.mappingConfirmed, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadTransferSettings_lift(_ buf: RustBuffer) throws -> DownloadTransferSettings {
+    return try FfiConverterTypeDownloadTransferSettings.lift(buf)
+}
+
+public func FfiConverterTypeDownloadTransferSettings_lower(_ value: DownloadTransferSettings) -> RustBuffer {
+    return FfiConverterTypeDownloadTransferSettings.lower(value)
 }
 
 
@@ -15997,6 +16639,110 @@ extension CoreError: Error { }
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum DownloadFileState {
+
+    case prepared
+    case submissionUnknown
+    case queued
+    case downloading
+    case completed
+    case failed
+    case cancelled
+    case importing
+    case imported
+}
+
+
+public struct FfiConverterTypeDownloadFileState: FfiConverterRustBuffer {
+    typealias SwiftType = DownloadFileState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadFileState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .prepared
+
+        case 2: return .submissionUnknown
+
+        case 3: return .queued
+
+        case 4: return .downloading
+
+        case 5: return .completed
+
+        case 6: return .failed
+
+        case 7: return .cancelled
+
+        case 8: return .importing
+
+        case 9: return .imported
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: DownloadFileState, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .prepared:
+            writeInt(&buf, Int32(1))
+
+
+        case .submissionUnknown:
+            writeInt(&buf, Int32(2))
+
+
+        case .queued:
+            writeInt(&buf, Int32(3))
+
+
+        case .downloading:
+            writeInt(&buf, Int32(4))
+
+
+        case .completed:
+            writeInt(&buf, Int32(5))
+
+
+        case .failed:
+            writeInt(&buf, Int32(6))
+
+
+        case .cancelled:
+            writeInt(&buf, Int32(7))
+
+
+        case .importing:
+            writeInt(&buf, Int32(8))
+
+
+        case .imported:
+            writeInt(&buf, Int32(9))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeDownloadFileState_lift(_ buf: RustBuffer) throws -> DownloadFileState {
+    return try FfiConverterTypeDownloadFileState.lift(buf)
+}
+
+public func FfiConverterTypeDownloadFileState_lower(_ value: DownloadFileState) -> RustBuffer {
+    return FfiConverterTypeDownloadFileState.lower(value)
+}
+
+
+
+extension DownloadFileState: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum DownloadSearchFailure {
 
     case disabled
@@ -18375,6 +19121,50 @@ fileprivate struct FfiConverterSequenceTypeDownloadOfferGroup: FfiConverterRustB
     }
 }
 
+fileprivate struct FfiConverterSequenceTypeDownloadTransferFile: FfiConverterRustBuffer {
+    typealias SwiftType = [DownloadTransferFile]
+
+    public static func write(_ value: [DownloadTransferFile], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDownloadTransferFile.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DownloadTransferFile] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DownloadTransferFile]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDownloadTransferFile.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeDownloadTransferJob: FfiConverterRustBuffer {
+    typealias SwiftType = [DownloadTransferJob]
+
+    public static func write(_ value: [DownloadTransferJob], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDownloadTransferJob.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DownloadTransferJob] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DownloadTransferJob]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDownloadTransferJob.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 fileprivate struct FfiConverterSequenceTypeDuplicateTrackGroup: FfiConverterRustBuffer {
     typealias SwiftType = [DuplicateTrackGroup]
 
@@ -18958,6 +19748,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_downloadsearchsession_close() != 4852) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_downloadsearchsession_enqueue_download() != 23528) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_downloadsearchsession_poll() != 368) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -19036,6 +19829,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_audio_output_state() != 6925) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_download_transfer() != 59941) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_cancel_library_scan() != 54997) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -19081,6 +19877,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_configure_download_search() != 11224) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_configure_download_transfers() != 1513) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_configure_enrichment() != 59093) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -19123,6 +19922,12 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_download_search_settings() != 1155) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_download_transfer_settings() != 1886) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_download_transfers() != 28116) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_embedded_playback() != 38250) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -19150,7 +19955,13 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_home_library() != 41220) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_import_download_file() != 41477) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_import_followed_artists() != 32866) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_inspect_download_file() != 57306) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_last_session() != 31866) {
@@ -19187,6 +19998,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_pause() != 19873) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_pending_download_import() != 18643) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_play() != 16881) {
@@ -19261,6 +20075,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_refresh_artist_news() != 28687) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_refresh_download_transfer() != 63893) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_release() != 18366) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -19316,6 +20133,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_resume() != 18016) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_retry_download_transfer() != 12903) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_save_album_collection() != 32282) {

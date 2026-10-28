@@ -254,6 +254,7 @@ impl PluginRuntime {
                 PluginCapability::SourceSearch => adapter.sources().is_some(),
                 PluginCapability::Playback => adapter.resolver().is_some(),
                 PluginCapability::DownloadSearch => adapter.download_search().is_some(),
+                PluginCapability::DownloadTransfer => adapter.download_transfer().is_some(),
                 _ => false, // Reserved capabilities gain ports in their own roadmap stages.
             };
             if !implemented {
@@ -642,6 +643,41 @@ impl PluginRuntime {
                     return Err(IntegrationError::Cancelled);
                 }
                 handle.poll().await
+            },
+        )
+        .await
+    }
+    pub(crate) async fn transfer(
+        &self,
+        ticket: RequestTicket,
+        command: crate::application::transfer_ports::TransferCommand,
+    ) -> Result<crate::application::transfer_ports::TransferReceipt, PluginError> {
+        let remote = self.remote.clone();
+        self.execute(
+            &ProviderId::new("slskd").unwrap(),
+            PluginCapability::DownloadTransfer,
+            ticket,
+            true,
+            move |adapter, context| async move {
+                let host = adapter.request_host(&context.configuration);
+                let receipt = adapter
+                    .download_transfer()
+                    .ok_or(IntegrationError::UnsupportedCapability)?
+                    .transfer(context, command)
+                    .await?;
+                if let (
+                    Some(host),
+                    Some(IntegrationError::RateLimited {
+                        retry_after_seconds: Some(seconds),
+                    }),
+                ) = (host, receipt.not_submitted)
+                {
+                    remote
+                        .defer(&host, seconds)
+                        .await
+                        .map_err(|_| IntegrationError::TemporarilyUnavailable)?;
+                }
+                Ok(receipt)
             },
         )
         .await

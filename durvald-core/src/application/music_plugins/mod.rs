@@ -25,6 +25,11 @@ pub(crate) trait MusicPlugin: Send + Sync {
     ) -> Result<(), PluginError> {
         Ok(())
     }
+    fn download_transfer(
+        &self,
+    ) -> Option<&dyn crate::application::transfer_ports::DownloadTransferProvider> {
+        None
+    }
     fn download_search(&self) -> Option<&dyn DownloadSearcher> {
         None
     }

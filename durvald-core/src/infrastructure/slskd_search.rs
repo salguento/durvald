@@ -48,11 +48,15 @@ impl MusicPlugin for SlskdSearch {
             id: ProviderId::new("slskd").unwrap(),
             version: PluginVersion {
                 major: 1,
-                minor: 0,
+                minor: 1,
                 patch: 0,
             },
             api_version: PLUGIN_API_VERSION,
-            capabilities: [PluginCapability::DownloadSearch].into(),
+            capabilities: [
+                PluginCapability::DownloadSearch,
+                PluginCapability::DownloadTransfer,
+            ]
+            .into(),
             permissions: [PluginPermission::Network, PluginPermission::Credentials].into(),
             primary_host: Some("localhost".into()),
             settings: BTreeMap::from([(
@@ -82,6 +86,11 @@ impl MusicPlugin for SlskdSearch {
             .host_str()
             .map(str::to_owned)
     }
+    fn download_transfer(
+        &self,
+    ) -> Option<&dyn crate::application::transfer_ports::DownloadTransferProvider> {
+        Some(self)
+    }
     fn download_search(&self) -> Option<&dyn DownloadSearcher> {
         Some(self)
     }
@@ -93,45 +102,7 @@ impl DownloadSearcher for SlskdSearch {
         request: DownloadSearchRequest,
     ) -> IntegrationFuture<'_, Arc<dyn DownloadSearchHandle>> {
         Box::pin(async move {
-            if !context
-                .configuration
-                .flags
-                .get("sharing_acknowledged")
-                .copied()
-                .unwrap_or(false)
-            {
-                return Err(E::AccessDenied);
-            }
-            let base = endpoint(
-                context
-                    .configuration
-                    .values
-                    .get("endpoint")
-                    .map(String::as_str)
-                    .unwrap_or_default(),
-            )
-            .map_err(|_| E::InvalidResponse)?;
-            let key = context
-                .credential("api_key")
-                .ok_or(E::AuthenticationRequired)?;
-            let mut header = reqwest::header::HeaderValue::from_str(key.expose())
-                .map_err(|_| E::AuthenticationRequired)?;
-            header.set_sensitive(true);
-            let client = Client::builder()
-                .default_headers(
-                    [(
-                        reqwest::header::HeaderName::from_static("x-api-key"),
-                        header,
-                    )]
-                    .into_iter()
-                    .collect(),
-                )
-                .redirect(reqwest::redirect::Policy::none())
-                .no_proxy()
-                .connect_timeout(Duration::from_secs(3))
-                .timeout(Duration::from_secs(5))
-                .build()
-                .map_err(|_| E::TemporarilyUnavailable)?;
+            let (client, base) = client(&context)?;
             let id = search_id()?;
             let lease = Arc::new(Lease {
                 client,
@@ -148,7 +119,49 @@ impl DownloadSearcher for SlskdSearch {
         })
     }
 }
-fn search_id() -> Result<String, E> {
+pub(crate) fn client(context: &PluginContext) -> Result<(Client, Url), E> {
+    if !context
+        .configuration
+        .flags
+        .get("sharing_acknowledged")
+        .copied()
+        .unwrap_or(false)
+    {
+        return Err(E::AccessDenied);
+    }
+    let base = endpoint(
+        context
+            .configuration
+            .values
+            .get("endpoint")
+            .map(String::as_str)
+            .unwrap_or_default(),
+    )
+    .map_err(|_| E::InvalidResponse)?;
+    let key = context
+        .credential("api_key")
+        .ok_or(E::AuthenticationRequired)?;
+    let mut header = reqwest::header::HeaderValue::from_str(key.expose())
+        .map_err(|_| E::AuthenticationRequired)?;
+    header.set_sensitive(true);
+    let client = Client::builder()
+        .default_headers(
+            [(
+                reqwest::header::HeaderName::from_static("x-api-key"),
+                header,
+            )]
+            .into_iter()
+            .collect(),
+        )
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|_| E::TemporarilyUnavailable)?;
+    Ok((client, base))
+}
+pub(crate) fn search_id() -> Result<String, E> {
     use ring::rand::{SecureRandom, SystemRandom};
     let mut bytes = [0u8; 16];
     SystemRandom::new()
@@ -182,7 +195,7 @@ impl Lease {
         request(&self.client, &self.base, method, path, body).await
     }
 }
-async fn request(
+pub(crate) async fn request(
     client: &Client,
     base: &Url,
     method: Method,
@@ -254,6 +267,9 @@ async fn cleanup(client: &Client, base: &Url, id: &str) -> Result<(), E> {
     result.unwrap_or(Err(E::Timeout))
 }
 impl DownloadSearchHandle for Lease {
+    fn endpoint(&self) -> String {
+        self.base.as_str().into()
+    }
     fn poll(&self) -> IntegrationFuture<'_, DownloadSearchPage> {
         Box::pin(async move {
             let status = self

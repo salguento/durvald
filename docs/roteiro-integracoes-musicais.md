@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 28/10/2026.
-Status: implementação incremental; etapas 1–8, 9B, 10 e 11 concluídas; 9A dispensada no piloto atual, demais etapas planejadas.
+Status: implementação incremental; etapas 1–8, 9B e 10–12 concluídas; 9A dispensada no piloto atual, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -441,6 +441,13 @@ timeout e ausência de respostas, devido às limitações da rede de trabalho.
 progressivos e falha isolada, sem esperar reprodução ou alterar arquivos locais.
 
 ### 12. Transferências e importação de arquivos
+
+**Status:** implementada em 28/10/2026. [Transferências e importação Soulseek](features/soulseek-transfers.md).
+Seleção explícita de arquivos e destinos, fila persistente com progresso, falha,
+cancelamento e retomada segura. Importação revisada apenas de áudio concluído,
+validado e acessível no mapeamento local, com recibo transacional idempotente e
+preservação de dados pessoais. Testes usam um simulador local; transferências
+reais permanecem limitadas pela rede do trabalho informada pelo usuário.
 
 **Dependências:** 11 e 6; usar 7 se houver associação a faixas exclusivamente remotas.
 

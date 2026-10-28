@@ -59,6 +59,7 @@ pub(crate) trait MediaResolver: Send + Sync {
 
 /// A search lease belongs to one request and one backend configuration.
 pub(crate) trait DownloadSearchHandle: Send + Sync {
+    fn endpoint(&self) -> String;
     fn poll(&self) -> IntegrationFuture<'_, crate::api::DownloadSearchPage>;
     fn cancel(&self) -> IntegrationFuture<'_, ()>;
 }

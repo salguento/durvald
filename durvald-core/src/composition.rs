@@ -56,6 +56,8 @@ pub(crate) struct PersistenceApplications {
 }
 
 pub(crate) struct CoreComponents {
+    pub(crate) download_transfers:
+        Arc<crate::application::download_transfers::DownloadTransfersApplication>,
     pub(crate) download_search: Arc<crate::application::download_search::DownloadSearchApplication>,
     pub(crate) sources: Arc<crate::application::sources::SourcesApplication>,
     pub(crate) catalog_search: Arc<CatalogSearchApplication>,
@@ -140,7 +142,7 @@ where
     let persistence = build_persistence_applications(
         db_pool.clone(),
         config.covers_dir.clone(),
-        metadata_edit_queue,
+        metadata_edit_queue.clone(),
         settings_repository,
         &playback_application,
     );
@@ -156,7 +158,18 @@ where
         crate::application::download_search::DownloadSearchApplication::new(music_plugins.clone())
             .await,
     );
+    let download_transfers = Arc::new(
+        crate::application::download_transfers::DownloadTransfersApplication::new(
+            crate::infrastructure::sqlite::download_transfers::TransferRepository::new(
+                db_pool.clone(),
+            ),
+            music_plugins.clone(),
+            metadata_edit_queue,
+            config.covers_dir.clone(),
+        ),
+    );
     Ok(CoreComponents {
+        download_transfers,
         download_search,
         sources,
         catalog_search,

@@ -618,6 +618,7 @@ const MIGRATIONS: &[(i64, &str)] = &[
         23,
         "CREATE TABLE track_source_observations(source_id INTEGER PRIMARY KEY REFERENCES track_sources(source_id) ON DELETE CASCADE, payload TEXT NOT NULL CHECK(json_valid(payload)));",
     ),
+    (24,crate::infrastructure::sqlite::download_transfers::SCHEMA),
 ];
 
 pub fn migrate_enrichment(conn: &mut Connection) -> rusqlite::Result<()> {
@@ -724,7 +725,7 @@ mod tests {
             conn.query_row("SELECT COUNT(*) FROM enrichment_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            23
+            24
         );
     }
 
@@ -926,7 +927,7 @@ mod tests {
                 &[
                     MIGRATIONS,
                     &[(
-                        24,
+                        25,
                         "CREATE TABLE must_rollback (id); INSERT INTO absent VALUES (1);"
                     )]
                 ]
@@ -940,7 +941,7 @@ mod tests {
                 r.get::<_, i64>(0)
             })
             .unwrap(),
-            23
+            24
         );
     }
 

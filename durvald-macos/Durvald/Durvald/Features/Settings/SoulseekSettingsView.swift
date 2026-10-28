@@ -9,6 +9,7 @@ struct SoulseekSettingsView: View {
     @State private var hasKey = false
     @State private var busy = false
     @State private var message: String?
+    @State private var showTransfers = false
     var body: some View {
         Form {
             Toggle("Habilitar pesquisa Soulseek", isOn: $enabled)
@@ -16,7 +17,8 @@ struct SoulseekSettingsView: View {
             SecureField(hasKey ? "Nova chave da API (vazio mantém a atual)" : "Chave da API slskd", text: $key)
             Text("Conecte uma instância slskd instalada e configurada por você. Use HTTPS para endereços remotos. A conta Soulseek e os compartilhamentos são gerenciados no slskd.").font(.caption).foregroundStyle(.secondary)
             Toggle("Revisei os compartilhamentos da minha instância slskd", isOn: $acknowledged)
-            Text("Habilitar a pesquisa não compartilha sua biblioteca. A chave fica no armazenamento protegido do sistema. Esta etapa permite pesquisar e inspecionar ofertas; baixar e importar serão ações separadas.").font(.caption).foregroundStyle(.secondary)
+            Text("Habilitar a pesquisa não compartilha sua biblioteca. A chave fica no armazenamento protegido do sistema. Downloads e importações exigem confirmação e destinos configurados separadamente.").font(.caption).foregroundStyle(.secondary)
+            Button("Configurar transferências e pastas…") { showTransfers = true }
             if let message { Text(message).foregroundStyle(.secondary) }
             HStack {
                 Button("Salvar") { Task { await save(removeKey: false) } }
@@ -24,6 +26,7 @@ struct SoulseekSettingsView: View {
                 if busy { ProgressView().controlSize(.small) }
             }
         }
+        .sheet(isPresented: $showTransfers) { DownloadTransferSettingsView() }
         .disabled(busy || store.core == nil)
         .task(id: store.core.map(ObjectIdentifier.init)) {
             guard let core = store.core else { return }

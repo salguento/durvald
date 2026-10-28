@@ -171,6 +171,7 @@ struct Active {
     deadline: Instant,
 }
 struct State {
+    endpoint: Option<String>,
     serial: u64,
     closed: bool,
     page: DownloadSearchPage,
@@ -189,6 +190,7 @@ impl SearchSession {
         Self {
             application,
             state: Mutex::new(State {
+                endpoint: None,
                 serial: 0,
                 closed: false,
                 page: empty(0, DownloadSearchState::Cancelled),
@@ -202,6 +204,40 @@ impl SearchSession {
             operations: Mutex::new(()),
             scope: RequestScope::default(),
         }
+    }
+    pub(crate) async fn selected_offer(
+        &self,
+        offer_id: String,
+        filenames: Vec<String>,
+        confirmed: bool,
+    ) -> CoreResult<(String, DownloadOfferGroup)> {
+        let s = self.state.lock().await;
+        if s.closed || !confirmed || filenames.is_empty() || filenames.len() > 500 {
+            return Err(invalid(
+                "Revise os arquivos e confirme o download nesta busca.",
+            ));
+        }
+        let mut group = s
+            .page
+            .groups
+            .iter()
+            .find(|g| g.offer_id == offer_id)
+            .cloned()
+            .ok_or_else(|| invalid("A oferta expirou ou pertence a outra busca."))?;
+        let selected: std::collections::HashSet<_> = filenames.into_iter().collect();
+        if !selected
+            .iter()
+            .all(|name| group.files.iter().any(|f| &f.filename == name))
+        {
+            return Err(invalid("Selecione somente arquivos desta oferta."));
+        }
+        group.files.retain(|f| selected.contains(&f.filename));
+        Ok((
+            s.endpoint
+                .clone()
+                .ok_or_else(|| invalid("A instância da oferta não está disponível."))?,
+            group,
+        ))
     }
     pub(crate) async fn start(
         &self,
@@ -258,6 +294,7 @@ impl SearchSession {
         }
         match result {
             Ok((provider_generation, handle)) => {
+                s.endpoint = Some(handle.endpoint());
                 s.active = Some(Active {
                     handle,
                     provider_generation,

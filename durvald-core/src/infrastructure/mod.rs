@@ -11,3 +11,7 @@ pub(crate) mod soundcloud_playback;
 pub(crate) mod soundcloud_links;
 
 pub(crate) mod slskd_search;
+
+pub(crate) mod slskd_transfers;
+
+pub(crate) mod acquisition_files;

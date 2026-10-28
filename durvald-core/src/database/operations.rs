@@ -3025,6 +3025,19 @@ pub(crate) fn persist_metadata_with_existing_ids(
     mtimes: Vec<i64>,
     existing_song_ids: Vec<Option<i64>>,
 ) -> DatabaseResult<PersistedMetadata> {
+    let tx = conn.unchecked_transaction()?;
+    let result = persist_metadata_in_transaction(&tx, metadata, mtimes, existing_song_ids)?;
+    tx.commit()?;
+    Ok(result)
+}
+
+/// Shared import/scan writer; caller owns the surrounding transaction.
+pub(crate) fn persist_metadata_in_transaction(
+    conn: &Connection,
+    metadata: Vec<AudioMetadata>,
+    mtimes: Vec<i64>,
+    existing_song_ids: Vec<Option<i64>>,
+) -> DatabaseResult<PersistedMetadata> {
     if metadata.len() != mtimes.len() || metadata.len() != existing_song_ids.len() {
         return Err(DatabaseError::Custom(
             "Metadata batch contains mismatched record counts".to_string(),
@@ -3041,15 +3054,15 @@ pub(crate) fn persist_metadata_with_existing_ids(
             Ok(normalize_metadata(item))
         })
         .collect::<DatabaseResult<_>>()?;
-    let transaction = conn.unchecked_transaction()?;
+    let transaction = conn;
     let all_artist = group_artists(&metadata);
     for artist in all_artist {
-        add_artist(&transaction, artist)?;
+        add_artist(transaction, artist)?;
     }
 
     let all_releases = group_releases(&metadata);
     for release in &all_releases {
-        add_release(&transaction, release)?;
+        add_release(transaction, release)?;
     }
 
     let mut added_tracks = 0;
@@ -3072,11 +3085,11 @@ pub(crate) fn persist_metadata_with_existing_ids(
                 touched_release_ids.insert(release_id);
             }
         }
-        let new_release_id = lookup_release_id(&transaction, &md)?;
+        let new_release_id = lookup_release_id(transaction, &md)?;
         let file_path = md.file_path.clone();
         if transaction.table_exists(None, "track_sources")? {
             super::source_catalog::cache_scanned_source(
-                &transaction,
+                transaction,
                 &md,
                 mtimes[i],
                 CURRENT_METADATA_VERSION,
@@ -3092,7 +3105,7 @@ pub(crate) fn persist_metadata_with_existing_ids(
                 continue;
             }
         }
-        match add_song(&transaction, md, mtimes[i], existing_song_id)? {
+        match add_song(transaction, md, mtimes[i], existing_song_id)? {
             SongWriteResult::Added => added_tracks += 1,
             SongWriteResult::Updated => updated_tracks += 1,
             SongWriteResult::SkippedDuplicate => {}
@@ -3100,25 +3113,23 @@ pub(crate) fn persist_metadata_with_existing_ids(
         if transaction.table_exists(None, "track_sources")? {
             // New sources are created by the insert trigger, so cache once more.
             super::source_catalog::cache_scan_time(
-                &transaction,
+                transaction,
                 &file_path,
                 mtimes[i],
                 CURRENT_METADATA_VERSION,
             )?;
         }
         touched_release_ids.insert(new_release_id);
-        crate::metadata_edit::cache_scanned(&transaction, &file_path, &cached_metadata)?;
-        super::classification::cache_file(&transaction, &file_path, &file_genres, &file_styles)?;
+        crate::metadata_edit::cache_scanned(transaction, &file_path, &cached_metadata)?;
+        super::classification::cache_file(transaction, &file_path, &file_genres, &file_styles)?;
     }
 
     for release in &all_releases {
-        refresh_release_statistics(&transaction, release)?;
+        refresh_release_statistics(transaction, release)?;
     }
     for release_id in touched_release_ids {
-        crate::database::identity::refresh_release_external_ids(&transaction, release_id)?;
+        crate::database::identity::refresh_release_external_ids(transaction, release_id)?;
     }
-
-    transaction.commit()?;
 
     Ok(PersistedMetadata {
         added_tracks,

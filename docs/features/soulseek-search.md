@@ -106,3 +106,9 @@ smokes Rust e 4 testes macOS externos permaneceram opt-in. Os nove testes
 do novo adaptador usam exclusivamente um servidor local simulado. Clippy com
 todos os alvos/features, geração Release/bindings e smoke UniFFI passaram.
 [Evidência consolidada](../evidence/provider-probes/slskd-search-2026-10-28.json).
+
+## Atualização: transferências
+
+A [etapa 12](soulseek-transfers.md) acrescenta seleção explícita de arquivos,
+fila persistente, cancelamento, retomada e importação revisada. Ofertas continuam
+temporárias; pesquisar ou selecionar uma pasta não inicia transferência.

@@ -5,12 +5,14 @@ struct SoulseekSearchLoader {
     var search: (DownloadSearchRequest, UInt64) async throws -> DownloadSearchPage
     var poll: (UInt64) async throws -> DownloadSearchPage
     var cancel: () async -> DownloadSearchPage
+    var enqueue: ((String, [String], Bool) async throws -> DownloadTransferJob)?
     var close: () async -> Void
     init(session: DownloadSearchSession) {
         search = { try await session.search(request: $0, generation: $1) }
         poll = { try await session.poll(generation: $0) }
         cancel = { await session.cancel() }
         close = { await session.close() }
+        enqueue = { try await session.enqueueDownload(offerId: $0, filenames: $1, confirmed: $2) }
     }
     init(search: @escaping (DownloadSearchRequest, UInt64) async throws -> DownloadSearchPage, poll: @escaping (UInt64) async throws -> DownloadSearchPage, cancel: @escaping () async -> DownloadSearchPage, close: @escaping () async -> Void) {
         self.search = search; self.poll = poll; self.cancel = cancel; self.close = close
@@ -62,6 +64,10 @@ final class SoulseekSearchPresentation {
         case .invalidResponse: return "O slskd retornou uma resposta incompatível ou grande demais."
         case .cancelled: return "A pesquisa foi cancelada ou a configuração mudou. Inicie outra busca."
         }
+    }
+    func enqueue(offerID: String, filenames: [String]) async throws -> DownloadTransferJob {
+        guard let enqueue = loader?.enqueue else { throw CoreError.InvalidInput(message: "A busca não está disponível para download.") }
+        return try await enqueue(offerID, filenames, true)
     }
     func prepare(_ loader: SoulseekSearchLoader) async {
         if self.loader != nil { await close() }

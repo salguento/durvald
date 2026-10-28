@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "stage": 12,
+  "date": "2026-10-28",
+  "provider": "slskd",
+  "mode": "local_contract_fixture",
+  "real_soulseek_network_tested": false,
+  "network_context": "Workplace network restrictions reported by user; no real Soulseek transfer attempted.",
+  "daemon_managed_by_app": false,
+  "shared_library": false,
+  "audio_fixture": "Valid one-second PCM WAV, decoded and copied through the production import path",
+  "checks": {
+    "explicit_search_offer_selection": true,
+    "persistent_job_before_submission": true,
+    "preflight_failure_distinct_from_ambiguous_submission": true,
+    "prepared_journal_explicit_resume": true,
+    "no_duplicate_post_after_lost_receipt": true,
+    "partial_batch_and_per_file_state": true,
+    "only_owned_transfer_ids_cancelled": true,
+    "retry_excludes_completed_and_imported_files": true,
+    "foreign_transfers_not_adopted": true,
+    "instance_identity_pinned": true,
+    "success_required_even_when_all_bytes_received": true,
+    "mapping_and_file_size_validated": true,
+    "audio_fully_decoded": true,
+    "sha256_copy_verification": true,
+    "existing_destination_not_overwritten": true,
+    "interrupted_copy_commit_recovery": true,
+    "cancel_before_commit_rolls_back": true,
+    "reimport_idempotent": true,
+    "personal_values_tags_history_and_playlist_duplicates_preserved": true,
+    "confirmed_completions_survive_backend_retention": true,
+    "swift_stale_result_and_cancel_guards": true,
+    "real_ffi_forged_offer_rejected_without_network": true
+  },
+  "tests": {
+    "rust_all_features_passed": 519,
+    "rust_external_ignored": 3,
+    "final_transfer_targeted_passed": 13,
+    "macos_all_unit": {
+      "passed": 428,
+      "skipped": 4,
+      "failed": 0
+    },
+    "final_release_acquisition_macos": {
+      "passed": 9,
+      "skipped": 0,
+      "failed": 0
+    },
+    "clippy_all_targets_all_features": "passed with -D warnings",
+    "uniffi_smoke": "passed",
+    "release_bindings_generation": "passed"
+  },
+  "sqlite_migration": 24,
+  "release_and_embedded_library_sha256": "352f85bd4236e636a55f73e935edd134add6119402d1709c71607d27f9bf7413",
+  "swift_binding_copies_match": true,
+  "source_sha256": {
+    "durvald-core/src/application/download_transfers.rs": "72d35d229f1322a0dcb0a907a6f6f98a05e1a70b7b92c5e13fa2cac56e7532c8",
+    "durvald-core/src/application/transfer_ports.rs": "4f5218d400dbb1dba495f4dca584421f4f1543b5981155e60fec52096714b621",
+    "durvald-core/src/infrastructure/slskd_transfers.rs": "123ce9be45e933919b902eea2b5a7167e4afe3a64bc8ca9845d4cb1a2f106edd",
+    "durvald-core/src/infrastructure/acquisition_files.rs": "ffc7ab4f7c04e0159b60997d67ce3c7a07e686f0dc6c739cb745bae0dbb7eb95",
+    "durvald-core/src/infrastructure/sqlite/download_transfers.rs": "bd25a15aea3d70b6034cfc4d79fd052e8a680c6507f3106e439f6c965c20211d",
+    "durvald-core/src/api/download_transfers.rs": "7594fd80bb7ce1d02a76f82eef70fabbf01b87a2cedc786cb9fe5757f05277c6",
+    "durvald-macos/Durvald/Durvald/Features/Downloads/DownloadTransfersView.swift": "e8b707995e85dd386b4c83089ac7dcd8f8acb3bfe577a687dd36896b921cd015"
+  },
+  "limitations": [
+    "Local contract fixture does not prove real peer transfer, workplace connectivity or remote mount availability.",
+    "Partial-byte resumption follows the slskd policy; the app does not change global backend settings.",
+    "Ambiguous submissions are not re-enqueued without a receipt; missing historical records may require manual backend inspection.",
+    "Import requires the explicitly mapped per-job folder and a destination supporting atomic hard-link publication."
+  ]
+}

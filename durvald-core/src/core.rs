@@ -31,6 +31,7 @@ use std::sync::Arc;
 /// the public API. All state is encapsulated behind this facade.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
+    download_transfers: Arc<crate::application::download_transfers::DownloadTransfersApplication>,
     download_search: Arc<crate::application::download_search::DownloadSearchApplication>,
     sources: Arc<crate::application::sources::SourcesApplication>,
     catalog_search: Arc<crate::application::catalog_search::CatalogSearchApplication>,
@@ -153,6 +154,7 @@ impl DurvaldCore {
     {
         let components = compose(config, create_audio_player).await?;
         let core = Self {
+            download_transfers: components.download_transfers,
             download_search: components.download_search,
             sources: components.sources,
             catalog_search: components.catalog_search,
@@ -210,6 +212,64 @@ impl DurvaldCore {
         self.playback_application.embedded_event(event).await
     }
 
+    pub async fn download_transfer_settings(&self) -> CoreResult<DownloadTransferSettings> {
+        self.download_transfers.settings().await
+    }
+    pub async fn configure_download_transfers(
+        &self,
+        settings: DownloadTransferSettings,
+    ) -> CoreResult<DownloadTransferSettings> {
+        self.download_transfers.configure(settings).await
+    }
+    pub async fn download_transfers(&self) -> CoreResult<Vec<DownloadTransferJob>> {
+        self.download_transfers.list().await
+    }
+    pub async fn refresh_download_transfer(
+        &self,
+        job_id: String,
+    ) -> CoreResult<DownloadTransferJob> {
+        self.download_transfers.refresh(job_id).await
+    }
+    pub async fn cancel_download_transfer(
+        &self,
+        job_id: String,
+    ) -> CoreResult<DownloadTransferJob> {
+        self.download_transfers.cancel(job_id).await
+    }
+    pub async fn retry_download_transfer(&self, job_id: String) -> CoreResult<DownloadTransferJob> {
+        self.download_transfers.retry(job_id).await
+    }
+    pub async fn pending_download_import(
+        &self,
+        job_id: String,
+        file_index: u32,
+    ) -> CoreResult<DownloadImportPreview> {
+        self.download_transfers
+            .pending_import(job_id, file_index)
+            .await
+    }
+    pub async fn inspect_download_file(
+        &self,
+        job_id: String,
+        file_index: u32,
+        path: String,
+    ) -> CoreResult<DownloadImportPreview> {
+        self.download_transfers
+            .inspect_file(job_id, file_index, path)
+            .await
+    }
+    pub async fn import_download_file(
+        &self,
+        job_id: String,
+        file_index: u32,
+        review_token: String,
+        target_track_id: Option<i64>,
+        confirmed: bool,
+    ) -> CoreResult<DownloadTransferJob> {
+        self.download_transfers
+            .import_file(job_id, file_index, review_token, target_track_id, confirmed)
+            .await
+    }
     pub async fn download_search_settings(&self) -> CoreResult<DownloadSearchSettings> {
         self.download_search.settings().await
     }
@@ -226,6 +286,7 @@ impl DurvaldCore {
     }
     pub fn download_search_session(&self) -> Arc<DownloadSearchSession> {
         Arc::new(DownloadSearchSession {
+            transfers: Arc::downgrade(&self.download_transfers),
             session: crate::application::download_search::SearchSession::new(
                 self.download_search.clone(),
             ),
@@ -2058,10 +2119,31 @@ mod tests {
 /// Temporary Soulseek offers are owned by this search session, never library sources.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DownloadSearchSession {
+    transfers:
+        std::sync::Weak<crate::application::download_transfers::DownloadTransfersApplication>,
     session: crate::application::download_search::SearchSession,
 }
 #[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 impl DownloadSearchSession {
+    pub async fn enqueue_download(
+        &self,
+        offer_id: String,
+        filenames: Vec<String>,
+        confirmed: bool,
+    ) -> CoreResult<DownloadTransferJob> {
+        let (endpoint, group) = self
+            .session
+            .selected_offer(offer_id, filenames, confirmed)
+            .await?;
+        self.transfers
+            .upgrade()
+            .ok_or(CoreError::InvalidInput {
+                message: "A biblioteca foi fechada.".into(),
+            })?
+            .enqueue(endpoint, group)
+            .await
+    }
+
     pub async fn search(
         &self,
         request: DownloadSearchRequest,
