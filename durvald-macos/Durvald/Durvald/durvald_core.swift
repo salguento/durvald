@@ -740,6 +740,183 @@ public func FfiConverterTypeCatalogSearchSession_lower(_ value: CatalogSearchSes
 
 
 /**
+ * Temporary Soulseek offers are owned by this search session, never library sources.
+ */
+public protocol DownloadSearchSessionProtocol : AnyObject {
+
+    func cancel() async  -> DownloadSearchPage
+
+    func close() async
+
+    func poll(generation: UInt64) async throws  -> DownloadSearchPage
+
+    func search(request: DownloadSearchRequest, generation: UInt64) async throws  -> DownloadSearchPage
+
+}
+
+/**
+ * Temporary Soulseek offers are owned by this search session, never library sources.
+ */
+open class DownloadSearchSession:
+    DownloadSearchSessionProtocol {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    /// This constructor can be used to instantiate a fake object.
+    /// - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    ///
+    /// - Warning:
+    ///     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_durvald_core_fn_clone_downloadsearchsession(self.pointer, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_durvald_core_fn_free_downloadsearchsession(pointer, $0) }
+    }
+
+
+
+
+open func cancel()async  -> DownloadSearchPage {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_downloadsearchsession_cancel(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadSearchPage.lift,
+            errorHandler: nil
+
+        )
+}
+
+open func close()async  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_downloadsearchsession_close(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_void,
+            completeFunc: ffi_durvald_core_rust_future_complete_void,
+            freeFunc: ffi_durvald_core_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: nil
+
+        )
+}
+
+open func poll(generation: UInt64)async throws  -> DownloadSearchPage {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_downloadsearchsession_poll(
+                    self.uniffiClonePointer(),
+                    FfiConverterUInt64.lower(generation)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadSearchPage.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func search(request: DownloadSearchRequest, generation: UInt64)async throws  -> DownloadSearchPage {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_downloadsearchsession_search(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeDownloadSearchRequest.lower(request),FfiConverterUInt64.lower(generation)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadSearchPage.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+
+}
+
+public struct FfiConverterTypeDownloadSearchSession: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = DownloadSearchSession
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> DownloadSearchSession {
+        return DownloadSearchSession(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: DownloadSearchSession) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadSearchSession {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: DownloadSearchSession, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+
+
+public func FfiConverterTypeDownloadSearchSession_lift(_ pointer: UnsafeMutableRawPointer) throws -> DownloadSearchSession {
+    return try FfiConverterTypeDownloadSearchSession.lift(pointer)
+}
+
+public func FfiConverterTypeDownloadSearchSession_lower(_ value: DownloadSearchSession) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeDownloadSearchSession.lower(value)
+}
+
+
+
+
+/**
  * Opaque core engine - the main entry point for all operations.
  *
  * Internally owns the application services and integration clients that back
@@ -889,6 +1066,8 @@ public protocol DurvaldCoreProtocol : AnyObject {
      */
     func completeLastfmAuth(token: String) async throws  -> SessionResponse
 
+    func configureDownloadSearch(endpoint: String, apiKey: String?, enabled: Bool, sharingAcknowledged: Bool) async throws  -> DownloadSearchSettings
+
     /**
      * Persists optional enrichment preferences; does not start network work.
      */
@@ -931,6 +1110,10 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func disconnectLastfm() async throws
 
     func dismissLocalRecommendation(releaseId: Int64) async throws
+
+    func downloadSearchSession()  -> DownloadSearchSession
+
+    func downloadSearchSettings() async throws  -> DownloadSearchSettings
 
     func embeddedPlayback() async  -> EmbeddedPlaybackSnapshot?
 
@@ -2171,6 +2354,23 @@ open func completeLastfmAuth(token: String)async throws  -> SessionResponse {
         )
 }
 
+open func configureDownloadSearch(endpoint: String, apiKey: String?, enabled: Bool, sharingAcknowledged: Bool)async throws  -> DownloadSearchSettings {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_configure_download_search(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(endpoint),FfiConverterOptionString.lower(apiKey),FfiConverterBool.lower(enabled),FfiConverterBool.lower(sharingAcknowledged)
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadSearchSettings.lift,
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
     /**
      * Persists optional enrichment preferences; does not start network work.
      */
@@ -2390,6 +2590,30 @@ open func dismissLocalRecommendation(releaseId: Int64)async throws  {
             completeFunc: ffi_durvald_core_rust_future_complete_void,
             freeFunc: ffi_durvald_core_rust_future_free_void,
             liftFunc: { $0 },
+            errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+open func downloadSearchSession() -> DownloadSearchSession {
+    return try!  FfiConverterTypeDownloadSearchSession.lift(try! rustCall() {
+    uniffi_durvald_core_fn_method_durvaldcore_download_search_session(self.uniffiClonePointer(),$0
+    )
+})
+}
+
+open func downloadSearchSettings()async throws  -> DownloadSearchSettings {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_download_search_settings(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeDownloadSearchSettings.lift,
             errorHandler: FfiConverterTypeCoreError.lift
         )
 }
@@ -8649,6 +8873,532 @@ public func FfiConverterTypeCoverRefreshProgress_lift(_ buf: RustBuffer) throws 
 
 public func FfiConverterTypeCoverRefreshProgress_lower(_ value: CoverRefreshProgress) -> RustBuffer {
     return FfiConverterTypeCoverRefreshProgress.lower(value)
+}
+
+
+public struct DownloadExpectedTrack {
+    public var title: String
+    public var disc: UInt32
+    public var position: UInt32
+    public var durationSeconds: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(title: String, disc: UInt32, position: UInt32, durationSeconds: UInt64?) {
+        self.title = title
+        self.disc = disc
+        self.position = position
+        self.durationSeconds = durationSeconds
+    }
+}
+
+
+
+extension DownloadExpectedTrack: Equatable, Hashable {
+    public static func ==(lhs: DownloadExpectedTrack, rhs: DownloadExpectedTrack) -> Bool {
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.disc != rhs.disc {
+            return false
+        }
+        if lhs.position != rhs.position {
+            return false
+        }
+        if lhs.durationSeconds != rhs.durationSeconds {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(title)
+        hasher.combine(disc)
+        hasher.combine(position)
+        hasher.combine(durationSeconds)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadExpectedTrack: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadExpectedTrack {
+        return
+            try DownloadExpectedTrack(
+                title: FfiConverterString.read(from: &buf),
+                disc: FfiConverterUInt32.read(from: &buf),
+                position: FfiConverterUInt32.read(from: &buf),
+                durationSeconds: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadExpectedTrack, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterUInt32.write(value.disc, into: &buf)
+        FfiConverterUInt32.write(value.position, into: &buf)
+        FfiConverterOptionUInt64.write(value.durationSeconds, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadExpectedTrack_lift(_ buf: RustBuffer) throws -> DownloadExpectedTrack {
+    return try FfiConverterTypeDownloadExpectedTrack.lift(buf)
+}
+
+public func FfiConverterTypeDownloadExpectedTrack_lower(_ value: DownloadExpectedTrack) -> RustBuffer {
+    return FfiConverterTypeDownloadExpectedTrack.lower(value)
+}
+
+
+public struct DownloadOfferFile {
+    public var filename: String
+    public var sizeBytes: UInt64
+    public var format: String
+    public var durationSeconds: UInt64?
+    public var bitrateKbps: UInt32?
+    public var sampleRateHz: UInt32?
+    public var bitDepth: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(filename: String, sizeBytes: UInt64, format: String, durationSeconds: UInt64?, bitrateKbps: UInt32?, sampleRateHz: UInt32?, bitDepth: UInt32?) {
+        self.filename = filename
+        self.sizeBytes = sizeBytes
+        self.format = format
+        self.durationSeconds = durationSeconds
+        self.bitrateKbps = bitrateKbps
+        self.sampleRateHz = sampleRateHz
+        self.bitDepth = bitDepth
+    }
+}
+
+
+
+extension DownloadOfferFile: Equatable, Hashable {
+    public static func ==(lhs: DownloadOfferFile, rhs: DownloadOfferFile) -> Bool {
+        if lhs.filename != rhs.filename {
+            return false
+        }
+        if lhs.sizeBytes != rhs.sizeBytes {
+            return false
+        }
+        if lhs.format != rhs.format {
+            return false
+        }
+        if lhs.durationSeconds != rhs.durationSeconds {
+            return false
+        }
+        if lhs.bitrateKbps != rhs.bitrateKbps {
+            return false
+        }
+        if lhs.sampleRateHz != rhs.sampleRateHz {
+            return false
+        }
+        if lhs.bitDepth != rhs.bitDepth {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(filename)
+        hasher.combine(sizeBytes)
+        hasher.combine(format)
+        hasher.combine(durationSeconds)
+        hasher.combine(bitrateKbps)
+        hasher.combine(sampleRateHz)
+        hasher.combine(bitDepth)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadOfferFile: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadOfferFile {
+        return
+            try DownloadOfferFile(
+                filename: FfiConverterString.read(from: &buf),
+                sizeBytes: FfiConverterUInt64.read(from: &buf),
+                format: FfiConverterString.read(from: &buf),
+                durationSeconds: FfiConverterOptionUInt64.read(from: &buf),
+                bitrateKbps: FfiConverterOptionUInt32.read(from: &buf),
+                sampleRateHz: FfiConverterOptionUInt32.read(from: &buf),
+                bitDepth: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadOfferFile, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.filename, into: &buf)
+        FfiConverterUInt64.write(value.sizeBytes, into: &buf)
+        FfiConverterString.write(value.format, into: &buf)
+        FfiConverterOptionUInt64.write(value.durationSeconds, into: &buf)
+        FfiConverterOptionUInt32.write(value.bitrateKbps, into: &buf)
+        FfiConverterOptionUInt32.write(value.sampleRateHz, into: &buf)
+        FfiConverterOptionUInt32.write(value.bitDepth, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadOfferFile_lift(_ buf: RustBuffer) throws -> DownloadOfferFile {
+    return try FfiConverterTypeDownloadOfferFile.lift(buf)
+}
+
+public func FfiConverterTypeDownloadOfferFile_lower(_ value: DownloadOfferFile) -> RustBuffer {
+    return FfiConverterTypeDownloadOfferFile.lower(value)
+}
+
+
+public struct DownloadOfferGroup {
+    public var offerId: String
+    public var peer: String
+    public var folder: String
+    public var files: [DownloadOfferFile]
+    public var totalBytes: UInt64
+    public var freeUploadSlot: Bool?
+    public var queueLength: UInt64?
+    public var uploadSpeedBytes: UInt64?
+    public var matchedTracks: UInt32
+    public var expectedTracks: UInt32
+    public var durationMatches: UInt32
+    public var comparison: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(offerId: String, peer: String, folder: String, files: [DownloadOfferFile], totalBytes: UInt64, freeUploadSlot: Bool?, queueLength: UInt64?, uploadSpeedBytes: UInt64?, matchedTracks: UInt32, expectedTracks: UInt32, durationMatches: UInt32, comparison: String) {
+        self.offerId = offerId
+        self.peer = peer
+        self.folder = folder
+        self.files = files
+        self.totalBytes = totalBytes
+        self.freeUploadSlot = freeUploadSlot
+        self.queueLength = queueLength
+        self.uploadSpeedBytes = uploadSpeedBytes
+        self.matchedTracks = matchedTracks
+        self.expectedTracks = expectedTracks
+        self.durationMatches = durationMatches
+        self.comparison = comparison
+    }
+}
+
+
+
+extension DownloadOfferGroup: Equatable, Hashable {
+    public static func ==(lhs: DownloadOfferGroup, rhs: DownloadOfferGroup) -> Bool {
+        if lhs.offerId != rhs.offerId {
+            return false
+        }
+        if lhs.peer != rhs.peer {
+            return false
+        }
+        if lhs.folder != rhs.folder {
+            return false
+        }
+        if lhs.files != rhs.files {
+            return false
+        }
+        if lhs.totalBytes != rhs.totalBytes {
+            return false
+        }
+        if lhs.freeUploadSlot != rhs.freeUploadSlot {
+            return false
+        }
+        if lhs.queueLength != rhs.queueLength {
+            return false
+        }
+        if lhs.uploadSpeedBytes != rhs.uploadSpeedBytes {
+            return false
+        }
+        if lhs.matchedTracks != rhs.matchedTracks {
+            return false
+        }
+        if lhs.expectedTracks != rhs.expectedTracks {
+            return false
+        }
+        if lhs.durationMatches != rhs.durationMatches {
+            return false
+        }
+        if lhs.comparison != rhs.comparison {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(offerId)
+        hasher.combine(peer)
+        hasher.combine(folder)
+        hasher.combine(files)
+        hasher.combine(totalBytes)
+        hasher.combine(freeUploadSlot)
+        hasher.combine(queueLength)
+        hasher.combine(uploadSpeedBytes)
+        hasher.combine(matchedTracks)
+        hasher.combine(expectedTracks)
+        hasher.combine(durationMatches)
+        hasher.combine(comparison)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadOfferGroup: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadOfferGroup {
+        return
+            try DownloadOfferGroup(
+                offerId: FfiConverterString.read(from: &buf),
+                peer: FfiConverterString.read(from: &buf),
+                folder: FfiConverterString.read(from: &buf),
+                files: FfiConverterSequenceTypeDownloadOfferFile.read(from: &buf),
+                totalBytes: FfiConverterUInt64.read(from: &buf),
+                freeUploadSlot: FfiConverterOptionBool.read(from: &buf),
+                queueLength: FfiConverterOptionUInt64.read(from: &buf),
+                uploadSpeedBytes: FfiConverterOptionUInt64.read(from: &buf),
+                matchedTracks: FfiConverterUInt32.read(from: &buf),
+                expectedTracks: FfiConverterUInt32.read(from: &buf),
+                durationMatches: FfiConverterUInt32.read(from: &buf),
+                comparison: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadOfferGroup, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.offerId, into: &buf)
+        FfiConverterString.write(value.peer, into: &buf)
+        FfiConverterString.write(value.folder, into: &buf)
+        FfiConverterSequenceTypeDownloadOfferFile.write(value.files, into: &buf)
+        FfiConverterUInt64.write(value.totalBytes, into: &buf)
+        FfiConverterOptionBool.write(value.freeUploadSlot, into: &buf)
+        FfiConverterOptionUInt64.write(value.queueLength, into: &buf)
+        FfiConverterOptionUInt64.write(value.uploadSpeedBytes, into: &buf)
+        FfiConverterUInt32.write(value.matchedTracks, into: &buf)
+        FfiConverterUInt32.write(value.expectedTracks, into: &buf)
+        FfiConverterUInt32.write(value.durationMatches, into: &buf)
+        FfiConverterString.write(value.comparison, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadOfferGroup_lift(_ buf: RustBuffer) throws -> DownloadOfferGroup {
+    return try FfiConverterTypeDownloadOfferGroup.lift(buf)
+}
+
+public func FfiConverterTypeDownloadOfferGroup_lower(_ value: DownloadOfferGroup) -> RustBuffer {
+    return FfiConverterTypeDownloadOfferGroup.lower(value)
+}
+
+
+public struct DownloadSearchPage {
+    public var generation: UInt64
+    public var state: DownloadSearchState
+    public var groups: [DownloadOfferGroup]
+    public var failure: DownloadSearchFailure?
+    public var truncated: Bool
+    public var cleanupPending: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(generation: UInt64, state: DownloadSearchState, groups: [DownloadOfferGroup], failure: DownloadSearchFailure?, truncated: Bool, cleanupPending: Bool) {
+        self.generation = generation
+        self.state = state
+        self.groups = groups
+        self.failure = failure
+        self.truncated = truncated
+        self.cleanupPending = cleanupPending
+    }
+}
+
+
+
+extension DownloadSearchPage: Equatable, Hashable {
+    public static func ==(lhs: DownloadSearchPage, rhs: DownloadSearchPage) -> Bool {
+        if lhs.generation != rhs.generation {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        if lhs.groups != rhs.groups {
+            return false
+        }
+        if lhs.failure != rhs.failure {
+            return false
+        }
+        if lhs.truncated != rhs.truncated {
+            return false
+        }
+        if lhs.cleanupPending != rhs.cleanupPending {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(generation)
+        hasher.combine(state)
+        hasher.combine(groups)
+        hasher.combine(failure)
+        hasher.combine(truncated)
+        hasher.combine(cleanupPending)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadSearchPage: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadSearchPage {
+        return
+            try DownloadSearchPage(
+                generation: FfiConverterUInt64.read(from: &buf),
+                state: FfiConverterTypeDownloadSearchState.read(from: &buf),
+                groups: FfiConverterSequenceTypeDownloadOfferGroup.read(from: &buf),
+                failure: FfiConverterOptionTypeDownloadSearchFailure.read(from: &buf),
+                truncated: FfiConverterBool.read(from: &buf),
+                cleanupPending: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadSearchPage, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.generation, into: &buf)
+        FfiConverterTypeDownloadSearchState.write(value.state, into: &buf)
+        FfiConverterSequenceTypeDownloadOfferGroup.write(value.groups, into: &buf)
+        FfiConverterOptionTypeDownloadSearchFailure.write(value.failure, into: &buf)
+        FfiConverterBool.write(value.truncated, into: &buf)
+        FfiConverterBool.write(value.cleanupPending, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadSearchPage_lift(_ buf: RustBuffer) throws -> DownloadSearchPage {
+    return try FfiConverterTypeDownloadSearchPage.lift(buf)
+}
+
+public func FfiConverterTypeDownloadSearchPage_lower(_ value: DownloadSearchPage) -> RustBuffer {
+    return FfiConverterTypeDownloadSearchPage.lower(value)
+}
+
+
+public struct DownloadSearchRequest {
+    public var query: String
+    public var expectedTracks: [DownloadExpectedTrack]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(query: String, expectedTracks: [DownloadExpectedTrack]) {
+        self.query = query
+        self.expectedTracks = expectedTracks
+    }
+}
+
+
+
+extension DownloadSearchRequest: Equatable, Hashable {
+    public static func ==(lhs: DownloadSearchRequest, rhs: DownloadSearchRequest) -> Bool {
+        if lhs.query != rhs.query {
+            return false
+        }
+        if lhs.expectedTracks != rhs.expectedTracks {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(query)
+        hasher.combine(expectedTracks)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadSearchRequest: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadSearchRequest {
+        return
+            try DownloadSearchRequest(
+                query: FfiConverterString.read(from: &buf),
+                expectedTracks: FfiConverterSequenceTypeDownloadExpectedTrack.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadSearchRequest, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.query, into: &buf)
+        FfiConverterSequenceTypeDownloadExpectedTrack.write(value.expectedTracks, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadSearchRequest_lift(_ buf: RustBuffer) throws -> DownloadSearchRequest {
+    return try FfiConverterTypeDownloadSearchRequest.lift(buf)
+}
+
+public func FfiConverterTypeDownloadSearchRequest_lower(_ value: DownloadSearchRequest) -> RustBuffer {
+    return FfiConverterTypeDownloadSearchRequest.lower(value)
+}
+
+
+public struct DownloadSearchSettings {
+    public var enabled: Bool
+    public var endpoint: String
+    public var hasApiKey: Bool
+    public var sharingAcknowledged: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(enabled: Bool, endpoint: String, hasApiKey: Bool, sharingAcknowledged: Bool) {
+        self.enabled = enabled
+        self.endpoint = endpoint
+        self.hasApiKey = hasApiKey
+        self.sharingAcknowledged = sharingAcknowledged
+    }
+}
+
+
+
+extension DownloadSearchSettings: Equatable, Hashable {
+    public static func ==(lhs: DownloadSearchSettings, rhs: DownloadSearchSettings) -> Bool {
+        if lhs.enabled != rhs.enabled {
+            return false
+        }
+        if lhs.endpoint != rhs.endpoint {
+            return false
+        }
+        if lhs.hasApiKey != rhs.hasApiKey {
+            return false
+        }
+        if lhs.sharingAcknowledged != rhs.sharingAcknowledged {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(enabled)
+        hasher.combine(endpoint)
+        hasher.combine(hasApiKey)
+        hasher.combine(sharingAcknowledged)
+    }
+}
+
+
+public struct FfiConverterTypeDownloadSearchSettings: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadSearchSettings {
+        return
+            try DownloadSearchSettings(
+                enabled: FfiConverterBool.read(from: &buf),
+                endpoint: FfiConverterString.read(from: &buf),
+                hasApiKey: FfiConverterBool.read(from: &buf),
+                sharingAcknowledged: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DownloadSearchSettings, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.enabled, into: &buf)
+        FfiConverterString.write(value.endpoint, into: &buf)
+        FfiConverterBool.write(value.hasApiKey, into: &buf)
+        FfiConverterBool.write(value.sharingAcknowledged, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeDownloadSearchSettings_lift(_ buf: RustBuffer) throws -> DownloadSearchSettings {
+    return try FfiConverterTypeDownloadSearchSettings.lift(buf)
+}
+
+public func FfiConverterTypeDownloadSearchSettings_lower(_ value: DownloadSearchSettings) -> RustBuffer {
+    return FfiConverterTypeDownloadSearchSettings.lower(value)
 }
 
 
@@ -15247,6 +15997,179 @@ extension CoreError: Error { }
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum DownloadSearchFailure {
+
+    case disabled
+    case configuration
+    case authentication
+    case unavailable
+    case timedOut
+    case rateLimited
+    case invalidResponse
+    case cancelled
+}
+
+
+public struct FfiConverterTypeDownloadSearchFailure: FfiConverterRustBuffer {
+    typealias SwiftType = DownloadSearchFailure
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadSearchFailure {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .disabled
+
+        case 2: return .configuration
+
+        case 3: return .authentication
+
+        case 4: return .unavailable
+
+        case 5: return .timedOut
+
+        case 6: return .rateLimited
+
+        case 7: return .invalidResponse
+
+        case 8: return .cancelled
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: DownloadSearchFailure, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .disabled:
+            writeInt(&buf, Int32(1))
+
+
+        case .configuration:
+            writeInt(&buf, Int32(2))
+
+
+        case .authentication:
+            writeInt(&buf, Int32(3))
+
+
+        case .unavailable:
+            writeInt(&buf, Int32(4))
+
+
+        case .timedOut:
+            writeInt(&buf, Int32(5))
+
+
+        case .rateLimited:
+            writeInt(&buf, Int32(6))
+
+
+        case .invalidResponse:
+            writeInt(&buf, Int32(7))
+
+
+        case .cancelled:
+            writeInt(&buf, Int32(8))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeDownloadSearchFailure_lift(_ buf: RustBuffer) throws -> DownloadSearchFailure {
+    return try FfiConverterTypeDownloadSearchFailure.lift(buf)
+}
+
+public func FfiConverterTypeDownloadSearchFailure_lower(_ value: DownloadSearchFailure) -> RustBuffer {
+    return FfiConverterTypeDownloadSearchFailure.lower(value)
+}
+
+
+
+extension DownloadSearchFailure: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum DownloadSearchState {
+
+    case searching
+    case completed
+    case timedOut
+    case cancelled
+    case failed
+}
+
+
+public struct FfiConverterTypeDownloadSearchState: FfiConverterRustBuffer {
+    typealias SwiftType = DownloadSearchState
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DownloadSearchState {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .searching
+
+        case 2: return .completed
+
+        case 3: return .timedOut
+
+        case 4: return .cancelled
+
+        case 5: return .failed
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: DownloadSearchState, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .searching:
+            writeInt(&buf, Int32(1))
+
+
+        case .completed:
+            writeInt(&buf, Int32(2))
+
+
+        case .timedOut:
+            writeInt(&buf, Int32(3))
+
+
+        case .cancelled:
+            writeInt(&buf, Int32(4))
+
+
+        case .failed:
+            writeInt(&buf, Int32(5))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeDownloadSearchState_lift(_ buf: RustBuffer) throws -> DownloadSearchState {
+    return try FfiConverterTypeDownloadSearchState.lift(buf)
+}
+
+public func FfiConverterTypeDownloadSearchState_lower(_ value: DownloadSearchState) -> RustBuffer {
+    return FfiConverterTypeDownloadSearchState.lower(value)
+}
+
+
+
+extension DownloadSearchState: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum EmbeddedCommandKind {
 
     case load
@@ -16906,6 +17829,27 @@ fileprivate struct FfiConverterOptionTypeCatalogFailure: FfiConverterRustBuffer 
     }
 }
 
+fileprivate struct FfiConverterOptionTypeDownloadSearchFailure: FfiConverterRustBuffer {
+    typealias SwiftType = DownloadSearchFailure?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeDownloadSearchFailure.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeDownloadSearchFailure.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionTypeEnrichmentProvider: FfiConverterRustBuffer {
     typealias SwiftType = EnrichmentProvider?
 
@@ -17360,6 +18304,72 @@ fileprivate struct FfiConverterSequenceTypeClassificationTerm: FfiConverterRustB
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeClassificationTerm.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeDownloadExpectedTrack: FfiConverterRustBuffer {
+    typealias SwiftType = [DownloadExpectedTrack]
+
+    public static func write(_ value: [DownloadExpectedTrack], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDownloadExpectedTrack.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DownloadExpectedTrack] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DownloadExpectedTrack]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDownloadExpectedTrack.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeDownloadOfferFile: FfiConverterRustBuffer {
+    typealias SwiftType = [DownloadOfferFile]
+
+    public static func write(_ value: [DownloadOfferFile], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDownloadOfferFile.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DownloadOfferFile] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DownloadOfferFile]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDownloadOfferFile.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeDownloadOfferGroup: FfiConverterRustBuffer {
+    typealias SwiftType = [DownloadOfferGroup]
+
+    public static func write(_ value: [DownloadOfferGroup], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeDownloadOfferGroup.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [DownloadOfferGroup] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [DownloadOfferGroup]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeDownloadOfferGroup.read(from: &buf))
         }
         return seq
     }
@@ -17942,6 +18952,18 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_catalogsearchsession_search_page() != 53715) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_downloadsearchsession_cancel() != 10520) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_downloadsearchsession_close() != 4852) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_downloadsearchsession_poll() != 368) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_downloadsearchsession_search() != 62834) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_add_album_to_collection() != 34363) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -18056,6 +19078,9 @@ private var initializationResult: InitializationResult {
     if (uniffi_durvald_core_checksum_method_durvaldcore_complete_lastfm_auth() != 29854) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_configure_download_search() != 11224) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_durvald_core_checksum_method_durvaldcore_configure_enrichment() != 59093) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -18090,6 +19115,12 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_dismiss_local_recommendation() != 65534) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_download_search_session() != 57632) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_download_search_settings() != 1155) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_embedded_playback() != 38250) {

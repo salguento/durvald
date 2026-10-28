@@ -36,6 +36,7 @@ struct AlbumView: View {
     let onSelectArtist: (Artist) -> Void
 
     @State private var tracks: [Track] = []
+    @State private var showingDownloads = false
     @State private var externalDetails: ExternalReleaseDetails?
     @State private var refreshedAlbum: Release?
     @State private var isLoading = true
@@ -106,6 +107,7 @@ struct AlbumView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
+                Button("Buscar opções de download") { showingDownloads = true }
                 trackList
             }
             .padding(24)
@@ -138,6 +140,9 @@ struct AlbumView: View {
         .task(id: store.personalTagsRequest) { await store.refreshPersonalTags() }
         .focusedSceneValue(\.pageCommands, albumCommands)
         .accessibilityIdentifier(accessibilityDetailID)
+        .sheet(isPresented: $showingDownloads) {
+            SoulseekSearchView(initialQuery: "\(artistName) \(title)", expectedTracks: tracks.filter { $0.trackNumber > 0 }.map(DownloadExpectedTrack.reference))
+        }
         .task(id: store.metadataRevision) {
             guard store.metadataRevision > 0, let album else { return }
             tracks = await store.tracks(forReleaseID: album.id)

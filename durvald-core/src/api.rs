@@ -3,6 +3,9 @@
 //! These are stable, frontend-safe types that can be serialized
 //! and sent across FFI boundaries (UniFFI, Tauri, etc.).
 
+mod download_search;
+pub use download_search::*;
+
 mod embedded;
 pub use embedded::*;
 

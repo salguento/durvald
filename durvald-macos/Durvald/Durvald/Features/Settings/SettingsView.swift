@@ -6,7 +6,7 @@ struct SettingsView: View {
     @State private var selectedTab = SettingsTab.general
 
     private enum SettingsTab: Hashable {
-        case general, audio, equalizer, library, enrichment, lastFM
+        case general, audio, equalizer, library, enrichment, lastFM, soulseek
     }
 
     var body: some View {
@@ -53,6 +53,8 @@ struct SettingsView: View {
                     Label("Metadados", systemImage: "person.text.rectangle")
                 }
                 .tag(SettingsTab.enrichment)
+            SoulseekSettingsView().padding()
+                .tabItem { Label("Soulseek", systemImage: "magnifyingglass") }.tag(SettingsTab.soulseek)
             LastFmSettingsView()
                 .padding()
                 .tabItem { Label("Last.fm", systemImage: "dot.radiowaves.left.and.right") }

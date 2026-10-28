@@ -127,6 +127,13 @@ impl PluginRuntime {
         })))
     }
 
+    pub(crate) async fn has_credential(
+        &self,
+        id: &ProviderId,
+        key: &str,
+    ) -> Result<bool, PluginError> {
+        Ok(self.credentials.get(id, key).await?.is_some())
+    }
     pub(crate) async fn list(&self) -> Result<Vec<PluginStatus>, PluginError> {
         let registry = self.registry.lock().await;
         if let Some(error) = registry.storage_error {
@@ -246,6 +253,7 @@ impl PluginRuntime {
                 }
                 PluginCapability::SourceSearch => adapter.sources().is_some(),
                 PluginCapability::Playback => adapter.resolver().is_some(),
+                PluginCapability::DownloadSearch => adapter.download_search().is_some(),
                 _ => false, // Reserved capabilities gain ports in their own roadmap stages.
             };
             if !implemented {
@@ -590,6 +598,54 @@ impl PluginRuntime {
         .await
     }
 
+    pub(crate) async fn begin_download_search(
+        &self,
+        ticket: RequestTicket,
+        request: crate::api::DownloadSearchRequest,
+    ) -> Result<
+        (
+            u64,
+            Arc<dyn crate::application::music_catalog::DownloadSearchHandle>,
+        ),
+        PluginError,
+    > {
+        self.execute(
+            &ProviderId::new("slskd").unwrap(),
+            PluginCapability::DownloadSearch,
+            ticket,
+            true,
+            move |adapter, context| async move {
+                let generation = context.generation;
+                let handle = adapter
+                    .download_search()
+                    .ok_or(IntegrationError::UnsupportedCapability)?
+                    .begin(context, request)
+                    .await?;
+                Ok((generation, handle))
+            },
+        )
+        .await
+    }
+    pub(crate) async fn poll_download_search(
+        &self,
+        ticket: RequestTicket,
+        generation: u64,
+        handle: Arc<dyn crate::application::music_catalog::DownloadSearchHandle>,
+    ) -> Result<crate::api::DownloadSearchPage, PluginError> {
+        self.execute(
+            &ProviderId::new("slskd").unwrap(),
+            PluginCapability::DownloadSearch,
+            ticket,
+            true,
+            move |_, context| async move {
+                if context.generation != generation {
+                    return Err(IntegrationError::Cancelled);
+                }
+                handle.poll().await
+            },
+        )
+        .await
+    }
     async fn execute<T, F, Fut>(
         &self,
         id: &ProviderId,
@@ -642,7 +698,7 @@ impl PluginRuntime {
                 return Err(PluginError::Cancelled);
             }
             let remote = self.remote.clone();
-            let host = entry.manifest.primary_host.clone();
+            let host = entry.adapter.request_host(&entry.configuration);
             let adapter = entry.adapter.clone();
             let mut task = ManagedTask(tokio::spawn(async move {
                 let (_global, _local) = (global, local);

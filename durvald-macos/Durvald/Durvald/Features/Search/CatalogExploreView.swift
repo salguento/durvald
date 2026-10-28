@@ -11,6 +11,7 @@ struct CatalogExploreView: View {
     @State private var configurationError: String?
     @State private var showSavedCatalog = false
     @State private var showSoundCloudLink = false
+    @State private var showSoulseek = false
     @State private var detailDestination: CatalogDetailDestination?
 
     private var request: SearchRequest {
@@ -21,7 +22,7 @@ struct CatalogExploreView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 28) {
-                HStack { Button("Ouvir link SoundCloud…") { showSoundCloudLink = true }; Spacer(); Button("Itens salvos") { showSavedCatalog = true } }
+                HStack { Button("Ouvir link SoundCloud…") { showSoundCloudLink = true }; Button("Buscar opções de download…") { showSoulseek = true }; Spacer(); Button("Itens salvos") { showSavedCatalog = true } }
                 providerSection(.library, title: "Sua biblioteca")
                 providerSection(.musicBrainz, title: "MusicBrainz")
             }
@@ -36,6 +37,7 @@ struct CatalogExploreView: View {
                                    loader: loader)
         }
         .onDisappear { presentation.cancel() }
+        .sheet(isPresented: $showSoulseek) { SoulseekSearchView(initialQuery: query) }
         .sheet(isPresented: $showSoundCloudLink) { SoundCloudLinkView() }
         .sheet(isPresented: $showSavedCatalog) { CatalogSavedView().frame(width: 760, height: 560) }
         .sheet(item: $detailDestination) { destination in

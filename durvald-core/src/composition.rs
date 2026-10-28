@@ -56,6 +56,7 @@ pub(crate) struct PersistenceApplications {
 }
 
 pub(crate) struct CoreComponents {
+    pub(crate) download_search: Arc<crate::application::download_search::DownloadSearchApplication>,
     pub(crate) sources: Arc<crate::application::sources::SourcesApplication>,
     pub(crate) catalog_search: Arc<CatalogSearchApplication>,
     pub(crate) music_plugins: Arc<PluginRuntime>,
@@ -151,7 +152,12 @@ where
         )
         .await,
     );
+    let download_search = Arc::new(
+        crate::application::download_search::DownloadSearchApplication::new(music_plugins.clone())
+            .await,
+    );
     Ok(CoreComponents {
+        download_search,
         sources,
         catalog_search,
         music_plugins,

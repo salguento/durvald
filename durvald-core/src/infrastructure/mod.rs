@@ -9,3 +9,5 @@ pub(crate) mod sqlite;
 pub(crate) mod soundcloud_playback;
 
 pub(crate) mod soundcloud_links;
+
+pub(crate) mod slskd_search;

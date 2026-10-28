@@ -110,6 +110,7 @@ struct TrackInfoSheet: View {
 
     @State private var info: TrackInfo?
     @State private var showingSources = false
+    @State private var showingDownloads = false
     @State private var editing = EditingState<TrackMetadataDraft?>(nil)
     private var draft: TrackMetadataDraft? {
         get { editing.value }
@@ -172,6 +173,9 @@ struct TrackInfoSheet: View {
             guard store.ratingScaleRevision > 0, !store.isChangingRatingScale,
                   let refreshed = try? await store.core?.trackInfo(trackId: trackID), info?.track.id == trackID else { return }
             info?.track.ratingHalfSteps = refreshed.track.ratingHalfSteps
+        }
+        .sheet(isPresented: $showingDownloads) {
+            if let track = info?.track { SoulseekSearchView(initialQuery: "\(track.artist) \(track.title)", expectedTracks: track.trackNumber > 0 ? [.reference(track)] : []) }
         }
         .sheet(isPresented: $showingSources) {
             if let info { SourceManagementView(entry: .sourceEntry(info.track)) }
@@ -257,6 +261,7 @@ struct TrackInfoSheet: View {
             }
             Spacer(minLength: 0)
             if let info {
+                Button("Buscar opções de download") { showingDownloads = true }.disabled(isSaving)
                 Button("Origens…") { showingSources = true }.disabled(isSaving)
                     .accessibilityIdentifier("trackInfo.sources")
                 Button {

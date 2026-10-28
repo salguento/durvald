@@ -1,6 +1,6 @@
 //! Built-in integration registry, isolated from the personal library and player.
 use crate::{
-    application::music_catalog::{CatalogReader, MediaResolver, SourceFinder},
+    application::music_catalog::{CatalogReader, DownloadSearcher, MediaResolver, SourceFinder},
     domain::music::{
         identity::ProviderId,
         plugins::{PluginConfiguration, PluginError, PluginManifest, PluginPreferences},
@@ -24,6 +24,12 @@ pub(crate) trait MusicPlugin: Send + Sync {
         _configuration: &PluginConfiguration,
     ) -> Result<(), PluginError> {
         Ok(())
+    }
+    fn download_search(&self) -> Option<&dyn DownloadSearcher> {
+        None
+    }
+    fn request_host(&self, _configuration: &PluginConfiguration) -> Option<String> {
+        self.manifest().primary_host
     }
     fn catalog(&self) -> Option<&dyn CatalogReader> {
         None

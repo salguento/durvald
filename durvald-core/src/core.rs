@@ -31,6 +31,7 @@ use std::sync::Arc;
 /// the public API. All state is encapsulated behind this facade.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct DurvaldCore {
+    download_search: Arc<crate::application::download_search::DownloadSearchApplication>,
     sources: Arc<crate::application::sources::SourcesApplication>,
     catalog_search: Arc<crate::application::catalog_search::CatalogSearchApplication>,
     // Owned from startup; native catalog commands will consume it in stage 3.
@@ -152,6 +153,7 @@ impl DurvaldCore {
     {
         let components = compose(config, create_audio_player).await?;
         let core = Self {
+            download_search: components.download_search,
             sources: components.sources,
             catalog_search: components.catalog_search,
             music_plugins: components.music_plugins,
@@ -208,6 +210,27 @@ impl DurvaldCore {
         self.playback_application.embedded_event(event).await
     }
 
+    pub async fn download_search_settings(&self) -> CoreResult<DownloadSearchSettings> {
+        self.download_search.settings().await
+    }
+    pub async fn configure_download_search(
+        &self,
+        endpoint: String,
+        api_key: Option<String>,
+        enabled: bool,
+        sharing_acknowledged: bool,
+    ) -> CoreResult<DownloadSearchSettings> {
+        self.download_search
+            .configure(endpoint, api_key, enabled, sharing_acknowledged)
+            .await
+    }
+    pub fn download_search_session(&self) -> Arc<DownloadSearchSession> {
+        Arc::new(DownloadSearchSession {
+            session: crate::application::download_search::SearchSession::new(
+                self.download_search.clone(),
+            ),
+        })
+    }
     pub async fn resolve_soundcloud_link_entry(
         &self,
         url: String,
@@ -2029,5 +2052,30 @@ mod tests {
         ));
 
         std::fs::remove_dir_all(directory).unwrap();
+    }
+}
+
+/// Temporary Soulseek offers are owned by this search session, never library sources.
+#[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
+pub struct DownloadSearchSession {
+    session: crate::application::download_search::SearchSession,
+}
+#[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
+impl DownloadSearchSession {
+    pub async fn search(
+        &self,
+        request: DownloadSearchRequest,
+        generation: u64,
+    ) -> CoreResult<DownloadSearchPage> {
+        self.session.start(request, generation).await
+    }
+    pub async fn poll(&self, generation: u64) -> CoreResult<DownloadSearchPage> {
+        self.session.poll(generation).await
+    }
+    pub async fn cancel(&self) -> DownloadSearchPage {
+        self.session.cancel(false).await
+    }
+    pub async fn close(&self) {
+        self.session.cancel(true).await;
     }
 }

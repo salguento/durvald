@@ -1,7 +1,7 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
 Data: 26/10/2026. Revisão: 28/10/2026.
-Status: implementação incremental; etapas 1–8, 9B e 10 concluídas; 9A dispensada no piloto atual, demais etapas planejadas.
+Status: implementação incremental; etapas 1–8, 9B, 10 e 11 concluídas; 9A dispensada no piloto atual, demais etapas planejadas.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
@@ -415,6 +415,13 @@ fixture WebKit/UniFFI, Clippy e biblioteca Release com bindings foram verificado
 erro compreensível e fallback permitido. Resolução/buffering/retry não criam plays.
 
 ### 11. Pesquisa Soulseek independente
+
+**Status:** implementada em 28/10/2026. [Pesquisa Soulseek independente](features/soulseek-search.md).
+Instância slskd externa e configurável, chave protegida, consulta explícita editável,
+resultados progressivos por peer/pasta, filtros e inspeção, comparação de tracklist,
+discos e duração, cancelamento e falha isolada. Não inicia transferências nem
+compartilha a biblioteca. A validação usa um servidor local simulado, incluindo
+timeout e ausência de respostas, devido às limitações da rede de trabalho.
 
 **Dependências:** 2, 4 e prova slskd de 5; não depende de 6–10.
 

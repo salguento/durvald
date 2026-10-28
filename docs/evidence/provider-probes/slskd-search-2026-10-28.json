@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-28",
+  "stage": 11,
+  "provider": "slskd",
+  "mode": "local_contract_fixture",
+  "real_soulseek_network_tested": false,
+  "network_context": "User reports workplace network restrictions; no live Soulseek search attempted.",
+  "daemon_managed_by_app": false,
+  "transfer_requested": false,
+  "library_shared": false,
+  "checks": {
+    "incremental_grouped_results": true,
+    "stable_offer_tokens": true,
+    "deduplicated_files_and_multidisc_comparison": true,
+    "unknown_metadata_preserved": true,
+    "query_validation_before_io": true,
+    "separate_settings_and_credentials": true,
+    "authentication_and_rate_limit_failures": true,
+    "transport_timeout_and_no_responses": true,
+    "partial_offers_preserved": true,
+    "inflight_cancellation_and_stale_results": true,
+    "cleanup_original_instance_only": true,
+    "cleanup_failure_reported": true,
+    "filter_and_inspect_without_new_requests": true,
+    "default_disabled_ffi_does_not_modify_library_or_playback": true
+  },
+  "tests": {
+    "rust_all_features_passed": 506,
+    "rust_external_ignored": 3,
+    "rust_download_search_passed": 9,
+    "macos_passed": 424,
+    "macos_skipped": 4,
+    "clippy_all_targets_all_features": "passed with -D warnings",
+    "uniffi_smoke": "passed",
+    "release_generation": "passed"
+  },
+  "release_and_embedded_library_sha256": "4c67d382e7ba5ccddfaa341cc7e89427cda1b2dcc1fbe52d9196ce5b4df21656",
+  "swift_binding_copies_match": true,
+  "source_sha256": {
+    "durvald-core/src/infrastructure/slskd_search.rs": "f0045b88dedc9baa4cc4ef8cb232d7292c5acca9e33181c9fa0d8e47e6424fff",
+    "durvald-core/src/application/download_search.rs": "14286c02eb406c5c3fe8df35c21d95e142284f7a23b3ebf2c7ddb03d6848561f",
+    "durvald-core/src/api/download_search.rs": "9593118652a095d5bbbce4ea02be153108434710de1cf413ecf6a5fc139ff082",
+    "durvald-macos/Durvald/Durvald/Features/Downloads/SoulseekSearchPresentation.swift": "4a280391ae010b53b6bc2e5d6e7662c77e25b5636a9c73945e7e8dc6b417f1f4",
+    "durvald-macos/Durvald/Durvald/Features/Downloads/SoulseekSearchView.swift": "a4628496e5fe70c8467e79cfda0ec0c051a483887dbd33f2f5fa4f2d1aa22697"
+  },
+  "limitations": [
+    "No claim of connectivity or peer availability on the workplace network.",
+    "No transfers, destination mapping or import; those belong to stage 12.",
+    "Tracklist comparison is an explicit reference-based suggestion, not edition or lossless verification."
+  ]
+}
