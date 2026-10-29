@@ -1,5 +1,7 @@
 # Etapa 12 — Transferências e importação de arquivos
 
+> Prova real posterior: [arquivo individual até importação e reimportação após reinício](soulseek-live-acquisition.md), aprovada em 28/10/2026. Cancelamento/lote parcial reais e montagem remota continuam pendentes. O texto abaixo registra a entrega original.
+
 Implementada em 28/10/2026 sobre a pesquisa independente da etapa 11. O Durvald
 usa a API de lotes do slskd configurado pelo usuário. Não instala o daemon, não
 altera seus compartilhamentos e não usa transferências como origem de streaming.

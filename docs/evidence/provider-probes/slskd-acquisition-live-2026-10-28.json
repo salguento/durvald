@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "status": "limited",
+  "real_soulseek_network_tested": false,
+  "phases": {
+    "transfer": {
+      "credential_cleanup_confirmed": true,
+      "status": "limited",
+      "transfer_cleanup": {
+        "confirmed": false,
+        "needed": true,
+        "requested": false
+      }
+    },
+    "cleanup": {
+      "checks": {
+        "cancel_confirmed": true,
+        "owned_jobs_cancel_requested": 0
+      },
+      "credential_cleanup_confirmed": true,
+      "status": "passed"
+    }
+  },
+  "real_backend_contacted": true,
+  "backend_version": "0.26.2.0",
+  "production_path": "DurvaldCore public facade; native initialization; no playback started",
+  "process_restarts": 1,
+  "library_shared": false,
+  "identities_redacted": true,
+  "private_recovery_run": "e3d26b01-8c39-4754-aca3-127a8229e39d",
+  "limitations": [
+    "Single explicitly selected file, native local slskd mapping; no claim about album completeness or remote mounts",
+    "Successful reimport validates favorite and source identity; other personal-value cases remain covered by offline tests",
+    "Cancellation and partial-batch recovery need their own explicitly selected real cases; not inferred from single-file success"
+  ],
+  "captured_at": "2026-10-29T02:27:40.763738+00:00",
+  "source_sha256": {
+    "live_acquisition.py": "eb9b0e1ded9606da802bd482d8348e55a8e28d64eddbbebe6c47cbb41707b93e",
+    "soulseek_acquisition_probe.rs": "54aeab74850c7f0d8eec7ead42f43c6b0f5722096d872ecbc0a6770b0dff8523"
+  }
+}

@@ -150,6 +150,25 @@ Após a configuração do backend, a suíte local foi ampliada e passou em **24
 testes**, incluindo permissões dos arquivos privados, preservação da conta,
 configuração sem compartilhamentos, arquivo de instalação e controle do processo.
 
+## Reteste Soulseek em 28/10/2026
+
+A mesma instalação slskd 0.26.2.0 e a configuração privada preservada foram
+reativadas, com autenticação da API e login Soulseek bem-sucedidos. A busca
+`debussy arabesque` recebeu **247 respostas**, observadas pela primeira vez
+na terceira leitura (aproximadamente dois segundos após iniciar a busca).
+As oito leituras registraram `0, 0, 247, 247, 247, 247, 247, 247`.
+Criação, incremento, cancelamento e remoção da própria busca passaram.
+
+Esse reteste não reproduziu o bloqueio anterior de busca sem respostas; não
+estabelece a causa dos timeouts de 27/10 nem garante conectividade futura.
+A contagem representa respostas de busca, não quantidade de arquivos baixados.
+Não houve transferência, compartilhamento da biblioteca nem mudança na integração
+de produção. O backend temporário foi encerrado após a execução.
+
+[Evidência do reteste](../evidence/provider-probes/slskd-retest-2026-10-28.json).
+O relatório e a matriz originais continuam preservados como registros históricos;
+transferência real e mapeamento de arquivo continuam pendentes.
+
 ## Evolução: coordenação SoundCloud no aplicativo
 
 Em 28/10/2026, a [etapa 9B](embedded-playback.md) integrou o widget visível ao

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "captured_at": "2026-10-29T02:34:42.344211+00:00",
+  "status": "passed_single_file_scope",
+  "evidence": "slskd-acquisition-live-retest-2026-10-28.json",
+  "evidence_sha256": "4d3fc58569389fdf36a83ae958407696b0356c37b563e798c85aa36e968d96b7",
+  "checks": {
+    "copied_bytes_equal_original": true,
+    "selected_metadata_consistent": true,
+    "canonical_tracks": 1,
+    "local_sources": 1,
+    "history_events": 0,
+    "two_real_process_restarts": true,
+    "isolated_credentials_removed": true,
+    "temporary_backend_stopped": true,
+    "personal_library_untouched": true
+  },
+  "validation": {
+    "python_tests_passed": 37,
+    "rust_example_build": "passed",
+    "rust_example_clippy": "passed with -D warnings",
+    "python_log_sha256": "c9af0368244d968100c03cc666356cb19dca688a394e373ecccb4458738b36ba"
+  },
+  "remaining_real_cases": [
+    "cancellation_in_progress",
+    "partial_batch_and_byte_resume",
+    "remote_mount",
+    "visual_SwiftUI_flow_not_retested"
+  ]
+}

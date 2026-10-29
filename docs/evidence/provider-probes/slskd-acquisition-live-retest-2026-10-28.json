@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "status": "passed",
+  "real_soulseek_network_tested": true,
+  "phases": {
+    "transfer": {
+      "checks": {
+        "backend_completion_confirmed": true,
+        "bytes": 8378198,
+        "explicit_file_found": true,
+        "no_implicit_library_import": true
+      },
+      "credential_cleanup_confirmed": true,
+      "status": "passed"
+    },
+    "import": {
+      "checks": {
+        "job_restored_in_new_process": true,
+        "mapped_audio_decoded": true,
+        "reviewed_import_committed": true
+      },
+      "credential_cleanup_confirmed": true,
+      "status": "passed"
+    },
+    "verify": {
+      "checks": {
+        "import_restored_in_new_process": true,
+        "one_canonical_track": true,
+        "personal_value_preserved": true,
+        "reimport_idempotent": true,
+        "sources_unchanged": true
+      },
+      "credential_cleanup_confirmed": true,
+      "status": "passed"
+    }
+  },
+  "real_backend_contacted": true,
+  "backend_version": "0.26.2.0",
+  "production_path": "DurvaldCore public facade; native initialization; no playback started",
+  "process_restarts": 2,
+  "library_shared": false,
+  "identities_redacted": true,
+  "private_recovery_run": "fe82f134-4f28-47f3-88c1-52a57730be4e",
+  "limitations": [
+    "Single explicitly selected file, native local slskd mapping; no claim about album completeness or remote mounts",
+    "Successful reimport validates favorite and source identity; other personal-value cases remain covered by offline tests",
+    "Cancellation and partial-batch recovery need their own explicitly selected real cases; not inferred from single-file success"
+  ],
+  "captured_at": "2026-10-29T02:30:44.069633+00:00",
+  "source_sha256": {
+    "live_acquisition.py": "eb9b0e1ded9606da802bd482d8348e55a8e28d64eddbbebe6c47cbb41707b93e",
+    "soulseek_acquisition_probe.rs": "efff78de484ec41da705af910fa50672d51990939ebe1fba22d324f47330295c"
+  }
+}
