@@ -1,12 +1,30 @@
 # Roteiro unificado: catálogo, múltiplas origens e plugins
 
-Data: 26/10/2026. Revisão: 28/10/2026.
-Status: implementação incremental; etapas 1–8, 9B e 10–12 concluídas; 9A dispensada no piloto atual, demais etapas planejadas.
+Para entender o código já implementado, consultar o
+[guia da arquitetura atual do core](../durvald-core/docs/guia-arquitetura-core.md)
+e a [referência de métodos e tipos da API](../durvald-core/docs/referencia-api-core.md).
+Este roteiro continua sendo um plano de evolução, não um inventário completo do runtime.
+
+Data: 26/10/2026. Revisão: 29/10/2026.
+Status: entregas incrementais das etapas 1–15 registradas no corpo; validação externa parcial conforme os recibos. A 9A foi dispensada apenas no piloto incorporado.
 
 Este é o plano canônico para busca de catálogo, fontes de reprodução, múltiplas
 origens e integrações de streaming e download. Consolida os roteiros de busca e
 origens e a trilha de plugins do roadmap. Features locais, gêneros e manutenção
 do enriquecimento continuam em seus documentos próprios.
+
+Próximo incremento, planejado em 29/10/2026:
+[refatoração para adaptadores sem chaves e mídia visual](roteiro-adaptadores-sem-chaves-e-midia-visual.md).
+As etapas R1–R12 desse roteiro orientam a substituição do requisito de chaves
+pessoais por extratores, a implementação do transporte remoto antes dispensado
+e a ampliação de retratos/capas/vídeos. Leitores autenticados existentes ficam
+opcionais; seus testes históricos não validam os novos adaptadores.
+
+A revisão desse incremento adota a separação inspirada no Stremio: manifesto e
+recursos de catálogo/metadados/streams, HTTP/JSON cacheável, identidade musical
+em camadas, serviço visual versionado, índice dedicado e cliente assíncrono.
+A implementação inicial continua local; backend público, CDN e armazenamento
+próprio de áudio são expansões condicionais, não requisitos para usar o Durvald.
 
 ## Objetivo e decisões
 
@@ -361,6 +379,12 @@ download integral obrigatório para todo formato suportado.
 
 ### 9B. Coordenação de player integrado
 
+**Estabilização posterior em 29/10/2026:** [término, fila, histórico e recuperação](features/soundcloud-completion-recovery.md).
+Escuta natural e seek comprovados em casos reais, avanço único da fila, histórico
+idempotente e recuperação explícita. Deadline não é renovado por PLAY repetido;
+seek não injeta PLAY extra. Limites de sessão gráfica e relatos históricos do
+SDK permanecem documentados.
+
 **Status:** concluída em 28/10/2026. [Player integrado, coordenação e limites](features/embedded-playback.md).
 Widget SoundCloud visível no macOS, comandos e eventos coordenados pelo core,
 exclusão de áudio simultâneo com confirmação de suspensão, fila seguinte local
@@ -446,8 +470,10 @@ progressivos e falha isolada, sem esperar reprodução ou alterar arquivos locai
 Seleção explícita de arquivos e destinos, fila persistente com progresso, falha,
 cancelamento e retomada segura. Importação revisada apenas de áudio concluído,
 validado e acessível no mapeamento local, com recibo transacional idempotente e
-preservação de dados pessoais. Testes usam um simulador local; transferências
-reais permanecem limitadas pela rede do trabalho informada pelo usuário.
+preservação de dados pessoais. A validação inicial usou simulador local. Uma
+[prova real posterior](features/soulseek-live-acquisition.md) confirmou arquivo
+individual, importação e reimportação após dois reinícios do processo, sem
+duplicação. Cancelamento/lote parcial reais e montagem remota seguem pendentes.
 
 **Dependências:** 11 e 6; usar 7 se houver associação a faixas exclusivamente remotas.
 
@@ -521,7 +547,10 @@ contextual funcionam na fila mista. Invariantes de histórico já valem no pilot
 limitado por operação, verificação offline/ciclo do helper e baseline Release
 reproduzível com budgets. [Suporte, recuperação e limites das medições](features/integration-stabilization.md).
 Expansão e promoção de budgets externos continuam condicionadas às provas por
-provedor/rede; métricas de SDK/banda não são inferidas dos testes locais.
+provedor/rede. [Coleta real dos players externos](features/external-player-measurements.md):
+três rodadas por SoundCloud/YouTube com CPU/RSS, banda atribuída, latência e
+stalls observados; sem timeout nos seis casos. Não constitui p95 geral de
+provedor; métricas de SDK/banda não são inferidas dos testes locais.
 
 **Dependências:** validar cada integração antes de habilitá-la por padrão;
 não esperar todos os serviços para estabilizar o primeiro.

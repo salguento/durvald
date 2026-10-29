@@ -32,6 +32,8 @@ Planos relacionados, ainda propostas e não pré-requisitos integralmente pronto
 
 - [Gêneros e navegação](roteiro-generos-navegacao.md).
 - [Catálogo, múltiplas origens e plugins](roteiro-integracoes-musicais.md).
+- [Adaptadores sem chaves e mídia visual](roteiro-adaptadores-sem-chaves-e-midia-visual.md)
+  — próximo incremento planejado em 29/10/2026, com etapas R1–R12.
 
 ## Ordem recomendada
 

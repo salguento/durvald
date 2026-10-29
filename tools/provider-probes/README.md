@@ -148,3 +148,60 @@ limitações: [estabilização](../../docs/features/integration-stabilization.md
 `slskd_backend.py verify` verifica a instalação fixada sem rede nem execução.
 Instalações incompatíveis/modificadas não são substituídas automaticamente;
 falha de prontidão encerra apenas o processo iniciado pela própria chamada.
+
+## Banda e recursos dos players externos
+
+`measure_external_players.py --runs 3 --report /tmp/external-player-metrics.json`
+executa SoundCloud e YouTube sequencialmente em um aplicativo temporário,
+visível e silencioso. Atribui processos WebKit ao próprio app e coleta CPU/RSS,
+contadores externos de bytes, latência até avanço e possíveis stalls. Não usa
+contadores globais da máquina como se fossem do player. Exige macOS e acesso
+real aos SDKs/CDNs; não acessa o Durvald nem altera suas integrações.
+
+[Protocolo, interpretação e evidências](../../docs/features/external-player-measurements.md).
+
+## Prova real: Soulseek até importação pelo core
+
+`live_acquisition.py` usa o backend de validação existente e as APIs públicas de
+produção do Durvald. Não usa a biblioteca pessoal. Exige que o backend já esteja
+ativo/autenticado, sem compartilhamentos, e que o operador tenha escolhido um
+arquivo exato em resultados reais. Não escolhe nem baixa candidatos automaticamente.
+
+Crie um JSON privado com `query`, `peer`, `filename` e `size_bytes` correspondentes
+à oferta revisada (um MP3/WAV/FLAC/Ogg, até 256 MiB). Não inclua chave da API.
+
+```sh
+cargo build --locked --manifest-path durvald-core/Cargo.toml --example soulseek_acquisition_probe
+python3 tools/provider-probes/live_acquisition.py \
+  --selection /tmp/arquivo-escolhido.json \
+  --timeout 120 --report /tmp/slskd-acquisition-live.json
+```
+
+A seleção é reencontrada na pesquisa do próprio core antes do envio. O mapeamento
+vem da configuração do slskd local de validação; esse executor não cobre montagens
+remotas. Três processos separados confirmam transferência, reabertura/importação
+e nova reabertura/reimportação idempotente. Origem e favorito devem sobreviver.
+Nenhuma reprodução de áudio ou scrobble é iniciada.
+
+Biblioteca, cópia importada, checkpoint e logs ficam na pasta privada ignorada
+`.state/acquisition/<UUID>`. O relatório exporta somente checks, bytes e o UUID de
+recuperação, sem consulta, peer, nomes/caminhos de arquivos ou credenciais.
+Cada processo remove sua credencial isolada ao terminar. Falha ou timeout tenta
+uma fase de limpeza que cancela somente lotes dessa biblioteca de prova; ausência
+de confirmação permanece explícita. O diário privado é preservado para recuperação.
+Não remova a pasta se houver cancelamento não confirmado.
+
+Uma prova positiva de arquivo individual não aprova lote parcial, cancelamento
+real, montagens remotas ou álbum completo; esses casos exigem seleções próprias.
+O teste não move nem apaga o original recebido no slskd. A biblioteca pessoal
+não recebe músicas da prova.
+
+## APIs de coleções SoundCloud e YouTube
+
+O exemplo Rust `service_collection_probe` executa captura, retomada em outro
+processo, importação de posições revisadas e conferência de idempotência pela
+fachada de produção. Usa pasta nova, biblioteca isolada e serviço de credenciais
+exclusivo. Sem token/chave, informa `blocked` antes de abrir a biblioteca.
+Os alvos fornecidos pelo usuário estão em `fixtures/service-collection-targets.json`.
+
+[Protocolo, comandos, limpeza e critérios ainda pendentes](../../docs/features/service-collection-api-proofs.md).

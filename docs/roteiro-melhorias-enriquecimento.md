@@ -1,5 +1,11 @@
 # Roteiro de melhorias do enriquecimento
 
+Ampliação planejada em 29/10/2026: as etapas R8–R11 do
+[roteiro de adaptadores sem chaves e mídia visual](roteiro-adaptadores-sem-chaves-e-midia-visual.md)
+tratam candidatos de retrato/capa/vídeo, fornecedores adicionais e escolha pessoal.
+Reutilizam as filas, cache, identidade e atribuição deste documento; não substituem
+essas bases por um segundo pipeline de enriquecimento.
+
 ## Objetivo
 
 Melhorar a atualização de perfis, discografias e capas, mantendo conformidade com as APIs externas e segurança diante de falhas de rede, conteúdo inválido e contenção no SQLite.
