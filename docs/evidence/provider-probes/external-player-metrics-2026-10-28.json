@@ -1,0 +1,5225 @@
+{
+  "status": "measured",
+  "summary": {
+    "soundcloud": {
+      "runs": 3,
+      "measured_runs": 3,
+      "timing_ranges": {
+        "page_to_ready_ms": {
+          "samples": 3,
+          "min": 585,
+          "max": 766
+        },
+        "play_to_progress_ms": {
+          "samples": 3,
+          "min": 894,
+          "max": 1002
+        },
+        "resume_to_progress_ms": {
+          "samples": 3,
+          "min": 225,
+          "max": 230
+        },
+        "seek_to_observed_ms": {
+          "samples": 3,
+          "min": 14,
+          "max": 16
+        }
+      },
+      "received_bytes": [
+        3868354,
+        3870740,
+        3864500
+      ],
+      "sent_bytes": [
+        79407,
+        80917,
+        79153
+      ],
+      "status": "measured"
+    },
+    "youtube": {
+      "runs": 3,
+      "measured_runs": 3,
+      "timing_ranges": {
+        "page_to_ready_ms": {
+          "samples": 3,
+          "min": 703,
+          "max": 752
+        },
+        "play_to_progress_ms": {
+          "samples": 3,
+          "min": 1022,
+          "max": 1053
+        },
+        "resume_to_progress_ms": {
+          "samples": 3,
+          "min": 484,
+          "max": 500
+        },
+        "seek_to_observed_ms": {
+          "samples": 3,
+          "min": 12,
+          "max": 268
+        }
+      },
+      "received_bytes": [
+        4284393,
+        4340882,
+        4647994
+      ],
+      "sent_bytes": [
+        153339,
+        162746,
+        153687
+      ],
+      "status": "measured"
+    }
+  },
+  "schema": 1,
+  "captured_at": "2026-10-29T01:45:36.835565+00:00",
+  "runs": [
+    {
+      "provider": "soundcloud",
+      "public_item_id": "293",
+      "run": 1,
+      "status": "measured",
+      "observation": {
+        "captured_at": "2026-10-29T01:41:45Z",
+        "checks": {
+          "pause": true,
+          "play": true,
+          "progress": true,
+          "ready": true,
+          "resume": true,
+          "seek": true
+        },
+        "engine": "WKWebView",
+        "events": [
+          {
+            "event": "process_ready",
+            "native_elapsed_ms": 52.79087499366142,
+            "phase": "unloaded_idle"
+          },
+          {
+            "event": "load_requested",
+            "native_elapsed_ms": 5053.2708749960875,
+            "phase": "loading"
+          },
+          {
+            "event": "ready",
+            "native_elapsed_ms": 5960.874166659778,
+            "phase": "loading",
+            "time": 766
+          },
+          {
+            "event": "play_requested",
+            "native_elapsed_ms": 5961.081416666275,
+            "phase": "loading",
+            "time": 766
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 5971.9100416696165,
+            "phase": "loading",
+            "time": 777
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 6775.462999998126,
+            "phase": "loading",
+            "time": 1580
+          },
+          {
+            "duration": 213.89,
+            "event": "first_progress",
+            "native_elapsed_ms": 6963.1248749938095,
+            "phase": "playback",
+            "position": 0.44133550000000005,
+            "time": 1768
+          },
+          {
+            "event": "paused",
+            "native_elapsed_ms": 26975.635499999044,
+            "phase": "paused",
+            "time": 21780
+          },
+          {
+            "event": "resume_requested",
+            "native_elapsed_ms": 36976.05720833235,
+            "phase": "resuming",
+            "time": 31781
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 36981.22145833622,
+            "phase": "resuming",
+            "time": 31786
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 36994.67083333002,
+            "phase": "resuming",
+            "time": 31799
+          },
+          {
+            "event": "resumed_progress",
+            "native_elapsed_ms": 37201.71445833694,
+            "phase": "resuming",
+            "position": 20.668527038,
+            "time": 32006
+          },
+          {
+            "event": "seek_requested",
+            "native_elapsed_ms": 39202.95270833594,
+            "phase": "seeking",
+            "position": 60,
+            "time": 34008
+          },
+          {
+            "event": "seek_observed",
+            "native_elapsed_ms": 39217.18683332438,
+            "phase": "seeking",
+            "position": 60,
+            "time": 34022
+          },
+          {
+            "event": "complete",
+            "native_elapsed_ms": 39217.44100000069,
+            "phase": "seeking",
+            "stalls": 0,
+            "time": 34022
+          }
+        ],
+        "os": "Version 27.2 (Build 26B123)",
+        "reason": "observed_controls",
+        "status": "passed"
+      },
+      "timing": {
+        "page_to_ready_ms": 766,
+        "play_to_progress_ms": 1002,
+        "ready_to_play_ms": 11,
+        "resume_to_progress_ms": 225,
+        "seek_to_observed_ms": 14
+      },
+      "phases": {
+        "unloaded_idle": {
+          "samples": 10,
+          "sampled_seconds": 5.268921583003248,
+          "cpu_mean_percent": 3.226466693837208,
+          "rss_max_mib": 95.03125
+        },
+        "loading": {
+          "samples": 3,
+          "sampled_seconds": 1.5968580000044312,
+          "cpu_mean_percent": 43.8360831080821,
+          "rss_max_mib": 289.140625
+        },
+        "playback": {
+          "samples": 38,
+          "sampled_seconds": 20.04690025000309,
+          "cpu_mean_percent": 21.54946623231357,
+          "rss_max_mib": 348.0
+        },
+        "paused": {
+          "samples": 19,
+          "sampled_seconds": 10.078138874989236,
+          "cpu_mean_percent": 2.976740087840082,
+          "rss_max_mib": 350.71875
+        },
+        "resuming": {
+          "samples": 4,
+          "sampled_seconds": 2.114089334005257,
+          "cpu_mean_percent": 12.298439607914586,
+          "rss_max_mib": 271.296875
+        }
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 0.5270302919961978,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5257442500005709,
+          "cpu_delta_seconds": 0.13999999999999999,
+          "rss_kib": 94160,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.053789166995557,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5267588749993593,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96288,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.5790497919952031,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5252606249996461,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 96304,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.106551375007257,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5275015830120537,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 96336,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.6326389169989852,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5260875419917284,
+          "cpu_delta_seconds": 0.009999999999999981,
+          "rss_kib": 97312,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.158897208995768,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5262582919967826,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97312,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.6863697499939008,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5274725409981329,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97312,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.214664625003934,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5282948750100331,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97312,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.7423039590066765,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5276393340027425,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97312,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 5.270207624998875,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5279036659921985,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97312,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 5.7976384999929,
+          "phase": "loading",
+          "interval_seconds": 0.5274308749940246,
+          "cpu_delta_seconds": 0.32,
+          "rss_kib": 224720,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.332838208996691,
+          "phase": "loading",
+          "interval_seconds": 0.5351997090037912,
+          "cpu_delta_seconds": 0.16000000000000003,
+          "rss_kib": 254512,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.867065625003306,
+          "phase": "loading",
+          "interval_seconds": 0.5342274160066154,
+          "cpu_delta_seconds": 0.22000000000000003,
+          "rss_kib": 296080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.40686045899929,
+          "phase": "playback",
+          "interval_seconds": 0.5397948339959839,
+          "cpu_delta_seconds": 0.26,
+          "rss_kib": 329472,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.935401916998671,
+          "phase": "playback",
+          "interval_seconds": 0.5285414579993812,
+          "cpu_delta_seconds": 0.14000000000000004,
+          "rss_kib": 332816,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.462954125003307,
+          "phase": "playback",
+          "interval_seconds": 0.5275522080046358,
+          "cpu_delta_seconds": 0.10999999999999993,
+          "rss_kib": 335872,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.990449042001273,
+          "phase": "playback",
+          "interval_seconds": 0.5274949169979664,
+          "cpu_delta_seconds": 0.1299999999999999,
+          "rss_kib": 336832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 9.51813924999442,
+          "phase": "playback",
+          "interval_seconds": 0.527690207993146,
+          "cpu_delta_seconds": 0.10000000000000009,
+          "rss_kib": 337600,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.045413833999191,
+          "phase": "playback",
+          "interval_seconds": 0.5272745840047719,
+          "cpu_delta_seconds": 0.10000000000000003,
+          "rss_kib": 338352,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.574059834005311,
+          "phase": "playback",
+          "interval_seconds": 0.5286460000061197,
+          "cpu_delta_seconds": 0.13,
+          "rss_kib": 340912,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.101590374993975,
+          "phase": "playback",
+          "interval_seconds": 0.5275305409886641,
+          "cpu_delta_seconds": 0.12000000000000005,
+          "rss_kib": 337280,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.629672416995163,
+          "phase": "playback",
+          "interval_seconds": 0.5280820420011878,
+          "cpu_delta_seconds": 0.1299999999999999,
+          "rss_kib": 334064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.156435291995876,
+          "phase": "playback",
+          "interval_seconds": 0.5267628750007134,
+          "cpu_delta_seconds": 0.13000000000000012,
+          "rss_kib": 335392,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.682827875003568,
+          "phase": "playback",
+          "interval_seconds": 0.5263925830076914,
+          "cpu_delta_seconds": 0.10999999999999999,
+          "rss_kib": 336208,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.209886458993424,
+          "phase": "playback",
+          "interval_seconds": 0.5270585839898558,
+          "cpu_delta_seconds": 0.08999999999999986,
+          "rss_kib": 336768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.737476459005848,
+          "phase": "playback",
+          "interval_seconds": 0.5275900000124238,
+          "cpu_delta_seconds": 0.13000000000000006,
+          "rss_kib": 336768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.264587458994356,
+          "phase": "playback",
+          "interval_seconds": 0.5271109999885084,
+          "cpu_delta_seconds": 0.10999999999999999,
+          "rss_kib": 338336,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.78917633400124,
+          "phase": "playback",
+          "interval_seconds": 0.5245888750068843,
+          "cpu_delta_seconds": 0.09000000000000008,
+          "rss_kib": 338256,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.316582917002961,
+          "phase": "playback",
+          "interval_seconds": 0.5274065830017207,
+          "cpu_delta_seconds": 0.1499999999999999,
+          "rss_kib": 338768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.84431400000176,
+          "phase": "playback",
+          "interval_seconds": 0.5277310829987982,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 338976,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.37174795899773,
+          "phase": "playback",
+          "interval_seconds": 0.5274339589959709,
+          "cpu_delta_seconds": 0.08999999999999997,
+          "rss_kib": 339424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.89782437500253,
+          "phase": "playback",
+          "interval_seconds": 0.5260764160047984,
+          "cpu_delta_seconds": 0.09999999999999998,
+          "rss_kib": 339728,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.424659625001368,
+          "phase": "playback",
+          "interval_seconds": 0.5268352499988396,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 340864,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.951454124995507,
+          "phase": "playback",
+          "interval_seconds": 0.5267944999941392,
+          "cpu_delta_seconds": 0.08000000000000007,
+          "rss_kib": 341120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.480206624997663,
+          "phase": "playback",
+          "interval_seconds": 0.528752500002156,
+          "cpu_delta_seconds": 0.10999999999999976,
+          "rss_kib": 341184,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.007904250000138,
+          "phase": "playback",
+          "interval_seconds": 0.5276976250024745,
+          "cpu_delta_seconds": 0.10000000000000009,
+          "rss_kib": 341536,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.535763958992902,
+          "phase": "playback",
+          "interval_seconds": 0.5278597089927644,
+          "cpu_delta_seconds": 0.08000000000000007,
+          "rss_kib": 341632,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.06146766699385,
+          "phase": "playback",
+          "interval_seconds": 0.5257037080009468,
+          "cpu_delta_seconds": 0.1100000000000001,
+          "rss_kib": 341904,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.58886762500333,
+          "phase": "playback",
+          "interval_seconds": 0.5273999580094824,
+          "cpu_delta_seconds": 0.1200000000000001,
+          "rss_kib": 342064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.11468737499672,
+          "phase": "playback",
+          "interval_seconds": 0.5258197499933885,
+          "cpu_delta_seconds": 0.10999999999999965,
+          "rss_kib": 342272,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.641857541995705,
+          "phase": "playback",
+          "interval_seconds": 0.5271701669989852,
+          "cpu_delta_seconds": 0.08999999999999997,
+          "rss_kib": 342544,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.169318458996713,
+          "phase": "playback",
+          "interval_seconds": 0.5274609170010081,
+          "cpu_delta_seconds": 0.13000000000000012,
+          "rss_kib": 342688,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.697064249994582,
+          "phase": "playback",
+          "interval_seconds": 0.5277457909978693,
+          "cpu_delta_seconds": 0.09999999999999987,
+          "rss_kib": 342864,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.225431583996397,
+          "phase": "playback",
+          "interval_seconds": 0.528367334001814,
+          "cpu_delta_seconds": 0.12000000000000033,
+          "rss_kib": 343600,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.75225037499331,
+          "phase": "playback",
+          "interval_seconds": 0.5268187909969129,
+          "cpu_delta_seconds": 0.1100000000000001,
+          "rss_kib": 343712,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.27949054200144,
+          "phase": "playback",
+          "interval_seconds": 0.5272401670081308,
+          "cpu_delta_seconds": 0.1299999999999999,
+          "rss_kib": 344496,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.805443874996854,
+          "phase": "playback",
+          "interval_seconds": 0.5259533329954138,
+          "cpu_delta_seconds": 0.11999999999999966,
+          "rss_kib": 344720,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.332937875005882,
+          "phase": "playback",
+          "interval_seconds": 0.5274940000090282,
+          "cpu_delta_seconds": 0.10000000000000031,
+          "rss_kib": 345136,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.859650792001048,
+          "phase": "playback",
+          "interval_seconds": 0.5267129169951659,
+          "cpu_delta_seconds": 0.09999999999999987,
+          "rss_kib": 345680,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.386565124994377,
+          "phase": "playback",
+          "interval_seconds": 0.5269143329933286,
+          "cpu_delta_seconds": 0.11000000000000021,
+          "rss_kib": 345904,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.913965875006397,
+          "phase": "playback",
+          "interval_seconds": 0.5274007500120206,
+          "cpu_delta_seconds": 0.13999999999999968,
+          "rss_kib": 356352,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.441925666993484,
+          "phase": "paused",
+          "interval_seconds": 0.5279597919870866,
+          "cpu_delta_seconds": 0.16000000000000014,
+          "rss_kib": 359040,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.969841084006475,
+          "phase": "paused",
+          "interval_seconds": 0.5279154170129914,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 359136,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.498336584001663,
+          "phase": "paused",
+          "interval_seconds": 0.5284954999951879,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 359120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.026199917003396,
+          "phase": "paused",
+          "interval_seconds": 0.5278633330017328,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 359104,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.552852916996926,
+          "phase": "paused",
+          "interval_seconds": 0.5266529999935301,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 359104,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.0794867920049,
+          "phase": "paused",
+          "interval_seconds": 0.526633875007974,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 359104,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.60782004200155,
+          "phase": "paused",
+          "interval_seconds": 0.5283332499966491,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 359104,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.135654792000423,
+          "phase": "paused",
+          "interval_seconds": 0.527834749998874,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 359104,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.663009500000044,
+          "phase": "paused",
+          "interval_seconds": 0.5273547079996206,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 359120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.18849612500344,
+          "phase": "paused",
+          "interval_seconds": 0.5254866250033956,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 359120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.71641166700283,
+          "phase": "paused",
+          "interval_seconds": 0.5279155419993913,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 357360,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.24402516700502,
+          "phase": "paused",
+          "interval_seconds": 0.5276135000021895,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 357312,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.77126204200613,
+          "phase": "paused",
+          "interval_seconds": 0.5272368750011083,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 357312,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.2979458750051,
+          "phase": "paused",
+          "interval_seconds": 0.5266838329989696,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 357312,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.87081758400018,
+          "phase": "paused",
+          "interval_seconds": 0.5728717089950806,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 301664,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.39706795899838,
+          "phase": "paused",
+          "interval_seconds": 0.5262503749981988,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 301024,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.926924958999734,
+          "phase": "paused",
+          "interval_seconds": 0.5298570000013569,
+          "cpu_delta_seconds": 0.009999999999999981,
+          "rss_kib": 300720,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.466776500004926,
+          "phase": "paused",
+          "interval_seconds": 0.5398515410051914,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 273504,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.99210474999563,
+          "phase": "paused",
+          "interval_seconds": 0.5253282499907073,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 273536,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.51946766700712,
+          "phase": "resuming",
+          "interval_seconds": 0.5273629170114873,
+          "cpu_delta_seconds": 0.050000000000000266,
+          "rss_kib": 269968,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.049935999995796,
+          "phase": "resuming",
+          "interval_seconds": 0.5304683329886757,
+          "cpu_delta_seconds": 0.07999999999999985,
+          "rss_kib": 269888,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.57762408400595,
+          "phase": "resuming",
+          "interval_seconds": 0.5276880840101512,
+          "cpu_delta_seconds": 0.04999999999999982,
+          "rss_kib": 272592,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.10619408400089,
+          "phase": "resuming",
+          "interval_seconds": 0.5285699999949429,
+          "cpu_delta_seconds": 0.0800000000000003,
+          "rss_kib": 277808,
+          "host_count": 1,
+          "webkit_count": 3
+        }
+      ],
+      "network": {
+        "status": "measured",
+        "received_bytes": 3868354,
+        "sent_bytes": 79407,
+        "processes_with_counters": 1,
+        "process_roles": [
+          "webkit"
+        ],
+        "scope": "nettop external TCP+UDP process counters; includes SDK, video/audio, metadata, advertising and control overhead; not media payload size",
+        "interval": "whole process lifetime including load, 20s advancing playback, 10s pause, resume and seek; prefetched bytes are not 20s bitrate"
+      },
+      "process_attribution": {
+        "verified": true,
+        "method": "LaunchServices app responsibility_get_pid_responsible_for_pid; new WebKit processes only",
+        "host_processes": 1,
+        "webkit_processes": 3,
+        "alive_five_seconds_after_exit": 0
+      },
+      "stall_windows_observed": 0
+    },
+    {
+      "provider": "soundcloud",
+      "public_item_id": "293",
+      "run": 2,
+      "status": "measured",
+      "observation": {
+        "captured_at": "2026-10-29T01:42:29Z",
+        "checks": {
+          "pause": true,
+          "play": true,
+          "progress": true,
+          "ready": true,
+          "resume": true,
+          "seek": true
+        },
+        "engine": "WKWebView",
+        "events": [
+          {
+            "event": "process_ready",
+            "native_elapsed_ms": 51.07987500377931,
+            "phase": "unloaded_idle"
+          },
+          {
+            "event": "load_requested",
+            "native_elapsed_ms": 5051.6329999954905,
+            "phase": "loading"
+          },
+          {
+            "event": "ready",
+            "native_elapsed_ms": 5766.207791675697,
+            "phase": "loading",
+            "time": 585
+          },
+          {
+            "event": "play_requested",
+            "native_elapsed_ms": 5766.393791665905,
+            "phase": "loading",
+            "time": 585
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 5774.625333331642,
+            "phase": "loading",
+            "time": 593
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 6507.204833338619,
+            "phase": "loading",
+            "time": 1326
+          },
+          {
+            "duration": 213.89,
+            "event": "first_progress",
+            "native_elapsed_ms": 6684.294250007952,
+            "phase": "playback",
+            "position": 0.43555295899999996,
+            "time": 1503
+          },
+          {
+            "event": "paused",
+            "native_elapsed_ms": 26694.27370833,
+            "phase": "paused",
+            "time": 21513
+          },
+          {
+            "event": "resume_requested",
+            "native_elapsed_ms": 36695.40608333773,
+            "phase": "resuming",
+            "time": 31514
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 36704.192749995855,
+            "phase": "resuming",
+            "time": 31523
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 36718.19625000353,
+            "phase": "resuming",
+            "time": 31537
+          },
+          {
+            "event": "resumed_progress",
+            "native_elapsed_ms": 36925.708791663055,
+            "phase": "resuming",
+            "position": 20.659341305,
+            "time": 31744
+          },
+          {
+            "event": "seek_requested",
+            "native_elapsed_ms": 38926.25516667613,
+            "phase": "seeking",
+            "position": 60,
+            "time": 33745
+          },
+          {
+            "event": "seek_observed",
+            "native_elapsed_ms": 38941.940666671144,
+            "phase": "seeking",
+            "position": 60,
+            "time": 33761
+          },
+          {
+            "event": "complete",
+            "native_elapsed_ms": 38942.20512500033,
+            "phase": "seeking",
+            "stalls": 0,
+            "time": 33761
+          }
+        ],
+        "os": "Version 27.2 (Build 26B123)",
+        "reason": "observed_controls",
+        "status": "passed"
+      },
+      "timing": {
+        "page_to_ready_ms": 585,
+        "play_to_progress_ms": 918,
+        "ready_to_play_ms": 8,
+        "resume_to_progress_ms": 230,
+        "seek_to_observed_ms": 16
+      },
+      "phases": {
+        "unloaded_idle": {
+          "samples": 9,
+          "sampled_seconds": 4.7384047910018126,
+          "cpu_mean_percent": 2.954580838383811,
+          "rss_max_mib": 94.265625
+        },
+        "loading": {
+          "samples": 3,
+          "sampled_seconds": 1.597815625005751,
+          "cpu_mean_percent": 35.673702965443745,
+          "rss_max_mib": 273.875
+        },
+        "playback": {
+          "samples": 38,
+          "sampled_seconds": 20.015087249994394,
+          "cpu_mean_percent": 31.026594700463967,
+          "rss_max_mib": 384.921875
+        },
+        "paused": {
+          "samples": 19,
+          "sampled_seconds": 10.015618417004589,
+          "cpu_mean_percent": 4.193450494149429,
+          "rss_max_mib": 388.6875
+        },
+        "resuming": {
+          "samples": 4,
+          "sampled_seconds": 2.118467124993913,
+          "cpu_mean_percent": 11.800985582946847,
+          "rss_max_mib": 309.734375
+        },
+        "seeking": {
+          "samples": 1,
+          "sampled_seconds": 0.5299473330087494,
+          "cpu_mean_percent": 9.434899826012458,
+          "rss_max_mib": 287.296875
+        }
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 0.5265445410041139,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5253501660045004,
+          "cpu_delta_seconds": 0.13,
+          "rss_kib": 96512,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.0528077909984859,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.526263249994372,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96512,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.5796714160096599,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.526863625011174,
+          "cpu_delta_seconds": 0.009999999999999995,
+          "rss_kib": 96528,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.1065418750076788,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5268704589980189,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96528,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.6334002079966012,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5268583329889225,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96528,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.159482000002754,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5260817920061527,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96528,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.6865385830024024,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5270565829996485,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96528,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.212687457998982,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5261488749965793,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96528,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.739599166001426,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5269117080024444,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96528,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 5.266890541010071,
+          "phase": "loading",
+          "interval_seconds": 0.5272913750086445,
+          "cpu_delta_seconds": 0.12000000000000002,
+          "rss_kib": 151200,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 5.808434291000594,
+          "phase": "loading",
+          "interval_seconds": 0.5415437499905238,
+          "cpu_delta_seconds": 0.25,
+          "rss_kib": 250816,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.337414791007177,
+          "phase": "loading",
+          "interval_seconds": 0.5289805000065826,
+          "cpu_delta_seconds": 0.20000000000000004,
+          "rss_kib": 280448,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.867688958009239,
+          "phase": "playback",
+          "interval_seconds": 0.5302741670020623,
+          "cpu_delta_seconds": 0.29999999999999993,
+          "rss_kib": 340128,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.394184333010344,
+          "phase": "playback",
+          "interval_seconds": 0.5264953750011045,
+          "cpu_delta_seconds": 0.17000000000000007,
+          "rss_kib": 349488,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.921208250001655,
+          "phase": "playback",
+          "interval_seconds": 0.5270239169913111,
+          "cpu_delta_seconds": 0.17999999999999994,
+          "rss_kib": 357120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.448644707998028,
+          "phase": "playback",
+          "interval_seconds": 0.5274364579963731,
+          "cpu_delta_seconds": 0.12999999999999995,
+          "rss_kib": 364064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.976704250002513,
+          "phase": "playback",
+          "interval_seconds": 0.5280595420044847,
+          "cpu_delta_seconds": 0.16000000000000014,
+          "rss_kib": 369056,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 9.503460166000878,
+          "phase": "playback",
+          "interval_seconds": 0.5267559159983648,
+          "cpu_delta_seconds": 0.2099999999999999,
+          "rss_kib": 370224,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.0307739580021,
+          "phase": "playback",
+          "interval_seconds": 0.5273137920012232,
+          "cpu_delta_seconds": 0.19000000000000006,
+          "rss_kib": 370864,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.55803850000666,
+          "phase": "playback",
+          "interval_seconds": 0.5272645420045592,
+          "cpu_delta_seconds": 0.17999999999999988,
+          "rss_kib": 372064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.08522029100277,
+          "phase": "playback",
+          "interval_seconds": 0.5271817909961101,
+          "cpu_delta_seconds": 0.17000000000000015,
+          "rss_kib": 367728,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.61047091599903,
+          "phase": "playback",
+          "interval_seconds": 0.5252506249962607,
+          "cpu_delta_seconds": 0.18999999999999984,
+          "rss_kib": 368320,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.136478583008284,
+          "phase": "playback",
+          "interval_seconds": 0.526007667009253,
+          "cpu_delta_seconds": 0.1700000000000001,
+          "rss_kib": 368688,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.660464083004626,
+          "phase": "playback",
+          "interval_seconds": 0.5239854999963427,
+          "cpu_delta_seconds": 0.15999999999999992,
+          "rss_kib": 369344,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.185674416003167,
+          "phase": "playback",
+          "interval_seconds": 0.5252103329985403,
+          "cpu_delta_seconds": 0.16000000000000003,
+          "rss_kib": 369984,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.70895879100135,
+          "phase": "playback",
+          "interval_seconds": 0.5232843749981839,
+          "cpu_delta_seconds": 0.19000000000000017,
+          "rss_kib": 370576,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.233933208000963,
+          "phase": "playback",
+          "interval_seconds": 0.524974416999612,
+          "cpu_delta_seconds": 0.15999999999999986,
+          "rss_kib": 370496,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.75916045800841,
+          "phase": "playback",
+          "interval_seconds": 0.5252272500074469,
+          "cpu_delta_seconds": 0.17999999999999983,
+          "rss_kib": 370976,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.284351458001765,
+          "phase": "playback",
+          "interval_seconds": 0.525190999993356,
+          "cpu_delta_seconds": 0.17000000000000037,
+          "rss_kib": 370880,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.810898499999894,
+          "phase": "playback",
+          "interval_seconds": 0.5265470419981284,
+          "cpu_delta_seconds": 0.1599999999999996,
+          "rss_kib": 371376,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.334730832997593,
+          "phase": "playback",
+          "interval_seconds": 0.5238323329976993,
+          "cpu_delta_seconds": 0.17000000000000015,
+          "rss_kib": 371856,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.86078941600863,
+          "phase": "playback",
+          "interval_seconds": 0.5260585830110358,
+          "cpu_delta_seconds": 0.15000000000000033,
+          "rss_kib": 372192,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.385013375009294,
+          "phase": "playback",
+          "interval_seconds": 0.5242239590006648,
+          "cpu_delta_seconds": 0.12999999999999956,
+          "rss_kib": 372320,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.91183350000938,
+          "phase": "playback",
+          "interval_seconds": 0.5268201250000857,
+          "cpu_delta_seconds": 0.10999999999999988,
+          "rss_kib": 372400,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.43890520800778,
+          "phase": "playback",
+          "interval_seconds": 0.5270717079984024,
+          "cpu_delta_seconds": 0.12000000000000033,
+          "rss_kib": 372736,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.965997500010417,
+          "phase": "playback",
+          "interval_seconds": 0.5270922920026351,
+          "cpu_delta_seconds": 0.09999999999999987,
+          "rss_kib": 373600,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.49280470800295,
+          "phase": "playback",
+          "interval_seconds": 0.5268072079925332,
+          "cpu_delta_seconds": 0.11000000000000032,
+          "rss_kib": 375952,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.02060195800732,
+          "phase": "playback",
+          "interval_seconds": 0.5277972500043688,
+          "cpu_delta_seconds": 0.09999999999999987,
+          "rss_kib": 381568,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.551304416003404,
+          "phase": "playback",
+          "interval_seconds": 0.5307024579960853,
+          "cpu_delta_seconds": 0.15000000000000013,
+          "rss_kib": 382432,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.08000816599815,
+          "phase": "playback",
+          "interval_seconds": 0.5287037499947473,
+          "cpu_delta_seconds": 0.17999999999999972,
+          "rss_kib": 382336,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.607767583001987,
+          "phase": "playback",
+          "interval_seconds": 0.5277594170038356,
+          "cpu_delta_seconds": 0.16999999999999982,
+          "rss_kib": 382992,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.134793040997465,
+          "phase": "playback",
+          "interval_seconds": 0.5270254579954781,
+          "cpu_delta_seconds": 0.16000000000000014,
+          "rss_kib": 382896,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.66222470800858,
+          "phase": "playback",
+          "interval_seconds": 0.5274316670111148,
+          "cpu_delta_seconds": 0.17999999999999994,
+          "rss_kib": 383552,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.189194999999017,
+          "phase": "playback",
+          "interval_seconds": 0.5269702919904375,
+          "cpu_delta_seconds": 0.14000000000000035,
+          "rss_kib": 383472,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.71617004100699,
+          "phase": "playback",
+          "interval_seconds": 0.5269750410079723,
+          "cpu_delta_seconds": 0.16000000000000014,
+          "rss_kib": 383632,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.242844166001305,
+          "phase": "playback",
+          "interval_seconds": 0.5266741249943152,
+          "cpu_delta_seconds": 0.17999999999999972,
+          "rss_kib": 383600,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.770385374999023,
+          "phase": "playback",
+          "interval_seconds": 0.5275412089977181,
+          "cpu_delta_seconds": 0.16000000000000014,
+          "rss_kib": 383680,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.297984582997742,
+          "phase": "playback",
+          "interval_seconds": 0.5275992079987191,
+          "cpu_delta_seconds": 0.17999999999999972,
+          "rss_kib": 384416,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.82546325000294,
+          "phase": "playback",
+          "interval_seconds": 0.5274786670051981,
+          "cpu_delta_seconds": 0.15000000000000036,
+          "rss_kib": 384528,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.35250204100157,
+          "phase": "playback",
+          "interval_seconds": 0.5270387909986312,
+          "cpu_delta_seconds": 0.17999999999999938,
+          "rss_kib": 394160,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.87892429099884,
+          "phase": "paused",
+          "interval_seconds": 0.5264222499972675,
+          "cpu_delta_seconds": 0.18000000000000016,
+          "rss_kib": 396688,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.407412166008726,
+          "phase": "paused",
+          "interval_seconds": 0.5284878750098869,
+          "cpu_delta_seconds": 0.10000000000000053,
+          "rss_kib": 398016,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.934973791008815,
+          "phase": "paused",
+          "interval_seconds": 0.5275616250000894,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 397408,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.46222841599956,
+          "phase": "paused",
+          "interval_seconds": 0.5272546249907464,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 397392,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.989901875000214,
+          "phase": "paused",
+          "interval_seconds": 0.5276734590006527,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 397392,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.51650066600996,
+          "phase": "paused",
+          "interval_seconds": 0.5265987910097465,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 397328,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.0435653750028,
+          "phase": "paused",
+          "interval_seconds": 0.5270647089928389,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 397328,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.570418582996354,
+          "phase": "paused",
+          "interval_seconds": 0.526853207993554,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 393328,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.09637566600577,
+          "phase": "paused",
+          "interval_seconds": 0.5259570830094162,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 393328,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.623222583002644,
+          "phase": "paused",
+          "interval_seconds": 0.5268469169968739,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 393328,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.149970458005555,
+          "phase": "paused",
+          "interval_seconds": 0.5267478750029113,
+          "cpu_delta_seconds": 0.020000000000000684,
+          "rss_kib": 393008,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.677174208001816,
+          "phase": "paused",
+          "interval_seconds": 0.5272037499962607,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 391664,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.20392808300676,
+          "phase": "paused",
+          "interval_seconds": 0.5267538750049425,
+          "cpu_delta_seconds": 0.019999999999999796,
+          "rss_kib": 391664,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.730591041006846,
+          "phase": "paused",
+          "interval_seconds": 0.5266629580000881,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 391616,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.25656212499598,
+          "phase": "paused",
+          "interval_seconds": 0.5259710839891341,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 391616,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.7837310830073,
+          "phase": "paused",
+          "interval_seconds": 0.5271689580113161,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 391520,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.31064075000177,
+          "phase": "paused",
+          "interval_seconds": 0.5269096669944702,
+          "cpu_delta_seconds": 0.020000000000000018,
+          "rss_kib": 339680,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.83817204099614,
+          "phase": "paused",
+          "interval_seconds": 0.527531290994375,
+          "cpu_delta_seconds": 0.019999999999999796,
+          "rss_kib": 311136,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.36812045800616,
+          "phase": "paused",
+          "interval_seconds": 0.5299484170100186,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 309600,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.89544795799884,
+          "phase": "resuming",
+          "interval_seconds": 0.5273274999926798,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 316240,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.42229479100206,
+          "phase": "resuming",
+          "interval_seconds": 0.5268468330032192,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 317168,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.95942912499595,
+          "phase": "resuming",
+          "interval_seconds": 0.5371343339938903,
+          "cpu_delta_seconds": 0.04000000000000026,
+          "rss_kib": 292368,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.48658758300007,
+          "phase": "resuming",
+          "interval_seconds": 0.5271584580041235,
+          "cpu_delta_seconds": 0.07999999999999985,
+          "rss_kib": 295424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.01653491600882,
+          "phase": "seeking",
+          "interval_seconds": 0.5299473330087494,
+          "cpu_delta_seconds": 0.050000000000000155,
+          "rss_kib": 294192,
+          "host_count": 1,
+          "webkit_count": 3
+        }
+      ],
+      "network": {
+        "status": "measured",
+        "received_bytes": 3870740,
+        "sent_bytes": 80917,
+        "processes_with_counters": 1,
+        "process_roles": [
+          "webkit"
+        ],
+        "scope": "nettop external TCP+UDP process counters; includes SDK, video/audio, metadata, advertising and control overhead; not media payload size",
+        "interval": "whole process lifetime including load, 20s advancing playback, 10s pause, resume and seek; prefetched bytes are not 20s bitrate"
+      },
+      "process_attribution": {
+        "verified": true,
+        "method": "LaunchServices app responsibility_get_pid_responsible_for_pid; new WebKit processes only",
+        "host_processes": 1,
+        "webkit_processes": 3,
+        "alive_five_seconds_after_exit": 0
+      },
+      "stall_windows_observed": 0
+    },
+    {
+      "provider": "soundcloud",
+      "public_item_id": "293",
+      "run": 3,
+      "status": "measured",
+      "observation": {
+        "captured_at": "2026-10-29T01:43:14Z",
+        "checks": {
+          "pause": true,
+          "play": true,
+          "progress": true,
+          "ready": true,
+          "resume": true,
+          "seek": true
+        },
+        "engine": "WKWebView",
+        "events": [
+          {
+            "event": "process_ready",
+            "native_elapsed_ms": 57.42120833019726,
+            "phase": "unloaded_idle"
+          },
+          {
+            "event": "load_requested",
+            "native_elapsed_ms": 5057.926333334763,
+            "phase": "loading"
+          },
+          {
+            "event": "ready",
+            "native_elapsed_ms": 5799.278041668003,
+            "phase": "loading",
+            "time": 612
+          },
+          {
+            "event": "play_requested",
+            "native_elapsed_ms": 5799.474791667308,
+            "phase": "loading",
+            "time": 612
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 5807.696083327755,
+            "phase": "loading",
+            "time": 620
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 6693.427124992013,
+            "phase": "loading",
+            "time": 1506
+          },
+          {
+            "duration": 213.89,
+            "event": "first_progress",
+            "native_elapsed_ms": 6693.92104166036,
+            "phase": "playback",
+            "position": 0.25711316700000003,
+            "time": 1506
+          },
+          {
+            "event": "paused",
+            "native_elapsed_ms": 26704.245583328884,
+            "phase": "paused",
+            "time": 21517
+          },
+          {
+            "event": "resume_requested",
+            "native_elapsed_ms": 36704.946500001824,
+            "phase": "resuming",
+            "time": 31517
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 36710.73566666746,
+            "phase": "resuming",
+            "time": 31523
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 36713.812374990084,
+            "phase": "resuming",
+            "time": 31526
+          },
+          {
+            "event": "resumed_progress",
+            "native_elapsed_ms": 36931.693958322285,
+            "phase": "resuming",
+            "position": 20.48286201,
+            "time": 31744
+          },
+          {
+            "event": "seek_requested",
+            "native_elapsed_ms": 38932.40004166728,
+            "phase": "seeking",
+            "position": 60,
+            "time": 33745
+          },
+          {
+            "event": "seek_observed",
+            "native_elapsed_ms": 38947.32520832622,
+            "phase": "seeking",
+            "position": 60,
+            "time": 33760
+          },
+          {
+            "event": "complete",
+            "native_elapsed_ms": 38947.577166662086,
+            "phase": "seeking",
+            "stalls": 0,
+            "time": 33760
+          }
+        ],
+        "os": "Version 27.2 (Build 26B123)",
+        "reason": "observed_controls",
+        "status": "passed"
+      },
+      "timing": {
+        "page_to_ready_ms": 612,
+        "play_to_progress_ms": 894,
+        "ready_to_play_ms": 8,
+        "resume_to_progress_ms": 227,
+        "seek_to_observed_ms": 15
+      },
+      "phases": {
+        "unloaded_idle": {
+          "samples": 9,
+          "sampled_seconds": 4.745140875005745,
+          "cpu_mean_percent": 3.3718703873002775,
+          "rss_max_mib": 94.4375
+        },
+        "loading": {
+          "samples": 3,
+          "sampled_seconds": 1.591957332988386,
+          "cpu_mean_percent": 34.54866462831341,
+          "rss_max_mib": 273.71875
+        },
+        "playback": {
+          "samples": 38,
+          "sampled_seconds": 20.053239083004883,
+          "cpu_mean_percent": 23.188273878113154,
+          "rss_max_mib": 375.421875
+        },
+        "paused": {
+          "samples": 19,
+          "sampled_seconds": 9.993951750002452,
+          "cpu_mean_percent": 3.3019971304135933,
+          "rss_max_mib": 378.671875
+        },
+        "resuming": {
+          "samples": 5,
+          "sampled_seconds": 2.634236041994882,
+          "cpu_mean_percent": 12.906967886694057,
+          "rss_max_mib": 378.328125
+        }
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 0.5270404170005349,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5258575829939218,
+          "cpu_delta_seconds": 0.13999999999999999,
+          "rss_kib": 96624,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.0538044170098146,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5267640000092797,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96624,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.5813273750100052,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5275229580001906,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96640,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.1088825840124628,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5275552090024576,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96640,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.6366252500010887,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.527742665988626,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96640,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.1638197090069298,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.527194459005841,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96640,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.6908206670050276,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5270009579980979,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 96704,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.218787208999856,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5279665419948287,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 96704,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.7463237090123584,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5275365000125021,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96704,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 5.2733444170007715,
+          "phase": "loading",
+          "interval_seconds": 0.527020707988413,
+          "cpu_delta_seconds": 0.12,
+          "rss_kib": 151200,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 5.816360084005282,
+          "phase": "loading",
+          "interval_seconds": 0.5430156670045108,
+          "cpu_delta_seconds": 0.25,
+          "rss_kib": 251808,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.3382810420007445,
+          "phase": "loading",
+          "interval_seconds": 0.5219209579954622,
+          "cpu_delta_seconds": 0.18000000000000002,
+          "rss_kib": 280288,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.865868584005511,
+          "phase": "playback",
+          "interval_seconds": 0.5275875420047669,
+          "cpu_delta_seconds": 0.29999999999999993,
+          "rss_kib": 340544,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.3943532500125,
+          "phase": "playback",
+          "interval_seconds": 0.5284846660069888,
+          "cpu_delta_seconds": 0.16,
+          "rss_kib": 351008,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.928118792013265,
+          "phase": "playback",
+          "interval_seconds": 0.533765542000765,
+          "cpu_delta_seconds": 0.16,
+          "rss_kib": 353408,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.45491650000622,
+          "phase": "playback",
+          "interval_seconds": 0.5267977079929551,
+          "cpu_delta_seconds": 0.08000000000000004,
+          "rss_kib": 353728,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.981858709012158,
+          "phase": "playback",
+          "interval_seconds": 0.5269422090059379,
+          "cpu_delta_seconds": 0.08000000000000002,
+          "rss_kib": 354096,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 9.509926167011145,
+          "phase": "playback",
+          "interval_seconds": 0.5280674579989864,
+          "cpu_delta_seconds": 0.10999999999999993,
+          "rss_kib": 357088,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.03882254200289,
+          "phase": "playback",
+          "interval_seconds": 0.5288963749917457,
+          "cpu_delta_seconds": 0.10000000000000003,
+          "rss_kib": 362352,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.566922709011124,
+          "phase": "playback",
+          "interval_seconds": 0.5281001670082333,
+          "cpu_delta_seconds": 0.09999999999999998,
+          "rss_kib": 368112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.099309750003158,
+          "phase": "playback",
+          "interval_seconds": 0.5323870409920346,
+          "cpu_delta_seconds": 0.11000000000000004,
+          "rss_kib": 366960,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.631060209008865,
+          "phase": "playback",
+          "interval_seconds": 0.5317504590057069,
+          "cpu_delta_seconds": 0.11999999999999994,
+          "rss_kib": 368064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.159252209006809,
+          "phase": "playback",
+          "interval_seconds": 0.5281919999979436,
+          "cpu_delta_seconds": 0.08000000000000002,
+          "rss_kib": 368096,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.686062875000061,
+          "phase": "playback",
+          "interval_seconds": 0.5268106659932528,
+          "cpu_delta_seconds": 0.10000000000000009,
+          "rss_kib": 368896,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.216458125010831,
+          "phase": "playback",
+          "interval_seconds": 0.5303952500107698,
+          "cpu_delta_seconds": 0.09999999999999998,
+          "rss_kib": 369168,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.744607459011604,
+          "phase": "playback",
+          "interval_seconds": 0.5281493340007728,
+          "cpu_delta_seconds": 0.16999999999999993,
+          "rss_kib": 370208,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.27190191700356,
+          "phase": "playback",
+          "interval_seconds": 0.5272944579919567,
+          "cpu_delta_seconds": 0.11999999999999994,
+          "rss_kib": 370464,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.79944670900295,
+          "phase": "playback",
+          "interval_seconds": 0.5275447919993894,
+          "cpu_delta_seconds": 0.14000000000000012,
+          "rss_kib": 371808,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.327109792007832,
+          "phase": "playback",
+          "interval_seconds": 0.5276630830048816,
+          "cpu_delta_seconds": 0.14000000000000012,
+          "rss_kib": 372000,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.854607584013138,
+          "phase": "playback",
+          "interval_seconds": 0.5274977920053061,
+          "cpu_delta_seconds": 0.09999999999999976,
+          "rss_kib": 372176,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.380677709006704,
+          "phase": "playback",
+          "interval_seconds": 0.5260701249935664,
+          "cpu_delta_seconds": 0.1100000000000001,
+          "rss_kib": 372160,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.907645541999955,
+          "phase": "playback",
+          "interval_seconds": 0.5269678329932503,
+          "cpu_delta_seconds": 0.13000000000000012,
+          "rss_kib": 372752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.434299000000465,
+          "phase": "playback",
+          "interval_seconds": 0.52665345800051,
+          "cpu_delta_seconds": 0.09999999999999987,
+          "rss_kib": 369520,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.96106787500321,
+          "phase": "playback",
+          "interval_seconds": 0.5267688750027446,
+          "cpu_delta_seconds": 0.1299999999999999,
+          "rss_kib": 369616,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.48688208400563,
+          "phase": "playback",
+          "interval_seconds": 0.5258142090024194,
+          "cpu_delta_seconds": 0.1100000000000001,
+          "rss_kib": 369728,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.01401004201034,
+          "phase": "playback",
+          "interval_seconds": 0.5271279580047121,
+          "cpu_delta_seconds": 0.13000000000000012,
+          "rss_kib": 370064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.54080904200964,
+          "phase": "playback",
+          "interval_seconds": 0.5267989999993006,
+          "cpu_delta_seconds": 0.10999999999999988,
+          "rss_kib": 370000,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.06830950001313,
+          "phase": "playback",
+          "interval_seconds": 0.5275004580034874,
+          "cpu_delta_seconds": 0.1299999999999999,
+          "rss_kib": 370160,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.59596883400809,
+          "phase": "playback",
+          "interval_seconds": 0.5276593339949613,
+          "cpu_delta_seconds": 0.1200000000000001,
+          "rss_kib": 370560,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.121717500005616,
+          "phase": "playback",
+          "interval_seconds": 0.5257486659975257,
+          "cpu_delta_seconds": 0.09999999999999998,
+          "rss_kib": 370816,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.648212625004817,
+          "phase": "playback",
+          "interval_seconds": 0.5264951249992009,
+          "cpu_delta_seconds": 0.13000000000000012,
+          "rss_kib": 371408,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.175240542012034,
+          "phase": "playback",
+          "interval_seconds": 0.5270279170072172,
+          "cpu_delta_seconds": 0.10999999999999988,
+          "rss_kib": 371472,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.699407542007975,
+          "phase": "playback",
+          "interval_seconds": 0.5241669999959413,
+          "cpu_delta_seconds": 0.13000000000000012,
+          "rss_kib": 372048,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.22685404200456,
+          "phase": "playback",
+          "interval_seconds": 0.5274464999965858,
+          "cpu_delta_seconds": 0.13000000000000012,
+          "rss_kib": 372160,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.753794667005423,
+          "phase": "playback",
+          "interval_seconds": 0.5269406250008615,
+          "cpu_delta_seconds": 0.12999999999999967,
+          "rss_kib": 372464,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.28156158400816,
+          "phase": "playback",
+          "interval_seconds": 0.5277669170027366,
+          "cpu_delta_seconds": 0.10000000000000031,
+          "rss_kib": 372704,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.809577334002825,
+          "phase": "playback",
+          "interval_seconds": 0.5280157499946654,
+          "cpu_delta_seconds": 0.1200000000000001,
+          "rss_kib": 373536,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.336430916999234,
+          "phase": "playback",
+          "interval_seconds": 0.5268535829964094,
+          "cpu_delta_seconds": 0.11999999999999977,
+          "rss_kib": 374272,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.864480750009534,
+          "phase": "playback",
+          "interval_seconds": 0.5280498330103001,
+          "cpu_delta_seconds": 0.12999999999999967,
+          "rss_kib": 374448,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.391520125005627,
+          "phase": "playback",
+          "interval_seconds": 0.5270393749960931,
+          "cpu_delta_seconds": 0.1100000000000001,
+          "rss_kib": 384432,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.918819250000524,
+          "phase": "paused",
+          "interval_seconds": 0.5272991249948973,
+          "cpu_delta_seconds": 0.15000000000000033,
+          "rss_kib": 386880,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.44415612501325,
+          "phase": "paused",
+          "interval_seconds": 0.5253368750127265,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 387760,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.969321292010136,
+          "phase": "paused",
+          "interval_seconds": 0.5251651669968851,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 387744,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.496220708999317,
+          "phase": "paused",
+          "interval_seconds": 0.5268994169891812,
+          "cpu_delta_seconds": 0.019999999999999796,
+          "rss_kib": 387744,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.01969845900021,
+          "phase": "paused",
+          "interval_seconds": 0.5234777500008931,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 387728,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.546594667001045,
+          "phase": "paused",
+          "interval_seconds": 0.526896208000835,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 387728,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.068657792013255,
+          "phase": "paused",
+          "interval_seconds": 0.5220631250122096,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 387728,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.59552012500353,
+          "phase": "paused",
+          "interval_seconds": 0.5268623329902766,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 387728,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.11908354201296,
+          "phase": "paused",
+          "interval_seconds": 0.5235634170094272,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 387728,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.644295083999168,
+          "phase": "paused",
+          "interval_seconds": 0.5252115419862093,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 387552,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.169462042002124,
+          "phase": "paused",
+          "interval_seconds": 0.5251669580029557,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 387280,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.69588166700851,
+          "phase": "paused",
+          "interval_seconds": 0.5264196250063833,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 386144,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.22336687501229,
+          "phase": "paused",
+          "interval_seconds": 0.5274852080037817,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 386144,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.75056025000231,
+          "phase": "paused",
+          "interval_seconds": 0.52719337499002,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 386144,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.27717075000692,
+          "phase": "paused",
+          "interval_seconds": 0.5266105000046082,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 386144,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.80451070900017,
+          "phase": "paused",
+          "interval_seconds": 0.5273399589932524,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 386048,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.331446000011056,
+          "phase": "paused",
+          "interval_seconds": 0.5269352910108864,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 386048,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.858065209002234,
+          "phase": "paused",
+          "interval_seconds": 0.5266192089911783,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 386048,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.38547187500808,
+          "phase": "paused",
+          "interval_seconds": 0.5274066660058452,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 386064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.911967542007915,
+          "phase": "resuming",
+          "interval_seconds": 0.5264956669998355,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 387248,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.438547625002684,
+          "phase": "resuming",
+          "interval_seconds": 0.5265800829947693,
+          "cpu_delta_seconds": 0.0900000000000003,
+          "rss_kib": 387408,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.96655183400435,
+          "phase": "resuming",
+          "interval_seconds": 0.528004209001665,
+          "cpu_delta_seconds": 0.06999999999999984,
+          "rss_kib": 386512,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.4934490420128,
+          "phase": "resuming",
+          "interval_seconds": 0.5268972080084495,
+          "cpu_delta_seconds": 0.06999999999999984,
+          "rss_kib": 386512,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.01970791700296,
+          "phase": "resuming",
+          "interval_seconds": 0.5262588749901624,
+          "cpu_delta_seconds": 0.05999999999999994,
+          "rss_kib": 386528,
+          "host_count": 1,
+          "webkit_count": 3
+        }
+      ],
+      "network": {
+        "status": "measured",
+        "received_bytes": 3864500,
+        "sent_bytes": 79153,
+        "processes_with_counters": 1,
+        "process_roles": [
+          "webkit"
+        ],
+        "scope": "nettop external TCP+UDP process counters; includes SDK, video/audio, metadata, advertising and control overhead; not media payload size",
+        "interval": "whole process lifetime including load, 20s advancing playback, 10s pause, resume and seek; prefetched bytes are not 20s bitrate"
+      },
+      "process_attribution": {
+        "verified": true,
+        "method": "LaunchServices app responsibility_get_pid_responsible_for_pid; new WebKit processes only",
+        "host_processes": 1,
+        "webkit_processes": 3,
+        "alive_five_seconds_after_exit": 0
+      },
+      "stall_windows_observed": 0
+    },
+    {
+      "provider": "youtube",
+      "public_item_id": "M7lc1UVf-VE",
+      "run": 1,
+      "status": "measured",
+      "observation": {
+        "captured_at": "2026-10-29T01:44:00Z",
+        "checks": {
+          "pause": true,
+          "play": true,
+          "progress": true,
+          "ready": true,
+          "resume": true,
+          "seek": true
+        },
+        "engine": "WKWebView",
+        "events": [
+          {
+            "event": "process_ready",
+            "native_elapsed_ms": 50.08266666845884,
+            "phase": "unloaded_idle"
+          },
+          {
+            "event": "load_requested",
+            "native_elapsed_ms": 5050.546041660709,
+            "phase": "loading"
+          },
+          {
+            "event": "ready",
+            "native_elapsed_ms": 5943.301000006613,
+            "phase": "loading",
+            "time": 752
+          },
+          {
+            "event": "play_requested",
+            "native_elapsed_ms": 5943.545041664038,
+            "phase": "loading",
+            "time": 752
+          },
+          {
+            "event": "buffering",
+            "native_elapsed_ms": 5975.123833326506,
+            "phase": "loading",
+            "time": 784
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 6705.934708326822,
+            "phase": "loading",
+            "time": 1514
+          },
+          {
+            "duration": 1343.661,
+            "event": "first_progress",
+            "native_elapsed_ms": 6965.663166673039,
+            "phase": "playback",
+            "position": 0.2797398740543213,
+            "time": 1774
+          },
+          {
+            "event": "paused",
+            "native_elapsed_ms": 26972.888333330047,
+            "phase": "paused",
+            "time": 21781
+          },
+          {
+            "event": "resume_requested",
+            "native_elapsed_ms": 36973.946583326324,
+            "phase": "resuming",
+            "time": 31782
+          },
+          {
+            "event": "buffering",
+            "native_elapsed_ms": 36982.14750000625,
+            "phase": "resuming",
+            "time": 31790
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 37232.93783333793,
+            "phase": "resuming",
+            "time": 32041
+          },
+          {
+            "event": "resumed_progress",
+            "native_elapsed_ms": 37473.92204166681,
+            "phase": "resuming",
+            "position": 20.709843945517576,
+            "time": 32282
+          },
+          {
+            "event": "seek_requested",
+            "native_elapsed_ms": 39478.80199999781,
+            "phase": "seeking",
+            "position": 60,
+            "time": 34287
+          },
+          {
+            "event": "buffering",
+            "native_elapsed_ms": 39488.70291667117,
+            "phase": "seeking",
+            "time": 34297
+          },
+          {
+            "event": "seek_observed",
+            "native_elapsed_ms": 39493.76762499742,
+            "phase": "seeking",
+            "position": 60,
+            "time": 34302
+          },
+          {
+            "event": "complete",
+            "native_elapsed_ms": 39494.035208335845,
+            "phase": "seeking",
+            "stalls": 0,
+            "time": 34302
+          }
+        ],
+        "os": "Version 27.2 (Build 26B123)",
+        "reason": "observed_controls",
+        "status": "passed"
+      },
+      "timing": {
+        "page_to_ready_ms": 752,
+        "play_to_progress_ms": 1022,
+        "ready_to_play_ms": 762,
+        "resume_to_progress_ms": 500,
+        "seek_to_observed_ms": 15
+      },
+      "phases": {
+        "unloaded_idle": {
+          "samples": 9,
+          "sampled_seconds": 4.7412185829889495,
+          "cpu_mean_percent": 3.5855760923983584,
+          "rss_max_mib": 95.0625
+        },
+        "loading": {
+          "samples": 4,
+          "sampled_seconds": 2.1320060420111986,
+          "cpu_mean_percent": 46.43514044951285,
+          "rss_max_mib": 385.25
+        },
+        "playback": {
+          "samples": 38,
+          "sampled_seconds": 20.034126082988223,
+          "cpu_mean_percent": 11.929644398262246,
+          "rss_max_mib": 403.171875
+        },
+        "paused": {
+          "samples": 19,
+          "sampled_seconds": 10.005131124999025,
+          "cpu_mean_percent": 1.6991281561041658,
+          "rss_max_mib": 397.234375
+        },
+        "resuming": {
+          "samples": 5,
+          "sampled_seconds": 2.643138458006433,
+          "cpu_mean_percent": 13.62017184190673,
+          "rss_max_mib": 343.296875
+        }
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 0.5264798749994952,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5251223329978529,
+          "cpu_delta_seconds": 0.13,
+          "rss_kib": 96368,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.0543215419893386,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5278416669898434,
+          "cpu_delta_seconds": 0.009999999999999995,
+          "rss_kib": 96368,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.5808397919900017,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5265182500006631,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96384,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.1090590829990106,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5282192910090089,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96384,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.6350038329983363,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5259447499993257,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 96416,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.1615747079922585,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5265708749939222,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96416,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.689329041997553,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5277543340052944,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 97344,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.2162695419974625,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5269404999999097,
+          "cpu_delta_seconds": 0.009999999999999981,
+          "rss_kib": 97344,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.742576124990592,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5263065829931293,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97344,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 5.270165832989733,
+          "phase": "loading",
+          "interval_seconds": 0.527589707999141,
+          "cpu_delta_seconds": 0.14,
+          "rss_kib": 152240,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 5.8150514169974485,
+          "phase": "loading",
+          "interval_seconds": 0.5448855840077158,
+          "cpu_delta_seconds": 0.05,
+          "rss_kib": 176240,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.342562332996749,
+          "phase": "loading",
+          "interval_seconds": 0.5275109159993008,
+          "cpu_delta_seconds": 0.58,
+          "rss_kib": 360736,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.87458216700179,
+          "phase": "loading",
+          "interval_seconds": 0.532019834005041,
+          "cpu_delta_seconds": 0.22000000000000003,
+          "rss_kib": 394496,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.406928457989125,
+          "phase": "playback",
+          "interval_seconds": 0.5323462909873342,
+          "cpu_delta_seconds": 0.15999999999999998,
+          "rss_kib": 400640,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.935147625001264,
+          "phase": "playback",
+          "interval_seconds": 0.5282191670121392,
+          "cpu_delta_seconds": 0.10000000000000009,
+          "rss_kib": 401632,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.462535166996531,
+          "phase": "playback",
+          "interval_seconds": 0.5273875419952674,
+          "cpu_delta_seconds": 0.09999999999999995,
+          "rss_kib": 402080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.987720332996105,
+          "phase": "playback",
+          "interval_seconds": 0.5251851659995737,
+          "cpu_delta_seconds": 0.07000000000000003,
+          "rss_kib": 402400,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 9.514648083000793,
+          "phase": "playback",
+          "interval_seconds": 0.5269277500046883,
+          "cpu_delta_seconds": 0.09,
+          "rss_kib": 402688,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.042739707991132,
+          "phase": "playback",
+          "interval_seconds": 0.5280916249903385,
+          "cpu_delta_seconds": 0.09999999999999992,
+          "rss_kib": 402992,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.570348416993511,
+          "phase": "playback",
+          "interval_seconds": 0.5276087090023793,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 402944,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.096791124989977,
+          "phase": "playback",
+          "interval_seconds": 0.5264427079964662,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 399152,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.623563957997249,
+          "phase": "playback",
+          "interval_seconds": 0.5267728330072714,
+          "cpu_delta_seconds": 0.06,
+          "rss_kib": 398992,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.150843166993582,
+          "phase": "playback",
+          "interval_seconds": 0.5272792089963332,
+          "cpu_delta_seconds": 0.10999999999999988,
+          "rss_kib": 400784,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.675556874994072,
+          "phase": "playback",
+          "interval_seconds": 0.5247137080004904,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 400896,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.203059874998871,
+          "phase": "playback",
+          "interval_seconds": 0.5275030000047991,
+          "cpu_delta_seconds": 0.06,
+          "rss_kib": 401408,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.730984832989634,
+          "phase": "playback",
+          "interval_seconds": 0.5279249579907628,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 401456,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.25803741699201,
+          "phase": "playback",
+          "interval_seconds": 0.5270525840023765,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 401696,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.785536416995456,
+          "phase": "playback",
+          "interval_seconds": 0.527499000003445,
+          "cpu_delta_seconds": 0.06,
+          "rss_kib": 401712,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.312725791998673,
+          "phase": "playback",
+          "interval_seconds": 0.5271893750032177,
+          "cpu_delta_seconds": 0.060000000000000026,
+          "rss_kib": 401984,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.840292082997621,
+          "phase": "playback",
+          "interval_seconds": 0.5275662909989478,
+          "cpu_delta_seconds": 0.039999999999999813,
+          "rss_kib": 402144,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.36858958299854,
+          "phase": "playback",
+          "interval_seconds": 0.5282975000009174,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 402272,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.892502874994534,
+          "phase": "playback",
+          "interval_seconds": 0.5239132919959957,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 402288,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.42084941700159,
+          "phase": "playback",
+          "interval_seconds": 0.528346542007057,
+          "cpu_delta_seconds": 0.07999999999999996,
+          "rss_kib": 408560,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.949478582988377,
+          "phase": "playback",
+          "interval_seconds": 0.5286291659867857,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 409280,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.476110791991232,
+          "phase": "playback",
+          "interval_seconds": 0.5266322090028552,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 409392,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.003306291997433,
+          "phase": "playback",
+          "interval_seconds": 0.5271955000062007,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 409440,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.529958541999804,
+          "phase": "playback",
+          "interval_seconds": 0.5266522500023711,
+          "cpu_delta_seconds": 0.06999999999999984,
+          "rss_kib": 410864,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.060449457989307,
+          "phase": "playback",
+          "interval_seconds": 0.5304909159895033,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 411264,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.58719329199812,
+          "phase": "playback",
+          "interval_seconds": 0.526743834008812,
+          "cpu_delta_seconds": 0.029999999999999916,
+          "rss_kib": 411264,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.11374991699995,
+          "phase": "playback",
+          "interval_seconds": 0.526556625001831,
+          "cpu_delta_seconds": 0.08000000000000002,
+          "rss_kib": 412848,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.638715832988964,
+          "phase": "playback",
+          "interval_seconds": 0.5249659159890143,
+          "cpu_delta_seconds": 0.030000000000000027,
+          "rss_kib": 412640,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.1657432919892,
+          "phase": "playback",
+          "interval_seconds": 0.5270274590002373,
+          "cpu_delta_seconds": 0.030000000000000027,
+          "rss_kib": 411888,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.693118124996545,
+          "phase": "playback",
+          "interval_seconds": 0.5273748330073431,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 408720,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.220886791998055,
+          "phase": "playback",
+          "interval_seconds": 0.52776866700151,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 408880,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.748478916997556,
+          "phase": "playback",
+          "interval_seconds": 0.5275921249995008,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 404800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.275288707998698,
+          "phase": "playback",
+          "interval_seconds": 0.526809791001142,
+          "cpu_delta_seconds": 0.07999999999999971,
+          "rss_kib": 405776,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.80307462500059,
+          "phase": "playback",
+          "interval_seconds": 0.5277859170018928,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 405808,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.33193304199085,
+          "phase": "playback",
+          "interval_seconds": 0.5288584169902606,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 405840,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.85895266699663,
+          "phase": "playback",
+          "interval_seconds": 0.5270196250057779,
+          "cpu_delta_seconds": 0.030000000000000027,
+          "rss_kib": 405744,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.385779707998154,
+          "phase": "playback",
+          "interval_seconds": 0.5268270410015248,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 405760,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.908708249990013,
+          "phase": "playback",
+          "interval_seconds": 0.5229285419918597,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 406336,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.433552791990223,
+          "phase": "paused",
+          "interval_seconds": 0.5248445420002099,
+          "cpu_delta_seconds": 0.039999999999999813,
+          "rss_kib": 406768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.96036991699657,
+          "phase": "paused",
+          "interval_seconds": 0.526817125006346,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 406768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.48666162499285,
+          "phase": "paused",
+          "interval_seconds": 0.526291707996279,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 406768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.014082707988564,
+          "phase": "paused",
+          "interval_seconds": 0.5274210829957156,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 406768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.541331417000038,
+          "phase": "paused",
+          "interval_seconds": 0.5272487090114737,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 406768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.068207582997275,
+          "phase": "paused",
+          "interval_seconds": 0.526876165997237,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 406768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.596156832994893,
+          "phase": "paused",
+          "interval_seconds": 0.5279492499976186,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 406768,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.122561791999033,
+          "phase": "paused",
+          "interval_seconds": 0.5264049590041395,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 406752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.64547895800206,
+          "phase": "paused",
+          "interval_seconds": 0.5229171660030261,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 406704,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.17149754198908,
+          "phase": "paused",
+          "interval_seconds": 0.5260185839870246,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 406656,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.69803529199271,
+          "phase": "paused",
+          "interval_seconds": 0.5265377500036266,
+          "cpu_delta_seconds": 0.019999999999999796,
+          "rss_kib": 405024,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.22461474999727,
+          "phase": "paused",
+          "interval_seconds": 0.5265794580045622,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 404992,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.75213112500205,
+          "phase": "paused",
+          "interval_seconds": 0.5275163750047795,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 404944,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.279173666989664,
+          "phase": "paused",
+          "interval_seconds": 0.5270425419876119,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 404944,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.8050895829947,
+          "phase": "paused",
+          "interval_seconds": 0.5259159160050331,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 404896,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.332451416994445,
+          "phase": "paused",
+          "interval_seconds": 0.5273618339997483,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 404880,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.85908154198842,
+          "phase": "paused",
+          "interval_seconds": 0.5266301249939715,
+          "cpu_delta_seconds": 0.02000000000000024,
+          "rss_kib": 404880,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.385612500002026,
+          "phase": "paused",
+          "interval_seconds": 0.526530958013609,
+          "cpu_delta_seconds": 0.019999999999999796,
+          "rss_kib": 404992,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.91383937498904,
+          "phase": "paused",
+          "interval_seconds": 0.5282268749870127,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 402960,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.44198183299159,
+          "phase": "resuming",
+          "interval_seconds": 0.5281424580025487,
+          "cpu_delta_seconds": 0.12000000000000022,
+          "rss_kib": 351536,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.97294991699164,
+          "phase": "resuming",
+          "interval_seconds": 0.530968084000051,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 350464,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.500494916996104,
+          "phase": "resuming",
+          "interval_seconds": 0.5275450000044657,
+          "cpu_delta_seconds": 0.08999999999999986,
+          "rss_kib": 351472,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.03009462499176,
+          "phase": "resuming",
+          "interval_seconds": 0.5295997079956578,
+          "cpu_delta_seconds": 0.05999999999999983,
+          "rss_kib": 349872,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.55697783299547,
+          "phase": "resuming",
+          "interval_seconds": 0.52688320800371,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 350896,
+          "host_count": 1,
+          "webkit_count": 3
+        }
+      ],
+      "network": {
+        "status": "measured",
+        "received_bytes": 4284393,
+        "sent_bytes": 153339,
+        "processes_with_counters": 1,
+        "process_roles": [
+          "webkit"
+        ],
+        "scope": "nettop external TCP+UDP process counters; includes SDK, video/audio, metadata, advertising and control overhead; not media payload size",
+        "interval": "whole process lifetime including load, 20s advancing playback, 10s pause, resume and seek; prefetched bytes are not 20s bitrate"
+      },
+      "process_attribution": {
+        "verified": true,
+        "method": "LaunchServices app responsibility_get_pid_responsible_for_pid; new WebKit processes only",
+        "host_processes": 1,
+        "webkit_processes": 3,
+        "alive_five_seconds_after_exit": 0
+      },
+      "stall_windows_observed": 0
+    },
+    {
+      "provider": "youtube",
+      "public_item_id": "M7lc1UVf-VE",
+      "run": 2,
+      "status": "measured",
+      "observation": {
+        "captured_at": "2026-10-29T01:44:45Z",
+        "checks": {
+          "pause": true,
+          "play": true,
+          "progress": true,
+          "ready": true,
+          "resume": true,
+          "seek": true
+        },
+        "engine": "WKWebView",
+        "events": [
+          {
+            "event": "process_ready",
+            "native_elapsed_ms": 57.453291665297,
+            "phase": "unloaded_idle"
+          },
+          {
+            "event": "load_requested",
+            "native_elapsed_ms": 5057.963625004049,
+            "phase": "loading"
+          },
+          {
+            "event": "ready",
+            "native_elapsed_ms": 5938.014208339155,
+            "phase": "loading",
+            "time": 723
+          },
+          {
+            "event": "play_requested",
+            "native_elapsed_ms": 5938.229291670723,
+            "phase": "loading",
+            "time": 723
+          },
+          {
+            "event": "buffering",
+            "native_elapsed_ms": 5964.104666665662,
+            "phase": "loading",
+            "time": 749
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 6646.0818750056205,
+            "phase": "loading",
+            "time": 1431
+          },
+          {
+            "duration": 1343.661,
+            "event": "first_progress",
+            "native_elapsed_ms": 6969.982541675563,
+            "phase": "playback",
+            "position": 0.4380257729041748,
+            "time": 1755
+          },
+          {
+            "event": "paused",
+            "native_elapsed_ms": 26976.73458333884,
+            "phase": "paused",
+            "time": 21762
+          },
+          {
+            "event": "resume_requested",
+            "native_elapsed_ms": 36977.75437500968,
+            "phase": "resuming",
+            "time": 31762
+          },
+          {
+            "event": "buffering",
+            "native_elapsed_ms": 36993.28483334102,
+            "phase": "resuming",
+            "time": 31778
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 37235.53604166955,
+            "phase": "resuming",
+            "time": 32020
+          },
+          {
+            "event": "resumed_progress",
+            "native_elapsed_ms": 37462.019041675376,
+            "phase": "resuming",
+            "position": 20.789309164031984,
+            "time": 32247
+          },
+          {
+            "event": "seek_requested",
+            "native_elapsed_ms": 39465.975875005824,
+            "phase": "seeking",
+            "position": 60,
+            "time": 34250
+          },
+          {
+            "event": "buffering",
+            "native_elapsed_ms": 39479.295000011916,
+            "phase": "seeking",
+            "time": 34264
+          },
+          {
+            "event": "seek_observed",
+            "native_elapsed_ms": 39733.15216667834,
+            "phase": "seeking",
+            "position": 60,
+            "time": 34518
+          },
+          {
+            "event": "complete",
+            "native_elapsed_ms": 39733.57512500661,
+            "phase": "seeking",
+            "stalls": 0,
+            "time": 34518
+          }
+        ],
+        "os": "Version 27.2 (Build 26B123)",
+        "reason": "observed_controls",
+        "status": "passed"
+      },
+      "timing": {
+        "page_to_ready_ms": 723,
+        "play_to_progress_ms": 1032,
+        "ready_to_play_ms": 708,
+        "resume_to_progress_ms": 485,
+        "seek_to_observed_ms": 268
+      },
+      "phases": {
+        "unloaded_idle": {
+          "samples": 9,
+          "sampled_seconds": 4.749404583009891,
+          "cpu_mean_percent": 3.57939604909936,
+          "rss_max_mib": 95.328125
+        },
+        "loading": {
+          "samples": 4,
+          "sampled_seconds": 2.138130374994944,
+          "cpu_mean_percent": 48.64062604238806,
+          "rss_max_mib": 380.84375
+        },
+        "playback": {
+          "samples": 38,
+          "sampled_seconds": 20.057941709004808,
+          "cpu_mean_percent": 11.31721306668723,
+          "rss_max_mib": 398.71875
+        },
+        "paused": {
+          "samples": 19,
+          "sampled_seconds": 10.018763457992463,
+          "cpu_mean_percent": 1.796628902905231,
+          "rss_max_mib": 332.546875
+        },
+        "resuming": {
+          "samples": 4,
+          "sampled_seconds": 2.108353417002945,
+          "cpu_mean_percent": 13.75480968519211,
+          "rss_max_mib": 310.1875
+        },
+        "seeking": {
+          "samples": 1,
+          "sampled_seconds": 0.5270593330060365,
+          "cpu_mean_percent": 13.281237161812726,
+          "rss_max_mib": 312.34375
+        }
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 0.5227160419890424,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5214885419991333,
+          "cpu_delta_seconds": 0.13999999999999999,
+          "rss_kib": 96640,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.051248707997729,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5285326660086866,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96640,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.5786090829933528,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5273603749956237,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 96688,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.1067817079892848,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.528172624995932,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 96688,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.6408595419925405,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5340778340032557,
+          "cpu_delta_seconds": 0.009999999999999981,
+          "rss_kib": 97616,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.167966749999323,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5271072080067825,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97616,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.6960992079984862,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5281324579991633,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97616,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.223233332988457,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5271341249899706,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97616,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.7506320829998,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5273987500113435,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97616,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 5.276015457988251,
+          "phase": "loading",
+          "interval_seconds": 0.5253833749884507,
+          "cpu_delta_seconds": 0.14,
+          "rss_kib": 151712,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 5.832144457992399,
+          "phase": "loading",
+          "interval_seconds": 0.5561290000041481,
+          "cpu_delta_seconds": 0.08000000000000002,
+          "rss_kib": 179232,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.358638207995682,
+          "phase": "loading",
+          "interval_seconds": 0.5264937500032829,
+          "cpu_delta_seconds": 0.73,
+          "rss_kib": 388000,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.888762457994744,
+          "phase": "loading",
+          "interval_seconds": 0.5301242499990622,
+          "cpu_delta_seconds": 0.08999999999999994,
+          "rss_kib": 389984,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.425126292000641,
+          "phase": "playback",
+          "interval_seconds": 0.5363638340058969,
+          "cpu_delta_seconds": 0.19000000000000003,
+          "rss_kib": 403072,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.952445292001357,
+          "phase": "playback",
+          "interval_seconds": 0.5273190000007162,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 403712,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.487732791996677,
+          "phase": "playback",
+          "interval_seconds": 0.5352874999953201,
+          "cpu_delta_seconds": 0.07999999999999993,
+          "rss_kib": 404512,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 9.016262457997072,
+          "phase": "playback",
+          "interval_seconds": 0.5285296660003951,
+          "cpu_delta_seconds": 0.04000000000000001,
+          "rss_kib": 404528,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 9.54397116698965,
+          "phase": "playback",
+          "interval_seconds": 0.5277087089925772,
+          "cpu_delta_seconds": 0.08000000000000002,
+          "rss_kib": 404688,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.071501207989058,
+          "phase": "playback",
+          "interval_seconds": 0.5275300409994088,
+          "cpu_delta_seconds": 0.07999999999999993,
+          "rss_kib": 405088,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.598124707990792,
+          "phase": "playback",
+          "interval_seconds": 0.5266235000017332,
+          "cpu_delta_seconds": 0.07,
+          "rss_kib": 405008,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.125822791989776,
+          "phase": "playback",
+          "interval_seconds": 0.5276980839989847,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 400368,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.654520374999265,
+          "phase": "playback",
+          "interval_seconds": 0.5286975830094889,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 400304,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.182808041994576,
+          "phase": "playback",
+          "interval_seconds": 0.5282876669953112,
+          "cpu_delta_seconds": 0.11999999999999983,
+          "rss_kib": 403232,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.7118752499955,
+          "phase": "playback",
+          "interval_seconds": 0.5290672080009244,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 403376,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.241604541995912,
+          "phase": "playback",
+          "interval_seconds": 0.5297292920004111,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 403840,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.769689666994964,
+          "phase": "playback",
+          "interval_seconds": 0.5280851249990519,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 404048,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.297682666991022,
+          "phase": "playback",
+          "interval_seconds": 0.5279929999960586,
+          "cpu_delta_seconds": 0.03999999999999998,
+          "rss_kib": 404048,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.824745999998413,
+          "phase": "playback",
+          "interval_seconds": 0.5270633330073906,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 404272,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.35186258298927,
+          "phase": "playback",
+          "interval_seconds": 0.5271165829908568,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 404416,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.878681292000692,
+          "phase": "playback",
+          "interval_seconds": 0.5268187090114225,
+          "cpu_delta_seconds": 0.03999999999999998,
+          "rss_kib": 404448,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.405762041991693,
+          "phase": "playback",
+          "interval_seconds": 0.5270807499910006,
+          "cpu_delta_seconds": 0.04999999999999982,
+          "rss_kib": 404400,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.932095333002508,
+          "phase": "playback",
+          "interval_seconds": 0.5263332910108147,
+          "cpu_delta_seconds": 0.060000000000000026,
+          "rss_kib": 404336,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.459229374988354,
+          "phase": "playback",
+          "interval_seconds": 0.5271340419858461,
+          "cpu_delta_seconds": 0.09000000000000008,
+          "rss_kib": 404976,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.986569957996835,
+          "phase": "playback",
+          "interval_seconds": 0.5273405830084812,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 405088,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.512763916995027,
+          "phase": "playback",
+          "interval_seconds": 0.5261939589981921,
+          "cpu_delta_seconds": 0.05999999999999994,
+          "rss_kib": 405200,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.04015137499664,
+          "phase": "playback",
+          "interval_seconds": 0.5273874580016127,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 406208,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.567090124997776,
+          "phase": "playback",
+          "interval_seconds": 0.5269387500011362,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 406304,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.0953082920023,
+          "phase": "playback",
+          "interval_seconds": 0.5282181670045247,
+          "cpu_delta_seconds": 0.039999999999999813,
+          "rss_kib": 406320,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.621887666988187,
+          "phase": "playback",
+          "interval_seconds": 0.5265793749858858,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 407152,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.148643249995075,
+          "phase": "playback",
+          "interval_seconds": 0.5267555830068886,
+          "cpu_delta_seconds": 0.07,
+          "rss_kib": 407456,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.67662683299568,
+          "phase": "playback",
+          "interval_seconds": 0.527983583000605,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 407568,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.204638666997198,
+          "phase": "playback",
+          "interval_seconds": 0.5280118340015179,
+          "cpu_delta_seconds": 0.039999999999999925,
+          "rss_kib": 407568,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.730623999988893,
+          "phase": "playback",
+          "interval_seconds": 0.525985332991695,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 407888,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.258555458000046,
+          "phase": "playback",
+          "interval_seconds": 0.5279314580111532,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 407376,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.78564099999494,
+          "phase": "playback",
+          "interval_seconds": 0.527085541994893,
+          "cpu_delta_seconds": 0.030000000000000027,
+          "rss_kib": 407344,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.31420545799483,
+          "phase": "playback",
+          "interval_seconds": 0.5285644579998916,
+          "cpu_delta_seconds": 0.07999999999999985,
+          "rss_kib": 408256,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.842047124999226,
+          "phase": "playback",
+          "interval_seconds": 0.5278416670043953,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 408272,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.36970329200267,
+          "phase": "playback",
+          "interval_seconds": 0.5276561670034425,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 408288,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.896673458002624,
+          "phase": "playback",
+          "interval_seconds": 0.5269701659999555,
+          "cpu_delta_seconds": 0.029999999999999916,
+          "rss_kib": 408128,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.41855120800028,
+          "phase": "playback",
+          "interval_seconds": 0.5218777499976568,
+          "cpu_delta_seconds": 0.030000000000000027,
+          "rss_kib": 371872,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.946704166999552,
+          "phase": "playback",
+          "interval_seconds": 0.5281529589992715,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 350960,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.47635933299898,
+          "phase": "paused",
+          "interval_seconds": 0.5296551659994293,
+          "cpu_delta_seconds": 0.08000000000000007,
+          "rss_kib": 340528,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.003152167002554,
+          "phase": "paused",
+          "interval_seconds": 0.5267928340035724,
+          "cpu_delta_seconds": 0.019999999999999796,
+          "rss_kib": 340048,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.531812417000765,
+          "phase": "paused",
+          "interval_seconds": 0.5286602499982109,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 339120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.059599082989735,
+          "phase": "paused",
+          "interval_seconds": 0.5277866659889696,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 339120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.58657666698855,
+          "phase": "paused",
+          "interval_seconds": 0.5269775839988142,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 339120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.113294666996808,
+          "phase": "paused",
+          "interval_seconds": 0.526718000008259,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 339120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.640709291998064,
+          "phase": "paused",
+          "interval_seconds": 0.5274146250012564,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 339120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.168083500000648,
+          "phase": "paused",
+          "interval_seconds": 0.527374208002584,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 339120,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.69560058299976,
+          "phase": "paused",
+          "interval_seconds": 0.5275170829991112,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 337824,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.222434416995384,
+          "phase": "paused",
+          "interval_seconds": 0.5268338339956244,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 337792,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.750899499995285,
+          "phase": "paused",
+          "interval_seconds": 0.5284650829999009,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 336400,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.27806195800076,
+          "phase": "paused",
+          "interval_seconds": 0.5271624580054777,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 336352,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.802019499999005,
+          "phase": "paused",
+          "interval_seconds": 0.523957541998243,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 336304,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.32885762499063,
+          "phase": "paused",
+          "interval_seconds": 0.5268381249916274,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 336352,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.85635104199173,
+          "phase": "paused",
+          "interval_seconds": 0.5274934170010965,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 308048,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.3838673329883,
+          "phase": "paused",
+          "interval_seconds": 0.5275162909965729,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 307584,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.91065237499424,
+          "phase": "paused",
+          "interval_seconds": 0.5267850420059403,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 303904,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.43862599998829,
+          "phase": "paused",
+          "interval_seconds": 0.527973624994047,
+          "cpu_delta_seconds": 0.02000000000000024,
+          "rss_kib": 304192,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.965467624992016,
+          "phase": "paused",
+          "interval_seconds": 0.5268416250037262,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 308400,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.493001916998765,
+          "phase": "resuming",
+          "interval_seconds": 0.5275342920067487,
+          "cpu_delta_seconds": 0.10999999999999982,
+          "rss_kib": 313888,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.01926195799024,
+          "phase": "resuming",
+          "interval_seconds": 0.5262600409914739,
+          "cpu_delta_seconds": 0.04999999999999993,
+          "rss_kib": 314720,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.545795083002304,
+          "phase": "resuming",
+          "interval_seconds": 0.5265331250120653,
+          "cpu_delta_seconds": 0.07000000000000028,
+          "rss_kib": 315424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.07382104199496,
+          "phase": "resuming",
+          "interval_seconds": 0.5280259589926573,
+          "cpu_delta_seconds": 0.05999999999999983,
+          "rss_kib": 317632,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.600880375001,
+          "phase": "seeking",
+          "interval_seconds": 0.5270593330060365,
+          "cpu_delta_seconds": 0.07,
+          "rss_kib": 319840,
+          "host_count": 1,
+          "webkit_count": 3
+        }
+      ],
+      "network": {
+        "status": "measured",
+        "received_bytes": 4340882,
+        "sent_bytes": 162746,
+        "processes_with_counters": 1,
+        "process_roles": [
+          "webkit"
+        ],
+        "scope": "nettop external TCP+UDP process counters; includes SDK, video/audio, metadata, advertising and control overhead; not media payload size",
+        "interval": "whole process lifetime including load, 20s advancing playback, 10s pause, resume and seek; prefetched bytes are not 20s bitrate"
+      },
+      "process_attribution": {
+        "verified": true,
+        "method": "LaunchServices app responsibility_get_pid_responsible_for_pid; new WebKit processes only",
+        "host_processes": 1,
+        "webkit_processes": 3,
+        "alive_five_seconds_after_exit": 0
+      },
+      "stall_windows_observed": 0
+    },
+    {
+      "provider": "youtube",
+      "public_item_id": "M7lc1UVf-VE",
+      "run": 3,
+      "status": "measured",
+      "observation": {
+        "captured_at": "2026-10-29T01:45:31Z",
+        "checks": {
+          "pause": true,
+          "play": true,
+          "progress": true,
+          "ready": true,
+          "resume": true,
+          "seek": true
+        },
+        "engine": "WKWebView",
+        "events": [
+          {
+            "event": "process_ready",
+            "native_elapsed_ms": 50.63162501028273,
+            "phase": "unloaded_idle"
+          },
+          {
+            "event": "load_requested",
+            "native_elapsed_ms": 5051.0705833439715,
+            "phase": "loading"
+          },
+          {
+            "event": "ready",
+            "native_elapsed_ms": 5898.375125005259,
+            "phase": "loading",
+            "time": 703
+          },
+          {
+            "event": "play_requested",
+            "native_elapsed_ms": 5898.562333342852,
+            "phase": "loading",
+            "time": 703
+          },
+          {
+            "event": "buffering",
+            "native_elapsed_ms": 5914.012708337395,
+            "phase": "loading",
+            "time": 719
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 6614.32862500078,
+            "phase": "loading",
+            "time": 1419
+          },
+          {
+            "duration": 1343.661,
+            "event": "first_progress",
+            "native_elapsed_ms": 6951.327875009156,
+            "phase": "playback",
+            "position": 0.4512156193482666,
+            "time": 1756
+          },
+          {
+            "event": "paused",
+            "native_elapsed_ms": 26958.654416666832,
+            "phase": "paused",
+            "time": 21764
+          },
+          {
+            "event": "resume_requested",
+            "native_elapsed_ms": 36960.00491667655,
+            "phase": "resuming",
+            "time": 31765
+          },
+          {
+            "event": "buffering",
+            "native_elapsed_ms": 36967.59695833316,
+            "phase": "resuming",
+            "time": 31772
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 37218.53862500575,
+            "phase": "resuming",
+            "time": 32023
+          },
+          {
+            "event": "resumed_progress",
+            "native_elapsed_ms": 37444.74337500287,
+            "phase": "resuming",
+            "position": 20.78874574809265,
+            "time": 32249
+          },
+          {
+            "event": "seek_requested",
+            "native_elapsed_ms": 39448.73566667957,
+            "phase": "seeking",
+            "position": 60,
+            "time": 34253
+          },
+          {
+            "event": "buffering",
+            "native_elapsed_ms": 39459.26566667913,
+            "phase": "seeking",
+            "time": 34264
+          },
+          {
+            "event": "seek_observed",
+            "native_elapsed_ms": 39459.9592500017,
+            "phase": "seeking",
+            "position": 60,
+            "time": 34265
+          },
+          {
+            "event": "complete",
+            "native_elapsed_ms": 39460.18545834522,
+            "phase": "seeking",
+            "stalls": 0,
+            "time": 34265
+          }
+        ],
+        "os": "Version 27.2 (Build 26B123)",
+        "reason": "observed_controls",
+        "status": "passed"
+      },
+      "timing": {
+        "page_to_ready_ms": 703,
+        "play_to_progress_ms": 1053,
+        "ready_to_play_ms": 716,
+        "resume_to_progress_ms": 484,
+        "seek_to_observed_ms": 12
+      },
+      "phases": {
+        "unloaded_idle": {
+          "samples": 9,
+          "sampled_seconds": 4.760730666996096,
+          "cpu_mean_percent": 3.5708804360332738,
+          "rss_max_mib": 95.34375
+        },
+        "loading": {
+          "samples": 4,
+          "sampled_seconds": 2.123332749994006,
+          "cpu_mean_percent": 47.095774320008154,
+          "rss_max_mib": 375.234375
+        },
+        "playback": {
+          "samples": 38,
+          "sampled_seconds": 20.01363129100355,
+          "cpu_mean_percent": 13.540771090442687,
+          "rss_max_mib": 424.796875
+        },
+        "paused": {
+          "samples": 19,
+          "sampled_seconds": 10.001446334004868,
+          "cpu_mean_percent": 1.5997686200244954,
+          "rss_max_mib": 424.75
+        },
+        "resuming": {
+          "samples": 4,
+          "sampled_seconds": 2.1077999580011237,
+          "cpu_mean_percent": 11.86070808337434,
+          "rss_max_mib": 394.859375
+        },
+        "seeking": {
+          "samples": 1,
+          "sampled_seconds": 0.5279486669896869,
+          "cpu_mean_percent": 7.576494174722708,
+          "rss_max_mib": 384.8125
+        }
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 0.5271081249957206,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5257677079935092,
+          "cpu_delta_seconds": 0.13999999999999999,
+          "rss_kib": 96560,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.0541749589901883,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5270668339944677,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96560,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.5808779999933904,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5267030410032021,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 96640,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.108280874992488,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5274028749990975,
+          "cpu_delta_seconds": 0.01999999999999999,
+          "rss_kib": 97600,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.6442241670010844,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5359432920085965,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97600,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.180961499994737,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5367373329936527,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97600,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.7076706669904524,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5267091669957153,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97632,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.2346566670021275,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5269860000116751,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97632,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.762071083998308,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5274144169961801,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 97632,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 5.28843037498882,
+          "phase": "loading",
+          "interval_seconds": 0.5263592909905128,
+          "cpu_delta_seconds": 0.14,
+          "rss_kib": 152416,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 5.825551124988124,
+          "phase": "loading",
+          "interval_seconds": 0.5371207499993034,
+          "cpu_delta_seconds": 0.05,
+          "rss_kib": 176304,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.355579916998977,
+          "phase": "loading",
+          "interval_seconds": 0.5300287920108531,
+          "cpu_delta_seconds": 0.66,
+          "rss_kib": 381552,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.885403833992314,
+          "phase": "loading",
+          "interval_seconds": 0.5298239169933368,
+          "cpu_delta_seconds": 0.15,
+          "rss_kib": 384240,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.414860749995569,
+          "phase": "playback",
+          "interval_seconds": 0.5294569160032552,
+          "cpu_delta_seconds": 0.18,
+          "rss_kib": 400928,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.941474249993917,
+          "phase": "playback",
+          "interval_seconds": 0.5266134999983478,
+          "cpu_delta_seconds": 0.09000000000000008,
+          "rss_kib": 400896,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.470134458999382,
+          "phase": "playback",
+          "interval_seconds": 0.5286602090054657,
+          "cpu_delta_seconds": 0.07999999999999993,
+          "rss_kib": 401200,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.997620124995592,
+          "phase": "playback",
+          "interval_seconds": 0.5274856659962097,
+          "cpu_delta_seconds": 0.07000000000000003,
+          "rss_kib": 401568,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 9.523782083997503,
+          "phase": "playback",
+          "interval_seconds": 0.5261619590019109,
+          "cpu_delta_seconds": 0.08000000000000002,
+          "rss_kib": 400752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.050733999989461,
+          "phase": "playback",
+          "interval_seconds": 0.5269519159919582,
+          "cpu_delta_seconds": 0.11999999999999994,
+          "rss_kib": 403984,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.5751787499903,
+          "phase": "playback",
+          "interval_seconds": 0.5244447500008391,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 403824,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.102734916988993,
+          "phase": "playback",
+          "interval_seconds": 0.5275561669986928,
+          "cpu_delta_seconds": 0.07,
+          "rss_kib": 399056,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.631077124999138,
+          "phase": "playback",
+          "interval_seconds": 0.5283422080101445,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 398880,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.157210749996011,
+          "phase": "playback",
+          "interval_seconds": 0.5261336249968736,
+          "cpu_delta_seconds": 0.09999999999999987,
+          "rss_kib": 401312,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.684439459000714,
+          "phase": "playback",
+          "interval_seconds": 0.527228709004703,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 402704,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.214786291995551,
+          "phase": "playback",
+          "interval_seconds": 0.5303468329948373,
+          "cpu_delta_seconds": 0.10999999999999999,
+          "rss_kib": 404832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.739818124988233,
+          "phase": "playback",
+          "interval_seconds": 0.5250318329926813,
+          "cpu_delta_seconds": 0.09000000000000008,
+          "rss_kib": 405424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.267602874999284,
+          "phase": "playback",
+          "interval_seconds": 0.5277847500110511,
+          "cpu_delta_seconds": 0.0899999999999998,
+          "rss_kib": 405632,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.791813833988272,
+          "phase": "playback",
+          "interval_seconds": 0.5242109589889878,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 405648,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.3197954169882,
+          "phase": "playback",
+          "interval_seconds": 0.5279815829999279,
+          "cpu_delta_seconds": 0.08000000000000004,
+          "rss_kib": 405824,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.841809459001524,
+          "phase": "playback",
+          "interval_seconds": 0.5220140420133248,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 405856,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.36628883398953,
+          "phase": "playback",
+          "interval_seconds": 0.5244793749880046,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 405904,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.891816208997625,
+          "phase": "playback",
+          "interval_seconds": 0.525527375008096,
+          "cpu_delta_seconds": 0.04999999999999993,
+          "rss_kib": 405872,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.419062499990105,
+          "phase": "playback",
+          "interval_seconds": 0.5272462909924798,
+          "cpu_delta_seconds": 0.09000000000000008,
+          "rss_kib": 410640,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.94179504198837,
+          "phase": "playback",
+          "interval_seconds": 0.5227325419982662,
+          "cpu_delta_seconds": 0.06000000000000005,
+          "rss_kib": 410800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.46895075000066,
+          "phase": "playback",
+          "interval_seconds": 0.5271557080122875,
+          "cpu_delta_seconds": 0.10999999999999988,
+          "rss_kib": 411984,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.991772916997434,
+          "phase": "playback",
+          "interval_seconds": 0.5228221669967752,
+          "cpu_delta_seconds": 0.13000000000000006,
+          "rss_kib": 416288,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.518754124990664,
+          "phase": "playback",
+          "interval_seconds": 0.5269812079932308,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 417232,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.04558166700008,
+          "phase": "playback",
+          "interval_seconds": 0.5268275420094142,
+          "cpu_delta_seconds": 0.059999999999999915,
+          "rss_kib": 418448,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.572983749996638,
+          "phase": "playback",
+          "interval_seconds": 0.5274020829965593,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 420112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.099378792001517,
+          "phase": "playback",
+          "interval_seconds": 0.5263950420048786,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 421984,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.625867458991706,
+          "phase": "playback",
+          "interval_seconds": 0.5264886669901898,
+          "cpu_delta_seconds": 0.05999999999999983,
+          "rss_kib": 423168,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.15306366699224,
+          "phase": "playback",
+          "interval_seconds": 0.5271962080005324,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 424528,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.680973249996896,
+          "phase": "playback",
+          "interval_seconds": 0.5279095830046572,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 426352,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.208881166996434,
+          "phase": "playback",
+          "interval_seconds": 0.5279079169995384,
+          "cpu_delta_seconds": 0.05999999999999994,
+          "rss_kib": 427760,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.73628462498891,
+          "phase": "playback",
+          "interval_seconds": 0.5274034579924773,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 428736,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.264533958994434,
+          "phase": "playback",
+          "interval_seconds": 0.5282493340055225,
+          "cpu_delta_seconds": 0.07000000000000006,
+          "rss_kib": 430928,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.790860333989258,
+          "phase": "playback",
+          "interval_seconds": 0.5263263749948237,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 432160,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.317875458989874,
+          "phase": "playback",
+          "interval_seconds": 0.5270151250006165,
+          "cpu_delta_seconds": 0.030000000000000027,
+          "rss_kib": 433424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.844223084000987,
+          "phase": "playback",
+          "interval_seconds": 0.5263476250111125,
+          "cpu_delta_seconds": 0.08000000000000007,
+          "rss_kib": 434432,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.370934291990125,
+          "phase": "playback",
+          "interval_seconds": 0.5267112079891376,
+          "cpu_delta_seconds": 0.04999999999999988,
+          "rss_kib": 434544,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.899035124995862,
+          "phase": "playback",
+          "interval_seconds": 0.5281008330057375,
+          "cpu_delta_seconds": 0.05999999999999983,
+          "rss_kib": 434992,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.426588458998594,
+          "phase": "paused",
+          "interval_seconds": 0.5275533340027323,
+          "cpu_delta_seconds": 0.040000000000000036,
+          "rss_kib": 434944,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.95253066699661,
+          "phase": "paused",
+          "interval_seconds": 0.525942207998014,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 429584,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.47984654198808,
+          "phase": "paused",
+          "interval_seconds": 0.5273158749914728,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 429584,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.003593333996832,
+          "phase": "paused",
+          "interval_seconds": 0.5237467920087511,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 429584,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.53067533399735,
+          "phase": "paused",
+          "interval_seconds": 0.5270820000005187,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 429584,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.05838283400226,
+          "phase": "paused",
+          "interval_seconds": 0.5277075000049081,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 429536,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.58462395898823,
+          "phase": "paused",
+          "interval_seconds": 0.5262411249859724,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 429536,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.108352833995013,
+          "phase": "paused",
+          "interval_seconds": 0.5237288750067819,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 429472,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.635604499999317,
+          "phase": "paused",
+          "interval_seconds": 0.5272516660043038,
+          "cpu_delta_seconds": 0.029999999999999805,
+          "rss_kib": 429136,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.15834279199771,
+          "phase": "paused",
+          "interval_seconds": 0.5227382919983938,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 429104,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.684708959001,
+          "phase": "paused",
+          "interval_seconds": 0.5263661670032889,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 427488,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.212386250001146,
+          "phase": "paused",
+          "interval_seconds": 0.5276772910001455,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 427440,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.73880129199824,
+          "phase": "paused",
+          "interval_seconds": 0.5264150419970974,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 427456,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.265499083994655,
+          "phase": "paused",
+          "interval_seconds": 0.526697791996412,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 427456,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.791286041989224,
+          "phase": "paused",
+          "interval_seconds": 0.5257869579945691,
+          "cpu_delta_seconds": 0.010000000000000231,
+          "rss_kib": 427424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.31883041698893,
+          "phase": "paused",
+          "interval_seconds": 0.5275443749997066,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 427424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.84535212499031,
+          "phase": "paused",
+          "interval_seconds": 0.5265217080013826,
+          "cpu_delta_seconds": 0.009999999999999787,
+          "rss_kib": 427424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.374349791993154,
+          "phase": "paused",
+          "interval_seconds": 0.5289976670028409,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 427408,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.90048145900073,
+          "phase": "paused",
+          "interval_seconds": 0.5261316670075757,
+          "cpu_delta_seconds": 0.02000000000000024,
+          "rss_kib": 427424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.42706833400007,
+          "phase": "resuming",
+          "interval_seconds": 0.5265868749993388,
+          "cpu_delta_seconds": 0.10000000000000009,
+          "rss_kib": 404336,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.957965499997954,
+          "phase": "resuming",
+          "interval_seconds": 0.5308971659978852,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 393808,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.485285791990464,
+          "phase": "resuming",
+          "interval_seconds": 0.5273202919925097,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 394032,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.008281417001854,
+          "phase": "resuming",
+          "interval_seconds": 0.5229956250113901,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 394048,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.53623008399154,
+          "phase": "seeking",
+          "interval_seconds": 0.5279486669896869,
+          "cpu_delta_seconds": 0.039999999999999813,
+          "rss_kib": 394048,
+          "host_count": 1,
+          "webkit_count": 3
+        }
+      ],
+      "network": {
+        "status": "measured",
+        "received_bytes": 4647994,
+        "sent_bytes": 153687,
+        "processes_with_counters": 1,
+        "process_roles": [
+          "webkit"
+        ],
+        "scope": "nettop external TCP+UDP process counters; includes SDK, video/audio, metadata, advertising and control overhead; not media payload size",
+        "interval": "whole process lifetime including load, 20s advancing playback, 10s pause, resume and seek; prefetched bytes are not 20s bitrate"
+      },
+      "process_attribution": {
+        "verified": true,
+        "method": "LaunchServices app responsibility_get_pid_responsible_for_pid; new WebKit processes only",
+        "host_processes": 1,
+        "webkit_processes": 3,
+        "alive_five_seconds_after_exit": 0
+      },
+      "stall_windows_observed": 0
+    }
+  ],
+  "network_label": "current network; SSID, addresses and credentials not collected",
+  "hardware": {
+    "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "model": "Mac17,3"
+  },
+  "source_sha256": {
+    "measure_external_players.py": "35da11757b45e36eb86440a3910503931e6ddfed62c6264271a890c7faf6c853",
+    "MetricsWebKitProbe.swift": "de13de7b6fb46ec6c39ed7a62e0934e97cecc5a490fefd4a1c7dec811c1ae152",
+    "metrics-player.js": "c52cbe561a7d924e4c9f518ac9e1e9acc8baab41b38d33d8042e3decd3e99ff6",
+    "metrics-player.html": "b501aa66552550f6ce3cb8f461f3b9ed1e4922465c665929e533b02339b57396"
+  },
+  "limitations": [
+    "Standalone optimized WKWebView app; excludes Durvald UI/core and code-signing/notarization",
+    "Nonpersistent WebKit storage per run; OS/DNS/CDN caches not flushed",
+    "Only the two public sample items and measured intervals; no provider-wide SLO or p95 from three runs",
+    "Position polling 250ms; stalls mean no observed clock advance >1s, not decoded acoustic silence",
+    "Resource phases use 500ms snapshots; phase boundaries have sampling error and include diagnostic polling overhead",
+    "Process RSS sums may double-count shared pages; CPU percent is relative to one core",
+    "nettop counters observed every second; short-lived/unattributed processes may be missed; byte counts are observational, not packet capture"
+  ]
+}

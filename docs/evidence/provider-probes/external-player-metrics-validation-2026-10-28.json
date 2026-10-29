@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "captured_at": "2026-10-29T01:47:33.550914+00:00",
+  "git_base": "0201f1cac453b57988688c1089c7059e84d0ed91",
+  "dirty_tree": true,
+  "evidence": "external-player-metrics-2026-10-28.json",
+  "evidence_sha256": "a2508de85a874aae864a698db063e8e04691e0150b7e87c4f89787ba03225d68",
+  "source_hashes_match": true,
+  "network_context": {
+    "link_type_at_validation": "Wi-Fi",
+    "scope": "Observed after the six runs; SSID, IP addresses and hardware addresses not retained",
+    "capacity": "not_measured"
+  },
+  "tests": {
+    "python_passed": 34,
+    "javascript_syntax": "node --check passed",
+    "swift": "compiled with swiftc -O; six real app runs completed",
+    "log_sha256": "9a8816cd3317d4381e1dfd22a4ca358e1c66fe1b533e9bf78fe314036376b40c"
+  },
+  "result": {
+    "measured_runs": 6,
+    "providers": [
+      "soundcloud",
+      "youtube"
+    ],
+    "timeout_runs": 0,
+    "stall_windows_above_one_second": 0,
+    "attributed_processes_alive_after_grace": 0
+  },
+  "scope": "Official visible players for two public samples; no change to production defaults or user library"
+}

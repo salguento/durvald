@@ -118,12 +118,15 @@ registrar carga da máquina e variação, sem promover uma rodada isolada a SLO.
 Para UI Release, usar também `durvald-macos/scripts/measure-release-performance.sh`
 e o [protocolo existente](../../durvald-core/docs/performance-release-baseline.md).
 
-**Rede externa, custo de banda, CPU/RAM WebKit, buffering dos SDKs e p95 da primeira
-página remota permanecem sem nova medição nesta rede.** O relatório marca banda
-como indisponível, não como zero. Os smokes reais anteriores continuam históricos,
-não aprovam esses budgets. Provas HTTP locais validam contratos/falhas, não rede
-Soulseek real. Não foi habilitada nova integração por padrão por causa de fixture.
-A meta externa de 2 s exige rede de referência documentada e execução opt-in.
+**Na entrega inicial**, custo de banda, CPU/RAM WebKit, buffering dos SDKs e p95
+remoto ainda não tinham nova medição. O baseline local mantém banda indisponível,
+não zero. Uma [coleta posterior dos players externos](external-player-measurements.md)
+mediu três rodadas reais por SoundCloud/YouTube, incluindo bytes atribuídos,
+CPU/RSS, avanço, pausa e recuperação; os seis casos passaram sem timeout.
+São medidas por item/modo, não um p95 de provedor ou da primeira página de
+catálogo remoto. Os relatórios iniciais permanecem históricos. Provas HTTP locais
+não validam rede Soulseek real. Nenhuma nova integração foi habilitada por
+padrão; a meta externa de catálogo de 2 s exige sua própria prova.
 
 A [evidência desta rodada](../evidence/provider-probes/integration-baseline-2026-10-28.json)
 registra os números locais e seus limites. O resultado de processo sem relatório
