@@ -1,5 +1,52 @@
 use super::*;
 use serde_json::Value;
+// Google reports quota exhaustion as 403 and invalid keys as 400. Classify
+// structured reason codes only; messages can contain account or key details.
+async fn json(http: &dyn ServiceHttp, url: Url, headers: HeaderMap) -> Result<Value, E> {
+    let response = http.get(url, headers).await?;
+    if matches!(response.status, 400 | 403) {
+        if let Ok(body) = serde_json::from_slice::<Value>(&response.body) {
+            let legacy = body["error"]["errors"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v["reason"].as_str());
+            let details = body["error"]["details"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|v| {
+                    v["@type"] == "type.googleapis.com/google.rpc.ErrorInfo"
+                        && v["domain"] == "googleapis.com"
+                })
+                .filter_map(|v| v["reason"].as_str());
+            let reasons: Vec<_> = legacy.chain(details).collect();
+            if reasons
+                .iter()
+                .any(|r| matches!(*r, "keyInvalid" | "keyExpired" | "API_KEY_INVALID"))
+            {
+                return Err(E::AuthenticationRequired);
+            }
+            if reasons.iter().any(|r| {
+                matches!(
+                    *r,
+                    "quotaExceeded"
+                        | "dailyLimitExceeded"
+                        | "rateLimitExceeded"
+                        | "userRateLimitExceeded"
+                        | "RATE_LIMIT_EXCEEDED"
+                        | "RESOURCE_QUOTA_EXCEEDED"
+                )
+            }) {
+                return Err(E::RateLimited {
+                    retry_after_seconds: response.retry,
+                });
+            }
+        }
+    }
+    status(&response)?;
+    serde_json::from_slice(&response.body).map_err(|_| E::InvalidResponse)
+}
 fn api(path: &str) -> Url {
     Url::parse(&format!("https://www.googleapis.com/youtube/v3/{path}")).unwrap()
 }

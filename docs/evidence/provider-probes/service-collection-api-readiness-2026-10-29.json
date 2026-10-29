@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-29",
+  "scope": "assessment_priority_3_service_collection_apis",
+  "status": "implementation_ready_live_validation_blocked",
+  "blocker": "user_confirmed_no_soundcloud_oauth_or_youtube_data_api_credentials",
+  "live_authenticated_requests_attempted": false,
+  "preflights": {
+    "soundcloud": {
+      "library_opened": false,
+      "network_attempted": false,
+      "reason": "missing_credential",
+      "required_environment": "SOUNDCLOUD_ACCESS_TOKEN",
+      "status": "blocked"
+    },
+    "youtube": {
+      "library_opened": false,
+      "network_attempted": false,
+      "reason": "missing_credential",
+      "required_environment": "YOUTUBE_API_KEY",
+      "status": "blocked"
+    }
+  },
+  "validation": {
+    "rust_all_targets_default": {
+      "passed": 405,
+      "failed": 0,
+      "ignored": 4
+    },
+    "rust_all_targets_all_features": {
+      "passed": 544,
+      "failed": 0,
+      "ignored": 4
+    },
+    "adapter_subset": {
+      "passed": 10,
+      "failed": 0,
+      "ignored": 1
+    },
+    "python_cli": {
+      "passed": 2,
+      "failed": 0
+    },
+    "macos_service_collections": {
+      "passed": 4,
+      "failed": 0
+    },
+    "clippy_all_targets_all_features": "passed_with_warnings_denied",
+    "uniffi_smoke": "passed",
+    "release_embedded_and_tested_app_libraries_equal": true
+  },
+  "coverage_limits": [
+    "No real SoundCloud or YouTube Data API metadata response observed",
+    "No live pagination, unavailable item, credential failure or cancellation evidence",
+    "Offline cancellation and pagination do not replace live acceptance",
+    "The probe cancels between pages, not during a live request",
+    "No audio playback or remote account writes performed"
+  ],
+  "source_sha256": {
+    "durvald-core/src/infrastructure/public_services/youtube.rs": "b62d5bbcadb4ec67debb9aa209b17fb636b9b35f8c0a0590ad80d80abb54a4a8",
+    "durvald-core/src/infrastructure/public_services/tests.rs": "80344190148ae070247794a9d324da387b753f3f65cd0c9839fa2b50e6a0d8cf",
+    "durvald-core/examples/service_collection_probe.rs": "0dc7410943f95b4a741dc8323e943ad1378509e66ad74e2f761e05c960321a00",
+    "tools/provider-probes/fixtures/service-collection-targets.json": "9e26060adae64f88661feef8cd65afacb475df929af8eb38a7a9d88c9f3244d7",
+    "tools/provider-probes/tests/test_service_collection_probe.py": "b05a1298f42af291b9a805f21db10ca6a03a9550ba61f2ad12d5ce7173bc4637"
+  },
+  "tested_library_sha256": "51871e96d19276f42df71317c0bd444ea37ccf3a68ab6156829eee8f4a8c1fcd",
+  "logs": {
+    "rust": "/tmp/durvald-service-full-feature-tests.log",
+    "macos": "/tmp/durvald-service-macos-tests.log",
+    "cli": "/tmp/durvald-service-cli-tests.log"
+  }
+}

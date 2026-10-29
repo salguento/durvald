@@ -453,6 +453,89 @@ async fn youtube_lives_future_restricted_and_unknown_items_do_not_create_library
     assert_eq!(h.count("playlists").await, 0);
     assert!(locate("https://www.youtube.com/playlist?list=RDabcdefghijklmnop").is_err());
 }
+
+#[tokio::test]
+async fn youtube_structured_api_failures_preserve_partial_capture_and_allow_retry() {
+    let cases = [
+        (
+            400,
+            json!({"errors":[{"reason":"keyInvalid"}]}),
+            ServiceImportFailure::Authentication,
+        ),
+        (
+            403,
+            json!({"errors":[{"reason":"quotaExceeded"}]}),
+            ServiceImportFailure::RateLimited,
+        ),
+        (
+            400,
+            json!({"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"googleapis.com","reason":"API_KEY_INVALID"}]}),
+            ServiceImportFailure::Authentication,
+        ),
+        (
+            403,
+            json!({"details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","domain":"googleapis.com","reason":"RATE_LIMIT_EXCEEDED"}]}),
+            ServiceImportFailure::RateLimited,
+        ),
+        (
+            403,
+            json!({"errors":[{"reason":"playlistItemsNotAccessible"}]}),
+            ServiceImportFailure::Restricted,
+        ),
+        (
+            400,
+            json!({"errors":[{"reason":"invalidPageToken"}]}),
+            ServiceImportFailure::Unavailable,
+        ),
+        (
+            403,
+            json!({"message":"quotaExceeded keyInvalid","details":[{"reason":"API_KEY_INVALID","domain":"untrusted"}]}),
+            ServiceImportFailure::Restricted,
+        ),
+    ];
+    for (status, error, expected) in cases {
+        let h = Harness::new(ServiceProvider::YouTube).await;
+        let job = h
+            .app
+            .begin("https://www.youtube.com/playlist?list=PLabcdefghijklmnop".into())
+            .await
+            .unwrap();
+        h.http
+            .json(
+                "/youtube/v3/playlistItems",
+                json!({"items":[playlist_item("first",0,"abcdefghijk")],"nextPageToken":"NEXT"}),
+            )
+            .await;
+        h.http
+            .json(
+                "/youtube/v3/videos",
+                json!({"items":[youtube_video("abcdefghijk","First","none")]}),
+            )
+            .await;
+        let first = h.app.load(job.job_id.clone(), false, None).await.unwrap();
+        h.http
+            .response(
+                "/youtube/v3/playlistItems",
+                status,
+                None,
+                serde_json::to_vec(&json!({"error":error})).unwrap(),
+            )
+            .await;
+        let failed = h.app.load(job.job_id.clone(), false, None).await.unwrap();
+        assert_eq!(failed.failure, Some(expected));
+        assert_eq!(failed.items, first.items);
+        assert_eq!(failed.next_cursor, first.next_cursor);
+        assert_eq!(h.count("songs").await, 0);
+        h.http
+            .json("/youtube/v3/playlistItems", json!({"items":[]}))
+            .await;
+        let retry = h.app.load(job.job_id, false, None).await.unwrap();
+        assert!(retry.complete);
+        assert_eq!(retry.failure, None);
+        assert_eq!(retry.items, first.items);
+    }
+}
+
 #[tokio::test]
 async fn soundcloud_redirect_playlists_preserve_repeats_preview_and_blocked_placeholders() {
     let h = Harness::new(ServiceProvider::SoundCloud).await;

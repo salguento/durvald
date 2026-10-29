@@ -1,5 +1,9 @@
 # Etapa 13 — Demais serviços e importação de coleções
 
+> Preparação da validação autenticada em 29/10/2026:
+> [protocolo e executor isolado](service-collection-api-proofs.md).
+> As provas reais SoundCloud/YouTube Data API continuam pendentes de credenciais.
+
 > Evolução na etapa 14: histórico por origem/tentativa, sessão remota recuperável
 > e navegação unificada da fila mista foram consolidados. Veja
 > [Histórico e sessão consolidados](consolidated-playback.md).

@@ -1,0 +1,14 @@
+{
+  "soundcloud": {
+    "provider": "SoundCloud",
+    "single_url": "https://soundcloud.com/siafan/come-to-my-party-xcx-world",
+    "collection_url": "https://soundcloud.com/llycoris13/sets/hyperpop-2021",
+    "max_pages": 3
+  },
+  "youtube": {
+    "provider": "YouTube",
+    "single_url": "https://www.youtube.com/watch?v=nlUHDmSf_WY",
+    "collection_url": "https://www.youtube.com/playlist?list=PLgf-8GQFjABq2XqYIaYD4C_uIZ4jLL4x-",
+    "max_pages": 3
+  }
+}
