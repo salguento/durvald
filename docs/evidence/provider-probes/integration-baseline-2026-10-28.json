@@ -1,0 +1,331 @@
+{
+  "diagnostics": {
+    "preferences_available": true,
+    "providers": [
+      {
+        "adapter_version": "1.0.0",
+        "enabled": false,
+        "measurements": [],
+        "provider": "bandcamp-catalog"
+      },
+      {
+        "adapter_version": "1.0.0",
+        "enabled": true,
+        "measurements": [],
+        "provider": "musicbrainz"
+      },
+      {
+        "adapter_version": "1.1.0",
+        "enabled": true,
+        "measurements": [],
+        "provider": "service-links"
+      },
+      {
+        "adapter_version": "1.1.0",
+        "enabled": false,
+        "measurements": [],
+        "provider": "slskd"
+      },
+      {
+        "adapter_version": "1.0.0",
+        "enabled": true,
+        "measurements": [],
+        "provider": "soundcloud"
+      },
+      {
+        "adapter_version": "1.0.0",
+        "enabled": false,
+        "measurements": [],
+        "provider": "soundcloud-catalog"
+      },
+      {
+        "adapter_version": "1.0.0",
+        "enabled": false,
+        "measurements": [],
+        "provider": "youtube"
+      },
+      {
+        "adapter_version": "1.0.0",
+        "enabled": false,
+        "measurements": [],
+        "provider": "youtube-catalog"
+      }
+    ]
+  },
+  "library_tracks": 5000,
+  "limitations": [
+    "core only; excludes SwiftUI and WebKit",
+    "no claim about remote latency, bandwidth or SDK buffering",
+    "first access is not a flushed OS disk cache"
+  ],
+  "metrics": [
+    {
+      "elapsed_ms": 83.947584,
+      "metric": "core_startup",
+      "samples": 1
+    },
+    {
+      "elapsed_ms": 0.115625,
+      "metric": "local_list_first",
+      "samples": 1
+    },
+    {
+      "budget_ms": 200.0,
+      "metric": "local_list_warm",
+      "p95_ms": 0.065583,
+      "passed": true,
+      "samples": 50
+    },
+    {
+      "elapsed_ms": 0.1875,
+      "metric": "local_detail_first",
+      "samples": 1
+    },
+    {
+      "budget_ms": 300.0,
+      "metric": "local_detail_warm",
+      "p95_ms": 0.028833,
+      "passed": true,
+      "samples": 50
+    },
+    {
+      "elapsed_ms": 0.49574999999999997,
+      "metric": "local_search_first",
+      "samples": 1
+    },
+    {
+      "budget_ms": 200.0,
+      "metric": "local_search_warm",
+      "p95_ms": 0.334292,
+      "passed": true,
+      "samples": 50
+    },
+    {
+      "budget_ms": 3000.0,
+      "metric": "native_prepare",
+      "p95_ms": 1.5352919999999999,
+      "passed": true,
+      "samples": 20
+    },
+    {
+      "budget_ms": 3000.0,
+      "metric": "native_buffer_observation",
+      "p95_ms": 26.305458,
+      "passed": true,
+      "samples": 20
+    },
+    {
+      "budget_ms": 3000.0,
+      "metric": "native_click_to_advancing_position",
+      "p95_ms": 27.947958,
+      "passed": true,
+      "samples": 20
+    }
+  ],
+  "native_audio": "real renderer; silent PCM WAV 44.1 kHz stereo; volume 0",
+  "phase": "result",
+  "remote_requests_issued": 0,
+  "broken_plugin_preferences": false,
+  "resource_phases": {
+    "idle": {
+      "samples": 9,
+      "cpu_mean_percent": 0.10683777808634581,
+      "rss_max_mib": 30.59375,
+      "disk_growth_bytes": 0,
+      "children_max": 0,
+      "checks": {
+        "cpu_mean_percent": true,
+        "rss_max_mib": true,
+        "disk_growth_bytes": true
+      },
+      "budgets": {
+        "cpu_mean_percent": 2,
+        "rss_max_mib": 512,
+        "disk_growth_bytes": 1048576
+      },
+      "status": "passed"
+    },
+    "playback": {
+      "samples": 9,
+      "cpu_mean_percent": 1.4952826109400108,
+      "rss_max_mib": 30.8125,
+      "disk_growth_bytes": 0,
+      "children_max": 0,
+      "checks": {
+        "cpu_mean_percent": true,
+        "rss_max_mib": true,
+        "disk_growth_bytes": true
+      },
+      "budgets": {
+        "cpu_mean_percent": 30,
+        "rss_max_mib": 512,
+        "disk_growth_bytes": 1048576
+      },
+      "status": "passed"
+    }
+  },
+  "samples": [
+    {
+      "phase": "idle",
+      "elapsed_seconds": 2.5279259579983773,
+      "cpu_percent": 0.0,
+      "rss_kib": 31328,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 3.5703995829971973,
+      "cpu_percent": 0.0,
+      "rss_kib": 31328,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 4.6115422080038115,
+      "cpu_percent": 0.0,
+      "rss_kib": 31328,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 5.652492458000779,
+      "cpu_percent": 0.0,
+      "rss_kib": 31328,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 6.692490790999727,
+      "cpu_percent": 0.9615400027771124,
+      "rss_kib": 31200,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 7.733906166002271,
+      "cpu_percent": 0.0,
+      "rss_kib": 31264,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 8.776546250010142,
+      "cpu_percent": 0.0,
+      "rss_kib": 31264,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 9.816750041005434,
+      "cpu_percent": 0.0,
+      "rss_kib": 31264,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 10.858606541005429,
+      "cpu_percent": 0.0,
+      "rss_kib": 31264,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 12.529227416001959,
+      "cpu_percent": 1.9258348945575143,
+      "rss_kib": 31536,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 13.570187707999139,
+      "cpu_percent": 0.9606514366474121,
+      "rss_kib": 31536,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 14.610429499996826,
+      "cpu_percent": 1.9226299264127709,
+      "rss_kib": 31536,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 15.651439791006851,
+      "cpu_percent": 0.9606052972154248,
+      "rss_kib": 31536,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 16.690881125003216,
+      "cpu_percent": 1.9241105145497286,
+      "rss_kib": 31536,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 17.730057749999105,
+      "cpu_percent": 0.9623003211835686,
+      "rss_kib": 31552,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 18.772300750002614,
+      "cpu_percent": 1.9189382898165475,
+      "rss_kib": 31552,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 19.814278040998033,
+      "cpu_percent": 0.9597138139591156,
+      "rss_kib": 31552,
+      "disk_bytes": 14491648,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 20.854449999998906,
+      "cpu_percent": 1.9227590041180145,
+      "rss_kib": 31552,
+      "disk_bytes": 14491648,
+      "children": 0
+    }
+  ],
+  "child_processes_observed": 0,
+  "children_alive_after_exit": 0,
+  "network_bytes": null,
+  "network_measurement": "Not instrumented; no remote operations issued. SDK cost requires a separate real WebKit run.",
+  "status": "passed",
+  "executor_sha256": "ee8de6c792bbd124ef7d181736d95a68ffe24c06786fe7fb10d89bed4d6dd9ae",
+  "binary_sha256": "a936f4ba1f3a4a5ba359e2e07de24eda8274bd323c8d63833c9c1f733648e874",
+  "source_sha256": "0be30f791ba0c8895579d14f3fc30c40483ab61118576091e5fed2eb41a154ac",
+  "schema": 1,
+  "measured_at": "2026-10-29T01:24:54.776866+00:00",
+  "hardware": {
+    "architecture": "arm64",
+    "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+    "model": "Mac17,3"
+  },
+  "network": "No external requests. User reports workplace network restrictions; remote metrics remain unmeasured.",
+  "git_commit": "7a11dfee761da4bf1943bb7220dc2ac764aaf2ac",
+  "dirty_tree": true
+}

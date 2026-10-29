@@ -1,0 +1,282 @@
+{
+  "diagnostics": {
+    "preferences_available": false,
+    "providers": []
+  },
+  "library_tracks": 5000,
+  "limitations": [
+    "core only; excludes SwiftUI and WebKit",
+    "no claim about remote latency, bandwidth or SDK buffering",
+    "first access is not a flushed OS disk cache"
+  ],
+  "metrics": [
+    {
+      "elapsed_ms": 480.357667,
+      "metric": "core_startup",
+      "samples": 1
+    },
+    {
+      "elapsed_ms": 0.115958,
+      "metric": "local_list_first",
+      "samples": 1
+    },
+    {
+      "budget_ms": 200.0,
+      "metric": "local_list_warm",
+      "p95_ms": 0.063833,
+      "passed": true,
+      "samples": 50
+    },
+    {
+      "elapsed_ms": 0.172708,
+      "metric": "local_detail_first",
+      "samples": 1
+    },
+    {
+      "budget_ms": 300.0,
+      "metric": "local_detail_warm",
+      "p95_ms": 0.025875,
+      "passed": true,
+      "samples": 50
+    },
+    {
+      "elapsed_ms": 0.481875,
+      "metric": "local_search_first",
+      "samples": 1
+    },
+    {
+      "budget_ms": 200.0,
+      "metric": "local_search_warm",
+      "p95_ms": 0.32129100000000005,
+      "passed": true,
+      "samples": 50
+    },
+    {
+      "budget_ms": 3000.0,
+      "metric": "native_prepare",
+      "p95_ms": 1.673791,
+      "passed": true,
+      "samples": 20
+    },
+    {
+      "budget_ms": 3000.0,
+      "metric": "native_buffer_observation",
+      "p95_ms": 26.644709,
+      "passed": true,
+      "samples": 20
+    },
+    {
+      "budget_ms": 3000.0,
+      "metric": "native_click_to_advancing_position",
+      "p95_ms": 27.89975,
+      "passed": true,
+      "samples": 20
+    }
+  ],
+  "native_audio": "real renderer; silent PCM WAV 44.1 kHz stereo; volume 0",
+  "phase": "result",
+  "remote_requests_issued": 0,
+  "broken_plugin_preferences": true,
+  "resource_phases": {
+    "idle": {
+      "samples": 9,
+      "cpu_mean_percent": 0.2133014950489684,
+      "rss_max_mib": 30.28125,
+      "disk_growth_bytes": 0,
+      "children_max": 0,
+      "checks": {
+        "cpu_mean_percent": true,
+        "rss_max_mib": true,
+        "disk_growth_bytes": true
+      },
+      "budgets": {
+        "cpu_mean_percent": 2,
+        "rss_max_mib": 512,
+        "disk_growth_bytes": 1048576
+      },
+      "status": "passed"
+    },
+    "playback": {
+      "samples": 9,
+      "cpu_mean_percent": 1.392737897139331,
+      "rss_max_mib": 30.515625,
+      "disk_growth_bytes": 0,
+      "children_max": 0,
+      "checks": {
+        "cpu_mean_percent": true,
+        "rss_max_mib": true,
+        "disk_growth_bytes": true
+      },
+      "budgets": {
+        "cpu_mean_percent": 30,
+        "rss_max_mib": 512,
+        "disk_growth_bytes": 1048576
+      },
+      "status": "passed"
+    }
+  },
+  "samples": [
+    {
+      "phase": "idle",
+      "elapsed_seconds": 2.944067125004949,
+      "cpu_percent": 0.0,
+      "rss_kib": 31008,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 3.9856440410076175,
+      "cpu_percent": 0.960082721339265,
+      "rss_kib": 31008,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 5.021614458004478,
+      "cpu_percent": 0.0,
+      "rss_kib": 31008,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 6.061773833003826,
+      "cpu_percent": 0.0,
+      "rss_kib": 31008,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 7.105065833005938,
+      "cpu_percent": 0.0,
+      "rss_kib": 30928,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 8.147478291008156,
+      "cpu_percent": 0.0,
+      "rss_kib": 30944,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 9.189545790999546,
+      "cpu_percent": 0.9596307341014507,
+      "rss_kib": 30944,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 10.22974733299634,
+      "cpu_percent": 0.0,
+      "rss_kib": 30944,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "idle",
+      "elapsed_seconds": 11.272226790999412,
+      "cpu_percent": 0.0,
+      "rss_kib": 30944,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 12.943042333004996,
+      "cpu_percent": 0.9642546389087663,
+      "rss_kib": 31232,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 13.984512833005283,
+      "cpu_percent": 1.920361642503989,
+      "rss_kib": 31232,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 15.02466558299784,
+      "cpu_percent": 0.9613972563233196,
+      "rss_kib": 31232,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 16.063240707997466,
+      "cpu_percent": 1.9257152919012235,
+      "rss_kib": 31232,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 17.10287266600062,
+      "cpu_percent": 0.9618788575148487,
+      "rss_kib": 31232,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 18.14218795800116,
+      "cpu_percent": 1.9243438592636113,
+      "rss_kib": 31248,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 19.18162512499839,
+      "cpu_percent": 0.9620591140576987,
+      "rss_kib": 31248,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 20.223703666008078,
+      "cpu_percent": 0.9596205666331873,
+      "rss_kib": 31248,
+      "disk_bytes": 15634432,
+      "children": 0
+    },
+    {
+      "phase": "playback",
+      "elapsed_seconds": 21.246716416004347,
+      "cpu_percent": 1.9550098471473338,
+      "rss_kib": 31248,
+      "disk_bytes": 15634432,
+      "children": 0
+    }
+  ],
+  "child_processes_observed": 0,
+  "children_alive_after_exit": 0,
+  "network_bytes": null,
+  "network_measurement": "Not instrumented; no remote operations issued. SDK cost requires a separate real WebKit run.",
+  "status": "passed",
+  "executor_sha256": "ee8de6c792bbd124ef7d181736d95a68ffe24c06786fe7fb10d89bed4d6dd9ae",
+  "binary_sha256": "a936f4ba1f3a4a5ba359e2e07de24eda8274bd323c8d63833c9c1f733648e874",
+  "source_sha256": "0be30f791ba0c8895579d14f3fc30c40483ab61118576091e5fed2eb41a154ac",
+  "schema": 1,
+  "measured_at": "2026-10-29T01:25:16.808164+00:00",
+  "hardware": {
+    "architecture": "arm64",
+    "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+    "model": "Mac17,3"
+  },
+  "network": "No external requests. User reports workplace network restrictions; remote metrics remain unmeasured.",
+  "git_commit": "7a11dfee761da4bf1943bb7220dc2ac764aaf2ac",
+  "dirty_tree": true
+}

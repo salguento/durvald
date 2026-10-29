@@ -517,6 +517,12 @@ contextual funcionam na fila mista. Invariantes de histórico já valem no pilot
 
 ### 15. Estabilização e expansão orientada por evidências
 
+**Implementado em 28/10/2026:** isolamento de concorrência, diagnóstico local
+limitado por operação, verificação offline/ciclo do helper e baseline Release
+reproduzível com budgets. [Suporte, recuperação e limites das medições](features/integration-stabilization.md).
+Expansão e promoção de budgets externos continuam condicionadas às provas por
+provedor/rede; métricas de SDK/banda não são inferidas dos testes locais.
+
 **Dependências:** validar cada integração antes de habilitá-la por padrão;
 não esperar todos os serviços para estabilizar o primeiro.
 

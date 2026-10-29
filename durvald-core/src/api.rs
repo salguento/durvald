@@ -733,3 +733,6 @@ pub use download_transfers::*;
 
 mod service_collections;
 pub use service_collections::*;
+
+mod integration_diagnostics;
+pub use integration_diagnostics::*;

@@ -1187,6 +1187,11 @@ public protocol DurvaldCoreProtocol : AnyObject {
     func inspectDownloadFile(jobId: String, fileIndex: UInt32, path: String) async throws  -> DownloadImportPreview
 
     /**
+     * Read-only in-memory counters; never probes the network or opens credentials.
+     */
+    func integrationDiagnostics() async  -> IntegrationDiagnostics
+
+    /**
      * Returns the last session state.
      */
     func lastSession() async throws  -> LastSession
@@ -3030,6 +3035,27 @@ open func inspectDownloadFile(jobId: String, fileIndex: UInt32, path: String)asy
             freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterTypeDownloadImportPreview.lift,
             errorHandler: FfiConverterTypeCoreError.lift
+        )
+}
+
+    /**
+     * Read-only in-memory counters; never probes the network or opens credentials.
+     */
+open func integrationDiagnostics()async  -> IntegrationDiagnostics {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_durvald_core_fn_method_durvaldcore_integration_diagnostics(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_durvald_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_durvald_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_durvald_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeIntegrationDiagnostics.lift,
+            errorHandler: nil
+
         )
 }
 
@@ -11474,6 +11500,257 @@ public func FfiConverterTypeHomeLibrary_lower(_ value: HomeLibrary) -> RustBuffe
 }
 
 
+public struct IntegrationDiagnostic {
+    public var provider: String
+    public var adapterVersion: String
+    public var enabled: Bool
+    public var measurements: [IntegrationMeasurement]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(provider: String, adapterVersion: String, enabled: Bool, measurements: [IntegrationMeasurement]) {
+        self.provider = provider
+        self.adapterVersion = adapterVersion
+        self.enabled = enabled
+        self.measurements = measurements
+    }
+}
+
+
+
+extension IntegrationDiagnostic: Equatable, Hashable {
+    public static func ==(lhs: IntegrationDiagnostic, rhs: IntegrationDiagnostic) -> Bool {
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.adapterVersion != rhs.adapterVersion {
+            return false
+        }
+        if lhs.enabled != rhs.enabled {
+            return false
+        }
+        if lhs.measurements != rhs.measurements {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(provider)
+        hasher.combine(adapterVersion)
+        hasher.combine(enabled)
+        hasher.combine(measurements)
+    }
+}
+
+
+public struct FfiConverterTypeIntegrationDiagnostic: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> IntegrationDiagnostic {
+        return
+            try IntegrationDiagnostic(
+                provider: FfiConverterString.read(from: &buf),
+                adapterVersion: FfiConverterString.read(from: &buf),
+                enabled: FfiConverterBool.read(from: &buf),
+                measurements: FfiConverterSequenceTypeIntegrationMeasurement.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: IntegrationDiagnostic, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.provider, into: &buf)
+        FfiConverterString.write(value.adapterVersion, into: &buf)
+        FfiConverterBool.write(value.enabled, into: &buf)
+        FfiConverterSequenceTypeIntegrationMeasurement.write(value.measurements, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeIntegrationDiagnostic_lift(_ buf: RustBuffer) throws -> IntegrationDiagnostic {
+    return try FfiConverterTypeIntegrationDiagnostic.lift(buf)
+}
+
+public func FfiConverterTypeIntegrationDiagnostic_lower(_ value: IntegrationDiagnostic) -> RustBuffer {
+    return FfiConverterTypeIntegrationDiagnostic.lower(value)
+}
+
+
+public struct IntegrationDiagnostics {
+    public var preferencesAvailable: Bool
+    public var providers: [IntegrationDiagnostic]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(preferencesAvailable: Bool, providers: [IntegrationDiagnostic]) {
+        self.preferencesAvailable = preferencesAvailable
+        self.providers = providers
+    }
+}
+
+
+
+extension IntegrationDiagnostics: Equatable, Hashable {
+    public static func ==(lhs: IntegrationDiagnostics, rhs: IntegrationDiagnostics) -> Bool {
+        if lhs.preferencesAvailable != rhs.preferencesAvailable {
+            return false
+        }
+        if lhs.providers != rhs.providers {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(preferencesAvailable)
+        hasher.combine(providers)
+    }
+}
+
+
+public struct FfiConverterTypeIntegrationDiagnostics: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> IntegrationDiagnostics {
+        return
+            try IntegrationDiagnostics(
+                preferencesAvailable: FfiConverterBool.read(from: &buf),
+                providers: FfiConverterSequenceTypeIntegrationDiagnostic.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: IntegrationDiagnostics, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.preferencesAvailable, into: &buf)
+        FfiConverterSequenceTypeIntegrationDiagnostic.write(value.providers, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeIntegrationDiagnostics_lift(_ buf: RustBuffer) throws -> IntegrationDiagnostics {
+    return try FfiConverterTypeIntegrationDiagnostics.lift(buf)
+}
+
+public func FfiConverterTypeIntegrationDiagnostics_lower(_ value: IntegrationDiagnostics) -> RustBuffer {
+    return FfiConverterTypeIntegrationDiagnostics.lower(value)
+}
+
+
+public struct IntegrationMeasurement {
+    public var operation: IntegrationOperation
+    public var active: UInt64
+    public var completed: UInt64
+    public var succeeded: UInt64
+    public var cancelled: UInt64
+    public var failed: UInt64
+    public var sampleCount: UInt32
+    public var p95ElapsedMs: UInt64
+    public var p95QueueMs: UInt64
+    public var lastOutcome: IntegrationOutcome?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(operation: IntegrationOperation, active: UInt64, completed: UInt64, succeeded: UInt64, cancelled: UInt64, failed: UInt64, sampleCount: UInt32, p95ElapsedMs: UInt64, p95QueueMs: UInt64, lastOutcome: IntegrationOutcome?) {
+        self.operation = operation
+        self.active = active
+        self.completed = completed
+        self.succeeded = succeeded
+        self.cancelled = cancelled
+        self.failed = failed
+        self.sampleCount = sampleCount
+        self.p95ElapsedMs = p95ElapsedMs
+        self.p95QueueMs = p95QueueMs
+        self.lastOutcome = lastOutcome
+    }
+}
+
+
+
+extension IntegrationMeasurement: Equatable, Hashable {
+    public static func ==(lhs: IntegrationMeasurement, rhs: IntegrationMeasurement) -> Bool {
+        if lhs.operation != rhs.operation {
+            return false
+        }
+        if lhs.active != rhs.active {
+            return false
+        }
+        if lhs.completed != rhs.completed {
+            return false
+        }
+        if lhs.succeeded != rhs.succeeded {
+            return false
+        }
+        if lhs.cancelled != rhs.cancelled {
+            return false
+        }
+        if lhs.failed != rhs.failed {
+            return false
+        }
+        if lhs.sampleCount != rhs.sampleCount {
+            return false
+        }
+        if lhs.p95ElapsedMs != rhs.p95ElapsedMs {
+            return false
+        }
+        if lhs.p95QueueMs != rhs.p95QueueMs {
+            return false
+        }
+        if lhs.lastOutcome != rhs.lastOutcome {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(operation)
+        hasher.combine(active)
+        hasher.combine(completed)
+        hasher.combine(succeeded)
+        hasher.combine(cancelled)
+        hasher.combine(failed)
+        hasher.combine(sampleCount)
+        hasher.combine(p95ElapsedMs)
+        hasher.combine(p95QueueMs)
+        hasher.combine(lastOutcome)
+    }
+}
+
+
+public struct FfiConverterTypeIntegrationMeasurement: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> IntegrationMeasurement {
+        return
+            try IntegrationMeasurement(
+                operation: FfiConverterTypeIntegrationOperation.read(from: &buf),
+                active: FfiConverterUInt64.read(from: &buf),
+                completed: FfiConverterUInt64.read(from: &buf),
+                succeeded: FfiConverterUInt64.read(from: &buf),
+                cancelled: FfiConverterUInt64.read(from: &buf),
+                failed: FfiConverterUInt64.read(from: &buf),
+                sampleCount: FfiConverterUInt32.read(from: &buf),
+                p95ElapsedMs: FfiConverterUInt64.read(from: &buf),
+                p95QueueMs: FfiConverterUInt64.read(from: &buf),
+                lastOutcome: FfiConverterOptionTypeIntegrationOutcome.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: IntegrationMeasurement, into buf: inout [UInt8]) {
+        FfiConverterTypeIntegrationOperation.write(value.operation, into: &buf)
+        FfiConverterUInt64.write(value.active, into: &buf)
+        FfiConverterUInt64.write(value.completed, into: &buf)
+        FfiConverterUInt64.write(value.succeeded, into: &buf)
+        FfiConverterUInt64.write(value.cancelled, into: &buf)
+        FfiConverterUInt64.write(value.failed, into: &buf)
+        FfiConverterUInt32.write(value.sampleCount, into: &buf)
+        FfiConverterUInt64.write(value.p95ElapsedMs, into: &buf)
+        FfiConverterUInt64.write(value.p95QueueMs, into: &buf)
+        FfiConverterOptionTypeIntegrationOutcome.write(value.lastOutcome, into: &buf)
+    }
+}
+
+
+public func FfiConverterTypeIntegrationMeasurement_lift(_ buf: RustBuffer) throws -> IntegrationMeasurement {
+    return try FfiConverterTypeIntegrationMeasurement.lift(buf)
+}
+
+public func FfiConverterTypeIntegrationMeasurement_lower(_ value: IntegrationMeasurement) -> RustBuffer {
+    return FfiConverterTypeIntegrationMeasurement.lower(value)
+}
+
+
 /**
  * Key-value pair for metadata fields (UniFFI-friendly alternative to HashMap).
  */
@@ -17880,6 +18157,200 @@ extension ExternalArtworkScope: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum IntegrationOperation {
+
+    case catalogSearch
+    case metadata
+    case sourceSearch
+    case playbackResolution
+    case downloadSearch
+    case downloadTransfer
+    case collectionRead
+    case other
+}
+
+
+public struct FfiConverterTypeIntegrationOperation: FfiConverterRustBuffer {
+    typealias SwiftType = IntegrationOperation
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> IntegrationOperation {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .catalogSearch
+
+        case 2: return .metadata
+
+        case 3: return .sourceSearch
+
+        case 4: return .playbackResolution
+
+        case 5: return .downloadSearch
+
+        case 6: return .downloadTransfer
+
+        case 7: return .collectionRead
+
+        case 8: return .other
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: IntegrationOperation, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .catalogSearch:
+            writeInt(&buf, Int32(1))
+
+
+        case .metadata:
+            writeInt(&buf, Int32(2))
+
+
+        case .sourceSearch:
+            writeInt(&buf, Int32(3))
+
+
+        case .playbackResolution:
+            writeInt(&buf, Int32(4))
+
+
+        case .downloadSearch:
+            writeInt(&buf, Int32(5))
+
+
+        case .downloadTransfer:
+            writeInt(&buf, Int32(6))
+
+
+        case .collectionRead:
+            writeInt(&buf, Int32(7))
+
+
+        case .other:
+            writeInt(&buf, Int32(8))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeIntegrationOperation_lift(_ buf: RustBuffer) throws -> IntegrationOperation {
+    return try FfiConverterTypeIntegrationOperation.lift(buf)
+}
+
+public func FfiConverterTypeIntegrationOperation_lower(_ value: IntegrationOperation) -> RustBuffer {
+    return FfiConverterTypeIntegrationOperation.lower(value)
+}
+
+
+
+extension IntegrationOperation: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum IntegrationOutcome {
+
+    case succeeded
+    case cancelled
+    case timedOut
+    case rateLimited
+    case authentication
+    case disabled
+    case busy
+    case unavailable
+}
+
+
+public struct FfiConverterTypeIntegrationOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = IntegrationOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> IntegrationOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .succeeded
+
+        case 2: return .cancelled
+
+        case 3: return .timedOut
+
+        case 4: return .rateLimited
+
+        case 5: return .authentication
+
+        case 6: return .disabled
+
+        case 7: return .busy
+
+        case 8: return .unavailable
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: IntegrationOutcome, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .succeeded:
+            writeInt(&buf, Int32(1))
+
+
+        case .cancelled:
+            writeInt(&buf, Int32(2))
+
+
+        case .timedOut:
+            writeInt(&buf, Int32(3))
+
+
+        case .rateLimited:
+            writeInt(&buf, Int32(4))
+
+
+        case .authentication:
+            writeInt(&buf, Int32(5))
+
+
+        case .disabled:
+            writeInt(&buf, Int32(6))
+
+
+        case .busy:
+            writeInt(&buf, Int32(7))
+
+
+        case .unavailable:
+            writeInt(&buf, Int32(8))
+
+        }
+    }
+}
+
+
+public func FfiConverterTypeIntegrationOutcome_lift(_ buf: RustBuffer) throws -> IntegrationOutcome {
+    return try FfiConverterTypeIntegrationOutcome.lift(buf)
+}
+
+public func FfiConverterTypeIntegrationOutcome_lower(_ value: IntegrationOutcome) -> RustBuffer {
+    return FfiConverterTypeIntegrationOutcome.lower(value)
+}
+
+
+
+extension IntegrationOutcome: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
  * Rating granularity is persisted in the core, independently of display settings.
  */
@@ -19461,6 +19932,27 @@ fileprivate struct FfiConverterOptionTypeEnrichmentProvider: FfiConverterRustBuf
     }
 }
 
+fileprivate struct FfiConverterOptionTypeIntegrationOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = IntegrationOutcome?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeIntegrationOutcome.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeIntegrationOutcome.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
 fileprivate struct FfiConverterOptionTypeRatingRounding: FfiConverterRustBuffer {
     typealias SwiftType = RatingRounding?
 
@@ -20113,6 +20605,50 @@ fileprivate struct FfiConverterSequenceTypeFollowedArtist: FfiConverterRustBuffe
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeFollowedArtist.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeIntegrationDiagnostic: FfiConverterRustBuffer {
+    typealias SwiftType = [IntegrationDiagnostic]
+
+    public static func write(_ value: [IntegrationDiagnostic], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeIntegrationDiagnostic.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [IntegrationDiagnostic] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [IntegrationDiagnostic]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeIntegrationDiagnostic.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+fileprivate struct FfiConverterSequenceTypeIntegrationMeasurement: FfiConverterRustBuffer {
+    typealias SwiftType = [IntegrationMeasurement]
+
+    public static func write(_ value: [IntegrationMeasurement], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeIntegrationMeasurement.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [IntegrationMeasurement] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [IntegrationMeasurement]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeIntegrationMeasurement.read(from: &buf))
         }
         return seq
     }
@@ -20905,6 +21441,9 @@ private var initializationResult: InitializationResult {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_inspect_download_file() != 57306) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_durvald_core_checksum_method_durvaldcore_integration_diagnostics() != 55922) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_durvald_core_checksum_method_durvaldcore_last_session() != 31866) {

@@ -37,8 +37,6 @@ pub struct DurvaldCore {
     download_search: Arc<crate::application::download_search::DownloadSearchApplication>,
     sources: Arc<crate::application::sources::SourcesApplication>,
     catalog_search: Arc<crate::application::catalog_search::CatalogSearchApplication>,
-    // Owned from startup; native catalog commands will consume it in stage 3.
-    #[allow(dead_code)]
     music_plugins: Arc<crate::application::music_plugins::PluginRuntime>,
     enrichment_application: EnrichmentApplication,
     history_application: HistoryApplication,
@@ -182,6 +180,11 @@ impl DurvaldCore {
 
 #[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 impl DurvaldCore {
+    /// Read-only in-memory counters; never probes the network or opens credentials.
+    pub async fn integration_diagnostics(&self) -> IntegrationDiagnostics {
+        self.music_plugins.diagnostics().await
+    }
+
     /// Scans the library at the given paths.
     pub async fn scan_library(&self, paths: Vec<String>) -> CoreResult<ScanResult> {
         self.library_application.scan_library(paths).await
@@ -238,7 +241,16 @@ impl DurvaldCore {
             .configure(provider, enabled, credential)
             .await
     }
-    pub async fn service_collection_import(&self,job_id:String)->CoreResult<ServiceCollectionJob>{self.service_collections.repository.get(job_id).await.map(|j|j.job)}
+    pub async fn service_collection_import(
+        &self,
+        job_id: String,
+    ) -> CoreResult<ServiceCollectionJob> {
+        self.service_collections
+            .repository
+            .get(job_id)
+            .await
+            .map(|j| j.job)
+    }
     pub async fn service_collection_imports(&self) -> CoreResult<Vec<ServiceCollectionJob>> {
         self.service_collections.list().await
     }

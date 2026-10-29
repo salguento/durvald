@@ -96,17 +96,32 @@ def configure(state=STATE, new_account=False, server_address=None, server_port=N
     return values
 
 
+def verified_installation(state=STATE):
+    """Validate the pinned installation without downloads or executing the helper."""
+    manifest = json.loads((state/"installation.json").read_text())
+    if (manifest.get("version"), manifest.get("asset"), manifest.get("asset_sha256")) != (VERSION, ASSET, SHA256):
+        raise ValueError("Incompatible pinned installation")
+    relative = PurePosixPath(manifest.get("binary", ""))
+    if relative.is_absolute() or ".." in relative.parts or not relative.parts or relative.parts[0] != "release":
+        raise ValueError("Invalid installed executable path")
+    binary = state/str(relative)
+    release = (state/"release").resolve()
+    if (state/"release").is_symlink() or not binary.is_file() or not binary.resolve().is_relative_to(release) or binary.is_symlink():
+        raise ValueError("Installed executable missing or outside release")
+    if hashlib.sha256(binary.read_bytes()).hexdigest() != manifest.get("binary_sha256"):
+        raise ValueError("Installed executable checksum mismatch")
+    if not os.access(binary, os.X_OK):
+        raise ValueError("Installed executable is not executable")
+    return binary
+
+
 def install(state=STATE):
     if platform.system() != "Darwin" or platform.machine() != "arm64":
         raise ValueError("This pinned installer targets macOS ARM64")
     initialize(state)
     manifest_path = state/"installation.json"
     if manifest_path.exists():
-        manifest = json.loads(manifest_path.read_text())
-        binary = state/manifest["binary"]
-        if binary.is_file() and manifest.get("asset_sha256") == SHA256 and hashlib.sha256(binary.read_bytes()).hexdigest() == manifest.get("binary_sha256"):
-            return binary
-        raise ValueError("Existing installation does not match its manifest")
+        return verified_installation(state)
     release = json.load(urllib.request.urlopen(f"https://api.github.com/repos/slskd/slskd/releases/tags/{VERSION}", timeout=20))
     asset = next(item for item in release["assets"] if item["name"] == ASSET)
     if asset.get("digest") != "sha256:" + SHA256:
@@ -196,18 +211,27 @@ def start(state=STATE):
         process = subprocess.Popen([str(binary), "--app-dir", str(state/"data"), "--config", str(state/"slskd.yml")],
                                    cwd=binary.parent, env=environment, stdin=subprocess.DEVNULL, stdout=stream, stderr=stream,
                                    start_new_session=True, umask=0o077)
-    private_json(state/"process.json", {"pid": process.pid, "binary": str(binary), "started_at": dt.datetime.now(dt.timezone.utc).isoformat()})
-    for _ in range(40):
-        if process.poll() is not None:
-            raise ValueError("Backend exited; inspect the private backend log locally")
-        value = status(state)
-        if value["api_authenticated"] and (not values.get("soulseek_username") or value.get("soulseek_logged_in")):
+    try:
+        private_json(state/"process.json", {"pid": process.pid, "binary": str(binary), "started_at": dt.datetime.now(dt.timezone.utc).isoformat()})
+        for _ in range(40):
+            if process.poll() is not None:
+                raise ValueError("Backend exited; inspect the private backend log locally")
+            value = status(state)
+            if value["api_authenticated"] and (not values.get("soulseek_username") or value.get("soulseek_logged_in")):
+                return value
+            time.sleep(.5)
+        if value.get("api_authenticated"):
+            value["connection_pending"] = True
             return value
-        time.sleep(.5)
-    if value.get("api_authenticated"):
-        value["connection_pending"] = True
-        return value
-    raise ValueError("Backend started but API did not become ready")
+        raise ValueError("Backend API did not become ready")
+    except BaseException:
+        # This exact Popen belongs to this invocation. Failed startup must not
+        # leave an untracked daemon; an already-running daemon is never killed.
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=10)
+        (state/"process.json").unlink(missing_ok=True)
+        raise
 
 
 def stop(state=STATE):
@@ -225,7 +249,7 @@ def stop(state=STATE):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["install", "configure", "start", "stop", "status", "probe"])
+    parser.add_argument("command", choices=["install", "verify", "configure", "start", "stop", "status", "probe"])
     parser.add_argument("--new-test-account", action="store_true", help="Creates local credentials; account is established on first network login")
     parser.add_argument("--server-address")
     parser.add_argument("--server-port",type=int)
@@ -235,6 +259,8 @@ def main():
     try:
         if args.command == "install":
             install(); print("Official slskd package installed and checksum verified")
+        elif args.command == "verify":
+            verified_installation(); print("Pinned slskd executable verified offline; nothing started")
         elif args.command == "configure":
             configure(new_account=args.new_test_account,server_address=args.server_address,server_port=args.server_port); print("Private local configuration ready; credentials not printed")
         elif args.command == "start":

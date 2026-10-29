@@ -9,6 +9,7 @@ use crate::{
 use std::{future::Future, pin::Pin};
 
 pub(crate) mod context;
+mod diagnostics;
 mod runtime;
 pub(crate) use context::{PluginContext, PluginSecret, RequestTicket};
 pub(crate) use runtime::{PluginRuntime, RuntimeLimits};

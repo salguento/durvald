@@ -138,3 +138,13 @@ do processo antes de encerrá-lo. Não foi registrado serviço de inicializaçã
 Nesta entrega, a API e o login foram comprovados, mas houve timeouts e buscas
 sem respostas. A investigação foi cancelada pelo usuário, e o backend está
 parado. A configuração permanece disponível para retomar em outra rede.
+
+## Estabilização — etapa 15
+
+`measure_integrations.py` mede o core Release com biblioteca sintética e áudio
+nativo silencioso; não consulta provedores. Compile o exemplo `integration_baseline`
+antes de executar. `--report` exige caminho novo. Budgets, interpretação e
+limitações: [estabilização](../../docs/features/integration-stabilization.md).
+`slskd_backend.py verify` verifica a instalação fixada sem rede nem execução.
+Instalações incompatíveis/modificadas não são substituídas automaticamente;
+falha de prontidão encerra apenas o processo iniciado pela própria chamada.

@@ -73,6 +73,12 @@ async fn broken_plugin_preferences_do_not_block_local_library_or_reopening()
         ])
         .await?;
     assert_eq!(core.all_tracks_via_pages().await?.len(), 1);
+    let diagnostic = core.core().integration_diagnostics().await;
+    assert!(!diagnostic.preferences_available);
+    let track = core.all_tracks_via_pages().await?.remove(0);
+    let playback = core.core().play(track.id).await?;
+    assert_eq!(playback.current_track.unwrap().id, track.id);
+    core.core().stop().await?;
     let core = core.restart().await?;
     assert_eq!(core.all_tracks_via_pages().await?.len(), 1);
     assert!(

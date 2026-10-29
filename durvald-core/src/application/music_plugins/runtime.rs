@@ -50,6 +50,7 @@ struct Entry {
     generation: u64,
     cancel: Cancellation,
     slots: Arc<Semaphore>,
+    diagnostics: Arc<super::diagnostics::Diagnostics>,
 }
 impl Entry {
     fn status(&self) -> PluginStatus {
@@ -125,6 +126,28 @@ impl PluginRuntime {
             admitted: Arc::new(Semaphore::new(limits.admitted)),
             limits,
         })))
+    }
+
+    pub(crate) async fn diagnostics(&self) -> crate::api::IntegrationDiagnostics {
+        let registry = self.registry.lock().await;
+        let mut providers: Vec<_> = registry
+            .entries
+            .values()
+            .map(|entry| {
+                let v = entry.manifest.version;
+                crate::api::IntegrationDiagnostic {
+                    provider: entry.manifest.id.as_str().to_owned(),
+                    adapter_version: format!("{}.{}.{}", v.major, v.minor, v.patch),
+                    enabled: entry.enabled,
+                    measurements: entry.diagnostics.snapshot(),
+                }
+            })
+            .collect();
+        providers.sort_by(|a, b| a.provider.cmp(&b.provider));
+        crate::api::IntegrationDiagnostics {
+            preferences_available: registry.storage_error.is_none(),
+            providers,
+        }
     }
 
     pub(crate) async fn has_credential(
@@ -313,6 +336,7 @@ impl PluginRuntime {
             generation: registry.next_generation,
             cancel: Cancellation::default(),
             slots: Arc::new(Semaphore::new(self.limits.per_plugin)),
+            diagnostics: Arc::default(),
         });
         let status = entry.status();
         registry.entries.insert(entry.manifest.id.clone(), entry);
@@ -358,6 +382,7 @@ impl PluginRuntime {
             generation: registry.next_generation,
             cancel: Cancellation::default(),
             slots: old.slots.clone(),
+            diagnostics: old.diagnostics.clone(),
         });
         let status = entry.status();
         registry.entries.insert(entry.manifest.id.clone(), entry);
@@ -718,6 +743,37 @@ impl PluginRuntime {
         Fut: Future<Output = Result<T, IntegrationError>> + Send + 'static,
     {
         let entry = self.entry(id).await?;
+        let mut observation = entry.diagnostics.begin(capability);
+        let result = self
+            .execute_entry(
+                id,
+                entry,
+                capability,
+                ticket,
+                check_cooldown,
+                operation,
+                &mut observation,
+            )
+            .await;
+        observation.finish(&result);
+        result
+    }
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_entry<T, F, Fut>(
+        &self,
+        id: &ProviderId,
+        entry: Arc<Entry>,
+        capability: PluginCapability,
+        ticket: RequestTicket,
+        check_cooldown: bool,
+        operation: F,
+        observation: &mut super::diagnostics::Observation,
+    ) -> Result<T, PluginError>
+    where
+        T: Send + 'static,
+        F: FnOnce(Arc<dyn MusicPlugin>, PluginContext) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T, IntegrationError>> + Send + 'static,
+    {
         if !entry.enabled {
             return Err(PluginError::Disabled);
         }
@@ -732,18 +788,21 @@ impl PluginRuntime {
         let request = ticket.0.clone();
         let lifecycle = entry.cancel.clone();
         let work = async {
-            let global = self
-                .slots
-                .clone()
-                .acquire_owned()
-                .await
-                .map_err(|_| PluginError::Busy)?;
+            // A saturated provider must not occupy global slots while waiting
+            // for its own permit, starving independent providers and Play.
             let local = entry
                 .slots
                 .clone()
                 .acquire_owned()
                 .await
                 .map_err(|_| PluginError::Busy)?;
+            let global = self
+                .slots
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| PluginError::Busy)?;
+            observation.dispatched();
             let credentials = self.load_credentials(&entry.manifest).await?;
             let context = PluginContext {
                 configuration: entry.configuration.clone(),

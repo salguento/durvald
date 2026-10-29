@@ -1052,3 +1052,91 @@ async fn detail_and_source_ports_dispatch_without_starting_playback_or_adopting_
         Err(PluginError::Adapter(IntegrationError::NotFound))
     ));
 }
+
+#[tokio::test]
+async fn saturated_provider_does_not_reserve_global_slots_for_its_waiters() {
+    let h = harness(RuntimeLimits {
+        concurrent: 2,
+        per_plugin: 1,
+        admitted: 8,
+        ..RuntimeLimits::default()
+    })
+    .await;
+    let slow = Fake::new("slow", Behavior::Block);
+    let fast = Fake::new("playback-provider", Behavior::Immediate);
+    enabled(&h.runtime, slow.clone()).await;
+    enabled(&h.runtime, fast.clone()).await;
+    let first = start(h.runtime.clone(), slow.clone());
+    slow.started(1).await;
+    let queued = start(h.runtime.clone(), slow.clone());
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        search(&h.runtime, &fast.manifest.id),
+    )
+    .await
+    .expect("unrelated provider must keep its slot")
+    .unwrap();
+    h.runtime
+        .set_enabled(&slow.manifest.id, false)
+        .await
+        .unwrap();
+    assert_eq!(first.await.unwrap().unwrap_err(), PluginError::Cancelled);
+    assert_eq!(queued.await.unwrap().unwrap_err(), PluginError::Cancelled);
+}
+
+#[tokio::test(start_paused = true)]
+async fn diagnostics_account_for_timeout_caller_drop_recovery_and_bound_samples() {
+    use crate::api::{IntegrationOperation, IntegrationOutcome};
+    let h = harness(RuntimeLimits {
+        timeout: Duration::from_secs(5),
+        ..RuntimeLimits::default()
+    })
+    .await;
+    let slow = Fake::new("slow", Behavior::Block);
+    let fast = Fake::new("fast", Behavior::Immediate);
+    enabled(&h.runtime, slow.clone()).await;
+    enabled(&h.runtime, fast.clone()).await;
+    let pending = start(h.runtime.clone(), slow.clone());
+    slow.started(1).await;
+    let snapshot = h.runtime.diagnostics().await;
+    assert_eq!(snapshot.providers[1].measurements[0].active, 1);
+    tokio::time::advance(Duration::from_secs(5)).await;
+    assert_eq!(pending.await.unwrap().unwrap_err(), PluginError::Timeout);
+    let snapshot = h.runtime.diagnostics().await;
+    let m = &snapshot.providers[1].measurements[0];
+    assert_eq!(m.last_outcome, Some(IntegrationOutcome::TimedOut));
+    assert_eq!(m.p95_elapsed_ms, 5000);
+    assert_eq!(m.active, 0);
+    let pending = start(h.runtime.clone(), slow.clone());
+    slow.started(1).await;
+    pending.abort();
+    let _ = pending.await;
+    let snapshot = h.runtime.diagnostics().await;
+    assert_eq!(snapshot.providers[1].measurements[0].cancelled, 1);
+    slow.release.add_permits(1);
+    search(&h.runtime, &slow.manifest.id).await.unwrap();
+    let snapshot = h.runtime.diagnostics().await;
+    assert_eq!(
+        snapshot.providers[1].measurements[0].last_outcome,
+        Some(IntegrationOutcome::Succeeded)
+    );
+    for _ in 0..100 {
+        search(&h.runtime, &fast.manifest.id).await.unwrap();
+    }
+    let snapshot = h.runtime.diagnostics().await;
+    let m = &snapshot.providers[0].measurements[0];
+    assert_eq!(m.completed, 100);
+    assert_eq!(m.succeeded, 100);
+    assert_eq!(m.sample_count, 64);
+    assert_eq!(m.operation, IntegrationOperation::CatalogSearch);
+    assert_eq!(m.active, 0);
+    // Public serialization contains no request, item title, config values or credentials.
+    let json = serde_json::to_string(&snapshot).unwrap();
+    assert!(!json.contains("artist"));
+    assert!(!json.contains("default"));
+    h.runtime.remove(&fast.manifest.id).await.unwrap();
+    assert_eq!(h.runtime.diagnostics().await.providers.len(), 1);
+}

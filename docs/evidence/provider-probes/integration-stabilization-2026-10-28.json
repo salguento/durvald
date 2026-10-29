@@ -1,0 +1,56 @@
+{
+  "stage": 15,
+  "recorded_at": "2026-10-29T01:27:56.569291+00:00",
+  "git_base": "7a11dfee761da4bf1943bb7220dc2ac764aaf2ac",
+  "dirty_tree": true,
+  "status": "implemented_with_external_measurements_pending",
+  "validation": {
+    "rust": {
+      "passed": 540,
+      "ignored_external": 4
+    },
+    "macos": {
+      "passed": 437,
+      "skipped_external": 5
+    },
+    "python_probes": {
+      "passed": 30
+    },
+    "clippy": "passed with -D warnings; all targets/features",
+    "uniffi": "passed; generated Swift copies and embedded/tested library hashes match",
+    "focused_lifecycle": "9 passed including local playback with incompatible plugin preferences",
+    "focused_final_macos": "2 diagnostic tests passed after final view change",
+    "installed_helper": "pinned slskd executable verified offline; no process started"
+  },
+  "log_sha256": {
+    "rust": "7a31f7a1b10f48ffcda6caa96752712d19ed095ba263dd183374359ed3bb9e62",
+    "macos": "24b0a08270a29cc04805e7029e9ccc151f7c3f2654458c2391ff112c92daba91",
+    "diagnostics_macos": "55a6e2dc265449f6a45e717b328c0405144bfb849bb4c01a40c3022002eef82a",
+    "lifecycle": "980c6077d74bc25d7c723c1bb8929f9231e9d49e38e2a942ff48b72e3499b31b",
+    "probes": "b24c647525dd435b1c19c5996e1b03390a1fcee79e06a864cfbb789832cd5532",
+    "clippy": "61b46dbd1f58d5fed74cb2199b19651f742ca4023a4eea449cfdd65a492b2f96",
+    "ffi": "c7d75a327e1595c6063ae33af7cf62418f81efa96207fc45ce7ba9db1f16e155"
+  },
+  "source_sha256": {
+    "durvald-core/src/application/music_plugins/runtime.rs": "2e4b73dc27c89b5514f7084407611bea5debdff1b70e05945d134cfd34885aaf",
+    "durvald-core/src/application/music_plugins/diagnostics.rs": "a30da68289db4a54e5f35c7ea16759c7f5bb11ca9d8e15f4f67aa43a34171e26",
+    "durvald-core/src/api/integration_diagnostics.rs": "f20eb68a0c363c3a845b4b07bbe6258e55172c8169b4f727d8793996ebd95d48",
+    "durvald-core/examples/integration_baseline.rs": "0be30f791ba0c8895579d14f3fc30c40483ab61118576091e5fed2eb41a154ac",
+    "durvald-macos/Durvald/Durvald/Features/Services/IntegrationDiagnosticsView.swift": "0e73f67acb769b094d64a96b270c88de7b229c8c9e6ea689b30105f5da82a121",
+    "tools/provider-probes/slskd_backend.py": "3b43875260041f7536d2da8947ce838caa46beb2794b3976ea2c42fae4f5a332",
+    "tools/provider-probes/measure_integrations.py": "ee8de6c792bbd124ef7d181736d95a68ffe24c06786fe7fb10d89bed4d6dd9ae"
+  },
+  "library_sha256": "bc4ce36c0fb31c774aa3f6272cd1b43c0301e16266146bb036cdba910d0107f3",
+  "measurements": [
+    "integration-baseline-2026-10-28.json",
+    "integration-baseline-broken-plugins-2026-10-28.json"
+  ],
+  "not_measured": [
+    "remote page p95 on reference network",
+    "WebKit CPU/RSS/network usage",
+    "SDK buffering",
+    "long-duration stability",
+    "new helper version update or notarized distribution"
+  ],
+  "expansion": "No new provider or default enablement; expand only after observed coverage gaps and capability proofs"
+}

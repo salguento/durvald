@@ -11,10 +11,13 @@ struct ServiceImportSettingsView: View {
     @State private var youtube = false
     @State private var busy = false
     @State private var error: String?
+    @State private var diagnostics = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text("Serviços e coleções").font(.title2)
+                Button("Diagnóstico dos serviços…") { diagnostics = true }
+                    .accessibilityIdentifier("integrations.diagnostics.open")
                 Text("Cada integração é opcional. Importar salva metadados e links, após revisão; não baixa áudio nem acessa arquivos comprados.").font(.caption).foregroundStyle(.secondary)
                 ForEach(settings, id: \.provider) { setting in
                     VStack(alignment: .leading, spacing: 10) {
@@ -33,7 +36,8 @@ struct ServiceImportSettingsView: View {
                 Text("O player usa o IFrame oficial com vídeo e controles visíveis. Não oferece áudio isolado, download, equalização nem reprodução sem intervalo. A verificação dos metadados de vídeo deve ter menos de 24 horas.").font(.caption).foregroundStyle(.secondary)
                 if let error { Text(error).foregroundStyle(.red) }
             }.padding()
-        }.disabled(busy || store.core == nil)
+        }.sheet(isPresented: $diagnostics) { IntegrationDiagnosticsView() }
+        .disabled(busy || store.core == nil)
         .task(id: store.core.map(ObjectIdentifier.init)) {
             guard let core = store.core else { return }
             do { settings = try await core.serviceImportSettings(); youtube = await core.youtubePlaybackEnabled() }
