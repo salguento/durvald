@@ -17,17 +17,33 @@ protocol CatalogDetailLoading: AnyObject {
 final class NativeCatalogDetails: CatalogDetailLoading {
     private let core: DurvaldCore
     private let session: CatalogSearchSession
-    init(core: DurvaldCore) { self.core = core; session = core.catalogSearchSession() }
+    private let onLibraryChange: @MainActor () async -> Void
+    init(core: DurvaldCore, onLibraryChange: @escaping @MainActor () async -> Void) {
+        self.core = core
+        self.onLibraryChange = onLibraryChange
+        session = core.catalogSearchSession()
+    }
     func page(_ request: CatalogDetailRequest) async throws -> CatalogDetailPage { try await session.detailSection(request: request) }
     func selection(_ reference: CatalogReference) async throws -> CatalogSelection? { try await core.catalogSelection(reference: reference) }
-    func save(_ entry: CatalogEntry) async throws -> CatalogSelection { try await core.saveCatalogSelection(entry: entry) }
+    func save(_ entry: CatalogEntry) async throws -> CatalogSelection {
+        let saved = try await core.saveCatalogSelection(entry: entry)
+        await onLibraryChange()
+        return saved
+    }
     func followed(_ artistID: Int64) async throws -> Bool { try await core.followedArtists().contains { $0.artist.id == artistID } }
-    func follow(_ entry: CatalogEntry, followed: Bool) async throws -> CatalogSelection { try await core.followCatalogArtist(entry: entry, followed: followed) }
+    func follow(_ entry: CatalogEntry, followed: Bool) async throws -> CatalogSelection {
+        let saved = try await core.followCatalogArtist(entry: entry, followed: followed)
+        await onLibraryChange()
+        return saved
+    }
     func hasListenIntent(_ entry: CatalogEntry) async throws -> Bool {
         guard entry.reference.provider == "musicbrainz", entry.reference.kind == .releaseGroup else { return false }
         return try await core.listenList().contains { $0.externalRelease?.musicbrainzId == entry.reference.id }
     }
-    func listen(_ entry: CatalogEntry, artist: CatalogEntry) async throws { _ = try await core.addCatalogToListenList(entry: entry, artist: artist) }
+    func listen(_ entry: CatalogEntry, artist: CatalogEntry) async throws {
+        _ = try await core.addCatalogToListenList(entry: entry, artist: artist)
+        await onLibraryChange()
+    }
     func close() async { await session.close() }
 }
 
@@ -185,6 +201,9 @@ extension DurvaldCoreStore {
         if let fixture = catalogDetailFixture { return fixture() }
         #endif
         guard let core else { return nil }
-        return NativeCatalogDetails(core: core)
+        return NativeCatalogDetails(core: core, onLibraryChange: { [weak self] in
+            guard let self, self.core === core else { return }
+            await self.refreshLibraryCatalog()
+        })
     }
 }
