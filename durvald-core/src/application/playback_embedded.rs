@@ -559,10 +559,15 @@ impl PlaybackApplication {
                     }
                 }
                 EmbeddedEventKind::Playing => {
+                    // A repeated PLAY is not evidence that the clock advanced.
+                    // Only entering Playing (including resume) grants a fresh
+                    // startup grace; subsequent progress must be observed.
+                    if s.snapshot.state != EmbeddedPlaybackState::Playing {
+                        s.last_progress = now;
+                    }
                     s.snapshot.state = EmbeddedPlaybackState::Playing;
                     s.started = true;
                     s.remaining.clear();
-                    s.last_progress = now;
                 }
                 EmbeddedEventKind::Paused => {
                     s.snapshot.state = EmbeddedPlaybackState::Paused;
@@ -636,7 +641,7 @@ impl PlaybackApplication {
         });
         if expired {
             self.fail_embedded_locked(
-                "O player não respondeu ou a reprodução parou de avançar. Tente novamente.",
+                "O player não respondeu ou parou de avançar. O término não foi confirmado e a fila foi preservada. Tente novamente ou escolha a próxima faixa.",
             )
             .await;
             let _ = self.fallback_before_audio_locked().await;

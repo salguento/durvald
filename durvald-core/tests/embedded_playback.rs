@@ -473,3 +473,83 @@ async fn cancelled_open_cannot_deliver_a_late_load_after_native_replacement() ->
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn repeated_play_notifications_do_not_extend_a_stalled_transport_deadline() -> Result {
+    let app = TestCore::open().await?;
+    let source = remote(&app).await?;
+    let next = local(&app).await?;
+    let host = Host::default();
+    app.core()
+        .set_embedded_playback_host(Box::new(host.clone()))
+        .await?;
+    app.core()
+        .play_collection(
+            vec![source.track_id, next.id, next.id],
+            vec!["remote".into(), "next".into(), "duplicate".into()],
+            Some(0),
+            Some(false),
+        )
+        .await?;
+    let initial = app.core().playback().await;
+    let generation = app.core().embedded_playback().await.unwrap().generation;
+    event(
+        &app,
+        &generation,
+        1,
+        EmbeddedEventKind::Ready,
+        0.,
+        Some(180.),
+    )
+    .await?;
+    event(&app, &generation, 2, EmbeddedEventKind::Playing, 0., None).await?;
+    event(&app, &generation, 3, EmbeddedEventKind::Seeked, 179., None).await?;
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(29)).await;
+    event(&app, &generation, 4, EmbeddedEventKind::Playing, 179., None).await?;
+    tokio::time::advance(Duration::from_secs(2)).await;
+    tokio::time::resume();
+    for _ in 0..40 {
+        if app.core().embedded_playback().await.unwrap().state == EmbeddedPlaybackState::Failed {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        app.core().embedded_playback().await.unwrap().state,
+        EmbeddedPlaybackState::Failed
+    );
+    assert!(
+        host.commands
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|c| c.kind == EmbeddedCommandKind::Stop)
+    );
+    let failed = app.core().playback().await;
+    assert!(!failed.is_playing);
+    assert_eq!(failed.queue, initial.queue);
+    assert!(
+        app.core()
+            .playback_history_page(20, 0)
+            .await?
+            .items
+            .is_empty()
+    );
+    // Even a late real FINISH cannot complete an attempt already failed/stopped.
+    event(&app, &generation, 5, EmbeddedEventKind::Ended, 180., None).await?;
+    assert_eq!(app.core().playback().await.queue, initial.queue);
+    assert!(
+        app.core()
+            .playback_history_page(20, 0)
+            .await?
+            .items
+            .is_empty()
+    );
+    app.core().resume().await?;
+    let retry = app.core().embedded_playback().await.unwrap();
+    assert_ne!(retry.generation, generation);
+    assert_eq!(retry.state, EmbeddedPlaybackState::Loading);
+    app.core().detach_embedded_playback_host().await?;
+    Ok(())
+}

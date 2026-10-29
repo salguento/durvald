@@ -1,5 +1,7 @@
 # Etapa 9B — Coordenação de player integrado
 
+> Estabilização em 29/10/2026: [término, fila, histórico e recuperação](soundcloud-completion-recovery.md). Provas reais aprovadas de término natural e seek, correção do deadline com PLAY repetido e ações explícitas de recuperação. A limitação histórica abaixo é preservada; os testes reais agora verificam a sessão gráfica.
+
 > Evolução na etapa 14: histórico por origem/tentativa, sessão remota recuperável
 > e navegação unificada da fila mista foram consolidados. Veja
 > [Histórico e sessão consolidados](consolidated-playback.md).

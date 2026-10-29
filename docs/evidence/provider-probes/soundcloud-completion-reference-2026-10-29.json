@@ -1,0 +1,1654 @@
+{
+  "status": "limited",
+  "summary": {
+    "soundcloud": {
+      "runs": 1,
+      "measured_runs": 0,
+      "timing_ranges": {
+        "page_to_ready_ms": {
+          "samples": 0,
+          "min": null,
+          "max": null
+        },
+        "play_to_progress_ms": {
+          "samples": 0,
+          "min": null,
+          "max": null
+        },
+        "resume_to_progress_ms": {
+          "samples": 0,
+          "min": null,
+          "max": null
+        },
+        "seek_to_observed_ms": {
+          "samples": 0,
+          "min": null,
+          "max": null
+        }
+      },
+      "received_bytes": [
+        3655691
+      ],
+      "sent_bytes": [
+        75419
+      ],
+      "status": "limited"
+    },
+    "youtube": {
+      "runs": 0,
+      "measured_runs": 0,
+      "timing_ranges": {
+        "page_to_ready_ms": {
+          "samples": 0,
+          "min": null,
+          "max": null
+        },
+        "play_to_progress_ms": {
+          "samples": 0,
+          "min": null,
+          "max": null
+        },
+        "resume_to_progress_ms": {
+          "samples": 0,
+          "min": null,
+          "max": null
+        },
+        "seek_to_observed_ms": {
+          "samples": 0,
+          "min": null,
+          "max": null
+        }
+      },
+      "received_bytes": [],
+      "sent_bytes": [],
+      "status": "limited"
+    }
+  },
+  "schema": 1,
+  "captured_at": "2026-10-29T03:35:30.389370+00:00",
+  "runs": [
+    {
+      "provider": "soundcloud",
+      "public_item_id": "293",
+      "run": 1,
+      "status": "limited",
+      "observation": {
+        "captured_at": "2026-10-29T03:35:24Z",
+        "checks": {
+          "pause": false,
+          "play": true,
+          "progress": true,
+          "ready": true,
+          "resume": false,
+          "seek": false
+        },
+        "engine": "WKWebView",
+        "events": [
+          {
+            "event": "process_ready",
+            "native_elapsed_ms": 55.528625001898035,
+            "phase": "unloaded_idle"
+          },
+          {
+            "event": "load_requested",
+            "native_elapsed_ms": 5056.553541668109,
+            "phase": "loading"
+          },
+          {
+            "event": "ready",
+            "native_elapsed_ms": 6105.344541676459,
+            "phase": "loading",
+            "time": 831
+          },
+          {
+            "event": "play_requested",
+            "native_elapsed_ms": 6105.538958334364,
+            "phase": "loading",
+            "time": 831
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 6116.107791676768,
+            "phase": "loading",
+            "time": 842
+          },
+          {
+            "event": "playing",
+            "native_elapsed_ms": 7441.32079166593,
+            "phase": "loading",
+            "time": 2167
+          },
+          {
+            "duration": 213.89,
+            "event": "first_progress",
+            "native_elapsed_ms": 7444.982708329917,
+            "phase": "playback",
+            "position": 0.19293279200000002,
+            "time": 2171
+          }
+        ],
+        "os": "Version 27.2 (Build 26B123)",
+        "reason": "native_deadline",
+        "status": "limited"
+      },
+      "timing": {
+        "page_to_ready_ms": 831,
+        "play_to_progress_ms": 1340,
+        "ready_to_play_ms": 11,
+        "resume_to_progress_ms": null,
+        "seek_to_observed_ms": null
+      },
+      "phases": {
+        "unloaded_idle": {
+          "samples": 10,
+          "sampled_seconds": 5.296116041005007,
+          "cpu_mean_percent": 3.209899456201119,
+          "rss_max_mib": 94.703125
+        },
+        "loading": {
+          "samples": 4,
+          "sampled_seconds": 2.1209359589993255,
+          "cpu_mean_percent": 38.66217631516241,
+          "rss_max_mib": 269.6875
+        },
+        "playback": {
+          "samples": 147,
+          "sampled_seconds": 77.92382029099099,
+          "cpu_mean_percent": 0.949645432213946,
+          "rss_max_mib": 314.65625
+        }
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 0.521640082995873,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5199259579967475,
+          "cpu_delta_seconds": 0.12,
+          "rss_kib": 78496,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.0562000829959288,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5345600000000559,
+          "cpu_delta_seconds": 0.049999999999999996,
+          "rss_kib": 96960,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 1.5877048330003163,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5315047500043875,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96976,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.11862774999463,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5309229169943137,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96976,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 2.6491721250058617,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5305443750112318,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96976,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.180381166006555,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5312090410006931,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96976,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 3.705689666006947,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5253085000003921,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96976,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.236186291003833,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5304966249968857,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96976,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 4.766895666005439,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5307093750016065,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96976,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 5.2978301660041325,
+          "phase": "unloaded_idle",
+          "interval_seconds": 0.5309344999986934,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 96976,
+          "host_count": 1,
+          "webkit_count": 1
+        },
+        {
+          "elapsed_seconds": 5.828379083002801,
+          "phase": "loading",
+          "interval_seconds": 0.5305489169986686,
+          "cpu_delta_seconds": 0.27999999999999997,
+          "rss_kib": 171296,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.355770875001326,
+          "phase": "loading",
+          "interval_seconds": 0.5273917919985252,
+          "cpu_delta_seconds": 0.23,
+          "rss_kib": 249152,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 6.88631366599293,
+          "phase": "loading",
+          "interval_seconds": 0.5305427909916034,
+          "cpu_delta_seconds": 0.12000000000000002,
+          "rss_kib": 264448,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.418766125003458,
+          "phase": "loading",
+          "interval_seconds": 0.5324524590105284,
+          "cpu_delta_seconds": 0.18999999999999995,
+          "rss_kib": 276160,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 7.9488437910040375,
+          "phase": "playback",
+          "interval_seconds": 0.5300776660005795,
+          "cpu_delta_seconds": 0.23000000000000007,
+          "rss_kib": 297712,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 8.481625625005108,
+          "phase": "playback",
+          "interval_seconds": 0.5327818340010708,
+          "cpu_delta_seconds": 0.09999999999999992,
+          "rss_kib": 310608,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 9.01334200000565,
+          "phase": "playback",
+          "interval_seconds": 0.531716375000542,
+          "cpu_delta_seconds": 0.050000000000000044,
+          "rss_kib": 314480,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 9.543628165993141,
+          "phase": "playback",
+          "interval_seconds": 0.5302861659874907,
+          "cpu_delta_seconds": 0.16000000000000003,
+          "rss_kib": 322192,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.06940237499657,
+          "phase": "playback",
+          "interval_seconds": 0.5257742090034299,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 322208,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 10.60012812500645,
+          "phase": "playback",
+          "interval_seconds": 0.5307257500098785,
+          "cpu_delta_seconds": 0.01999999999999999,
+          "rss_kib": 322208,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.130932333006058,
+          "phase": "playback",
+          "interval_seconds": 0.5308042079996085,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 317424,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 11.66176820799592,
+          "phase": "playback",
+          "interval_seconds": 0.5308358749898616,
+          "cpu_delta_seconds": 0.020000000000000018,
+          "rss_kib": 317216,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.192423582993797,
+          "phase": "playback",
+          "interval_seconds": 0.5306553749978775,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 317216,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 12.72299620800186,
+          "phase": "playback",
+          "interval_seconds": 0.5305726250080625,
+          "cpu_delta_seconds": 0.019999999999999907,
+          "rss_kib": 317168,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.25412199999846,
+          "phase": "playback",
+          "interval_seconds": 0.531125791996601,
+          "cpu_delta_seconds": 0.020000000000000018,
+          "rss_kib": 316976,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 13.785423708002781,
+          "phase": "playback",
+          "interval_seconds": 0.531301708004321,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 317056,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.316268499998841,
+          "phase": "playback",
+          "interval_seconds": 0.5308447919960599,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316784,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 14.846953290994861,
+          "phase": "playback",
+          "interval_seconds": 0.5306847909960197,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316656,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.369025207997765,
+          "phase": "playback",
+          "interval_seconds": 0.5220719170029042,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 316656,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 15.90031862500473,
+          "phase": "playback",
+          "interval_seconds": 0.5312934170069639,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316736,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.431687125004828,
+          "phase": "playback",
+          "interval_seconds": 0.5313685000000987,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316736,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 16.963317000001553,
+          "phase": "playback",
+          "interval_seconds": 0.5316298749967245,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316672,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 17.494844208005816,
+          "phase": "playback",
+          "interval_seconds": 0.5315272080042632,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316672,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.02585133300454,
+          "phase": "playback",
+          "interval_seconds": 0.5310071249987232,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316672,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 18.556606875004945,
+          "phase": "playback",
+          "interval_seconds": 0.5307555420004064,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316672,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.087194040999748,
+          "phase": "playback",
+          "interval_seconds": 0.5305871659948025,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316672,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 19.617297165998025,
+          "phase": "playback",
+          "interval_seconds": 0.530103124998277,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316672,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.148779625000316,
+          "phase": "playback",
+          "interval_seconds": 0.5314824590022909,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316672,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 20.67975995800225,
+          "phase": "playback",
+          "interval_seconds": 0.5309803330019349,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 316656,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.21022854099283,
+          "phase": "playback",
+          "interval_seconds": 0.5304685829905793,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316656,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 21.739902333007194,
+          "phase": "playback",
+          "interval_seconds": 0.5296737920143642,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316560,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.269296124999528,
+          "phase": "playback",
+          "interval_seconds": 0.5293937919923337,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316560,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 22.800949458003743,
+          "phase": "playback",
+          "interval_seconds": 0.5316533330042148,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316560,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.331655582995154,
+          "phase": "playback",
+          "interval_seconds": 0.5307061249914113,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 316560,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 23.862299375003204,
+          "phase": "playback",
+          "interval_seconds": 0.5306437920080498,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314160,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.392880083003547,
+          "phase": "playback",
+          "interval_seconds": 0.5305807080003433,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314160,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 24.923153249997995,
+          "phase": "playback",
+          "interval_seconds": 0.5302731669944478,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314160,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.453447416002746,
+          "phase": "playback",
+          "interval_seconds": 0.5302941660047509,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314128,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 25.983883666005568,
+          "phase": "playback",
+          "interval_seconds": 0.5304362500028219,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314128,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 26.51506687499932,
+          "phase": "playback",
+          "interval_seconds": 0.5311832089937525,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314128,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.045150582998758,
+          "phase": "playback",
+          "interval_seconds": 0.530083707999438,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314128,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 27.574584916001186,
+          "phase": "playback",
+          "interval_seconds": 0.5294343330024276,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.10459845799778,
+          "phase": "playback",
+          "interval_seconds": 0.5300135419965954,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 28.635515832997044,
+          "phase": "playback",
+          "interval_seconds": 0.5309173749992624,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.16583083299338,
+          "phase": "playback",
+          "interval_seconds": 0.5303149999963352,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 29.6978658750013,
+          "phase": "playback",
+          "interval_seconds": 0.5320350420079194,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.22858525000629,
+          "phase": "playback",
+          "interval_seconds": 0.5307193750049919,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 30.752345290995436,
+          "phase": "playback",
+          "interval_seconds": 0.5237600409891456,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.281521208002232,
+          "phase": "playback",
+          "interval_seconds": 0.5291759170067962,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 31.81231175000721,
+          "phase": "playback",
+          "interval_seconds": 0.5307905420049792,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.34279254100693,
+          "phase": "playback",
+          "interval_seconds": 0.530480790999718,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 32.87211125000613,
+          "phase": "playback",
+          "interval_seconds": 0.5293187089991989,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.402766041006544,
+          "phase": "playback",
+          "interval_seconds": 0.5306547910004156,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 33.93284662500082,
+          "phase": "playback",
+          "interval_seconds": 0.5300805839942768,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.46347162500024,
+          "phase": "playback",
+          "interval_seconds": 0.5306249999994179,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 34.988981040994986,
+          "phase": "playback",
+          "interval_seconds": 0.5255094159947475,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 35.51524537500518,
+          "phase": "playback",
+          "interval_seconds": 0.5262643340101931,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.04587629099842,
+          "phase": "playback",
+          "interval_seconds": 0.5306309159932425,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314112,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 36.5762684999936,
+          "phase": "playback",
+          "interval_seconds": 0.5303922089951811,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.10677187499823,
+          "phase": "playback",
+          "interval_seconds": 0.5305033750046277,
+          "cpu_delta_seconds": 0.009999999999999953,
+          "rss_kib": 314064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 37.6374342909985,
+          "phase": "playback",
+          "interval_seconds": 0.5306624160002684,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314064,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.167690208007116,
+          "phase": "playback",
+          "interval_seconds": 0.530255917008617,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 38.698586540995166,
+          "phase": "playback",
+          "interval_seconds": 0.5308963329880498,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.22989533300279,
+          "phase": "playback",
+          "interval_seconds": 0.5313087920076214,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 39.76039295800729,
+          "phase": "playback",
+          "interval_seconds": 0.5304976250045002,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 40.29108391600312,
+          "phase": "playback",
+          "interval_seconds": 0.5306909579958301,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 40.821901083007106,
+          "phase": "playback",
+          "interval_seconds": 0.5308171670039883,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 41.35268366600212,
+          "phase": "playback",
+          "interval_seconds": 0.5307825829950161,
+          "cpu_delta_seconds": 0.009999999999999953,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 41.87897541599523,
+          "phase": "playback",
+          "interval_seconds": 0.5262917499931064,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 42.40922945800412,
+          "phase": "playback",
+          "interval_seconds": 0.5302540420088917,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 314080,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 42.939655708003556,
+          "phase": "playback",
+          "interval_seconds": 0.5304262499994365,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 313952,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 43.47016620800423,
+          "phase": "playback",
+          "interval_seconds": 0.5305105000006733,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312896,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 44.00125391599431,
+          "phase": "playback",
+          "interval_seconds": 0.531087707990082,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 312896,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 44.531159125006525,
+          "phase": "playback",
+          "interval_seconds": 0.5299052090122132,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312896,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 45.06160595800611,
+          "phase": "playback",
+          "interval_seconds": 0.5304468329995871,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312896,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 45.5887117079983,
+          "phase": "playback",
+          "interval_seconds": 0.5271057499921881,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 46.11906820800505,
+          "phase": "playback",
+          "interval_seconds": 0.5303565000067465,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 46.64949204100412,
+          "phase": "playback",
+          "interval_seconds": 0.5304238329990767,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 47.18009275000077,
+          "phase": "playback",
+          "interval_seconds": 0.5306007089966442,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 47.710773083003005,
+          "phase": "playback",
+          "interval_seconds": 0.5306803330022376,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 48.24151008299668,
+          "phase": "playback",
+          "interval_seconds": 0.5307369999936782,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 48.77007512499404,
+          "phase": "playback",
+          "interval_seconds": 0.5285650419973535,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 49.29902479100565,
+          "phase": "playback",
+          "interval_seconds": 0.5289496660116129,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 49.830079708000994,
+          "phase": "playback",
+          "interval_seconds": 0.5310549169953447,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312832,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 50.360799250003765,
+          "phase": "playback",
+          "interval_seconds": 0.530719542002771,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 50.89142837500549,
+          "phase": "playback",
+          "interval_seconds": 0.5306291250017239,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 51.41769579099491,
+          "phase": "playback",
+          "interval_seconds": 0.5262674159894232,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 51.948357707995456,
+          "phase": "playback",
+          "interval_seconds": 0.5306619170005433,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 52.477938041003654,
+          "phase": "playback",
+          "interval_seconds": 0.5295803330081981,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 53.00880529099959,
+          "phase": "playback",
+          "interval_seconds": 0.5308672499959357,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 53.53918187500676,
+          "phase": "playback",
+          "interval_seconds": 0.5303765840071719,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 54.07002400000056,
+          "phase": "playback",
+          "interval_seconds": 0.5308421249937965,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 54.59519791600178,
+          "phase": "playback",
+          "interval_seconds": 0.5251739160012221,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 55.12600116600515,
+          "phase": "playback",
+          "interval_seconds": 0.5308032500033733,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 55.655206291005015,
+          "phase": "playback",
+          "interval_seconds": 0.5292051249998622,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 56.18603908299701,
+          "phase": "playback",
+          "interval_seconds": 0.5308327919919975,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 56.71613025000261,
+          "phase": "playback",
+          "interval_seconds": 0.5300911670055939,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 57.24639683299756,
+          "phase": "playback",
+          "interval_seconds": 0.5302665829949547,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 57.776617291005095,
+          "phase": "playback",
+          "interval_seconds": 0.530220458007534,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 58.30712791600672,
+          "phase": "playback",
+          "interval_seconds": 0.5305106250016252,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 58.8374995829945,
+          "phase": "playback",
+          "interval_seconds": 0.5303716669877758,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 59.36779391599703,
+          "phase": "playback",
+          "interval_seconds": 0.53029433300253,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 59.89859095799329,
+          "phase": "playback",
+          "interval_seconds": 0.5307970419962658,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 60.428477666006074,
+          "phase": "playback",
+          "interval_seconds": 0.529886708012782,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 60.959252083004685,
+          "phase": "playback",
+          "interval_seconds": 0.5307744169986108,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 61.48907470800623,
+          "phase": "playback",
+          "interval_seconds": 0.5298226250015432,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 62.01983658300014,
+          "phase": "playback",
+          "interval_seconds": 0.5307618749939138,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 62.55015783300041,
+          "phase": "playback",
+          "interval_seconds": 0.5303212500002701,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 63.08126099999936,
+          "phase": "playback",
+          "interval_seconds": 0.5311031669989461,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 63.61133620800683,
+          "phase": "playback",
+          "interval_seconds": 0.5300752080074744,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 64.14178195799468,
+          "phase": "playback",
+          "interval_seconds": 0.5304457499878481,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 64.66262545800419,
+          "phase": "playback",
+          "interval_seconds": 0.5208435000095051,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 65.19416954100598,
+          "phase": "playback",
+          "interval_seconds": 0.5315440830017906,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 65.72442808300548,
+          "phase": "playback",
+          "interval_seconds": 0.5302585419995012,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 66.25513791599951,
+          "phase": "playback",
+          "interval_seconds": 0.5307098329940345,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 66.78553191600076,
+          "phase": "playback",
+          "interval_seconds": 0.5303940000012517,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 67.31573112499609,
+          "phase": "playback",
+          "interval_seconds": 0.5301992089953274,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 67.84661545799463,
+          "phase": "playback",
+          "interval_seconds": 0.5308843329985393,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 68.37677441599953,
+          "phase": "playback",
+          "interval_seconds": 0.530158958004904,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 68.90645754100115,
+          "phase": "playback",
+          "interval_seconds": 0.5296831250016112,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 69.43649862500024,
+          "phase": "playback",
+          "interval_seconds": 0.5300410839990946,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 69.96363499999279,
+          "phase": "playback",
+          "interval_seconds": 0.5271363749925513,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 70.4940034159954,
+          "phase": "playback",
+          "interval_seconds": 0.5303684160026023,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 71.02499491600611,
+          "phase": "playback",
+          "interval_seconds": 0.5309915000107139,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 71.55489520799892,
+          "phase": "playback",
+          "interval_seconds": 0.5299002919928171,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 72.08532316600031,
+          "phase": "playback",
+          "interval_seconds": 0.5304279580013826,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 72.61579583300045,
+          "phase": "playback",
+          "interval_seconds": 0.5304726670001401,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 73.14599433299736,
+          "phase": "playback",
+          "interval_seconds": 0.5301984999969136,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 73.67635612499726,
+          "phase": "playback",
+          "interval_seconds": 0.5303617919998942,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 74.20693283299624,
+          "phase": "playback",
+          "interval_seconds": 0.5305767079989891,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 74.73780345800333,
+          "phase": "playback",
+          "interval_seconds": 0.5308706250070827,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 75.2686767080013,
+          "phase": "playback",
+          "interval_seconds": 0.5308732499979669,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 75.7987453329988,
+          "phase": "playback",
+          "interval_seconds": 0.5300686249975115,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 76.33042670799477,
+          "phase": "playback",
+          "interval_seconds": 0.5316813749959692,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 76.86102883299463,
+          "phase": "playback",
+          "interval_seconds": 0.5306021249998594,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 77.39125483299722,
+          "phase": "playback",
+          "interval_seconds": 0.5302260000025854,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 77.92171845800476,
+          "phase": "playback",
+          "interval_seconds": 0.5304636250075419,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 78.45232962499722,
+          "phase": "playback",
+          "interval_seconds": 0.5306111669924576,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 78.98264154100616,
+          "phase": "playback",
+          "interval_seconds": 0.5303119160089409,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 79.51373691599292,
+          "phase": "playback",
+          "interval_seconds": 0.5310953749867622,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 80.0448250000045,
+          "phase": "playback",
+          "interval_seconds": 0.5310880840115715,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312752,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 80.57384429099329,
+          "phase": "playback",
+          "interval_seconds": 0.5290192909887992,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 81.10452870800509,
+          "phase": "playback",
+          "interval_seconds": 0.5306844170117984,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 81.63510825000412,
+          "phase": "playback",
+          "interval_seconds": 0.5305795419990318,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 82.16436708299443,
+          "phase": "playback",
+          "interval_seconds": 0.5292588329903083,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 82.69374770800641,
+          "phase": "playback",
+          "interval_seconds": 0.5293806250119815,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 83.22372483300569,
+          "phase": "playback",
+          "interval_seconds": 0.5299771249992773,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 83.75244354100141,
+          "phase": "playback",
+          "interval_seconds": 0.5287187079957221,
+          "cpu_delta_seconds": 0.010000000000000009,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 84.28218866599491,
+          "phase": "playback",
+          "interval_seconds": 0.5297451249934966,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 84.81230608299666,
+          "phase": "playback",
+          "interval_seconds": 0.5301174170017475,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        },
+        {
+          "elapsed_seconds": 85.34258641599445,
+          "phase": "playback",
+          "interval_seconds": 0.5302803329977905,
+          "cpu_delta_seconds": 0,
+          "rss_kib": 312800,
+          "host_count": 1,
+          "webkit_count": 3
+        }
+      ],
+      "network": {
+        "status": "measured",
+        "received_bytes": 3655691,
+        "sent_bytes": 75419,
+        "processes_with_counters": 1,
+        "process_roles": [
+          "webkit"
+        ],
+        "scope": "nettop external TCP+UDP process counters; includes SDK, video/audio, metadata, advertising and control overhead; not media payload size",
+        "interval": "whole process lifetime including load, 20s advancing playback, 10s pause, resume and seek; prefetched bytes are not 20s bitrate"
+      },
+      "process_attribution": {
+        "verified": true,
+        "method": "LaunchServices app responsibility_get_pid_responsible_for_pid; new WebKit processes only",
+        "host_processes": 1,
+        "webkit_processes": 3,
+        "alive_five_seconds_after_exit": 0
+      },
+      "stall_windows_observed": 0
+    }
+  ],
+  "network_label": "current network; SSID, addresses and credentials not collected",
+  "hardware": {
+    "os": "macOS-27.2-arm64-arm-64bit-Mach-O",
+    "architecture": "arm64",
+    "model": "Mac17,3"
+  },
+  "source_sha256": {
+    "measure_external_players.py": "35da11757b45e36eb86440a3910503931e6ddfed62c6264271a890c7faf6c853",
+    "MetricsWebKitProbe.swift": "de13de7b6fb46ec6c39ed7a62e0934e97cecc5a490fefd4a1c7dec811c1ae152",
+    "metrics-player.js": "c52cbe561a7d924e4c9f518ac9e1e9acc8baab41b38d33d8042e3decd3e99ff6",
+    "metrics-player.html": "b501aa66552550f6ce3cb8f461f3b9ed1e4922465c665929e533b02339b57396"
+  },
+  "limitations": [
+    "Standalone optimized WKWebView app; excludes Durvald UI/core and code-signing/notarization",
+    "Nonpersistent WebKit storage per run; OS/DNS/CDN caches not flushed",
+    "Only the two public sample items and measured intervals; no provider-wide SLO or p95 from three runs",
+    "Position polling 250ms; stalls mean no observed clock advance >1s, not decoded acoustic silence",
+    "Resource phases use 500ms snapshots; phase boundaries have sampling error and include diagnostic polling overhead",
+    "Process RSS sums may double-count shared pages; CPU percent is relative to one core",
+    "nettop counters observed every second; short-lived/unattributed processes may be missed; byte counts are observational, not packet capture"
+  ]
+}

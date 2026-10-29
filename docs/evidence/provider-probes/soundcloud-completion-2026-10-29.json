@@ -1,0 +1,693 @@
+{
+  "schema": 1,
+  "stage": "assessment-priority-2",
+  "captured_at": "2026-10-29T03:47:12.891716+00:00",
+  "git_base": "0201f1cac453b57988688c1089c7059e84d0ed91",
+  "dirty_tree": true,
+  "status": "passed_scoped_completion_and_recovery_cases",
+  "validation": {
+    "rust_passed": 541,
+    "rust_ignored_external": 4,
+    "macos_passed": 440,
+    "macos_skipped_external": 7,
+    "clippy": "passed all targets/features with warnings denied",
+    "uniffi_smoke": "passed",
+    "tested_library_hashes_match": true,
+    "final_completion_suite": {
+      "passed": 4,
+      "skipped": 1,
+      "failed": 0,
+      "skip_reason": "Graphical session locked again before the seek case; earlier same-production-code seek proof retained"
+    }
+  },
+  "regressions": {
+    "stall_before": "failed as expected: remained Playing after deadline when PLAY repeated",
+    "stall_after": "passed",
+    "adapter_before": "failed as expected: extra PLAY and two FINISH deliveries",
+    "adapter_after": "passed"
+  },
+  "baseline_before_patch": {
+    "natural-end": {
+      "case": "natural-end",
+      "completion_without_seek": true,
+      "elapsed_seconds": 217.10997998714447,
+      "events": [
+        {
+          "duration": 213.89,
+          "elapsed": 1.6990079879760742,
+          "kind": "ready",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 1.7138210535049438,
+          "kind": "playing",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.3454580307006836,
+          "kind": "progress",
+          "position": 0.258448584
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.3457120656967163,
+          "kind": "playing",
+          "position": 0.258448584
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.848430037498474,
+          "kind": "progress",
+          "position": 0.7684710409999999
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 217.001403093338,
+          "kind": "paused",
+          "position": 213.88642999999993
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 217.00201499462128,
+          "kind": "ended",
+          "position": 213.88642999999993
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 217.00204002857208,
+          "kind": "seeked",
+          "position": 0
+        }
+      ],
+      "finish_observed": true,
+      "history_count": 1,
+      "live": true,
+      "queue_advanced": true,
+      "recoverable_failure": false,
+      "terminal_observed": true
+    },
+    "fixture-completion": {
+      "case": "fixture-completion",
+      "completion_without_seek": true,
+      "elapsed_seconds": 2.4097079038619995,
+      "events": [
+        {
+          "duration": 2,
+          "elapsed": 0.2450929880142212,
+          "kind": "ready",
+          "position": 0
+        },
+        {
+          "duration": 2,
+          "elapsed": 0.2454829216003418,
+          "kind": "playing",
+          "position": 0
+        },
+        {
+          "duration": 2,
+          "elapsed": 0.8971819877624512,
+          "kind": "progress",
+          "position": 0.6
+        },
+        {
+          "duration": 2,
+          "elapsed": 2.3467170000076294,
+          "kind": "ended",
+          "position": 2
+        },
+        {
+          "duration": 2,
+          "elapsed": 2.3473739624023438,
+          "kind": "ended",
+          "position": 2
+        }
+      ],
+      "finish_observed": true,
+      "history_count": 1,
+      "live": false,
+      "queue_advanced": true,
+      "recoverable_failure": false,
+      "terminal_observed": true
+    },
+    "seek-near-end": {
+      "case": "seek-near-end",
+      "completion_without_seek": false,
+      "elapsed_seconds": 7.74862003326416,
+      "events": [
+        {
+          "duration": 213.89,
+          "elapsed": 1.9572160243988037,
+          "kind": "ready",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 1.9727989435195923,
+          "kind": "playing",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.935228943824768,
+          "kind": "progress",
+          "position": 0.251369126
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.93544602394104,
+          "kind": "playing",
+          "position": 0.251369126
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.440528988838196,
+          "kind": "progress",
+          "position": 0.76075425
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.49794602394104,
+          "kind": "seeked",
+          "position": 210
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.4982489347457886,
+          "kind": "paused",
+          "position": 210
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.4982869625091553,
+          "kind": "playing",
+          "position": 210
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.5269060134887695,
+          "kind": "playing",
+          "position": 210
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.95320200920105,
+          "kind": "progress",
+          "position": 210.14205379100002
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 7.707183003425598,
+          "kind": "paused",
+          "position": 213.88642999999993
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 7.707347989082336,
+          "kind": "ended",
+          "position": 213.88642999999993
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 7.707366943359375,
+          "kind": "seeked",
+          "position": 0
+        }
+      ],
+      "finish_observed": true,
+      "history_count": 0,
+      "live": true,
+      "queue_advanced": true,
+      "recoverable_failure": false,
+      "terminal_observed": true
+    }
+  },
+  "first_final_live_attempt": {
+    "natural-end": {
+      "case": "natural-end",
+      "completion_without_seek": true,
+      "effective_duration_seconds": null,
+      "elapsed_seconds": 38.23227596282959,
+      "events": [
+        {
+          "duration": 213.89,
+          "elapsed": 1.3625519275665283,
+          "kind": "ready",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 1.376810908317566,
+          "kind": "playing",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.2501440048217773,
+          "kind": "progress",
+          "position": 0.258495541
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.250808000564575,
+          "kind": "playing",
+          "position": 0.258495541
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.7595049142837524,
+          "kind": "progress",
+          "position": 0.783584
+        }
+      ],
+      "finish_observed": false,
+      "heard_seconds": null,
+      "history_count": 0,
+      "live": true,
+      "queue_advanced": false,
+      "recoverable_failure": true,
+      "terminal_observed": true
+    },
+    "fixture-completion": {
+      "case": "fixture-completion",
+      "completion_without_seek": true,
+      "effective_duration_seconds": 2,
+      "elapsed_seconds": 2.4192569255828857,
+      "events": [
+        {
+          "duration": 2,
+          "elapsed": 0.06405901908874512,
+          "kind": "ready",
+          "position": 0
+        },
+        {
+          "duration": 2,
+          "elapsed": 0.06437695026397705,
+          "kind": "playing",
+          "position": 0
+        },
+        {
+          "duration": 2,
+          "elapsed": 0.714743971824646,
+          "kind": "progress",
+          "position": 0.6
+        },
+        {
+          "duration": 2,
+          "elapsed": 2.3593469858169556,
+          "kind": "ended",
+          "position": 2
+        },
+        {
+          "duration": 2,
+          "elapsed": 2.3599469661712646,
+          "kind": "ended",
+          "position": 2
+        }
+      ],
+      "finish_observed": true,
+      "heard_seconds": 1,
+      "history_count": 1,
+      "live": false,
+      "queue_advanced": true,
+      "recoverable_failure": false,
+      "terminal_observed": true
+    },
+    "seek-near-end": {
+      "case": "seek-near-end",
+      "completion_without_seek": false,
+      "effective_duration_seconds": null,
+      "elapsed_seconds": 7.796944975852966,
+      "events": [
+        {
+          "duration": 213.89,
+          "elapsed": 1.3238660097122192,
+          "kind": "ready",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 1.3358190059661865,
+          "kind": "playing",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.0701340436935425,
+          "kind": "progress",
+          "position": 0.258372291
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.0709680318832397,
+          "kind": "playing",
+          "position": 0.258372291
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.752730965614319,
+          "kind": "progress",
+          "position": 0.948437458
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.9852219820022583,
+          "kind": "seeked",
+          "position": 210
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 3.815948009490967,
+          "kind": "progress",
+          "position": 210.38161158999998
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 7.693006992340088,
+          "kind": "paused",
+          "position": 213.88642999999993
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 7.693027973175049,
+          "kind": "ended",
+          "position": 213.88642999999993
+        }
+      ],
+      "finish_observed": true,
+      "heard_seconds": null,
+      "history_count": 0,
+      "live": true,
+      "queue_advanced": true,
+      "recoverable_failure": false,
+      "terminal_observed": true
+    }
+  },
+  "bounded_natural_retry": {
+    "natural-end": {
+      "case": "natural-end",
+      "completion_without_seek": true,
+      "effective_duration_seconds": null,
+      "elapsed_seconds": 38.15414094924927,
+      "events": [
+        {
+          "duration": 213.89,
+          "elapsed": 1.0040580034255981,
+          "kind": "ready",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 1.015302062034607,
+          "kind": "playing",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 1.818977952003479,
+          "kind": "progress",
+          "position": 0.302549583
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 1.8195890188217163,
+          "kind": "playing",
+          "position": 0.302549583
+        }
+      ],
+      "finish_observed": false,
+      "heard_seconds": null,
+      "history_count": 0,
+      "live": true,
+      "queue_advanced": false,
+      "recoverable_failure": true,
+      "reported_duration_seconds": 213.89,
+      "terminal_observed": true,
+      "terminal_position_seconds": 5.864169103
+    }
+  },
+  "environment": {
+    "screen_locked_observed_after_failures": true,
+    "checked_with": "IORegistry boolean only; no screenshot or session identity retained",
+    "required_next_step": null,
+    "reference": "soundcloud-completion-reference-2026-10-29.json",
+    "inference": "Graphical-session state confounded failed repetitions; final unlocked natural proof passed. No assertion of a single external service cause.",
+    "screen_unlocked_confirmed_before_final_run": true,
+    "operator_confirmed_unlock": true,
+    "final_natural_completion_passed": true
+  },
+  "source_sha256": {
+    "durvald-core/src/application/playback_embedded.rs": "2a4786bdcaaf3f30a074be58ede7b5a40913d786ce7014691a4036f2285f6a0b",
+    "durvald-core/tests/embedded_playback.rs": "bca7907ed28f3a67e22b91b2e80d2931ad6415480a6cdf394802b4f1e01c0f74",
+    "durvald-macos/Durvald/Durvald/Features/Player/EmbeddedPlayerController.swift": "194107202ac3775fd144a9f3c4807d893c4ba9938999fa96d59395cb0dfdbbde",
+    "durvald-macos/Durvald/DurvaldTests/SoundCloudCompletionTests.swift": "364cb83d6ca58e6f02f0be3bde89bbcacfcf0c1a5f30aedd2d66a5f6ac3b37d0"
+  },
+  "library_sha256": "21f1421bbb9c0a10d05bb568a72bdbed3905198fc11c982bb776caa357cd5c0e",
+  "limitations": [
+    "FINISH and history/queue passed for the public sample in the recorded natural and seek cases; not a guarantee for all service items/networks",
+    "Screen-locked runs remained limited; tests now skip known locked-session starts and do not count skips as approval",
+    "Current playback snapshot at completion is the following local WAV; remote duration/listened time is in history fields",
+    "No Ended synthesis from elapsed time, position or pause; no schema or public ABI changes"
+  ],
+  "final_unlocked_run": {
+    "natural-end": {
+      "case": "natural-end",
+      "completion_without_seek": true,
+      "effective_duration_seconds": 214,
+      "elapsed_seconds": 216.53668892383575,
+      "events": [
+        {
+          "duration": 213.89,
+          "elapsed": 1.5754189491271973,
+          "kind": "ready",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 1.5854589939117432,
+          "kind": "playing",
+          "position": 0
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.7991750240325928,
+          "kind": "progress",
+          "position": 0.251318042
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 2.799446940422058,
+          "kind": "playing",
+          "position": 0.251318042
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 12.82967495918274,
+          "kind": "progress",
+          "position": 10.288518005
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 22.897676944732666,
+          "kind": "progress",
+          "position": 20.35619279
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 32.978439927101135,
+          "kind": "progress",
+          "position": 30.436466557
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 42.99752497673035,
+          "kind": "progress",
+          "position": 40.45642849
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 53.49757695198059,
+          "kind": "progress",
+          "position": 50.955973617999994
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 63.62168800830841,
+          "kind": "progress",
+          "position": 61.080578798
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 73.65738093852997,
+          "kind": "progress",
+          "position": 71.116356218
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 83.77947700023651,
+          "kind": "progress",
+          "position": 81.23667796500001
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 93.95742094516754,
+          "kind": "progress",
+          "position": 91.415798581
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 104.00952994823456,
+          "kind": "progress",
+          "position": 101.46848060099998
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 114.15421998500824,
+          "kind": "progress",
+          "position": 111.61195175600001
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 124.28974092006683,
+          "kind": "progress",
+          "position": 121.74880294699999
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 134.34956896305084,
+          "kind": "progress",
+          "position": 131.808076707
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 144.47315502166748,
+          "kind": "progress",
+          "position": 141.930932734
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 154.61716401576996,
+          "kind": "progress",
+          "position": 152.074889632
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 164.69722294807434,
+          "kind": "progress",
+          "position": 162.155178082
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 174.9765030145645,
+          "kind": "progress",
+          "position": 172.43119026
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 185.17368400096893,
+          "kind": "progress",
+          "position": 182.632524654
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 196.16277194023132,
+          "kind": "progress",
+          "position": 193.62018693599998
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 207.16000497341156,
+          "kind": "progress",
+          "position": 204.618531005
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 216.49648094177246,
+          "kind": "paused",
+          "position": 213.88642999999993
+        },
+        {
+          "duration": 213.89,
+          "elapsed": 216.49686300754547,
+          "kind": "ended",
+          "position": 213.88642999999993
+        }
+      ],
+      "finish_observed": true,
+      "heard_seconds": 214,
+      "history_count": 1,
+      "live": true,
+      "queue_advanced": true,
+      "recoverable_failure": false,
+      "reported_duration_seconds": 30,
+      "terminal_observed": true,
+      "terminal_position_seconds": 0
+    },
+    "fixture-completion": {
+      "case": "fixture-completion",
+      "completion_without_seek": true,
+      "effective_duration_seconds": 2,
+      "elapsed_seconds": 2.2899340391159058,
+      "events": [
+        {
+          "duration": 2,
+          "elapsed": 0.06323897838592529,
+          "kind": "ready",
+          "position": 0
+        },
+        {
+          "duration": 2,
+          "elapsed": 0.06353604793548584,
+          "kind": "playing",
+          "position": 0
+        },
+        {
+          "duration": 2,
+          "elapsed": 0.7149540185928345,
+          "kind": "progress",
+          "position": 0.6
+        },
+        {
+          "duration": 2,
+          "elapsed": 2.1640650033950806,
+          "kind": "ended",
+          "position": 2
+        },
+        {
+          "duration": 2,
+          "elapsed": 2.16422700881958,
+          "kind": "ended",
+          "position": 2
+        }
+      ],
+      "finish_observed": true,
+      "heard_seconds": 1,
+      "history_count": 1,
+      "live": false,
+      "queue_advanced": true,
+      "recoverable_failure": false,
+      "reported_duration_seconds": 30,
+      "terminal_observed": true,
+      "terminal_position_seconds": 0.081269841
+    }
+  },
+  "approved_live_cases": {
+    "natural": "final_unlocked_run.natural-end",
+    "seek_near_end": "first_final_live_attempt.seek-near-end"
+  },
+  "log_sha256": {
+    "rust_all": "e5a53a25df757e747811f75cfedac7f0da2270f3323296b05f66ad93e92b27bd",
+    "clippy": "6760a06373548e50b217b83f7837ce109396341d359b9183a8629b2fe990c8eb",
+    "macos_all": "c331fd4f1155ad1d1b0ae03d644556ba34e89a7f7610af35490af2bad0ddbb0d",
+    "uniffi": "c7d75a327e1595c6063ae33af7cf62418f81efa96207fc45ce7ba9db1f16e155",
+    "live_unlocked": "53a0f6890f89045683e715fb4d2cff05a8079fd6aafca491ef4e5040c3d60a69",
+    "stall_before": "8f17d641a712966956175403ec476e7f41d1f0ca1c7187a5665af0cae3686df2",
+    "adapter_before": "c52a4de60ec0db822fd1dd7f604890096848f3a91ac20fea06cd7c57fbd62fbb"
+  },
+  "baseline_source_sha256": {
+    "durvald-core/src/application/playback_embedded.rs": "1dd65f01ab1cdba4363d1a0d44adccf7393e52c8741cbe54cc840ae6b7ff1a44",
+    "durvald-macos/Durvald/Durvald/Features/Player/EmbeddedPlayerController.swift": "c18925cf300eb5e5be1c749a7aeec7c60babb9df8d0ac08a213eea1354e46f9d",
+    "durvald-macos/Durvald/Frameworks/libdurvald_core.dylib": "bc4ce36c0fb31c774aa3f6272cd1b43c0301e16266146bb036cdba910d0107f3"
+  }
+}

@@ -1,5 +1,7 @@
 # Etapa 14 — Histórico, sessão e experiência consolidados
 
+> Prova real posterior em 29/10/2026: [SoundCloud até FINISH, avanço único da fila e histórico idempotente](soundcloud-completion-recovery.md), incluindo seek sem escuta fabricada e recuperação explícita.
+
 Implementada em 28/10/2026 sobre a etapa 13. Arquivos locais e players integrados
 compartilham a identidade da faixa, a ocorrência da fila, o contexto da coleção
 e as regras de navegação. O transporte permanece específico de cada origem.

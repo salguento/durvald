@@ -48,6 +48,14 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
         status = await core.embeddedPlayback()
         sourceStatus = await core.playbackSourceStatus()
     }
+    func retryFailedPlayback(generation expected: String) async throws {
+        guard let core else { return }
+        let current = await core.embeddedPlayback()
+        guard current?.generation == expected, current?.state == .failed else { return }
+        // Retry is an explicit resume, independent of an outdated UI play/pause snapshot.
+        try await core.resume()
+        await refresh()
+    }
     func execute(_ command: EmbeddedPlaybackCommand, completion: @escaping (Bool) -> Void) {
         if command.kind == .stop {
             guard generation == command.generation, let view = webView else { completion(true); return }
@@ -182,13 +190,13 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
         <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;background:transparent}iframe{border:0;width:100%;height:166px}</style></head>
         <body><iframe id="player" allow="autoplay"></iframe><script>
-        'use strict';const url=\(encoded)[0];let widget,ready=false,desiredPlay=true,volume=\(volume),duration=null,position=0,lastProgress=0;
+        'use strict';const url=\(encoded)[0];let widget,ready=false,finished=false,desiredPlay=true,volume=\(volume),duration=null,position=0,lastProgress=0;
         const send=kind=>window.webkit.messageHandlers.durvaldPlayback.postMessage({kind,position,duration});
         window.durvaldCommand=(kind,value)=>{
           if(kind==='volume'){volume=value*100;if(ready)widget.setVolume(volume);}
           if(kind==='pause'){desiredPlay=false;if(ready)widget.pause();}
           if(kind==='play'){desiredPlay=true;if(ready)widget.play();}
-          if(kind==='seek'&&ready){const resume=desiredPlay;widget.seekTo(value*1000);if(resume)widget.play();}
+          if(kind==='seek'&&ready&&!finished)widget.seekTo(value*1000);
         };
         document.getElementById('player').src='https://w.soundcloud.com/player/?url='+encodeURIComponent(url)+'&auto_play=false&single_active=true';
         const script=document.createElement('script');script.src='https://w.soundcloud.com/player/api.js';script.onerror=()=>send('failed');
@@ -196,11 +204,11 @@ final class EmbeddedPlayerController: NSObject, WKScriptMessageHandler, WKNaviga
           widget=SC.Widget(document.getElementById('player'));const E=SC.Widget.Events;
           widget.bind(E.ERROR,()=>send('failed'));
           widget.bind(E.READY,()=>widget.getDuration(d=>{duration=d>0?d/1000:null;ready=true;widget.setVolume(volume);send('ready');if(desiredPlay)widget.play();else widget.isPaused(p=>{if(p)send('paused');});}));
-          widget.bind(E.PLAY,()=>{desiredPlay=true;send('playing');});
-          widget.bind(E.PAUSE,()=>{desiredPlay=false;send('paused');});
-          widget.bind(E.SEEK,e=>{position=e.currentPosition/1000;send('seeked');});
-          widget.bind(E.PLAY_PROGRESS,e=>{position=e.currentPosition/1000;if(performance.now()-lastProgress>=500){lastProgress=performance.now();send('progress');}});
-          widget.bind(E.FINISH,()=>send('ended'));
+          widget.bind(E.PLAY,()=>{if(finished)return;desiredPlay=true;send('playing');});
+          widget.bind(E.PAUSE,()=>{if(finished)return;desiredPlay=false;send('paused');});
+          widget.bind(E.SEEK,e=>{if(finished)return;position=e.currentPosition/1000;send('seeked');});
+          widget.bind(E.PLAY_PROGRESS,e=>{if(finished)return;position=e.currentPosition/1000;if(performance.now()-lastProgress>=500){lastProgress=performance.now();send('progress');}});
+          widget.bind(E.FINISH,e=>{if(finished)return;finished=true;desiredPlay=false;if(Number.isFinite(e?.currentPosition))position=e.currentPosition/1000;send('ended');});
         };document.head.append(script);
         </script></body></html>
         """
@@ -242,7 +250,22 @@ struct EmbeddedPlayerPanel: View {
         }
         if let notice = player.sourceStatus?.message, player.status != nil || store.playback?.currentTrack != nil { Text(notice).font(.caption).foregroundStyle(.secondary).padding(8) }
         if let status = player.status, let message = status.message {
-            HStack { Text(message).font(.caption); Button("Tentar novamente") { Task { await store.togglePause(); await player.refresh() } } }.padding(8)
+            HStack {
+                Text(message).font(.caption)
+                if status.state == .failed {
+                    Button("Tentar novamente") {
+                        Task {
+                            do { try await player.retryFailedPlayback(generation: status.generation); await store.refreshPlayback() }
+                            catch { store.errorMessage = "Não foi possível reiniciar o player. Confira a origem e tente novamente." }
+                        }
+                    }.accessibilityIdentifier("player.embedded.retry")
+                }
+                if status.trackId == nil ? !store.queue.isEmpty : store.queue.count > 1 {
+                    Button(status.state == .ended ? "Tentar próxima faixa" : "Próxima faixa") {
+                        Task { await store.next(); await player.refresh() }
+                    }.accessibilityIdentifier("player.embedded.recovery.next")
+                }
+            }.padding(8)
         }
     }
 }
