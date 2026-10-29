@@ -1,5 +1,11 @@
 # Estado da refatoração arquitetural do core
 
+> Checkpoint histórico de setembro. Para a estrutura atual, incluindo catálogo,
+> origens, players incorporados, transferências e coleções adicionados depois,
+> consulte o [guia da arquitetura atual](guia-arquitetura-core.md) de 29/10/2026 e
+> sua [referência de API](referencia-api-core.md). As contagens abaixo não são o
+> inventário atual, e os guards não comprovam desacoplamento integral de todos os módulos.
+
 Última atualização: 27 de setembro de 2026
 
 Commit de referência: `cd2d603 perf(macos): reduce active playback polling`

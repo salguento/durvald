@@ -1,5 +1,10 @@
 # F0.02 — Inventário da superfície pública atual
 
+> Este é o snapshot anterior à migração. A referência de 29/10/2026 está no
+> [inventário atual da API](../referencia-api-core.md) e no
+> [guia da arquitetura implementada](../guia-arquitetura-core.md). Os exports
+> legados descritos abaixo não representam a visibilidade atual de `lib.rs`.
+
 Este documento registra a superfície pública observável do `durvald-core` antes da migração arquitetural.
 
 A finalidade desta etapa é distinguir:

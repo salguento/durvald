@@ -6,6 +6,12 @@ Last.fm integration. Native Rust clients such as GTK consume the public Rust API
 directly; SwiftUI and other FFI clients use its UniFFI surface. No UI policy
 belongs in this crate. See [the Linux frontend](../durvald-gtk/README.md).
 
+For the current implementation, read the
+[architecture guide in Portuguese](docs/guia-arquitetura-core.md): use cases,
+data structures, application boundaries, libraries, integrations, and architectural
+adherence. The [API reference](docs/referencia-api-core.md) lists the public method
+signatures and type definitions. Both distinguish implemented code from future plans.
+
 ## Core contracts
 
 ### Local Home shelves
